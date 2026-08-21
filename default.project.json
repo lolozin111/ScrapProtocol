@@ -1,0 +1,41 @@
+{
+  "name": "SalvageProtocol",
+  "tree": {
+    "$className": "DataModel",
+
+    "ReplicatedStorage": {
+      "$className": "ReplicatedStorage",
+      "Shared": {
+        "$path": "src/ReplicatedStorage/Shared"
+      },
+      "Remotes": {
+        "$className": "Folder",
+        "MineNode": { "$className": "RemoteEvent" },
+        "CraftItem": { "$className": "RemoteFunction" },
+        "DeployRobot": { "$className": "RemoteFunction" },
+        "StartWave": { "$className": "RemoteEvent" },
+        "WaveUpdate": { "$className": "RemoteEvent" },
+        "InventoryUpdate": { "$className": "RemoteEvent" },
+        "GetProfile": { "$className": "RemoteFunction" },
+        "InteractHeal": { "$className": "RemoteFunction" },
+        "BuyOutpostItem": { "$className": "RemoteFunction" },
+        "StartOutpostRaid": { "$className": "RemoteEvent" },
+        "OutpostUpdate": { "$className": "RemoteEvent" },
+        "RegenerateExpedition": { "$className": "RemoteEvent" }
+      }
+    },
+
+    "ServerScriptService": {
+      "$className": "ServerScriptService",
+      "$path": "src/ServerScriptService"
+    },
+
+    "StarterPlayer": {
+      "$className": "StarterPlayer",
+      "StarterPlayerScripts": {
+        "$className": "StarterPlayerScripts",
+        "$path": "src/StarterPlayerScripts"
+      }
+    }
+  }
+}
