@@ -10,11 +10,21 @@
 local Services = script.Parent.Services
 
 require(Services.DataService)
+require(Services.PlotService)
+require(Services.BaseService)
+require(Services.StationService)
+require(Services.AdminService)
+require(Services.RaidEnergyService)
 require(Services.MiningService)
 require(Services.CraftingService)
 require(Services.WaveService)
 require(Services.ShopService)
 require(Services.NodeService)
 require(Services.ExpeditionService)
+require(Services.AutoMinerService)
+require(Services.MineShaftService)
+-- ResourceZoneService (the old scattered-ring ore layout) is no longer required — it's been
+-- replaced by the dig-down MineShaftService above. The file's still on disk for reference; see
+-- DESIGN_NOTES.md for why it was retired instead of tuned further.
 
 print("[Salvage Protocol] Server services online.")

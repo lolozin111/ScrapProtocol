@@ -32,8 +32,8 @@ NodeConfig.CombatTiers = {
 	},
 	[2] = {
 		Name = "Raider Camp",
-		EnemyHP = 260,
-		DamagePerSecond = 5,
+		EnemyHP = 190,
+		DamagePerSecond = 4,
 		CooldownSeconds = 75,
 		Loot = {
 			{ Kind = "Ore", OreKey = "SteelPlating", Min = 10, Max = 20, Chance = 1.0 },

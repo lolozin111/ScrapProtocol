@@ -21,7 +21,18 @@
         "BuyOutpostItem": { "$className": "RemoteFunction" },
         "StartOutpostRaid": { "$className": "RemoteEvent" },
         "OutpostUpdate": { "$className": "RemoteEvent" },
-        "RegenerateExpedition": { "$className": "RemoteEvent" }
+        "RegenerateExpedition": { "$className": "RemoteEvent" },
+        "SkipNode": { "$className": "RemoteEvent" },
+        "CraftAutoMiner": { "$className": "RemoteFunction" },
+        "UpgradeTool": { "$className": "RemoteFunction" },
+        "MineFailed": { "$className": "RemoteEvent" },
+        "EnergyDrinkFound": { "$className": "RemoteEvent" },
+        "EndExpedition": { "$className": "RemoteEvent" },
+        "MineShaftHit": { "$className": "RemoteEvent" },
+        "UpgradeSuit": { "$className": "RemoteFunction" },
+        "DepthUpdate": { "$className": "RemoteEvent" },
+        "RecallFromMine": { "$className": "RemoteEvent" },
+        "EquipMod": { "$className": "RemoteFunction" }
       }
     },
 

@@ -68,21 +68,44 @@ end)
 -- Distance-based fog — clear near the base, hazier further down the Expedition path
 ----------------------------------------------------------------------
 
--- NOTE: an earlier version of this used NEAR_FOG_END = 100000. That made the near->far lerp
--- stay in the tens-of-thousands for almost the entire path (Roblox's default view distance is
--- nowhere near that), so fog was effectively invisible everywhere except the very last few
--- studs. These values are scaled to the compact path (ExpeditionConfig.SlotSpacing = 12,
--- up to 8 slots ≈ 96 studs out) so the haze is actually visible well before you reach the end.
-local NEAR_FOG_END = 400    -- clear near the base — still large enough that nothing looks foggy at 0 distance
-local FAR_FOG_END = 45      -- noticeably hazy by the time you're near the far end of the path
-local FAR_DISTANCE = 80     -- studs from the anchor at which fog reaches its haziest
-local NEAR_COLOR = Color3.fromRGB(150, 160, 170)
-local FAR_COLOR = Color3.fromRGB(90, 80, 75)
+-- NOTE: two earlier versions of this used NEAR_FOG_END values (100000, then 400) that stayed
+-- too large across most of the path for the fog to read as visible against a plain grey
+-- baseplate/skybox — technically applying, but not noticeable. This version ramps up fast and
+-- hard, and uses a FAR_COLOR with real contrast against the default sky instead of another
+-- grey, so it's unmistakable well before the end of the (now even shorter) path.
+local NEAR_FOG_END = 150    -- still fairly clear right at the base
+local FAR_FOG_END = 20      -- thick, obvious haze
+local FAR_DISTANCE = 45     -- studs from the anchor at which fog reaches its haziest — most of an 8-slot path
+local NEAR_COLOR = Color3.fromRGB(180, 190, 200)
+local FAR_COLOR = Color3.fromRGB(70, 58, 50)
 
 local function getAnchorPosition(): Vector3?
 	local anchor = CollectionService:GetTagged("ExpeditionStart")[1]
 	return anchor and anchor.Position
 end
+
+if not getAnchorPosition() then
+	warn("[EnvironmentFX] No Part tagged 'ExpeditionStart' found yet — distance fog has nothing to measure from until one exists.")
+end
+
+-- CONFIRMED via testing: this place has an Atmosphere instance under Lighting, and Atmosphere
+-- suppresses classic Lighting.Fog* rendering outright — that's why FogEnd was computing sane
+-- numbers (105-130) but nothing was visible. Atmosphere.Haze (not Density) is the property that
+-- actually reads as "foggy," so that's the primary knob now; Density and Color ride along for
+-- extra depth. Lighting.Fog* is left in place below as a harmless no-op fallback for anyone
+-- testing this in a place that DOESN'T have an Atmosphere.
+local atmosphere = Lighting:FindFirstChildOfClass("Atmosphere")
+local NEAR_HAZE = 0
+local FAR_HAZE = 5      -- Atmosphere.Haze goes 0-10; 5 is a strong, unmistakable haze on purpose — dial back once you've confirmed it's visible
+local BASE_DENSITY = atmosphere and atmosphere.Density or 0.3
+local FAR_DENSITY = 0.6
+
+-- Two earlier tuning passes on this still didn't read as visible in testing. Rather than guess
+-- a third time, this prints the live numbers every couple seconds — if it's STILL not visible
+-- once FogEnd is reported down near 20-30, the bug isn't the math anymore and the Output log
+-- here is what we need to see to find the real cause (e.g. check Lighting in Explorer for an
+-- Atmosphere object and what Technology is set, and screenshot both).
+local lastDebugPrint = 0
 
 RunService.Heartbeat:Connect(function()
 	local character = LocalPlayer.Character
@@ -94,8 +117,23 @@ RunService.Heartbeat:Connect(function()
 
 	local distance = (root.Position - anchorPosition).Magnitude
 	local t = math.clamp(distance / FAR_DISTANCE, 0, 1)
+	local fogEnd = NEAR_FOG_END + (FAR_FOG_END - NEAR_FOG_END) * t
 
-	Lighting.FogEnd = NEAR_FOG_END + (FAR_FOG_END - NEAR_FOG_END) * t
+	Lighting.FogEnd = fogEnd
 	Lighting.FogStart = 0
 	Lighting.FogColor = NEAR_COLOR:Lerp(FAR_COLOR, t)
+
+	if atmosphere then
+		atmosphere.Haze = NEAR_HAZE + (FAR_HAZE - NEAR_HAZE) * t
+		atmosphere.Density = BASE_DENSITY + (FAR_DENSITY - BASE_DENSITY) * t
+		atmosphere.Color = NEAR_COLOR:Lerp(FAR_COLOR, t)
+	end
+
+	local now = os.clock()
+	if now - lastDebugPrint > 2 then
+		lastDebugPrint = now
+		local hazeText = atmosphere and ("%.2f"):format(atmosphere.Haze) or "n/a"
+		print(("[EnvironmentFX] distance=%.0f t=%.2f FogEnd=%.0f Haze=%s"):format(
+			distance, t, fogEnd, hazeText))
+	end
 end)

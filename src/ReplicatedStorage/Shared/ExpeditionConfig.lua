@@ -1,28 +1,27 @@
 --[[
 	ExpeditionConfig.lua
-	Tuning for the procedurally-generated Expedition path: how many node slots, how far apart,
-	how likely each slot is to actually hold a node, and where the forks (path choices) land.
+	Tuning for the Expedition queue: 5-8 node "rows" sitting at fixed slots near the
+	ExpeditionStart anchor. Every Nth row is a two-way fork instead of a single node. Rows only
+	ever move in response to the player — clearing the frontmost row shifts every other row down
+	one slot and spawns a fresh one at the back. Nothing moves on a timer.
 ]]
 
 local ExpeditionConfig = {}
 
-ExpeditionConfig.PathLengthMin = 5
-ExpeditionConfig.PathLengthMax = 8
+ExpeditionConfig.PathLengthMin = 5     -- how many node rows stay active in the conveyor at once (min)
+ExpeditionConfig.PathLengthMax = 8     -- how many node rows stay active in the conveyor at once (max) — picked once when the conveyor (re)starts
 
-ExpeditionConfig.SlotSpacing = 12      -- studs between consecutive slots along the path — kept short so the whole path stays close to base
-ExpeditionConfig.ForkInterval = 3      -- every Nth slot is a two-way choice instead of a single slot
-ExpeditionConfig.ForkLateralOffset = 5 -- how far apart the two fork options sit, side to side
+ExpeditionConfig.SlotSpacing = 8       -- studs between consecutive rows in the queue
+ExpeditionConfig.ForkInterval = 3      -- every Nth spawned row is a two-way choice instead of a single node
+ExpeditionConfig.ForkLateralOffset = 7 -- how far apart the two fork options sit, side to side (must clear the node size below so they don't crowd each other)
 
--- Regular (non-fork) slots roll this chance to actually contain a node at all — the rest are
--- just open path, so a run's node count varies and no two expeditions look identical. Fork
--- slots are exempt: a choice with only one real option isn't a choice, so both branches always
--- get a node.
-ExpeditionConfig.NodeSpawnChance = 0.3
+ExpeditionConfig.ShiftDuration = 0.5   -- seconds the "everyone moves down one slot" animation takes when the front row is cleared — this is the ONLY time anything moves; there's no time-based drift
 
--- Hard floor/ceiling applied AFTER the random rolls above, so short/unlucky rolls never leave
--- you with a near-empty path and lucky rolls never flood it with fights.
-ExpeditionConfig.MinTotalNodes = 5     -- if RNG rolls fewer nodes than this, extra ones are forced into open slots
-ExpeditionConfig.MaxCombatNodes = 4    -- Combat nodes stop being rolled once a path already has this many
+ExpeditionConfig.MaxCombatNodes = 4    -- Combat nodes stop being rolled once this many are simultaneously active in the queue
+ExpeditionConfig.MinCombatNodes = 1    -- the queue is never allowed to have FEWER than this many Combat nodes active at once — the moment a
+                                        -- freshly-spawned row's count would still be under this, that row is forced to include a Combat node
+                                        -- instead of rolling normally (still respects MaxCombatNodes above). Raise this (e.g. to 2) for combat
+                                        -- to show up noticeably more often; it must stay <= MaxCombatNodes or the forcing can never satisfy it.
 
 -- Weighted random node type (weights don't need to sum to 100, they're relative).
 ExpeditionConfig.NodeTypeWeights = {
@@ -31,21 +30,39 @@ ExpeditionConfig.NodeTypeWeights = {
 	Heal = 15,
 }
 
--- Combat tier scales with how deep into the path a node sits — the far end of an expedition
--- should feel meaningfully riskier than the first couple of slots.
-ExpeditionConfig.TierBySlotIndex = {
-	{ MaxIndex = 2, Tier = 1 },
-	{ MaxIndex = 5, Tier = 2 },
-	{ MaxIndex = math.huge, Tier = 3 },
+-- Combat tier is a WEIGHTED ROLL (not a hard cutoff) that shifts toward harder tiers the more
+-- rows have spawned so far this run — a rough stand-in for "the player is presumably stronger/
+-- further along by now" since this is one shared queue, not something scoped to a single
+-- player's gear. Early on it's mostly Tier 1 with Tier 2 showing up here and there; by the late
+-- band Tier 3 dominates. Tune the weights per band, or add more bands for a smoother ramp.
+ExpeditionConfig.TierWeightBands = {
+	{ MaxIndex = 5, Weights = { [1] = 70, [2] = 25, [3] = 5 } },
+	{ MaxIndex = 12, Weights = { [1] = 40, [2] = 40, [3] = 20 } },
+	{ MaxIndex = math.huge, Weights = { [1] = 15, [2] = 40, [3] = 45 } },
 }
 
 function ExpeditionConfig.GetTierForSlot(slotIndex: number): number
-	for _, band in ipairs(ExpeditionConfig.TierBySlotIndex) do
+	local weights = ExpeditionConfig.TierWeightBands[#ExpeditionConfig.TierWeightBands].Weights
+	for _, band in ipairs(ExpeditionConfig.TierWeightBands) do
 		if slotIndex <= band.MaxIndex then
-			return band.Tier
+			weights = band.Weights
+			break
 		end
 	end
-	return 1
+
+	local total = 0
+	for _, weight in pairs(weights) do
+		total += weight
+	end
+	local roll = math.random() * total
+	local cumulative = 0
+	for tier, weight in pairs(weights) do
+		cumulative += weight
+		if roll <= cumulative then
+			return tier
+		end
+	end
+	return 1 -- fallback, should be unreachable
 end
 
 function ExpeditionConfig.RollNodeType(): string

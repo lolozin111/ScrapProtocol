@@ -16,14 +16,17 @@ local CollectionService = game:GetService("CollectionService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local NodeConfig = require(ReplicatedStorage.Shared.NodeConfig)
+local AdminConfig = require(ReplicatedStorage.Shared.AdminConfig)
 local DataService = require(script.Parent.DataService)
 local CombatMath = require(script.Parent.CombatMath)
+local ExpeditionService = require(script.Parent.ExpeditionService)
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 local InteractHeal = Remotes.InteractHeal
 local BuyOutpostItem = Remotes.BuyOutpostItem
 local StartOutpostRaid = Remotes.StartOutpostRaid
 local OutpostUpdate = Remotes.OutpostUpdate
+local SkipNode = Remotes.SkipNode
 
 local NODE_TAG = "Node"
 
@@ -76,11 +79,34 @@ local function commitFork(node: Instance)
 	end
 end
 
+-- Only the frontmost row of the expedition conveyor is reachable — you can't skip ahead to a
+-- node still further back in the queue. Hand-placed permanent nodes have no SlotIndex
+-- attribute and are never gated (CanAccessSlot returns true for a nil slot index).
+local function checkSlotAccess(node: Instance): boolean
+	return ExpeditionService.CanAccessSlot(node:GetAttribute("SlotIndex"))
+end
+
+-- Expedition nodes are one-time: once successfully used, they're destroyed outright (which also
+-- triggers ExpeditionService to recycle that row and spawn a new one at the back of the queue).
+-- Permanent, hand-placed nodes are never touched here.
+local function destroyIfExpedition(node: Instance)
+	if node:GetAttribute("IsExpeditionNode") then
+		node:Destroy()
+	end
+end
+
 ----------------------------------------------------------------------
 -- Heal Station
 ----------------------------------------------------------------------
 
 local healCooldowns: { [number]: number } = {} -- userId -> os.time() they can next heal
+
+-- Declared up here (rather than down by runRaid, where it's mainly used) so Heal/Shop can also
+-- check it — a raid is the one interaction that takes real time, and a fork's two options share
+-- a slot the whole time, so without this a player could raid one side of a fork while also
+-- healing/shopping the other side mid-fight. Nothing else needs this: Heal/Shop resolve
+-- instantly, so there's no equivalent window to exploit for them.
+local activeRaids: { [number]: boolean } = {} -- userId -> true while raiding
 
 InteractHeal.OnServerInvoke = function(player: Player, node: Instance?)
 	local character = player.Character
@@ -89,17 +115,36 @@ InteractHeal.OnServerInvoke = function(player: Player, node: Instance?)
 		return { Success = false, Reason = "No character" }
 	end
 
-	local now = os.time()
-	local readyAt = healCooldowns[player.UserId] or 0
-	if now < readyAt then
-		return { Success = false, Reason = "On cooldown", SecondsLeft = readyAt - now }
+	if activeRaids[player.UserId] then
+		return { Success = false, Reason = "Busy — you're mid-raid" }
+	end
+
+	if typeof(node) == "Instance" and not checkSlotAccess(node) then
+		return { Success = false, Reason = "Locked — clear the node in front of you first" }
+	end
+
+	-- Expedition Heal nodes are one-time (destroyed on use) so a cooldown on top of that would
+	-- just be a redundant second gate — and worse, it used to silently block the destroy below,
+	-- leaving a "used" node stuck in place until the shared cooldown happened to expire. Only
+	-- the permanent hand-placed Heal Station (reusable forever) needs the cooldown.
+	local isExpeditionHeal = typeof(node) == "Instance"
+		and node:GetAttribute("IsExpeditionNode")
+		and getNodeType(node) == "Heal"
+
+	if not isExpeditionHeal then
+		local now = os.time()
+		local readyAt = healCooldowns[player.UserId] or 0
+		if now < readyAt then
+			return { Success = false, Reason = "On cooldown", SecondsLeft = readyAt - now }
+		end
+		healCooldowns[player.UserId] = now + NodeConfig.HealCooldownSeconds
 	end
 
 	humanoid.Health = humanoid.MaxHealth
-	healCooldowns[player.UserId] = now + NodeConfig.HealCooldownSeconds
 
-	if typeof(node) == "Instance" and getNodeType(node) == "Heal" then
+	if isExpeditionHeal then
 		commitFork(node)
+		destroyIfExpedition(node)
 	end
 
 	return { Success = true }
@@ -113,6 +158,14 @@ BuyOutpostItem.OnServerInvoke = function(player: Player, node: Instance?, itemKe
 	local item = NodeConfig.ShopCatalog[itemKey]
 	if not item then
 		return { Success = false, Reason = "Unknown item" }
+	end
+
+	if activeRaids[player.UserId] then
+		return { Success = false, Reason = "Busy — you're mid-raid" }
+	end
+
+	if typeof(node) == "Instance" and not checkSlotAccess(node) then
+		return { Success = false, Reason = "Locked — clear the node in front of you first" }
 	end
 
 	local profile = DataService.Get(player)
@@ -133,6 +186,7 @@ BuyOutpostItem.OnServerInvoke = function(player: Player, node: Instance?, itemKe
 
 	if typeof(node) == "Instance" and getNodeType(node) == "Shop" then
 		commitFork(node)
+		destroyIfExpedition(node)
 	end
 
 	pushInventory(player, profile)
@@ -143,8 +197,8 @@ end
 -- Combat Outposts
 ----------------------------------------------------------------------
 
-local activeRaids: { [number]: boolean } = {}                     -- userId -> true while raiding
 local raidCooldowns: { [number]: { [Instance]: number } } = {}    -- userId -> node -> os.time() ready
+-- (activeRaids itself is declared up near InteractHeal — see the comment there for why)
 
 local function runRaid(player: Player, node: Instance, tier: number)
 	local userId = player.UserId
@@ -152,6 +206,30 @@ local function runRaid(player: Player, node: Instance, tier: number)
 	local profile = DataService.Get(player)
 
 	if not tierData or not profile then
+		activeRaids[userId] = nil
+		return
+	end
+
+	-- Admin fast-forward: skip gear checks, cooldowns, and the whole timed tick loop, resolve
+	-- straight to a win. This is purely a dev-testing shortcut (see AdminConfig.lua) so you can
+	-- get to loot/crafting/downstream systems without grinding combat every time.
+	if AdminConfig.IsAdmin(player) then
+		OutpostUpdate:FireClient(player, {
+			Status = "RaidStart",
+			NodeName = tierData.Name,
+			Tier = tier,
+			EnemyHP = tierData.EnemyHP,
+		})
+
+		local loot = grantLoot(player, tierData.Loot)
+		pushInventory(player, profile)
+		commitFork(node)
+
+		if node:GetAttribute("IsExpeditionNode") then
+			node:Destroy()
+		end
+
+		OutpostUpdate:FireClient(player, { Status = "RaidCleared", Loot = loot })
 		activeRaids[userId] = nil
 		return
 	end
@@ -181,6 +259,18 @@ local function runRaid(player: Player, node: Instance, tier: number)
 
 	while remainingEnemyHP > 0 do
 		task.wait(1)
+
+		-- The node this raid is fighting can vanish out from under it — most notably, Return to
+		-- Base wipes the whole expedition queue mid-fight. Without this check the loop just kept
+		-- ticking forever against a node that no longer existed: still damaging the player, still
+		-- holding activeRaids[userId] true (blocking Heal/Shop/new raids) long after the player
+		-- thought they'd left. Treated as a clean cancellation, not a loss — no failure message,
+		-- no penalty, it just stops.
+		if not node.Parent then
+			OutpostUpdate:FireClient(player, { Status = "RaidCancelled" })
+			activeRaids[userId] = nil
+			return
+		end
 
 		local character = player.Character
 		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
@@ -212,7 +302,7 @@ local function runRaid(player: Player, node: Instance, tier: number)
 	commitFork(node)
 
 	if node:GetAttribute("IsExpeditionNode") then
-		node:Destroy() -- expedition camps are one-time; the permanent base ones aren't
+		node:Destroy() -- expedition camps are one-time; the permanent base ones aren't (also recycles this row via ExpeditionService)
 	else
 		nodeCooldowns = raidCooldowns[userId] or {}
 		nodeCooldowns[node] = os.time() + tierData.CooldownSeconds
@@ -230,12 +320,46 @@ StartOutpostRaid.OnServerEvent:Connect(function(player: Player, node: Instance)
 	if activeRaids[player.UserId] then
 		return -- already mid-raid
 	end
+	if not checkSlotAccess(node) then
+		OutpostUpdate:FireClient(player, { Status = "Locked" })
+		return
+	end
+
+	-- Energy is no longer spent here — engaging any one Combat node inside an expedition used to
+	-- cost Energy every time, which meant a single exploration run with 3 Combat rows could burn
+	-- 3 Energy. Energy is meant to gate starting an exploration, not each fight inside one — it's
+	-- now charged exactly once, when the expedition itself starts (see ExpeditionService's
+	-- RegenerateExpedition handler). Nothing to check or spend here anymore.
 
 	local tierValue = node:FindFirstChild("Tier")
 	local tier = (tierValue and tierValue:IsA("NumberValue")) and tierValue.Value or 1
 
 	activeRaids[player.UserId] = true
 	task.spawn(runRaid, player, node, tier)
+end)
+
+----------------------------------------------------------------------
+-- Skip — abandon the current frontmost expedition node without engaging it (e.g. a Shop you
+-- can't afford anything at). Works on any node type in principle; only the Shop panel exposes
+-- a button for it right now. Blocked entirely while a raid is in progress — not just against
+-- the Combat node itself, but its fork sibling too, since skipping the sibling would commitFork
+-- and destroy the Combat node out from under the still-running runRaid loop, letting a player
+-- dodge a losing fight for free.
+----------------------------------------------------------------------
+
+SkipNode.OnServerEvent:Connect(function(player: Player, node: Instance)
+	if typeof(node) ~= "Instance" or not CollectionService:HasTag(node, NODE_TAG) then
+		return
+	end
+	if activeRaids[player.UserId] then
+		return
+	end
+	if not checkSlotAccess(node) then
+		return -- not the frontmost node anyway — nothing to skip
+	end
+
+	commitFork(node)
+	destroyIfExpedition(node)
 end)
 
 game.Players.PlayerRemoving:Connect(function(player)

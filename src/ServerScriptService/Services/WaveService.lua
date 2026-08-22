@@ -17,8 +17,10 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local WaveConfig = require(ReplicatedStorage.Shared.WaveConfig)
+local PlotConfig = require(ReplicatedStorage.Shared.PlotConfig)
 local DataService = require(script.Parent.DataService)
 local CombatMath = require(script.Parent.CombatMath)
+local PlotService = require(script.Parent.PlotService)
 
 local Remotes = ReplicatedStorage.Remotes
 local StartWave = Remotes.StartWave
@@ -123,6 +125,10 @@ end
 StartWave.OnServerEvent:Connect(function(player: Player)
 	if activeRuns[player.UserId] then
 		return -- already mid-run
+	end
+	if not PlotService.IsPlayerInOwnPlot(player) then
+		WaveUpdate:FireClient(player, { Status = "NotInBase", Message = PlotConfig.NotInBaseMessage })
+		return
 	end
 	activeRuns[player.UserId] = true
 	task.spawn(runWaves, player)

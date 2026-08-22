@@ -14,6 +14,8 @@ local DataStoreService = game:GetService("DataStoreService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local RaidEnergyConfig = require(ReplicatedStorage.Shared.RaidEnergyConfig)
+
 local PlayerDataStore = DataStoreService:GetDataStore("SalvageProtocol_PlayerData_v1")
 
 local DataService = {}
@@ -33,14 +35,38 @@ local function defaultProfile()
 			VoidiumShard = 0,
 		},
 		ToolTier = 1,
+		SuitTier = 1,           -- environmental protection for the mine shaft's depth hazards — see
+		                        -- MineShaftConfig.SuitTiers/SuitTierCosts, purchased via Workbench -> Suit
+		BaseTier = 1,           -- which BaseConfig.Tiers Model BaseService clones onto the player's
+		                        -- plot — see BaseConfig.lua; no purchase flow yet, always 1 for now
 		OwnedGamePasses = {},   -- [gamePassKey] = true
 		CraftedWeapons = {},    -- [weaponKey] = true
 		CraftedRobots = {},     -- [robotKey] = count owned
+		CraftedStructures = {}, -- [structureKey] = true (e.g. "AutoMiner" — see AutoMinerService)
 		DeployedRobots = {},    -- list of robotKeys currently on defense duty
+		CraftedMods = {},       -- [modKey] = true (permanent unlock, same shape as CraftedWeapons) — see ModConfig
+		EquippedMods = {},      -- [itemKey][slotIndex] = modKey — itemKey is a weaponKey or robotKey,
+		                        -- slotIndex runs 1..ModConfig.SlotsPerItem. Applies per item TYPE, not
+		                        -- per robot instance — see ModConfig.lua's header comment.
 		HighestWave = 0,
 		InstantCraftTokens = 0,
 		WaveReviveTokens = 0,
+		Energy = RaidEnergyConfig.MaxEnergy, -- starts full so a fresh player isn't stuck waiting — see RaidEnergyService
 	}
+end
+
+-- Backfills any fields added to defaultProfile() after a player's save was already written —
+-- without this, an existing save loaded from before a field existed (e.g. CraftedStructures)
+-- would be missing it entirely rather than getting the new default, and every service that
+-- reads it would need its own nil-guard. One shallow pass here is simpler and covers every
+-- field uniformly; only fills in what's actually missing, never touches existing values.
+local function backfillMissingFields(profile)
+	for key, defaultValue in pairs(defaultProfile()) do
+		if profile[key] == nil then
+			profile[key] = defaultValue
+		end
+	end
+	return profile
 end
 
 local function loadProfile(userId: number)
@@ -52,7 +78,7 @@ local function loadProfile(userId: number)
 	if not ok then
 		warn("[DataService] GetAsync failed for", userId, err)
 	end
-	return data or defaultProfile()
+	return backfillMissingFields(data or defaultProfile())
 end
 
 local function saveProfile(userId: number)
