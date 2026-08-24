@@ -8,6 +8,9 @@
       "Shared": {
         "$path": "src/ReplicatedStorage/Shared"
       },
+      "ItemIcons": {
+        "$className": "Folder"
+      },
       "Remotes": {
         "$className": "Folder",
         "MineNode": { "$className": "RemoteEvent" },
@@ -32,7 +35,13 @@
         "UpgradeSuit": { "$className": "RemoteFunction" },
         "DepthUpdate": { "$className": "RemoteEvent" },
         "RecallFromMine": { "$className": "RemoteEvent" },
-        "EquipMod": { "$className": "RemoteFunction" }
+        "EquipMod": { "$className": "RemoteFunction" },
+        "EquipWeapon": { "$className": "RemoteFunction" },
+        "UndeployRobot": { "$className": "RemoteFunction" },
+        "ForgeWeapon": { "$className": "RemoteFunction" },
+        "CraftLuckPotion": { "$className": "RemoteFunction" },
+        "UpgradeForgeTier": { "$className": "RemoteFunction" },
+        "StartSmelt": { "$className": "RemoteFunction" }
       }
     },
 

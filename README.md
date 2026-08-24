@@ -114,33 +114,140 @@ no manual copy-pasting scripts into Studio.
   actions now also require standing near a particular physical prop, not just anywhere in the
   plot. Tag a Part or Model `Station` (`StationConfig.Tag`) and give it a child `StringValue`
   named `StationType` set to one of three keys: `Crafting` (a **Workbench** prop — gates Tools,
-  Auto-Miner, and Suit upgrades), `Welding` (a **Welding Station** prop — gates Weapons, Robots,
-  and Mods), or `Forge` (no mechanic wired up yet — a real ore-smelting system is planned later,
-  see `DESIGN_NOTES.md`; for now clicking it just prints a "doesn't do anything yet" notice).
-  Clicking a `Crafting`/`Welding` station in-world opens the Workbench menu straight to that
-  station's tab (`StationConfig.Types[type].DefaultTab`) as a convenience, but the tabs
-  themselves aren't hidden or restricted by location — you can still browse everything from the
-  general **Workbench** action-row button; only the actual craft/upgrade/deploy/equip action
-  itself gets rejected server-side (`StationService.IsPlayerNearStation`,
-  `StationConfig.InteractDistance` = 12 studs) if you try it while not near the right station,
-  with a clear "You need to be at your Workbench/Welding Station to do that" reason. Place as
-  many of each type as you like, anywhere inside your `PlotConfig.FootprintHalfSize` box.
+  Auto-Miner, and Suit upgrades), `Welding` (a **Welding Station** prop — gates Robots and Mods),
+  or `Forge` (gates Weapons and Smelting — every weapon in the game is rolled here now, see "Forge"
+  below, and raw ore gets refined here too, see "Ore Smelting" below).
+  There's no standalone "Workbench" button anymore — clicking a `Crafting`/`Welding`/`Forge`
+  station in-world is the ONLY way to open the menu, and it opens scoped to just that station's own
+  tabs (`StationConfig.Types[type].Tabs`) rather than every tab: a `Welding` station's menu only
+  ever shows Robots/Mods, a `Forge` station's only ever shows Weapons, a `Crafting` station's only
+  ever shows Tools/Auto-Miner/Suit. On top
+  of that, the actual craft/upgrade/deploy/equip action still gets rejected server-side too
+  (`StationService.IsPlayerNearStation`, `StationConfig.InteractDistance` = 12 studs) if you try
+  it while not near the right station, with a clear "You need to be at your Workbench/Welding
+  Station to do that" reason — the client-side tab restriction is a UX improvement on top of that
+  server check, not a replacement for it. Place as many of each type as you like, anywhere inside
+  your `PlotConfig.FootprintHalfSize` box. Once a station is built as part of a real per-player
+  `BaseTemplates` Model (see "Base plots" above), it also only works for its owner —
+  `BaseService` stamps an `OwnerUserId` attribute on every `Station`-tagged descendant of a
+  player's cloned base, so nobody can walk into someone else's base and use their gear. A loose
+  `Station` block placed directly in the world (not part of any base Model — i.e. what
+  placeholder-block testing looks like right now) has no owner and stays open to everyone.
 - **Crafting** — call the `CraftItem` RemoteFunction from a UI button with a tree name
-  (`"Weapons"`, `"Robots"`, or `"Mods"`) and a recipe key from `CraftingRecipes.lua`/
-  `ModConfig.lua`. Cost is validated and deducted server-side. **Only works while standing at
-  your own base plot, near the right station** — see `PlotService.IsPlayerInOwnPlot` and
-  `StationService.IsPlayerNearStation`, which every Workbench remote (`CraftItem`, `DeployRobot`,
-  `EquipMod`, `UpgradeTool`, `UpgradeSuit`, `CraftAutoMiner`) and `StartWave` (plot only, no
-  station needed) check first, rejecting with a clear reason if you're not.
-- **Deploying robots** — call `DeployRobot` the same way with a robot key you already own.
-- **Weapon/robot mods** — Workbench → Mods tab to craft permanent mod unlocks (`ModConfig.lua`,
-  3 slots per weapon/robot type — see `DESIGN_NOTES.md`'s "Base" section for the full design and
-  why mods apply per item type rather than per robot instance). Once a weapon or robot is owned,
-  its row in the Weapons/Robots tab grows 3 slot buttons — click one to open a picker popup
-  listing every mod you currently own (each tagged with its rarity — everything's `Common` for
-  now, see `ModConfig.Rarities`) plus a "None" option to clear the slot. Equip via the `EquipMod`
-  RemoteFunction (`tree, itemKey, slotIndex, modKey`); `CombatMath.GetEffectiveStats` applies
-  whatever's equipped when computing DPS.
+  (`"Robots"` or `"Mods"` — **not** `"Weapons"` anymore, see "Forge" below) and a recipe key from
+  `CraftingRecipes.lua`/`ModConfig.lua`. Cost is validated and deducted server-side. **Only works
+  while standing at your own base plot, near the right station** — see `PlotService
+  .IsPlayerInOwnPlot` and `StationService.IsPlayerNearStation`, which every Workbench/Forge remote
+  (`CraftItem`, `DeployRobot`, `EquipMod`, `EquipWeapon`, `ForgeWeapon`, `CraftLuckPotion`,
+  `UpgradeForgeTier`, `StartSmelt`, `UpgradeTool`, `UpgradeSuit`, `CraftAutoMiner`) and `StartWave` (plot only,
+  no station needed) check first, rejecting with a clear reason if you're not.
+- **Forge (weapon rolling + rarity + Luck + Pity)** — every weapon in the game is Forged, not
+  flat-crafted: click the **Forge** station's Weapons tab, pick a weapon type, and hit "Forge" to
+  spend that recipe's normal `CraftingRecipes.Weapons[key].Cost` and mint a brand-new unique
+  instance (`profile.Weapons`, `{ Id, WeaponKey, Rarity, Affixes }`) — rolling the same type twice
+  gives you two independent weapons, never a shared upgrade. Rarity (`ModConfig.Rarities` — Common
+  through Legendary) is weighted-random (`ForgeConfig.BaseWeights`/`ForgeService.rollRarity`), and
+  higher rarities roll 1-3 bonus stat affixes (`ForgeConfig.AffixPool` — flat +Damage or
+  +Fire-Rate percentages) on top of the recipe's base stats. **This tab is craft-only** — it shows
+  your Forge-tier upgrade row, a Luck Potion craft row, a "last result" readout, and one Forge
+  button per weapon type, nothing more; there are no Equip buttons or mod slots here (they used to
+  sit right below each owned weapon on this tab, which just duplicated the Inventory panel and made
+  "click Forge" and "click Equip" easy to mix up). Owning, equipping, and mod-slotting a Forged
+  weapon all happen exclusively in the **Inventory panel** now (see below).
+
+  **Luck** pushes the odds toward better rarities two ways that stack: your Forge's own permanent
+  `ForgeTier` upgrade track (Forge's Weapons tab, same sequential-tier shape as Tool/Suit tier,
+  costed by `ForgeConfig.ForgeTierCosts` — there's no separate abstract "Luck" stat, a better Forge
+  just rolls luckier) and a consumable **Luck Potion** (craftable at the Forge,
+  `ForgeConfig.LuckPotion`, burned on one roll). Whether the next roll spends a Potion is armed by
+  a **square button** (`potionButton`, icon via `ReplicatedStorage.ItemIcons.LuckPotion` same as
+  everything else, badge shows how many you own) docked directly under the Forge menu — not a row
+  buried inside its tab, but not a permanent HUD fixture either. **Pity** backstops a genuinely
+  unlucky run: `ForgeConfig.Pity.Threshold` (15) rolls in a row without landing `Pity.MinRarity`
+  (Rare) or better forces the very next roll to at least that rarity — still luck-weighted among
+  Rare-and-up, not a flat guarantee of exactly Rare. Shown the same way: a **pity progress bar**
+  (`pityBarFrame`) reading `Forge Pity: N / 15 (Rare+)` with a filling bar, docked right beside the
+  Potion button, filling the rest of the row out to the Forge menu's own right edge. **Both widgets
+  are Forge-only** — hidden the rest of the time, and hidden again for the Workbench/Welding
+  Station's own menus (`setForgeWidgetsVisible`, toggled from `openStationMenu`/
+  `craftCloseButton`) — they only ever appear docked under the Forge's own Weapons tab, resetting
+  to empty the moment any roll, forced or not, lands Rare+. The bottom action row
+  (Inventory/Start Defense/etc.) hides for the same window, since on shorter viewports the docked
+  row sits low enough to overlap it otherwise.
+
+  Pick which owned instance actually counts for combat DPS with `EquipWeapon`
+  (`profile.EquippedWeaponId`, called from the Inventory panel) — same "explicit choice wins, else
+  auto-pick the highest-DPS owned instance" fallback the old type-level `EquipWeapon` had, just
+  re-pointed at instances. **Existing saves migrate automatically**: any weapons owned under the
+  old flat system before this update convert into Common-rarity, zero-affix instances the first
+  time that player's save loads (`DataService.migrateLegacyWeapons`) — nothing is lost, just
+  upgraded into the new shape. See `DESIGN_NOTES.md`'s "Forge / weapon rarity, Luck & Pity" bullet
+  for the full implementation writeup.
+- **Ore Smelting** — the Forge's other job: its **Smelting** tab turns raw ore into refined
+  material, one batch at a time. The tab is one square panel (`RefinedOreConfig.lua`) with three
+  states: click the centered icon to open a popup grid into your raw ore inventory (only ores
+  you own at least one legal batch of are listed), pick one and a quantity readout, a "Reset," and
+  four bulk-add buttons (`+1`/`+10`/`+100`/`MAX` — each ADDS BATCHES, i.e. `RefineRatio`-sized
+  steps: 3:1 for Scrap Iron/Copper Wire, 2:1 for Steel Plating/Gold Contacts, 1:1 for Voidium
+  Shard, so the quantity is always a legal multiple) plus a "Smelt" button appear, and once you hit
+  it a live countdown/progress bar takes over until the batch finishes. Batch time is
+  `RefinedOreConfig.ComputeSmeltSeconds(quantity) = BaseSeconds + LogSecondsPerOre * math.log
+  (quantity)` — a real logarithm, so bigger batches cost less time per raw ore, not just
+  proportionally more total time (but still climb at a real pace, not flatten out almost
+  immediately — see `DESIGN_NOTES.md` for the exact numbers, and `SmeltService.lua` for where a
+  future Smelt Speed gamepass/upgrade would hook in).
+  One job at a time per player (`profile.SmeltJob`, cleared by `SmeltService.lua`'s background
+  loop the moment `FinishTime` passes — works the same whether you're online or not when it
+  finishes), granting `profile.RefinedOreCounts[RefinedKey]`. Refined materials show up in the
+  Inventory panel's Materials tab once you own at least one, but aren't spendable on anything yet —
+  wiring them into `CraftingRecipes`/`ModConfig` costs is a deliberately separate follow-up. See
+  `DESIGN_NOTES.md`'s "Ore smelting" bullet for the full implementation writeup, including which
+  numbers (RefineRatios, refined-material names, the time-formula constants) were picked without a
+  playtest and are worth reconsidering.
+- **Deploying robots** — call `DeployRobot` with a robot key you already own; `UndeployRobot`
+  (same signature) pulls one matching instance back off defense duty. `DeployRobot` caps at how
+  many of that key you actually own, not just "own at least one," so the same single owned robot
+  can't be deployed into every free slot at once.
+- **Weapon/robot mods** — Welding Station → Mods tab (or the Inventory panel's Mods tab) to craft
+  permanent mod unlocks (`ModConfig.lua`, 3 slots per weapon/robot type — see `DESIGN_NOTES.md`'s
+  "Base" section for the full design and why mods apply per item type rather than per robot/weapon
+  instance). For a Forged weapon, mod slots key off its `WeaponKey` (type), not its unique instance
+  Id — equipping a mod on "Pipe Pistol" affects every Pipe Pistol instance you own at once, same
+  simplified design robots always had. Owned weapon/robot rows grow 3 slot buttons — click one to
+  open a picker popup listing every mod you currently own (each tagged with its rarity —
+  everything's `Common` for now, see `ModConfig.Rarities`) plus a "None" option to clear the slot.
+  Equip via the `EquipMod` RemoteFunction (`tree, itemKey, slotIndex, modKey`) — gated to the Forge
+  for the Weapons tree, the Welding Station for Robots. `CombatMath.GetEffectiveWeaponStats`/
+  `GetEffectiveStats` applies whatever's equipped when computing DPS.
+- **Inventory panel** — a second, always-available panel (`inventoryButton` in the bottom action
+  row) for viewing and managing everything you own, filtered into four tabs: **Weapons**,
+  **Robots**, **Mods**, **Materials**. Unlike the Workbench, it's NOT gated to any station or
+  plot — you can open it and browse from anywhere, since it's just a window onto your save data.
+  Presented as an icon grid — one square tile per item/material, not rows — and clicking a tile
+  opens a detail panel beside the Inventory with a bigger image, description, stats, and (for
+  Weapons/Robots) an action button and mod slots. The Weapons tab shows every Forged instance you
+  own (rarity badge in the tile corner, full affix summary in the detail panel) and lets you pick
+  which single instance actually counts for combat DPS (`EquipWeapon` RemoteFunction,
+  `profile.EquippedWeaponId`) — leave nothing equipped and it falls back to auto-picking the
+  highest-DPS owned instance. The Robots tab shows owned-vs-deployed counts per robot and toggles
+  Deploy/Undeploy. The Mods tab lists everything you own with its rarity. The Materials tab shows
+  Scrap, Cores, every ore/material count, and any refined materials you've smelted at least one of
+  (see "Ore Smelting" above) — this is where that information moved to once the top-left readout
+  got trimmed down to just Scrap/Cores/Energy (see "Testing the loop" below).
+  Equip/Deploy/Undeploy actions from this panel still only actually work while standing at the
+  right station (Forge for weapons, Welding for robots) — same server-side gate as everywhere
+  else, browsing is just unrestricted.
+
+  **Icons** (optional — everything works without them, just shows a plain colored tile with the
+  item's name as text): add an `ImageLabel`, `ImageButton`, or `Decal` inside
+  `ReplicatedStorage.ItemIcons` (an empty Folder, already in `default.project.json`), named EXACTLY
+  like the item's key (e.g. `PipePistol`, `ScrapIron`, `SpeedCoil`, or the literal `Scrap`/`Cores`
+  for the two currencies), and set its Image/Texture property via Studio's normal asset picker.
+  Only that one property is read — nothing else about the instance matters, so any leftover
+  default size/position on it is harmless. **Descriptions** live in code: `CraftingRecipes.lua`'s
+  Weapons/Robots entries and `OreConfig.lua`'s Ores entries each have a `Description` field
+  (`ModConfig.lua`'s mods already did) — edit those directly to change the flavor text shown in
+  the detail panel.
 - **Auto-Miner** — `AutoMinerService.lua` handles a one-time-craftable "Mini Particle
   Accelerator" (Workbench → Auto-Miner tab, cost in `AutoMinerConfig.lua`) that passively grants
   a small amount of Scrap Iron on a timer for every player who's built one, whether they're
@@ -244,10 +351,11 @@ no manual copy-pasting scripts into Studio.
 
 ## 4. Testing the loop (debug HUD)
 
-`MainHud.client.lua` builds a plain, undecorated HUD in code — a currency readout, a
-Workbench panel (Weapons/Robots tabs, craft and deploy buttons), and a Start Defense button
-with a live wave/HP bar. It exists so the loop is actually visible before any real art or UI
-design happens. To test end to end:
+`MainHud.client.lua` builds a plain, undecorated HUD in code — a trimmed currency readout
+(Scrap/Cores/Energy only), a Workbench panel (opens only from a physical station), an Inventory
+panel (opens from anywhere — equip/deploy/undeploy your gear, see everything you own including
+raw materials), and a Start Defense button with a live wave/HP bar. It exists so the loop is
+actually visible before any real art or UI design happens. To test end to end:
 
 1. Place any Part somewhere in your map (any size — it'll be forced invisible/non-collidable
    automatically) and tag it `Plot` (Studio's Tag Editor, top ribbon under **Model**, or via
@@ -261,31 +369,84 @@ design happens. To test end to end:
    `BaseTier1`, floor at local Y=0, to replace the placeholder with something real — see the
    **Base plots** bullet above.)
 2. Inside your base's footprint (within `PlotConfig.FootprintHalfSize` of the `Plot` Part), place
-   two more Parts. Tag one `Station` and give it a child `StringValue` named `StationType` set to
-   `Crafting`; tag the other `Station` too, with `StationType` set to `Welding`. These are your
-   **Workbench** and **Welding Station** props — any size/shape works, they don't need to look
-   like anything yet.
+   three more Parts. Tag each `Station` and give it a child `StringValue` named `StationType` set
+   to `Crafting`, `Welding`, and `Forge` respectively. These are your **Workbench**, **Welding
+   Station**, and **Forge** props — any size/shape works, they don't need to look like anything
+   yet.
 3. Place a Part in the workspace, tag it `OreNode` (Studio's Tag Editor, top ribbon under
    **Model** or via `CollectionService`), and add a child `StringValue` named `OreType` with
    value `ScrapIron`.
 4. Play, walk up to it, hold the ProximityPrompt to mine — the Scrap/ore count updates live.
    (Mining ordinary ore nodes works anywhere on the map, not just at your base.)
-5. Click your `Crafting`-tagged Station — the Workbench menu should open straight to the **Tools**
-   tab, and hovering the station should show its outline highlight. Now click your `Welding`
-   Station instead — the menu should jump to **Weapons**. Craft a Pipe Pistol from there — it
-   should succeed. Now walk away from both stations (but stay inside your plot) and try crafting
-   again from the same open menu — it should fail with a "You need to be at your Welding Station
-   to do that" warning in Output. Walk back next to the Welding Station and confirm it works
-   again. Then walk well outside your `Plot` Part's footprint entirely and try once more — this
-   time it should fail with "You need to be at your own base to do that" instead (the broader
-   plot check, checked first).
-6. If you crafted a robot instead, click it again (while near the Welding Station) to **Deploy**
-   it.
-7. Click **Start Defense** — the wave panel appears and the objective/enemy bars move as the
+5. Click your `Crafting`-tagged Station — the menu should open titled **Workbench**, showing only
+   the **Tools** / **Auto-Miner** / **Suit** tabs (no Weapons/Robots/Mods at all — there's no
+   general Workbench button anymore, so this is the only way in), landing on **Tools**, and
+   hovering the station should show its outline highlight. Close it with the **X** in the top
+   corner, then click your `Welding` Station instead — the menu should reopen titled **Welding
+   Station**, this time showing only Robots/Mods, landing on **Robots**. Craft a Scrapbot from
+   there — it should succeed. Now walk away from the station (but stay inside your plot) and try
+   crafting again from the same still-open menu — it should fail with a "You need to be at your
+   Welding Station to do that" warning in Output. Walk back next to it and confirm it works again.
+   Then walk well outside your `Plot` Part's footprint entirely and try once more — this time it
+   should fail with "You need to be at your own base to do that" instead (the broader plot check,
+   checked first).
+6. Before opening any station, confirm neither the Pity bar nor the Potion button is visible
+   anywhere on screen — they're Forge-only now. Click your `Crafting` Workbench or `Welding`
+   Station and confirm they still don't appear (only the Forge shows them). Click your
+   `Forge`-tagged Station — the menu should open titled **Forge**, and the moment it does, a small
+   **Forge Pity** bar (`Forge Pity: 0 / 15 (Rare+)`, empty fill) and a 64x64 square **Luck Potion**
+   button (plain "Luck Potion" text and a `0` badge, since you have none yet and haven't added an
+   icon) should appear docked in a row directly under the Forge window — the Potion button flush
+   with its left edge, the Pity bar filling the rest of the row out to its right edge. The
+   **Weapons** tab itself shows only a Forge-tier upgrade row, a Luck Potion craft row, and one
+   **Forge** row per weapon type — no owned-weapon rows, Equip buttons, Pity row, or Potion toggle
+   inside it, those live in the docked row below the window now. Click **Forge** on Pipe Pistol —
+   it should spend the recipe cost, the Pity bar should tick to `1 / 15` with its fill nudging
+   forward, and a **Last Forged: [Rarity] Pipe Pistol** row should appear inside the menu showing
+   an affix summary (most rolls will say "No bonus affixes" — Common has none by design, see
+   `ForgeConfig.AffixCountByRarity`). Craft a Luck Potion from the row above (costs Copper Wire +
+   Gold Contacts) and confirm the Potion button's badge updates to `1`; click the Potion button
+   itself and confirm it highlights (armed); Forge another weapon and confirm the badge drops back
+   to `0` and the button un-highlights, since the toggle is one-shot. Forge about 15 more (any
+   type, Potion armed or not) without landing Rare or better and confirm the roll that hits the
+   threshold is guaranteed at least Rare (the Pity bar should snap back to empty on that roll, and
+   every roll that naturally lands Rare+ before then should already reset it early). While the
+   Forge is open, confirm the bottom **Inventory**/**Start Defense** row is gone (it would
+   otherwise sit under/behind the docked Pity bar and Potion button on shorter windows). Close the
+   Forge with the **X** and confirm the Pity bar and Potion button disappear immediately AND the
+   Inventory/Start Defense row comes right back. Then click your Scrapbot's row (while near the
+   Welding Station) to **Deploy** it.
+7. While still at the **Forge**, click its **Smelting** tab — a square panel should appear showing
+   a centered clickable icon (plain "Select\nOre" placeholder text until you add an icon) and the
+   prompt "Select Ore to Smelt". Click it — a popup should open titled **Select Ore**, showing a
+   grid tile for every raw ore you own at least one full batch of (e.g. 3+ Scrap Iron, since it
+   refines 3:1). Pick **Scrap Iron** — the popup closes and the square panel now shows "Scrap Iron
+   (owned N)", a `3 ore` readout with a small **Reset** button beside it, a row of **+1**/**+10**/
+   **+100**/**MAX** buttons, an estimated output/time readout (`-> 1 Steel Ingot · 0:46`), and a
+   **Smelt** button that wasn't there before you picked an ore. Click **+10** and confirm the
+   quantity jumps by 10 BATCHES (30 raw ore, since Scrap Iron refines 3:1), not by 10 raw ore; click
+   **MAX** and confirm it jumps straight to the largest multiple of 3 you can afford without going
+   over; click **Reset** and confirm it drops back to the smallest legal batch (3). Confirm the "->
+   N Steel Ingot" count and estimated time keep pace with whichever quantity you land on, and that
+   the estimated time grows much more slowly than the quantity does (log, not linear — compare the
+   estimate at quantity 3 vs. a much bigger one via **+100**/**MAX** if you have that much ore).
+   Click **Smelt** — the stepper/buttons should be replaced immediately by a countdown ("Ready in
+   M:SS") and a filling
+   progress bar, and your Scrap Iron count (Materials tab) should already be down by the amount you
+   fed in. Try clicking the Smelting tab's icon while a job is running — nothing should let you
+   start a second one (there's no picker to reopen; the panel is showing the countdown, not the
+   picker state). Wait for it to finish (or reduce `RefinedOreConfig.SmeltTime.BaseSeconds`
+   temporarily to speed up testing) — the panel should flip back to the "Select Ore to Smelt" icon
+   on its own within a couple seconds of hitting zero (the background loop ticks every
+   `SmeltTime.TickSeconds`, not instantly), and the Inventory panel's Materials tab should now show
+   a new **Steel Ingot** tile with the refined count. Close the Forge and reopen it on the
+   **Smelting** tab again to confirm the panel remembers there's nothing in progress (it should, not
+   get stuck showing a stale state).
+8. Click **Start Defense** — the wave panel appears and the objective/enemy bars move as the
    simulated combat resolves (see the big comment in `WaveService.lua` for what this is
    standing in for). This one only needs you inside your plot generally, not near a specific
    station.
-8. Place three more Parts and tag one each `Node` with `NodeType` = `Heal`, `Shop`, and
+9. Place three more Parts and tag one each `Node` with `NodeType` = `Heal`, `Shop`, and
    `Combat` (give the Combat one a `Tier` NumberValue set to `1`). Left-click the Combat node
    (within 50 studs) to raid it — this spends 1 Energy (top-left readout, starts full at 5/5) —
    the raid panel (bottom-right) shows enemy HP and your own HP draining together. Clear it,
@@ -295,7 +456,7 @@ design happens. To test end to end:
    resolve as an instant win with no Energy spent — see "Admin dev shortcuts" above. Add a
    teammate's UserId to `AdminConfig.AdminUserIds` if you want them to see normal combat while
    you test as admin, or vice versa.)
-9. Place one more Part near your base, tag it `ExpeditionStart` (whichever way its front face
+10. Place one more Part near your base, tag it `ExpeditionStart` (whichever way its front face
    points is the lane direction), and tag a second Part near it `ExpeditionLever`. Press Play —
    the lane area should be **empty** at first, nothing spawns on its own anymore. Hold the
    lever's prompt: 5–8 colored, labeled node rows should now appear at fixed slots along the
@@ -313,7 +474,7 @@ design happens. To test end to end:
    running: the raid panel should close immediately with no failure message, instead of
    continuing to tick/damage you in the background. The same `ExpeditionStart` Part also anchors
    the resource zone (next step) and the distance fog.
-10. Place one more Part **up on a platform with genuinely open air underneath it** (not resting on
+11. Place one more Part **up on a platform with genuinely open air underneath it** (not resting on
    your map's real ground — the whole grid gets built as real solid Parts directly below this, so
    it needs real clear space to build into), tag it `MineShaftStart`. Press Play — check the
    Output window for `[MineShaftService] populated 16384/16384 Depth-0 blocks` (generation is
@@ -345,20 +506,49 @@ design happens. To test end to end:
    second player, or a second Studio test server, check the same spot and confirm they see it
    already open). (NOTE: this replaces the old scattered-ring zone — `ResourceZoneService.lua` no
    longer runs; see `DESIGN_NOTES.md`.)
-11. Open **Workbench → Auto-Miner** (near your `Crafting` Station) and click **Build** (costs
+12. Open **Workbench → Auto-Miner** (near your `Crafting` Station) and click **Build** (costs
     Scrap Iron + Copper Wire). Once built, the row switches to showing the passive rate (e.g.
     `+3 Scrap Iron every 60s`); wait a tick or two and confirm your Scrap Iron count ticks up on
     its own, whether or not you're actively mining.
-12. Open **Workbench → Mods** (near your `Welding` Station) and craft a mod (e.g. Speed Coil,
-    costs Copper Wire). Craft a Pipe Pistol if you haven't already, and confirm its row in the
-    **Weapons** tab now shows 3 slot
-    buttons underneath. Click a slot — a **popup should open** listing every mod you currently
-    own (each prefixed with its rarity, e.g. `[Common] Speed Coil`) plus a "None" option. Click
-    Speed Coil — the popup closes and the slot button should now read "Speed Coil". Open that same
-    slot again and confirm it shows "Selected" next to Speed Coil. Craft a second, different mod
-    and equip it into a different slot; then try equipping that same mod into a third slot on the
-    same weapon and confirm it's rejected (check the Output window for the warning). Deploy a
-    robot and equip a mod on it the same way.
+13. Open **Workbench → Mods** (near your `Welding` Station) and craft a mod (e.g. Speed Coil,
+    costs Copper Wire). Forge a Pipe Pistol at the **Forge** if you haven't already, and confirm
+    its row further down the Forge's Weapons tab now shows 3 slot buttons underneath. Click a
+    slot — a **popup should open** listing every mod you currently own (each prefixed with its
+    rarity, e.g. `[Common] Speed Coil`) plus a "None" option. Click Speed Coil — the popup closes
+    and the slot button should now read "Speed Coil". Open that same slot again and confirm it
+    shows "Selected" next to Speed Coil. Craft a second, different mod and equip it into a
+    different slot; then try equipping that same mod into a third slot on the same weapon and
+    confirm it's rejected (check the Output window for the warning). Deploy a robot and equip a
+    mod on it the same way (near the Welding Station this time, not the Forge).
+14. Click **Inventory** in the bottom action row — it should open from anywhere, not just near a
+    station (walk well outside your plot first to confirm this), showing a grid of square tiles
+    rather than rows. Since you haven't added anything to `ReplicatedStorage.ItemIcons` yet, every
+    tile should show as a plain colored square with the item's name as text instead of a blank
+    square — that's the expected no-icon fallback, not a bug. Click the **Materials** tab, then
+    click the **Scrap Iron** tile — a detail panel should pop up to the right of the Inventory
+    showing its name, description, and "You have: N" matching the count that's now missing from
+    the trimmed-down top-left readout; click the **X** on the detail panel to close just that
+    panel (the Inventory itself should stay open). Switch to **Weapons** and click a tile you
+    own — the detail panel should show its rarity/stats/affix summary/description, three mod slot
+    buttons (clicking one should open the same mod picker popup from before), and an **Equip**
+    button at the bottom (or **Equipped**, highlighted, if it's your current pick). While standing
+    away from your Forge, click **Equip** on a weapon instance that isn't already equipped and
+    confirm it's rejected with a "You need to be at your Forge" reason; walk back and confirm it
+    succeeds — the button should flip to "Equipped" and the tile itself should pick up the accent
+    highlight without needing to reopen the panel. Craft a second copy of a robot you already own
+    (needs 2+ owned) and deploy both from the **Robots** tab detail panel — its stats line should
+    read "owned 2, deployed 2" and the button should flip to **Undeploy**; click it and confirm one
+    instance comes back off duty ("deployed 1") and the button flips back to **Deploy**. Confirm
+    the **Mods** tab's tiles open a detail panel with the mod's description and rarity but no
+    action button (mods equip through a Weapon/Robot's own slots, not directly). Finally, go back
+    to the Forge's own Weapons tab and confirm it does NOT show that weapon's row or an Equip
+    button anywhere — the Forge stays craft-only, this Inventory panel is the only place equipping
+    happens. If you want to test the icon system itself: add an
+    `ImageLabel` named `PipePistol` inside `ReplicatedStorage.ItemIcons`, set its Image property to
+    any decal/image asset, and confirm that specific tile (and its detail panel) picks up the
+    picture instead of the placeholder text. The same convention covers the persistent **Luck
+    Potion** button from step 6 — add one named exactly `LuckPotion` and confirm that square button
+    (not a tile, but same `getItemIcon` lookup) picks up the picture too.
 
 ## 5. Environment effects (optional polish)
 

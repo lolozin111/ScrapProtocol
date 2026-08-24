@@ -7,12 +7,17 @@
 	StringValue named "StationType" set to a key in StationConfig.Types (e.g. "Welding") — no code
 	changes needed to add more of any type, or move one.
 
-	Deliberately doesn't care WHICH plot a station belongs to or WHOSE it is — every caller here
-	already checks PlotService.IsPlayerInOwnPlot first (this is only ever the SECOND check, never
-	a replacement for it), so in practice a station only ever gets reached while a player is
-	already standing in their own base. This service only has to answer "is a station of the
-	right TYPE nearby" — same shape as MiningService's own distance check, just against tagged
-	instances instead of a single node.
+	Every caller here already checks PlotService.IsPlayerInOwnPlot first (this is only ever the
+	SECOND check, never a replacement for it), so in practice a station only ever gets reached
+	while a player is already standing in their own base. This service answers "is a station of
+	the right TYPE nearby, AND is it actually mine" — same shape as MiningService's own distance
+	check, just against tagged instances instead of a single node.
+
+	Ownership: BaseService stamps every Station-tagged descendant of a player's cloned base Model
+	with an OwnerUserId attribute matching that player. A station with NO OwnerUserId attribute
+	(a loose block placed straight in the world, not part of any base Model — e.g. current
+	placeholder testing before real base art exists) is left open to everyone; once it's part of
+	a real per-player base, the owner check kicks in automatically with no extra setup.
 ]]
 
 local CollectionService = game:GetService("CollectionService")
@@ -58,9 +63,13 @@ function StationService.IsPlayerNearStation(player: Player, stationType: string)
 
 	for _, inst in ipairs(CollectionService:GetTagged(StationConfig.Tag)) do
 		if getStationType(inst) == stationType then
-			local position = getStationPosition(inst)
-			if position and (position - rootPart.Position).Magnitude <= StationConfig.InteractDistance then
-				return true
+			-- nil OwnerUserId = not part of any player's base yet (loose testing block) = open to all.
+			local ownerUserId = inst:GetAttribute("OwnerUserId")
+			if ownerUserId == nil or ownerUserId == player.UserId then
+				local position = getStationPosition(inst)
+				if position and (position - rootPart.Position).Magnitude <= StationConfig.InteractDistance then
+					return true
+				end
 			end
 		end
 	end

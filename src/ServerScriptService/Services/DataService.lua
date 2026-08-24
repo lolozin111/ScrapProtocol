@@ -40,7 +40,40 @@ local function defaultProfile()
 		BaseTier = 1,           -- which BaseConfig.Tiers Model BaseService clones onto the player's
 		                        -- plot — see BaseConfig.lua; no purchase flow yet, always 1 for now
 		OwnedGamePasses = {},   -- [gamePassKey] = true
-		CraftedWeapons = {},    -- [weaponKey] = true
+		CraftedWeapons = {},    -- [weaponKey] = true — LEGACY, superseded by Weapons below. Kept
+			-- around only as the migration source for saves written before the Forge existed (see
+			-- migrateLegacyWeapons); nothing ever writes a new true into this table anymore.
+		Weapons = {},           -- list of unique weapon instances: { Id, WeaponKey, Rarity, Affixes }.
+			-- Every weapon in the game is Forged (ForgeService.ForgeWeapon), not flat-crafted, so
+			-- each one is its own instance with its own randomly rolled Rarity (see ModConfig
+			-- .Rarities) and 0-3 Affixes (see ForgeConfig.AffixPool) layered on top of
+			-- CraftingRecipes.Weapons' base stats — see CombatMath.GetEffectiveWeaponStats.
+		NextWeaponId = 1,       -- incrementing counter that mints each new Weapons instance's Id
+			-- ("w1", "w2", ...) — never reused, even across a weapon being lost/sold in the future.
+			-- EquippedWeaponId (string?) is deliberately NOT listed here, same reasoning as the old
+			-- EquippedWeapon field it replaces: pairs() skips nil-valued table entries, so a `= nil`
+			-- line would be a no-op, and profile.EquippedWeaponId reads as nil identically whether
+			-- the key is present-and-nil or simply absent. nil means "no explicit choice made yet" —
+			-- CombatMath.GetPlayerCombatDPS falls back to auto-picking the best owned INSTANCE by DPS
+			-- in that case. Set via the EquipWeapon remote (now on ForgeService.lua), same gate as
+			-- EquipMod/DeployRobot but scoped to the Forge instead of the Welding Station.
+		ForgeTier = 1,          -- your Forge's own permanent upgrade track — see ForgeConfig
+			-- .ForgeTiers/ForgeTierCosts, purchased via the Forge's Weapons tab, same shape as
+			-- SuitTier/ToolTier. A better Forge rolls luckier, full stop — no separate "Luck" stat.
+		LuckPotions = 0,        -- consumable count — see ForgeConfig.LuckPotion, craftable at the
+			-- Forge and burned on a single ForgeWeapon roll for a one-time luck boost.
+		ForgePityCounter = 0,   -- rolls since your last Rare-or-better — see ForgeConfig.Pity and
+			-- ForgeService.ForgeWeapon. Resets to 0 the moment a roll (forced or natural) lands
+			-- Pity.MinRarity or better; forces the next roll to that floor once it hits Threshold.
+		RefinedOreCounts = {},  -- [refinedKey] = amount owned — see RefinedOreConfig.lua/
+			-- SmeltService.lua. Keyed by RefinedKey (e.g. "SteelIngot"), not the raw ore key it came
+			-- from. Starts empty and fills in on demand, same convention as CraftedRobots below.
+			-- SmeltJob (table?) is deliberately NOT listed here, same reasoning as EquippedWeaponId
+			-- above: pairs() skips nil-valued entries, so a `= nil` line would be a no-op. nil means
+			-- "no smelting job in progress right now." When active its shape is { OreKey, Quantity,
+			-- RefinedKey, RefinedAmount, FinishTime } — set/cleared by SmeltService.lua, always
+			-- broadcast as `profile.SmeltJob or false` so a clear actually survives the network (see
+			-- that file's completion loop).
 		CraftedRobots = {},     -- [robotKey] = count owned
 		CraftedStructures = {}, -- [structureKey] = true (e.g. "AutoMiner" — see AutoMinerService)
 		DeployedRobots = {},    -- list of robotKeys currently on defense duty
@@ -69,6 +102,42 @@ local function backfillMissingFields(profile)
 	return profile
 end
 
+-- One-time upgrade path from the old flat "own every copy of this type" weapon model to the
+-- Forge's per-instance model (unique Id + Rarity + Affixes per weapon). Self-guarding: only
+-- converts anything when there's legacy ownership AND it hasn't already been converted — once
+-- profile.Weapons is non-empty this is a permanent no-op, even on a save where CraftedWeapons
+-- still has old `true` entries sitting in it (they're just never looked at again after this).
+-- Legacy weapons come back as Common-rarity, zero-affix instances — nothing is deleted or downgraded
+-- in value, they just didn't exist under a rarity system when they were originally crafted.
+local function migrateLegacyWeapons(profile)
+	if #profile.Weapons > 0 then
+		return profile
+	end
+	local hasLegacy = false
+	for _, owned in pairs(profile.CraftedWeapons) do
+		if owned then
+			hasLegacy = true
+			break
+		end
+	end
+	if not hasLegacy then
+		return profile
+	end
+	for weaponKey, owned in pairs(profile.CraftedWeapons) do
+		if owned then
+			local id = "w" .. profile.NextWeaponId
+			profile.NextWeaponId += 1
+			table.insert(profile.Weapons, {
+				Id = id,
+				WeaponKey = weaponKey,
+				Rarity = "Common",
+				Affixes = {},
+			})
+		end
+	end
+	return profile
+end
+
 local function loadProfile(userId: number)
 	local key = "Player_" .. userId
 	local data
@@ -78,7 +147,9 @@ local function loadProfile(userId: number)
 	if not ok then
 		warn("[DataService] GetAsync failed for", userId, err)
 	end
-	return backfillMissingFields(data or defaultProfile())
+	local profile = backfillMissingFields(data or defaultProfile())
+	profile = migrateLegacyWeapons(profile)
+	return profile
 end
 
 local function saveProfile(userId: number)
@@ -113,6 +184,16 @@ function DataService.AddOre(player: Player, oreKey: string, amount: number)
 		return
 	end
 	profile.OreCounts[oreKey] = (profile.OreCounts[oreKey] or 0) + amount
+end
+
+-- refinedKey is a RefinedOreConfig.Ores[...].RefinedKey (e.g. "SteelIngot"), not a raw ore key —
+-- see SmeltService.lua's completion loop, the only caller today.
+function DataService.AddRefinedOre(player: Player, refinedKey: string, amount: number)
+	local profile = cache[player.UserId]
+	if not profile then
+		return
+	end
+	profile.RefinedOreCounts[refinedKey] = (profile.RefinedOreCounts[refinedKey] or 0) + amount
 end
 
 -- costTable example: { ScrapIron = 25, CopperWire = 10 } — ore keys and/or "Scrap"/"Cores".

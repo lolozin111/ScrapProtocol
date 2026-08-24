@@ -9,12 +9,18 @@
 	StationConfig.Types below (e.g. "Welding"). No code changes needed to add, move, or re-skin a
 	station — StationService.lua finds it by tag/attribute alone.
 
-	DefaultTab is which Workbench tab clicking that station jumps the HUD straight to (see
-	MainHud.client.lua's setupStation) — nil means "no menu, this station doesn't have one yet"
-	(the Forge, until a real smelting mechanic exists — see DESIGN_NOTES.md). This is convenience
-	only: it does NOT hide the other tabs, and it is NOT what actually enforces the gate — that's
-	StationService.IsPlayerNearStation, called independently by every gated remote handler
-	(CraftingService/MiningService/AutoMinerService/MineShaftService).
+	Tabs is the full set of Workbench tabs that station's menu shows at all — the HUD rebuilds the
+	tab row down to just these every time this station is opened, so a Welding Station literally
+	cannot show you the Suit tab and vice versa. DefaultTab (must be one of Tabs) is which of those
+	the menu opens on. Both nil means "no menu, this station doesn't have one yet." None of this is
+	what actually enforces the gate, though — that's StationService.IsPlayerNearStation, called
+	independently by every gated remote handler (CraftingService/ForgeService/MiningService/
+	AutoMinerService/MineShaftService), same as before; Tabs just keeps the menu itself from ever
+	offering something this station can't actually do.
+
+	The Forge went live once weapon crafting became weapon ROLLING (see ForgeConfig.lua/
+	ForgeService.lua) — every weapon in the game is now Forged, not flat-crafted at the Welding
+	Station, so Weapons moved from Welding's Tabs to Forge's.
 ]]
 
 local StationConfig = {}
@@ -26,18 +32,22 @@ StationConfig.InteractDistance = 12 -- studs; same ballpark as MiningService.MAX
 StationConfig.Types = {
 	Crafting = {
 		DisplayName = "Workbench",
-		DefaultTab = "Tools", -- also covers Auto-Miner and Suit — general equipment/utility upgrades
+		Tabs = { "Tools", "Auto-Miner", "Suit" }, -- general equipment/utility upgrades
+		DefaultTab = "Tools",
 		NotThereMessage = "You need to be at your Workbench to do that.",
 	},
 	Welding = {
 		DisplayName = "Welding Station",
-		DefaultTab = "Weapons", -- also covers Robots and Mods — building/equipping combat gear
+		Tabs = { "Robots", "Mods" }, -- building/equipping robots + mod-slot management for everything
+		DefaultTab = "Robots",
 		NotThereMessage = "You need to be at your Welding Station to do that.",
 	},
 	Forge = {
 		DisplayName = "Forge",
-		DefaultTab = nil, -- no real mechanic yet — smelting raw ore into refined material is a
-		                   -- planned later addition, see DESIGN_NOTES.md's "Base" section
+		Tabs = { "Weapons", "Smelting" }, -- roll a unique weapon instance, upgrade Luck, craft Luck
+			-- Potions; Smelting turns raw ore into refined materials — see SmeltService.lua/
+			-- RefinedOreConfig.lua
+		DefaultTab = "Weapons",
 		NotThereMessage = "You need to be at your Forge to do that.",
 	},
 }

@@ -21,11 +21,13 @@
 	needed once it exists.
 ]]
 
+local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 
 local BaseConfig = require(ReplicatedStorage.Shared.BaseConfig)
+local StationConfig = require(ReplicatedStorage.Shared.StationConfig)
 local DataService = require(script.Parent.DataService)
 local PlotService = require(script.Parent.PlotService)
 
@@ -53,6 +55,19 @@ end
 
 local function tierData(tierIndex: number)
 	return BaseConfig.Tiers[tierIndex] or BaseConfig.Tiers[1]
+end
+
+-- Stamps every Station-tagged descendant of a player's freshly-built base with WHO it belongs to.
+-- StationService checks this attribute so a station only works for its owner — other players
+-- standing right next to it get turned away, same as if no station were there at all. A station
+-- with no OwnerUserId attribute (e.g. a loose testing block not part of any base Model yet) is
+-- left open to everyone on purpose, so placeholder-block testing keeps working with zero setup.
+local function tagStationOwnership(baseModel: Model, player: Player)
+	for _, inst in ipairs(baseModel:GetDescendants()) do
+		if CollectionService:HasTag(inst, StationConfig.Tag) then
+			inst:SetAttribute("OwnerUserId", player.UserId)
+		end
+	end
 end
 
 -- Top surface sits exactly at the plot anchor's own height, matching the convention a real Base
@@ -98,6 +113,8 @@ function BaseService.RebuildPlayerBase(player: Player, plot: Instance)
 			tier.ModelName, BaseConfig.TemplateFolderName))
 		baseModel = buildFallbackBase(player, plot)
 	end
+
+	tagStationOwnership(baseModel, player)
 
 	local existing = playerBaseModel[player]
 	if existing then

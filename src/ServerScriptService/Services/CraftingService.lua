@@ -1,12 +1,26 @@
 --[[
 	CraftingService.lua
-	Validates and resolves craft requests for all three trees. Client calls the CraftItem
-	RemoteFunction with a tree ("Weapons", "Robots", or "Mods") and a recipe key; server checks the
-	recipe exists, tries to spend the cost via DataService, and grants the item on success.
+	Validates and resolves craft requests for Robots and Mods. Client calls the CraftItem
+	RemoteFunction with a tree ("Robots" or "Mods") and a recipe key; server checks the recipe
+	exists, tries to spend the cost via DataService, and grants the item on success.
+
+	Weapons are NOT crafted here anymore — every weapon in the game is Forged (a unique rolled
+	instance with its own Rarity/Affixes) rather than flat-crafted, so weapon creation moved
+	entirely to ForgeService.lua/ForgeWeapon. CraftItem rejects tree == "Weapons" outright so an
+	out-of-date client can't slip a request through.
 
 	Also owns EquipMod — swapping which mod (if any) sits in one of a weapon/robot TYPE's
 	ModConfig.SlotsPerItem slots. See ModConfig.lua's header comment for why mods apply per item
-	type rather than per robot instance.
+	type rather than per robot/weapon instance. Weapon mod-slots are still keyed by weaponKey
+	(the TYPE), even though individual weapons are now per-instance via the Forge — equipping
+	Speed Coil on "PipePistol" affects every Pipe Pistol instance you own at once, same simplified
+	design as robots always had.
+
+	And owns UndeployRobot (the missing other half of DeployRobot — was craftable/deployable but
+	never un-deployable until the Inventory panel needed it). DeployRobot/UndeployRobot/EquipMod
+	share the same plot+Welding-Station gate (Weapons-tree EquipMod calls are gated to the Forge
+	instead — see below), so browsing the Inventory panel works from anywhere but actually
+	changing anything only works while physically at the right station, same rule as crafting.
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -24,9 +38,7 @@ local CraftItem = Remotes.CraftItem
 local CraftingService = {}
 
 local function getRecipe(tree: string, key: string)
-	if tree == "Weapons" then
-		return CraftingRecipes.Weapons[key]
-	elseif tree == "Robots" then
+	if tree == "Robots" then
 		return CraftingRecipes.Robots[key]
 	elseif tree == "Mods" then
 		return ModConfig.Mods[key]
@@ -35,11 +47,15 @@ local function getRecipe(tree: string, key: string)
 end
 
 CraftItem.OnServerInvoke = function(player: Player, tree: string, key: string)
+	if tree == "Weapons" then
+		return { Success = false, Reason = "Weapons are Forged now — visit your Forge, not the Welding Station." }
+	end
+
 	if not PlotService.IsPlayerInOwnPlot(player) then
 		return { Success = false, Reason = PlotConfig.NotInBaseMessage }
 	end
-	-- Weapons/Robots/Mods are all assembled at the Welding Station — see StationConfig.Types.
-	if (tree == "Weapons" or tree == "Robots" or tree == "Mods") and not StationService.IsPlayerNearStation(player, "Welding") then
+	-- Robots/Mods are still assembled at the Welding Station — see StationConfig.Types.
+	if (tree == "Robots" or tree == "Mods") and not StationService.IsPlayerNearStation(player, "Welding") then
 		return { Success = false, Reason = StationConfig.Types.Welding.NotThereMessage }
 	end
 
@@ -53,9 +69,6 @@ CraftItem.OnServerInvoke = function(player: Player, tree: string, key: string)
 		return { Success = false, Reason = "Profile not loaded" }
 	end
 
-	if tree == "Weapons" and profile.CraftedWeapons[key] then
-		return { Success = false, Reason = "Already own this weapon" }
-	end
 	if tree == "Mods" and profile.CraftedMods[key] then
 		return { Success = false, Reason = "Already own this mod" }
 	end
@@ -65,9 +78,7 @@ CraftItem.OnServerInvoke = function(player: Player, tree: string, key: string)
 		return { Success = false, Reason = "Not enough resources" }
 	end
 
-	if tree == "Weapons" then
-		profile.CraftedWeapons[key] = true
-	elseif tree == "Robots" then
+	if tree == "Robots" then
 		profile.CraftedRobots[key] = (profile.CraftedRobots[key] or 0) + 1
 	else -- Mods
 		profile.CraftedMods[key] = true
@@ -75,7 +86,6 @@ CraftItem.OnServerInvoke = function(player: Player, tree: string, key: string)
 
 	Remotes.InventoryUpdate:FireClient(player, {
 		OreCounts = profile.OreCounts,
-		CraftedWeapons = profile.CraftedWeapons,
 		CraftedRobots = profile.CraftedRobots,
 		CraftedMods = profile.CraftedMods,
 	})
@@ -101,6 +111,21 @@ Remotes.DeployRobot.OnServerInvoke = function(player: Player, robotKey: string)
 		return { Success = false, Reason = "You don't own this robot" }
 	end
 
+	-- Deploying doesn't consume the owned copy (it's still "yours," just on/off defense duty), so
+	-- this has to count how many of THIS key are already in DeployedRobots itself rather than
+	-- checking CraftedRobots against zero — otherwise the same one owned copy could be deployed
+	-- into every free slot at once, which is what the Inventory panel's Deploy/Undeploy toggle
+	-- surfaced when it started showing "owned N, deployed M" side by side.
+	local alreadyDeployed = 0
+	for _, key in ipairs(profile.DeployedRobots) do
+		if key == robotKey then
+			alreadyDeployed += 1
+		end
+	end
+	if alreadyDeployed >= profile.CraftedRobots[robotKey] then
+		return { Success = false, Reason = "All owned copies of this robot are already deployed" }
+	end
+
 	local maxSlots = CraftingRecipes.BaseMaxDeployedRobots
 	if profile.OwnedGamePasses.ExtraRobotSlot then
 		maxSlots += 1
@@ -111,6 +136,52 @@ Remotes.DeployRobot.OnServerInvoke = function(player: Player, robotKey: string)
 	end
 
 	table.insert(profile.DeployedRobots, robotKey)
+
+	-- The client never merged the old return value's DeployedRobots into its local profile mirror
+	-- (nothing displayed a deployed count before the Inventory panel needed one) — broadcasting
+	-- through InventoryUpdate instead means the existing generic listener picks it up for free,
+	-- same as every other loadout remote here.
+	Remotes.InventoryUpdate:FireClient(player, {
+		DeployedRobots = profile.DeployedRobots,
+	})
+
+	return { Success = true, DeployedRobots = profile.DeployedRobots }
+end
+
+-- UndeployRobot: the other half of DeployRobot — pulls ONE instance of robotKey off defense duty
+-- (if more than one copy is deployed, only the first match found is removed; which physical
+-- instance doesn't matter since they're identical). Doesn't touch CraftedRobots — undeploying
+-- never destroys the robot, it just stops counting toward combat DPS.
+Remotes.UndeployRobot.OnServerInvoke = function(player: Player, robotKey: string)
+	if not PlotService.IsPlayerInOwnPlot(player) then
+		return { Success = false, Reason = PlotConfig.NotInBaseMessage }
+	end
+	if not StationService.IsPlayerNearStation(player, "Welding") then
+		return { Success = false, Reason = StationConfig.Types.Welding.NotThereMessage }
+	end
+
+	local profile = DataService.Get(player)
+	if not profile then
+		return { Success = false, Reason = "Profile not loaded" }
+	end
+
+	local index
+	for i, key in ipairs(profile.DeployedRobots) do
+		if key == robotKey then
+			index = i
+			break
+		end
+	end
+	if not index then
+		return { Success = false, Reason = "That robot isn't currently deployed" }
+	end
+
+	table.remove(profile.DeployedRobots, index)
+
+	Remotes.InventoryUpdate:FireClient(player, {
+		DeployedRobots = profile.DeployedRobots,
+	})
+
 	return { Success = true, DeployedRobots = profile.DeployedRobots }
 end
 
@@ -118,15 +189,20 @@ end
 -- loadout. modKey=nil clears the slot. Rejects equipping the same mod into two slots of the same
 -- item at once (would just double-apply one multiplier for no reason) and validates ownership of
 -- both the item and the mod before writing anything.
+--
+-- Station gate depends on tree: weapon mod-slots live at the Forge now (that's where Weapons
+-- are Forged and equipped), robot mod-slots stay at the Welding Station — same split as
+-- StationConfig.Types' Tabs.
 Remotes.EquipMod.OnServerInvoke = function(player: Player, tree: string, itemKey: string, slotIndex: number, modKey: string?)
 	if not PlotService.IsPlayerInOwnPlot(player) then
 		return { Success = false, Reason = PlotConfig.NotInBaseMessage }
 	end
-	if not StationService.IsPlayerNearStation(player, "Welding") then
-		return { Success = false, Reason = StationConfig.Types.Welding.NotThereMessage }
-	end
 	if tree ~= "Weapons" and tree ~= "Robots" then
 		return { Success = false, Reason = "Unknown tree" }
+	end
+	local gateStation = tree == "Weapons" and "Forge" or "Welding"
+	if not StationService.IsPlayerNearStation(player, gateStation) then
+		return { Success = false, Reason = StationConfig.Types[gateStation].NotThereMessage }
 	end
 	if type(slotIndex) ~= "number" or slotIndex < 1 or slotIndex > ModConfig.SlotsPerItem then
 		return { Success = false, Reason = "Invalid slot" }
@@ -138,11 +214,18 @@ Remotes.EquipMod.OnServerInvoke = function(player: Player, tree: string, itemKey
 	end
 
 	-- NOTE: written as an explicit if/else, not `tree == "Weapons" and X or Y` — that ternary
-	-- idiom breaks the moment X can itself be false/nil, which profile.CraftedWeapons[itemKey]
-	-- (a boolean-or-nil field) very much can be.
+	-- idiom breaks the moment X can itself be false/nil. Weapon ownership is now "do I own ANY
+	-- Forged instance of this type" (itemKey is a weaponKey, not an instance Id — mod slots are
+	-- still per TYPE, see this file's header comment) rather than the old flat CraftedWeapons check.
 	local owned
 	if tree == "Weapons" then
-		owned = profile.CraftedWeapons[itemKey] == true
+		owned = false
+		for _, weaponInstance in ipairs(profile.Weapons) do
+			if weaponInstance.WeaponKey == itemKey then
+				owned = true
+				break
+			end
+		end
 	else
 		owned = (profile.CraftedRobots[itemKey] or 0) > 0
 	end
@@ -177,5 +260,8 @@ Remotes.EquipMod.OnServerInvoke = function(player: Player, tree: string, itemKey
 
 	return { Success = true, EquippedMods = profile.EquippedMods[itemKey] }
 end
+
+-- EquipWeapon moved to ForgeService.lua — it now operates on a Forged instance Id rather than a
+-- weaponKey, since every weapon is a unique instance now. See ForgeService.EquipWeapon.
 
 return CraftingService

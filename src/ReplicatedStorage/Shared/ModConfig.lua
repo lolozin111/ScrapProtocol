@@ -18,21 +18,27 @@
 	equipped on a weapon (weapons have no HP field to multiply) — no special-casing needed, the
 	multiply-if-present logic in CombatMath just skips it.
 
-	Rarity: every mod below is Common for now — ModConfig.Rarities exists as the structure to hang
-	a real rarity-weighted-drop system off of later (rarer mods = stronger tradeoffs, gated behind
-	a loot table instead of flat crafting), but with only one tier populated it's currently just a
-	display label the HUD's mod picker shows next to each mod's name. Add more tiers to
-	ModConfig.Rarities and set individual mods' Rarity field once that system actually exists.
+	Rarity: every mod below is still Common — mods themselves stay flat-craftable for now. This
+	table is shared with ForgeConfig.lua's weapon-rolling system, though, which is what actually
+	activates the non-Common tiers: a weapon Forged with Rarity="Rare" looks up ModConfig
+	.Rarities.Rare for its DisplayName/Badge/Color. Mods could start dropping by rarity too later
+	(rarer mods = stronger tradeoffs, gated behind a loot table instead of flat crafting) — nothing
+	below stops that, it just isn't built yet.
 ]]
 
 local ModConfig = {}
 
 ModConfig.SlotsPerItem = 3
 
+-- Badge is a 1-letter tag for tight UI spaces (inventory tile corners) where the full DisplayName
+-- doesn't fit. Color is unused by mods themselves right now (every mod is Common) but is what the
+-- Forge's weapon rows/tiles use to convey a roll's rarity at a glance.
 ModConfig.Rarities = {
-	Common = { DisplayName = "Common", Color = Color3.fromRGB(180, 180, 180) },
-	-- Rare / Epic / Legendary, etc. — add tiers here once mods drop via a weighted loot table
-	-- instead of being flat-craftable from the start. Every mod below is Common until then.
+	Common = { DisplayName = "Common", Badge = "C", Color = Color3.fromRGB(180, 180, 180) },
+	Uncommon = { DisplayName = "Uncommon", Badge = "U", Color = Color3.fromRGB(110, 190, 110) },
+	Rare = { DisplayName = "Rare", Badge = "R", Color = Color3.fromRGB(90, 150, 220) },
+	Epic = { DisplayName = "Epic", Badge = "E", Color = Color3.fromRGB(170, 100, 220) },
+	Legendary = { DisplayName = "Legendary", Badge = "L", Color = Color3.fromRGB(230, 175, 60) },
 }
 
 ModConfig.Mods = {

@@ -1,6 +1,8 @@
 --[[
 	MainHud.client.lua
-	A plain-code debug HUD — currency readout, a craft menu (Weapons/Robots tabs), and a
+	A plain-code debug HUD — a trimmed currency readout, a Workbench menu (opened only from a
+	physical station, see the Base stations section), an Inventory panel (viewable anywhere —
+	equip/deploy/undeploy your gear and see everything you own, including raw materials), and a
 	wave-defense panel. Everything here is Instance.new'd rather than a Studio-built ScreenGui
 	so the whole UI ships through Rojo as text, same as the rest of this project.
 
@@ -23,6 +25,8 @@ local RaidEnergyConfig = require(ReplicatedStorage.Shared.RaidEnergyConfig)
 local MineShaftConfig = require(ReplicatedStorage.Shared.MineShaftConfig)
 local ModConfig = require(ReplicatedStorage.Shared.ModConfig)
 local StationConfig = require(ReplicatedStorage.Shared.StationConfig)
+local ForgeConfig = require(ReplicatedStorage.Shared.ForgeConfig)
+local RefinedOreConfig = require(ReplicatedStorage.Shared.RefinedOreConfig)
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 local LocalPlayer = Players.LocalPlayer
@@ -42,9 +46,14 @@ local COLOR = {
 
 local profile = {
 	Scrap = 0, Cores = 0,
-	OreCounts = {}, CraftedWeapons = {}, CraftedRobots = {}, DeployedRobots = {},
+	OreCounts = {}, CraftedRobots = {}, DeployedRobots = {},
 	CraftedStructures = {}, OwnedGamePasses = {},
 	CraftedMods = {}, EquippedMods = {},
+	Weapons = {}, ForgeTier = 1, LuckPotions = 0, ForgePityCounter = 0, -- Forge state — see ForgeConfig.lua
+	RefinedOreCounts = {}, -- Smelting state — see RefinedOreConfig.lua. SmeltJob (table?) is
+		-- deliberately NOT initialized here, same reasoning as EquippedWeaponId never appearing in
+		-- this table — nil reads correctly as "no job running" whether the key is present-and-nil
+		-- or simply absent, and the server only ever sends it as `SmeltJob or false` anyway.
 	HighestWave = 0,
 	Energy = RaidEnergyConfig.MaxEnergy,
 	SuitTier = 1,
@@ -123,18 +132,12 @@ local scrapLabel = makeStatLabel(COLOR.Accent)
 local coresLabel = makeStatLabel(COLOR.Good)
 local energyLabel = makeStatLabel(COLOR.Good)
 
-new("Frame", { -- thin divider between currency and ore inventory
-	BackgroundColor3 = COLOR.Line,
-	Size = UDim2.new(1, 0, 0, 1),
-	Parent = currencyFrame,
-})
-
--- One label per MVP-mineable ore, in the same order as the design doc's tier table.
+-- Ore/material counts used to live here too (one label per ore plus a divider), but that made
+-- this corner unreadable fast — it's trimmed down to just the three numbers worth a glance during
+-- normal play now. The full breakdown (plus Scrap/Cores again for a complete picture) lives in
+-- the Inventory panel's Materials tab instead — see that section further down. ORE_DISPLAY_ORDER
+-- itself is kept here since the Materials tab still needs it.
 local ORE_DISPLAY_ORDER = { "ScrapIron", "CopperWire", "SteelPlating", "GoldContacts" }
-local oreLabels = {}
-for _, oreKey in ipairs(ORE_DISPLAY_ORDER) do
-	oreLabels[oreKey] = makeStatLabel(COLOR.Muted)
-end
 
 local function refreshCurrency()
 	scrapLabel.Text = ("Scrap: %d"):format(profile.Scrap or 0)
@@ -143,11 +146,6 @@ local function refreshCurrency()
 	-- RaidEnergyConfig.OverflowCap) — that's intentional, not a bug, it just drains back down to
 	-- the normal cap as raids are spent rather than being topped up further by passive regen.
 	energyLabel.Text = ("Energy: %d/%d"):format(profile.Energy or 0, RaidEnergyConfig.MaxEnergy)
-	for _, oreKey in ipairs(ORE_DISPLAY_ORDER) do
-		local displayName = OreConfig.Ores[oreKey].DisplayName
-		local count = (profile.OreCounts or {})[oreKey] or 0
-		oreLabels[oreKey].Text = ("%s: %d"):format(displayName, count)
-	end
 end
 
 ----------------------------------------------------------------------
@@ -158,23 +156,50 @@ local craftFrame = new("Frame", {
 	Name = "CraftMenu",
 	BackgroundColor3 = COLOR.Panel,
 	Position = UDim2.new(0.5, -320, 0.5, -200),
-	Size = UDim2.new(0, 640, 0, 400), -- widened/heightened to fit 6 tabs (added Mods) and the
+	Size = UDim2.new(0, 640, 0, 400), -- widened/heightened to fit up to 3 tabs at once and the
 	                                  -- taller equipment rows mod slots need
 	Visible = false,
 	Parent = screenGui,
 }, { corner(10), stroke() })
 
+-- There's no standalone "Workbench" button anymore — this menu only ever opens FROM a physical
+-- station now (see openStationMenu / setupStation further down), so the title doubles as a
+-- reminder of which one is currently open. Instances only; the click handler for
+-- craftCloseButton is wired up later, alongside closeModPicker's definition.
+local craftTitleLabel = new("TextLabel", {
+	BackgroundTransparency = 1,
+	Position = UDim2.new(0, 12, 0, 10),
+	Size = UDim2.new(1, -60, 0, 22),
+	Font = Enum.Font.SourceSansBold,
+	TextXAlignment = Enum.TextXAlignment.Left,
+	TextColor3 = COLOR.Text,
+	TextSize = 18,
+	Text = "Workbench",
+	Parent = craftFrame,
+})
+
+local craftCloseButton = new("TextButton", {
+	BackgroundColor3 = COLOR.PanelLight,
+	Position = UDim2.new(1, -40, 0, 8),
+	Size = UDim2.new(0, 28, 0, 28),
+	Font = Enum.Font.SourceSansBold,
+	TextColor3 = COLOR.Text,
+	TextSize = 16,
+	Text = "X",
+	Parent = craftFrame,
+}, { corner(6) })
+
 local tabRow = new("Frame", {
 	BackgroundTransparency = 1,
-	Position = UDim2.new(0, 12, 0, 12),
+	Position = UDim2.new(0, 12, 0, 40),
 	Size = UDim2.new(1, -24, 0, 32),
 	Parent = craftFrame,
 }, { new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 8) }) })
 
 local listFrame = new("ScrollingFrame", {
 	BackgroundTransparency = 1,
-	Position = UDim2.new(0, 12, 0, 52),
-	Size = UDim2.new(1, -24, 1, -64),
+	Position = UDim2.new(0, 12, 0, 80),
+	Size = UDim2.new(1, -24, 1, -92),
 	CanvasSize = UDim2.new(0, 0, 0, 0),
 	AutomaticCanvasSize = Enum.AutomaticSize.Y,
 	ScrollBarThickness = 6,
@@ -580,7 +605,208 @@ local function makeEquipmentRow(tree: string, itemKey: string, titleText: string
 	return row
 end
 
-local function renderCraftList()
+-- How many currently-deployed instances of a given robotKey there are (DeployedRobots can hold
+-- the same key more than once — a player owning 3 Sentry Bots can deploy all 3). Shared by
+-- makeRobotRow below and the Inventory panel's Robots tab.
+local function deployedCountForRobot(key: string): number
+	local count = 0
+	for _, deployedKey in ipairs(profile.DeployedRobots or {}) do
+		if deployedKey == key then
+			count += 1
+		end
+	end
+	return count
+end
+
+-- Plain-English summary of a Forged weapon instance's rolled affixes, e.g.
+-- "Sharpened +18% Damage, Hair-Trigger +32% Fire Rate" — or a placeholder if it rolled none
+-- (every Common weapon, and any unlucky roll on a rarity that could've gotten more).
+local function affixSummary(affixes)
+	if not affixes or #affixes == 0 then
+		return "No bonus affixes"
+	end
+	local parts = {}
+	for _, affix in ipairs(affixes) do
+		local statName = affix.Stat == "FireRateMultiplier" and "Fire Rate" or "Damage"
+		table.insert(parts, ("%s +%d%% %s"):format(affix.Label, math.floor(affix.Magnitude * 100 + 0.5), statName))
+	end
+	return table.concat(parts, ", ")
+end
+
+-- One owned robot's row. The Forge's Weapons tab has no equivalent anymore (it's craft-only now —
+-- see the Forge tab section below); owning/equipping a Forged weapon instance is Inventory-only.
+-- The button here toggles Deploy/Undeploy instead of always being "Deploy": once every owned copy
+-- is on defense duty there's nothing left to deploy, so the only sensible action left is pulling
+-- one back off (UndeployRobot, see CraftingService.lua) — a single button can express that
+-- unambiguously without needing two.
+local function makeRobotRow(key: string)
+	local recipe = CraftingRecipes.Robots[key]
+	local owned = profile.CraftedRobots[key] or 0
+	local deployed = deployedCountForRobot(key)
+	local canDeployMore = deployed < owned
+	return makeEquipmentRow(
+		"Robots", key,
+		("T%d  %s (owned %d, deployed %d)"):format(recipe.Tier, recipe.DisplayName, owned, deployed),
+		("Base: %.1f dmg x %.1f/s · %d HP"):format(recipe.BaseDamage, recipe.FireRate, recipe.HP),
+		canDeployMore and "Deploy" or "Undeploy",
+		function()
+			if canDeployMore then
+				local result = Remotes.DeployRobot:InvokeServer(key)
+				if not result.Success then
+					warn("[HUD] Deploy failed:", result.Reason)
+				end
+			else
+				local result = Remotes.UndeployRobot:InvokeServer(key)
+				if not result.Success then
+					warn("[HUD] Undeploy failed:", result.Reason)
+				end
+			end
+		end
+	)
+end
+
+----------------------------------------------------------------------
+-- Forge tab — replaces the old flat "craft one of each weapon type" list. Every weapon in the
+-- game is Forged now: rolling the same weapon type twice mints two independent instances, each
+-- with its own random Rarity (ModConfig.Rarities) and Affixes (ForgeConfig.AffixPool). Luck (both
+-- your Forge's own permanent ForgeTier and the consumable LuckPotion) bends the rarity odds, and
+-- Pity guarantees a floor after a long enough unlucky streak — see ForgeService.rollRarity/
+-- ForgeWeapon server-side for the actual math this UI is just presenting.
+--
+-- This tab is craft-only, deliberately — equipping, mod slots, and browsing what you already own
+-- all live in the Inventory panel instead (see that section further down). Rolling a weapon here
+-- used to also drop a full owned-instance list with Equip buttons right below the roll buttons,
+-- which just duplicated the Inventory and made "click Forge" and "click Equip" easy to fumble
+-- together. All this tab shows now is your Luck/Pity status and the roll buttons themselves, plus
+-- a small "last result" readout so a roll doesn't feel like it vanished into the void.
+----------------------------------------------------------------------
+
+-- Whether the player's NEXT Forge click should burn one Luck Potion. Client-side-only toggle —
+-- ForgeWeapon re-validates Potion ownership server-side regardless, so this can never desync into
+-- spending a Potion the player doesn't have.
+local forgeUsePotion = false
+
+-- What the last successful Forge roll produced, purely for the "last result" readout below — not
+-- server state, just cleared back to nil on a fresh HUD load. { WeaponKey, Rarity, Affixes }.
+local lastForgedResult = nil
+
+-- Forward-declared, same reason as renderCraftList below: the Forge roll button (defined here,
+-- earlier in the file) needs to refresh the persistent pity bar / potion button (defined later,
+-- in the "Forge status HUD" section, since the potion button needs getItemIcon which isn't
+-- available yet at this point in the script) the instant a roll lands, not just whenever the next
+-- InventoryUpdate patch happens to arrive.
+local refreshPityBar
+local refreshPotionButton
+
+-- Forward-declared: setForgeWidgetsVisible (assigned in the "Forge status HUD" section) hides the
+-- bottom action row (Inventory/Start Defense/etc.) while the Forge-docked pity bar and Potion
+-- button are showing — on shorter viewports the docked row sits low enough to overlap the action
+-- row otherwise (see the screenshot that prompted this). actionRow itself isn't created until much
+-- later in the file (down by the other bottom-of-screen panels), hence the forward declaration.
+local actionRow
+
+-- Forward-declared: renderCraftList's "Smelting" branch (below) needs to call this, but the real
+-- definition lives in the "Ore Smelting" section much further down — it needs makeItemTile/
+-- getItemIcon/showInvDetail (Inventory panel helpers) and a popup frame of its own, same ordering
+-- constraint as refreshPityBar/refreshPotionButton above.
+local renderSmeltingTab
+
+-- Forward-declared: renderForgeWeapons' Potion-toggle button needs to re-render the list it's
+-- sitting in, but renderCraftList (below) is what dispatches TO renderForgeWeapons in the first
+-- place — a genuine circular reference. Declaring the local up here (assigned further down with
+-- `renderCraftList = function() ... end`, no `local` keyword there) lets renderForgeWeapons
+-- capture the right upvalue.
+local renderCraftList
+
+local function renderForgeWeapons()
+	local forgeTier = profile.ForgeTier or 1
+	local forgeTierData = ForgeConfig.ForgeTiers[forgeTier]
+	local nextForgeTierData = ForgeConfig.ForgeTiers[forgeTier + 1]
+
+	if nextForgeTierData then
+		local cost = ForgeConfig.ForgeTierCosts[forgeTier + 1]
+		makeRow(
+			("Forge: %s -> %s"):format(forgeTierData and forgeTierData.Name or "?", nextForgeTierData.Name),
+			("Currently +%d luck · %s"):format(forgeTierData and forgeTierData.Bonus or 0, cost and costString(cost) or "Not configured"),
+			"Upgrade",
+			function()
+				local result = Remotes.UpgradeForgeTier:InvokeServer()
+				if not result.Success then
+					warn("[HUD] Forge upgrade failed:", result.Reason)
+				end
+			end
+		).Parent = listFrame
+	else
+		makeRow(
+			forgeTierData and forgeTierData.Name or "Forge",
+			("+%d luck · max tier reached"):format(forgeTierData and forgeTierData.Bonus or 0),
+			"Maxed",
+			function() end
+		).Parent = listFrame
+	end
+
+	makeRow(
+		("Luck Potion (%d owned)"):format(profile.LuckPotions or 0),
+		("%s · +%d luck, consumed on your next roll"):format(costString(ForgeConfig.LuckPotion.Cost), ForgeConfig.LuckPotion.Bonus),
+		"Craft",
+		function()
+			local result = Remotes.CraftLuckPotion:InvokeServer()
+			if not result.Success then
+				warn("[HUD] Craft Luck Potion failed:", result.Reason)
+			end
+		end
+	).Parent = listFrame
+
+	-- The "use a Potion on next roll" toggle and the Pity progress readout both moved OUT of this
+	-- list per direct feedback — see the "Forge status HUD" section further down for the persistent
+	-- pity bar and Luck Potion button that replaced them (positioned under the top-left currency
+	-- readout, always visible, not just while this menu happens to be open).
+
+	if lastForgedResult then
+		local recipe = CraftingRecipes.Weapons[lastForgedResult.WeaponKey]
+		local rarityData = ModConfig.Rarities[lastForgedResult.Rarity]
+		local rarityName = rarityData and rarityData.DisplayName or lastForgedResult.Rarity
+		makeRow(
+			("Last Forged: [%s] %s"):format(rarityName, recipe and recipe.DisplayName or lastForgedResult.WeaponKey),
+			affixSummary(lastForgedResult.Affixes),
+			"OK",
+			function() end
+		).Parent = listFrame
+	end
+
+	-- Roll rows — one per weapon type, always available. Unlike the old flat-craft list there's no
+	-- "already own it" gate here: every click mints a brand-new independent instance.
+	local keys = {}
+	for key in pairs(CraftingRecipes.Weapons) do
+		table.insert(keys, key)
+	end
+	table.sort(keys, function(a, b)
+		return CraftingRecipes.Weapons[a].Tier < CraftingRecipes.Weapons[b].Tier
+	end)
+	for _, key in ipairs(keys) do
+		local recipe = CraftingRecipes.Weapons[key]
+		makeRow(
+			("T%d  %s"):format(recipe.Tier, recipe.DisplayName),
+			("%s · Base %.1f dmg x %.1f/s"):format(costString(recipe.Cost), recipe.BaseDamage, recipe.FireRate),
+			"Forge",
+			function()
+				local usePotion = forgeUsePotion and (profile.LuckPotions or 0) > 0
+				local result = Remotes.ForgeWeapon:InvokeServer(key, usePotion)
+				if not result.Success then
+					warn("[HUD] Forge failed:", result.Reason)
+				else
+					forgeUsePotion = false -- one-shot regardless of whether a Potion actually got spent
+					lastForgedResult = result.Weapon
+					refreshPotionButton() -- reflects both the reset toggle and the (likely) spent Potion
+					refreshPityBar() -- snappier than waiting on the InventoryUpdate patch that follows
+					renderCraftList()
+				end
+			end
+		).Parent = listFrame
+	end
+end
+
+renderCraftList = function()
 	for _, child in ipairs(listFrame:GetChildren()) do
 		if child:IsA("Frame") then
 			child:Destroy()
@@ -599,9 +825,16 @@ local function renderCraftList()
 	elseif currentTab == "Mods" then
 		renderModsRow()
 		return
+	elseif currentTab == "Weapons" then
+		renderForgeWeapons()
+		return
+	elseif currentTab == "Smelting" then
+		renderSmeltingTab()
+		return
 	end
 
-	local recipes = currentTab == "Weapons" and CraftingRecipes.Weapons or CraftingRecipes.Robots
+	-- Only Robots ever reaches here now — Weapons moved to the Forge above.
+	local recipes = CraftingRecipes.Robots
 
 	-- Sort by tier so the list reads as a progression, not a random bag.
 	local keys = {}
@@ -614,57 +847,21 @@ local function renderCraftList()
 
 	for _, key in ipairs(keys) do
 		local recipe = recipes[key]
-		if currentTab == "Weapons" then
-			local owned = profile.CraftedWeapons[key]
-			if owned then
-				makeEquipmentRow(
-					"Weapons", key,
-					("T%d  %s (Owned)"):format(recipe.Tier, recipe.DisplayName),
-					("Base: %.1f dmg x %.1f/s"):format(recipe.BaseDamage, recipe.FireRate),
-					"Owned",
-					function() end
-				).Parent = listFrame
-			else
-				makeRow(
-					("T%d  %s"):format(recipe.Tier, recipe.DisplayName),
-					costString(recipe.Cost),
-					"Craft",
-					function()
-						local result = Remotes.CraftItem:InvokeServer("Weapons", key)
-						if not result.Success then
-							warn("[HUD] Craft failed:", result.Reason)
-						end
-					end
-				).Parent = listFrame
-			end
+		local ownedCount = profile.CraftedRobots[key] or 0
+		if ownedCount > 0 then
+			makeRobotRow(key).Parent = listFrame
 		else
-			local ownedCount = profile.CraftedRobots[key] or 0
-			if ownedCount > 0 then
-				makeEquipmentRow(
-					"Robots", key,
-					("T%d  %s (owned %d)"):format(recipe.Tier, recipe.DisplayName, ownedCount),
-					("Base: %.1f dmg x %.1f/s · %d HP"):format(recipe.BaseDamage, recipe.FireRate, recipe.HP),
-					"Deploy",
-					function()
-						local result = Remotes.DeployRobot:InvokeServer(key)
-						if not result.Success then
-							warn("[HUD] Deploy failed:", result.Reason)
-						end
+			makeRow(
+				("T%d  %s"):format(recipe.Tier, recipe.DisplayName),
+				costString(recipe.Cost),
+				"Craft",
+				function()
+					local result = Remotes.CraftItem:InvokeServer("Robots", key)
+					if not result.Success then
+						warn("[HUD] Craft failed:", result.Reason)
 					end
-				).Parent = listFrame
-			else
-				makeRow(
-					("T%d  %s"):format(recipe.Tier, recipe.DisplayName),
-					costString(recipe.Cost),
-					"Craft",
-					function()
-						local result = Remotes.CraftItem:InvokeServer("Robots", key)
-						if not result.Success then
-							warn("[HUD] Craft failed:", result.Reason)
-						end
-					end
-				).Parent = listFrame
-			end
+				end
+			).Parent = listFrame
 		end
 	end
 end
@@ -697,12 +894,1190 @@ local function makeTabButton(name)
 	return button
 end
 
-makeTabButton("Weapons")
-makeTabButton("Robots")
-makeTabButton("Mods")
-makeTabButton("Tools")
-makeTabButton("Auto-Miner")
-makeTabButton("Suit")
+-- Rebuilds the tab row down to exactly the tabs one station's menu should offer — e.g. a Welding
+-- Station's row only ever gets Weapons/Robots/Mods, never Tools/Auto-Miner/Suit. Called by
+-- openStationMenu every time the menu is (re)opened, since a different station can be clicked
+-- next without the HUD ever needing a page reload. No tabs are created at startup — the menu
+-- starts empty because there's nothing to show until a station opens it for the first time.
+local function rebuildTabs(tabNames: { string })
+	for _, child in ipairs(tabRow:GetChildren()) do
+		if child:IsA("TextButton") then
+			child:Destroy()
+		end
+	end
+	for _, name in ipairs(tabNames) do
+		makeTabButton(name)
+	end
+end
+
+----------------------------------------------------------------------
+-- Inventory panel — a personal "what do I own, what's equipped, how much do I have" screen.
+-- Unlike the Workbench (which only opens from a physical station and is for crafting NEW
+-- things), this is viewable from anywhere — it's just a window onto data already sitting in
+-- `profile`. The Equip/Deploy/Undeploy buttons inside it call the same remotes as everywhere
+-- else (EquipWeapon, DeployRobot, UndeployRobot, EquipMod via the shared mod picker), and those
+-- still enforce the plot+station gate independently server-side — so browsing works from anywhere,
+-- but actually changing your loadout only works while standing at the right station: weapons
+-- (EquipWeapon, and EquipMod on the Weapons tree) gate to the Forge, robots (DeployRobot/
+-- UndeployRobot, and EquipMod on the Robots tree) still gate to the Welding Station, same rule as
+-- crafting. Also replaces the old cluttered top-left ore breakdown — see the Materials tab below
+-- and the trimmed-down currencyFrame near the top of this file.
+--
+-- Presentation: an icon grid (one square tile per owned item/material) instead of the Workbench's
+-- rows — clicking a tile opens a detail panel beside the Inventory showing a bigger image,
+-- description, stats, and (for Weapons/Robots) an Equip/Deploy button and mod slots. The
+-- Welding Station's own Robots tab is untouched and still uses the row layout (makeRobotRow) —
+-- crafting NEW items needs cost text that doesn't fit this tile format, so that stays row-based;
+-- only browsing OWNED items here got the icon-grid treatment. The Forge's Weapons tab has no row
+-- equivalent at all anymore — it's craft-only (see that section's own header comment); Weapons
+-- ownership/equipping lives here in the Inventory exclusively now.
+--
+-- Icons: drop an ImageLabel, ImageButton, or Decal into ReplicatedStorage.ItemIcons (a plain
+-- Folder, see default.project.json), named EXACTLY like the item's key — a weaponKey/robotKey/
+-- modKey from CraftingRecipes.lua/ModConfig.lua, or an oreKey from OreConfig.lua (plus the literal
+-- names "Scrap"/"Cores" for the two currencies). Only its Image (or Texture, for a Decal) property
+-- is read — every other property on that instance is ignored, so it doesn't matter how it's
+-- sized/positioned; just get the image onto it via Studio's normal asset picker and name it right.
+-- No matching instance yet? The tile falls back to a plain colored square with the item's name in
+-- text — "functional before art," same as everywhere else in this project. No code changes needed
+-- either way; getItemIcon below just looks the key up fresh every time a tile is built.
+--
+-- Descriptions live in code, next to each item's other data — CraftingRecipes.lua's
+-- Weapons/Robots entries and OreConfig.lua's Ores entries each got a `Description` field this
+-- session (ModConfig.lua's mods already had one). Scrap/Cores aren't real "ore" entries anywhere,
+-- so their descriptions are just inlined in showInvDetail below instead of a shared config.
+----------------------------------------------------------------------
+
+-- FindFirstChild, NOT WaitForChild — this whole panel has to work with zero icons ever added (the
+-- "functional before art" default), and WaitForChild yields forever if ReplicatedStorage.ItemIcons
+-- never shows up at all (e.g. Studio hasn't been resynced since this folder was added to
+-- default.project.json yet), which was freezing the rest of this script past this point. Missing
+-- folder now behaves exactly like a missing icon inside it: getItemIcon just returns nil and every
+-- tile/detail panel falls back to its plain placeholder square, same as before.
+local ItemIcons = ReplicatedStorage:FindFirstChild("ItemIcons")
+
+local function getItemIcon(key: string): string?
+	local inst = ItemIcons and ItemIcons:FindFirstChild(key)
+	if not inst then
+		return nil
+	end
+	if (inst:IsA("ImageLabel") or inst:IsA("ImageButton")) and inst.Image ~= "" then
+		return inst.Image
+	elseif inst:IsA("Decal") and inst.Texture ~= "" then
+		return inst.Texture
+	end
+	return nil
+end
+
+local TILE_SIZE = 76
+
+local invFrame = new("Frame", {
+	Name = "Inventory",
+	BackgroundColor3 = COLOR.Panel,
+	Position = UDim2.new(0.5, -320, 0.5, -200),
+	Size = UDim2.new(0, 640, 0, 400),
+	Visible = false,
+	Parent = screenGui,
+}, { corner(10), stroke() })
+
+new("TextLabel", {
+	BackgroundTransparency = 1,
+	Position = UDim2.new(0, 12, 0, 10),
+	Size = UDim2.new(1, -60, 0, 22),
+	Font = Enum.Font.SourceSansBold,
+	TextXAlignment = Enum.TextXAlignment.Left,
+	TextColor3 = COLOR.Text,
+	TextSize = 18,
+	Text = "Inventory",
+	Parent = invFrame,
+})
+
+-- Instance only — connected at the very bottom of this section, once closeInvDetail exists.
+local invCloseButton = new("TextButton", {
+	BackgroundColor3 = COLOR.PanelLight,
+	Position = UDim2.new(1, -40, 0, 8),
+	Size = UDim2.new(0, 28, 0, 28),
+	Font = Enum.Font.SourceSansBold,
+	TextColor3 = COLOR.Text,
+	TextSize = 16,
+	Text = "X",
+	Parent = invFrame,
+}, { corner(6) })
+
+local invTabRow = new("Frame", {
+	BackgroundTransparency = 1,
+	Position = UDim2.new(0, 12, 0, 40),
+	Size = UDim2.new(1, -24, 0, 32),
+	Parent = invFrame,
+}, { new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 8) }) })
+
+local invListFrame = new("ScrollingFrame", {
+	BackgroundTransparency = 1,
+	Position = UDim2.new(0, 12, 0, 80),
+	Size = UDim2.new(1, -24, 1, -92),
+	CanvasSize = UDim2.new(0, 0, 0, 0),
+	AutomaticCanvasSize = Enum.AutomaticSize.Y,
+	ScrollBarThickness = 6,
+	Parent = invFrame,
+}, { new("UIGridLayout", { CellSize = UDim2.new(0, TILE_SIZE, 0, TILE_SIZE), CellPadding = UDim2.new(0, 8, 0, 8) }) })
+
+-- Overlays invListFrame's area with a plain message when the current tab has nothing to show —
+-- UIGridLayout forces every child to CellSize, so a full-width "nothing here" message can't be a
+-- grid child without looking cramped; this sits outside the grid instead and is only ever shown
+-- when the grid has zero tiles in it, so the two never actually overlap in practice.
+local invEmptyLabel = new("TextLabel", {
+	BackgroundTransparency = 1,
+	Position = UDim2.new(0, 12, 0, 80),
+	Size = UDim2.new(1, -24, 1, -92),
+	Font = Enum.Font.SourceSansItalic,
+	TextColor3 = COLOR.Muted,
+	TextSize = 14,
+	TextWrapped = true,
+	TextXAlignment = Enum.TextXAlignment.Left,
+	TextYAlignment = Enum.TextYAlignment.Top,
+	Visible = false,
+	Text = "",
+	Parent = invFrame,
+})
+
+----------------------------------------------------------------------
+-- Detail panel — sits just right of the Inventory, populated by clicking a tile. Shared by all
+-- four tabs; which parts are visible (mod slots, the action button) depends on the category.
+----------------------------------------------------------------------
+
+local invDetailFrame = new("Frame", {
+	Name = "InventoryDetail",
+	BackgroundColor3 = COLOR.Panel,
+	Position = UDim2.new(0.5, 330, 0.5, -200),
+	Size = UDim2.new(0, 260, 0, 400),
+	Visible = false,
+	Parent = screenGui,
+}, { corner(10), stroke() })
+
+local invDetailTitle = new("TextLabel", {
+	BackgroundTransparency = 1,
+	Position = UDim2.new(0, 10, 0, 8),
+	Size = UDim2.new(1, -50, 0, 24),
+	Font = Enum.Font.SourceSansBold,
+	TextXAlignment = Enum.TextXAlignment.Left,
+	TextColor3 = COLOR.Text,
+	TextSize = 17,
+	TextWrapped = true,
+	Text = "",
+	Parent = invDetailFrame,
+})
+
+-- Instance only — connected once closeInvDetail exists, just below.
+local invDetailCloseButton = new("TextButton", {
+	BackgroundColor3 = COLOR.PanelLight,
+	Position = UDim2.new(1, -36, 0, 8),
+	Size = UDim2.new(0, 28, 0, 28),
+	Font = Enum.Font.SourceSansBold,
+	TextColor3 = COLOR.Text,
+	TextSize = 16,
+	Text = "X",
+	Parent = invDetailFrame,
+}, { corner(6) })
+
+local invDetailImage = new("ImageLabel", {
+	BackgroundColor3 = COLOR.PanelLight,
+	Position = UDim2.new(0, 10, 0, 42),
+	Size = UDim2.new(1, -20, 0, 140),
+	ScaleType = Enum.ScaleType.Fit,
+	Image = "",
+	Parent = invDetailFrame,
+}, { corner(8) })
+
+local invDetailStats = new("TextLabel", {
+	BackgroundTransparency = 1,
+	Position = UDim2.new(0, 10, 0, 190),
+	Size = UDim2.new(1, -20, 0, 36),
+	Font = Enum.Font.Code,
+	TextColor3 = COLOR.Muted,
+	TextSize = 13,
+	TextWrapped = true,
+	TextXAlignment = Enum.TextXAlignment.Left,
+	TextYAlignment = Enum.TextYAlignment.Top,
+	Text = "",
+	Parent = invDetailFrame,
+})
+
+local invDetailDescription = new("TextLabel", {
+	BackgroundTransparency = 1,
+	Position = UDim2.new(0, 10, 0, 230),
+	Size = UDim2.new(1, -20, 0, 70),
+	Font = Enum.Font.SourceSans,
+	TextColor3 = COLOR.Text,
+	TextSize = 14,
+	TextWrapped = true,
+	TextXAlignment = Enum.TextXAlignment.Left,
+	TextYAlignment = Enum.TextYAlignment.Top,
+	Text = "",
+	Parent = invDetailFrame,
+})
+
+-- Weapons/Robots only — same slot-button idea as makeEquipmentRow's slotRow, just rebuilt for
+-- whichever item the detail panel currently shows instead of being baked into a row.
+local invDetailSlotRow = new("Frame", {
+	BackgroundTransparency = 1,
+	Position = UDim2.new(0, 10, 0, 306),
+	Size = UDim2.new(1, -20, 0, 30),
+	Visible = false,
+	Parent = invDetailFrame,
+}, { new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 6) }) })
+
+-- Weapons/Robots only — Equip, or Deploy/Undeploy. Hidden for Mods/Materials (nothing to toggle).
+-- Connected further down, once invDetailState/deployedCountForRobot are in scope.
+local invDetailButton = new("TextButton", {
+	BackgroundColor3 = COLOR.Accent,
+	Position = UDim2.new(0, 10, 1, -42),
+	Size = UDim2.new(1, -20, 0, 32),
+	Font = Enum.Font.SourceSansBold,
+	TextColor3 = Color3.new(1, 1, 1),
+	TextSize = 15,
+	Visible = false,
+	Text = "",
+	Parent = invDetailFrame,
+}, { corner(6) })
+
+local invDetailState = { category = nil :: string?, key = nil :: string? }
+
+invDetailButton.MouseButton1Click:Connect(function()
+	local category, key = invDetailState.category, invDetailState.key
+	if not category or not key then
+		return
+	end
+	if category == "Weapons" then
+		-- key here is the Forged instance's Id (see showInvDetail's Weapons branch) — not a
+		-- weaponKey — since equipping now targets one specific rolled instance.
+		if profile.EquippedWeaponId == key then
+			return
+		end
+		local result = Remotes.EquipWeapon:InvokeServer(key)
+		if not result.Success then
+			warn("[HUD] Equip weapon failed:", result.Reason)
+		end
+	elseif category == "Robots" then
+		local owned = profile.CraftedRobots[key] or 0
+		local deployed = deployedCountForRobot(key)
+		if deployed < owned then
+			local result = Remotes.DeployRobot:InvokeServer(key)
+			if not result.Success then
+				warn("[HUD] Deploy failed:", result.Reason)
+			end
+		else
+			local result = Remotes.UndeployRobot:InvokeServer(key)
+			if not result.Success then
+				warn("[HUD] Undeploy failed:", result.Reason)
+			end
+		end
+	end
+end)
+
+local function rebuildInvDetailSlots(tree: string, itemKey: string)
+	for _, child in ipairs(invDetailSlotRow:GetChildren()) do
+		if child:IsA("TextButton") then
+			child:Destroy()
+		end
+	end
+	local slotWidth = math.floor((260 - 20 - 6 * (ModConfig.SlotsPerItem - 1)) / ModConfig.SlotsPerItem)
+	for slotIndex = 1, ModConfig.SlotsPerItem do
+		local equippedKey = equippedModKeyForSlot(itemKey, slotIndex)
+		local mod = equippedKey and ModConfig.Mods[equippedKey]
+		local slotButton = new("TextButton", {
+			BackgroundColor3 = mod and COLOR.AccentDark or COLOR.Panel,
+			Size = UDim2.new(0, slotWidth, 1, 0),
+			Font = Enum.Font.Code,
+			TextColor3 = COLOR.Text,
+			TextSize = 11,
+			TextWrapped = true,
+			Text = mod and mod.DisplayName or ("Slot %d"):format(slotIndex),
+			Parent = invDetailSlotRow,
+		}, { corner(4), stroke() })
+		slotButton.MouseButton1Click:Connect(function()
+			openModPicker(tree, itemKey, slotIndex)
+		end)
+	end
+	invDetailSlotRow.Visible = true
+end
+
+local function closeInvDetail()
+	invDetailFrame.Visible = false
+	invDetailState.category = nil
+	invDetailState.key = nil
+end
+invDetailCloseButton.MouseButton1Click:Connect(closeInvDetail)
+
+local function showInvDetail(category: string, key: string)
+	invDetailState.category = category
+	invDetailState.key = key
+
+	-- Icon lookup key differs from the selection key for Weapons only: `key` there is the Forged
+	-- instance's unique Id (see renderInvWeapons below), but icons are per weapon TYPE (see this
+	-- section's header comment on the ItemIcons convention) — so iconKey gets overridden to
+	-- instance.WeaponKey inside that branch below, before it's actually used.
+	local iconKey = key
+
+	if category == "Weapons" then
+		local instance
+		for _, w in ipairs(profile.Weapons or {}) do
+			if w.Id == key then
+				instance = w
+				break
+			end
+		end
+		if not instance then
+			-- Stale selection (e.g. this exact instance can't happen today — weapons are never
+			-- destroyed — but guard anyway rather than indexing into a nil recipe below).
+			closeInvDetail()
+			return
+		end
+		iconKey = instance.WeaponKey
+		local recipe = CraftingRecipes.Weapons[instance.WeaponKey]
+		local rarityData = ModConfig.Rarities[instance.Rarity]
+		local rarityName = rarityData and rarityData.DisplayName or instance.Rarity
+		local equipped = profile.EquippedWeaponId == instance.Id
+		invDetailTitle.Text = ("[%s] T%d  %s"):format(rarityName, recipe.Tier, recipe.DisplayName)
+		invDetailStats.Text = ("Base: %.1f dmg x %.1f/s"):format(recipe.BaseDamage, recipe.FireRate)
+		invDetailDescription.Text = ("%s\n\n%s"):format(recipe.Description or "", affixSummary(instance.Affixes))
+		rebuildInvDetailSlots("Weapons", instance.WeaponKey)
+		invDetailButton.Visible = true
+		invDetailButton.Text = equipped and "Equipped" or "Equip"
+		invDetailButton.BackgroundColor3 = equipped and COLOR.AccentDark or COLOR.Accent
+	elseif category == "Robots" then
+		local recipe = CraftingRecipes.Robots[key]
+		local owned = profile.CraftedRobots[key] or 0
+		local deployed = deployedCountForRobot(key)
+		invDetailTitle.Text = ("T%d  %s"):format(recipe.Tier, recipe.DisplayName)
+		invDetailStats.Text = ("Base: %.1f dmg x %.1f/s · %d HP · owned %d, deployed %d"):format(
+			recipe.BaseDamage, recipe.FireRate, recipe.HP, owned, deployed)
+		invDetailDescription.Text = recipe.Description or ""
+		rebuildInvDetailSlots("Robots", key)
+		invDetailButton.Visible = true
+		invDetailButton.Text = (deployed < owned) and "Deploy" or "Undeploy"
+		invDetailButton.BackgroundColor3 = COLOR.Accent
+	elseif category == "Mods" then
+		local mod = ModConfig.Mods[key]
+		local rarityData = ModConfig.Rarities[mod.Rarity]
+		local rarityName = rarityData and rarityData.DisplayName or mod.Rarity
+		invDetailTitle.Text = ("[%s] %s"):format(rarityName, mod.DisplayName)
+		invDetailStats.Text = "Equip from a Weapon/Robot's own mod slots"
+		invDetailDescription.Text = mod.Description or ""
+		invDetailSlotRow.Visible = false
+		invDetailButton.Visible = false
+	elseif category == "Materials" then
+		local displayName, description, count
+		if key == "Scrap" then
+			displayName = "Scrap"
+			description = "General scavenged currency — spent on higher-tier gear and materials."
+			count = profile.Scrap or 0
+		elseif key == "Cores" then
+			displayName = "Cores"
+			description = "Rare salvaged currency — spent on premium purchases."
+			count = profile.Cores or 0
+		elseif OreConfig.Ores[key] then
+			local oreData = OreConfig.Ores[key]
+			displayName = oreData.DisplayName
+			description = oreData.Description or ""
+			count = (profile.OreCounts or {})[key] or 0
+		else
+			-- Not a raw ore key — must be a refined material's RefinedKey (see
+			-- RefinedOreConfig.ByRefinedKey, the reverse lookup built for exactly this).
+			local refinedInfo = RefinedOreConfig.ByRefinedKey[key]
+			displayName = refinedInfo and refinedInfo.DisplayName or key
+			description = refinedInfo and refinedInfo.Description or ""
+			count = (profile.RefinedOreCounts or {})[key] or 0
+		end
+		invDetailTitle.Text = displayName
+		invDetailStats.Text = ("You have: %d"):format(count)
+		invDetailDescription.Text = description
+		invDetailSlotRow.Visible = false
+		invDetailButton.Visible = false
+	end
+
+	invDetailImage.Image = getItemIcon(iconKey) or ""
+	invDetailFrame.Visible = true
+end
+
+-- Called whenever InventoryUpdate patches profile — keeps the detail panel's Equip/Deploy button
+-- and stats in sync with a change made from anywhere (including the Workbench's own tabs) without
+-- needing the player to re-click the tile.
+local function refreshInvDetailIfShowing()
+	if invDetailFrame.Visible and invDetailState.category and invDetailState.key then
+		showInvDetail(invDetailState.category, invDetailState.key)
+	end
+end
+
+----------------------------------------------------------------------
+-- Grid tiles — one per tab, built fresh every render
+----------------------------------------------------------------------
+
+local function makeItemTile(key: string, displayName: string, badgeText: string?, highlighted: boolean, onSelect)
+	local icon = getItemIcon(key)
+	local tile = new("ImageButton", {
+		BackgroundColor3 = highlighted and COLOR.AccentDark or COLOR.PanelLight,
+		AutoButtonColor = false,
+		Image = icon or "",
+		ScaleType = Enum.ScaleType.Fit,
+		Size = UDim2.new(0, TILE_SIZE, 0, TILE_SIZE),
+	}, { corner(8), stroke() })
+
+	if not icon then
+		new("TextLabel", {
+			BackgroundTransparency = 1,
+			Position = UDim2.new(0, 3, 0, 3),
+			Size = UDim2.new(1, -6, 1, -6),
+			Font = Enum.Font.SourceSansBold,
+			TextColor3 = COLOR.Muted,
+			TextSize = 12,
+			TextWrapped = true,
+			Text = displayName,
+			Parent = tile,
+		})
+	end
+
+	if badgeText then
+		new("TextLabel", {
+			BackgroundColor3 = COLOR.Panel,
+			Position = UDim2.new(1, -24, 1, -18),
+			Size = UDim2.new(0, 22, 0, 16),
+			Font = Enum.Font.Code,
+			TextColor3 = COLOR.Text,
+			TextSize = 11,
+			Text = badgeText,
+			Parent = tile,
+		}, { corner(4) })
+	end
+
+	tile.MouseButton1Click:Connect(onSelect)
+	return tile
+end
+
+local currentInvTab = "Weapons"
+
+local function renderInvWeapons()
+	local instances = profile.Weapons or {}
+	if #instances == 0 then
+		invEmptyLabel.Text = "No weapons owned yet — Forge one at your Forge station."
+		invEmptyLabel.Visible = true
+		return
+	end
+	-- Copy before sorting — profile.Weapons is the live table, don't mutate its order.
+	local sorted = {}
+	for _, instance in ipairs(instances) do
+		table.insert(sorted, instance)
+	end
+	table.sort(sorted, function(a, b)
+		local tierA, tierB = CraftingRecipes.Weapons[a.WeaponKey].Tier, CraftingRecipes.Weapons[b.WeaponKey].Tier
+		if tierA ~= tierB then
+			return tierA < tierB
+		end
+		return a.Id < b.Id
+	end)
+	for _, instance in ipairs(sorted) do
+		local recipe = CraftingRecipes.Weapons[instance.WeaponKey]
+		local rarityData = ModConfig.Rarities[instance.Rarity]
+		local equipped = profile.EquippedWeaponId == instance.Id
+		-- Icon lookup key is instance.WeaponKey (the TYPE, icons aren't per-roll), but selecting
+		-- the tile opens the detail panel on this specific instance.Id.
+		makeItemTile(instance.WeaponKey, recipe.DisplayName, rarityData and rarityData.Badge or "?", equipped, function()
+			showInvDetail("Weapons", instance.Id)
+		end).Parent = invListFrame
+	end
+end
+
+local function renderInvRobots()
+	local keys = {}
+	for key, count in pairs(profile.CraftedRobots) do
+		if count and count > 0 then
+			table.insert(keys, key)
+		end
+	end
+	if #keys == 0 then
+		invEmptyLabel.Text = "No robots owned yet — craft one at your Welding Station."
+		invEmptyLabel.Visible = true
+		return
+	end
+	table.sort(keys, function(a, b)
+		return CraftingRecipes.Robots[a].Tier < CraftingRecipes.Robots[b].Tier
+	end)
+	for _, key in ipairs(keys) do
+		local recipe = CraftingRecipes.Robots[key]
+		local deployed = deployedCountForRobot(key)
+		makeItemTile(key, recipe.DisplayName, ("x%d"):format(profile.CraftedRobots[key]), deployed > 0, function()
+			showInvDetail("Robots", key)
+		end).Parent = invListFrame
+	end
+end
+
+local function renderInvMods()
+	local keys = ownedModKeysSorted()
+	if #keys == 0 then
+		invEmptyLabel.Text = "No mods owned yet — craft one at your Welding Station."
+		invEmptyLabel.Visible = true
+		return
+	end
+	for _, key in ipairs(keys) do
+		local mod = ModConfig.Mods[key]
+		makeItemTile(key, mod.DisplayName, nil, false, function()
+			showInvDetail("Mods", key)
+		end).Parent = invListFrame
+	end
+end
+
+-- Everything the old top-left readout used to show, in one filterable place, plus refined
+-- materials from the Forge's Smelting mechanic (see RefinedOreConfig.lua) tacked on at the end —
+-- exactly the "just need adding to this list, no new tab required" this function's comment always
+-- anticipated. Never shows the empty state — Scrap/Cores/every raw ore always gets a tile even at
+-- 0; refined materials only show once you've actually smelted at least one (there'd otherwise be
+-- 5 more permanently-zero tiles here before the player has ever touched the Forge's second tab).
+local function renderInvMaterials()
+	makeItemTile("Scrap", "Scrap", nil, false, function()
+		showInvDetail("Materials", "Scrap")
+	end).Parent = invListFrame
+	makeItemTile("Cores", "Cores", nil, false, function()
+		showInvDetail("Materials", "Cores")
+	end).Parent = invListFrame
+	for _, oreKey in ipairs(ORE_DISPLAY_ORDER) do
+		local displayName = OreConfig.Ores[oreKey].DisplayName
+		makeItemTile(oreKey, displayName, nil, false, function()
+			showInvDetail("Materials", oreKey)
+		end).Parent = invListFrame
+	end
+	for _, refineData in pairs(RefinedOreConfig.Ores) do
+		local owned = (profile.RefinedOreCounts or {})[refineData.RefinedKey] or 0
+		if owned > 0 then
+			makeItemTile(refineData.RefinedKey, refineData.DisplayName, ("x%d"):format(owned), false, function()
+				showInvDetail("Materials", refineData.RefinedKey)
+			end).Parent = invListFrame
+		end
+	end
+end
+
+local function renderInvList()
+	for _, child in ipairs(invListFrame:GetChildren()) do
+		if child:IsA("ImageButton") then
+			child:Destroy()
+		end
+	end
+	invEmptyLabel.Visible = false
+
+	if currentInvTab == "Weapons" then
+		renderInvWeapons()
+	elseif currentInvTab == "Robots" then
+		renderInvRobots()
+	elseif currentInvTab == "Mods" then
+		renderInvMods()
+	elseif currentInvTab == "Materials" then
+		renderInvMaterials()
+	end
+end
+
+local function selectInvTab(name: string)
+	currentInvTab = name
+	for _, sibling in ipairs(invTabRow:GetChildren()) do
+		if sibling:IsA("TextButton") then
+			sibling.BackgroundColor3 = sibling.Text == name and COLOR.Accent or COLOR.PanelLight
+		end
+	end
+	closeInvDetail() -- a Mods-tab selection doesn't make sense once you've switched to Weapons, etc.
+	renderInvList()
+end
+
+local function makeInvTabButton(name: string)
+	local button = new("TextButton", {
+		BackgroundColor3 = currentInvTab == name and COLOR.Accent or COLOR.PanelLight,
+		Size = UDim2.new(0, 140, 1, 0),
+		Font = Enum.Font.SourceSansBold,
+		TextColor3 = COLOR.Text,
+		TextSize = 15,
+		Text = name,
+		Parent = invTabRow,
+	}, { corner(6) })
+	button.MouseButton1Click:Connect(function()
+		selectInvTab(name)
+	end)
+	return button
+end
+
+-- Unlike the Workbench's tab row (which rebuilds per-station), the Inventory's tabs never
+-- change — every filter is always available no matter where you are, since viewing is unrestricted.
+makeInvTabButton("Weapons")
+makeInvTabButton("Robots")
+makeInvTabButton("Mods")
+makeInvTabButton("Materials")
+
+local function openInventory()
+	invFrame.Visible = true
+	closeInvDetail()
+	renderInvList()
+end
+
+invCloseButton.MouseButton1Click:Connect(function()
+	invFrame.Visible = false
+	closeInvDetail()
+	closeModPicker() -- don't leave the mod picker orphaned open behind a closed Inventory
+end)
+
+----------------------------------------------------------------------
+-- Forge status HUD — a pity progress bar and a Luck Potion button, both pulled out of the Forge's
+-- own Weapons tab per direct feedback. First pass put them in a permanent column under the
+-- top-left currency readout; second pass ("currently the pity and all that appears even when the
+-- forge UI is not open, please only have the pity appear when the forge UI is open, and make it
+-- under the forge GUI please for some cool layout thing, and make the potion close to the forge UI
+-- too") moved both to dock directly under `craftFrame` instead, as one row spanning its width, and
+-- made them Forge-only — they show up exactly when the Forge's Weapons tab is what's open, hidden
+-- for the Workbench/Welding Station and hidden again the moment the menu closes. See
+-- `setForgeWidgetsVisible` below (called from `openStationMenu` and `craftCloseButton`).
+----------------------------------------------------------------------
+
+local POTION_BUTTON_SIZE = 64
+
+-- Docked under craftFrame's bottom edge (Position 0.5,-200 + Size 0,400 -> bottom sits at
+-- 0.5,+200), 10px gap. potionButton is a fixed 64-wide square on the left; pityBarFrame fills the
+-- remaining width to craftFrame's own right edge (0.5,+320) — together they span exactly as wide
+-- as the Forge menu above them, not just huddled off to one side of it.
+local pityBarFrame = new("Frame", {
+	Name = "ForgePity",
+	BackgroundColor3 = COLOR.Panel,
+	Position = UDim2.new(0.5, -320 + POTION_BUTTON_SIZE + 10, 0.5, 220),
+	Size = UDim2.new(0, 640 - POTION_BUTTON_SIZE - 10, 0, 44),
+	Visible = false,
+	Parent = screenGui,
+}, { corner(8), stroke() })
+
+local pityCaption = new("TextLabel", {
+	BackgroundTransparency = 1,
+	Position = UDim2.new(0, 10, 0, 4),
+	Size = UDim2.new(1, -20, 0, 16),
+	Font = Enum.Font.Code,
+	TextXAlignment = Enum.TextXAlignment.Left,
+	TextColor3 = COLOR.Muted,
+	TextSize = 13,
+	Text = "Forge Pity: 0 / 0",
+	Parent = pityBarFrame,
+})
+
+local pityTrack = new("Frame", {
+	BackgroundColor3 = COLOR.PanelLight,
+	Position = UDim2.new(0, 10, 0, 24),
+	Size = UDim2.new(1, -20, 0, 12),
+	Parent = pityBarFrame,
+}, { corner(4) })
+
+local pityFill = new("Frame", {
+	BackgroundColor3 = COLOR.Accent,
+	Size = UDim2.new(0, 0, 1, 0),
+	Parent = pityTrack,
+}, { corner(4) })
+
+-- Assigns into the `local refreshPityBar` forward-declared up in the Forge tab section, so the
+-- Forge roll button (defined earlier in the file) can call this the instant a roll lands rather
+-- than waiting on the next InventoryUpdate patch — see that section's comment for why the forward
+-- declaration exists at all.
+refreshPityBar = function()
+	local counter = profile.ForgePityCounter or 0
+	local threshold = ForgeConfig.Pity.Threshold
+	pityCaption.Text = ("Forge Pity: %d / %d (%s+)"):format(counter, threshold, ForgeConfig.Pity.MinRarity)
+	local ratio = threshold > 0 and math.clamp(counter / threshold, 0, 1) or 0
+	pityFill.Size = UDim2.new(ratio, 0, 1, 0)
+end
+refreshPityBar()
+
+local potionButton = new("ImageButton", {
+	Name = "LuckPotionButton",
+	BackgroundColor3 = COLOR.PanelLight,
+	AutoButtonColor = false,
+	Image = "",
+	ScaleType = Enum.ScaleType.Fit,
+	Position = UDim2.new(0.5, -320, 0.5, 210),
+	Size = UDim2.new(0, POTION_BUTTON_SIZE, 0, POTION_BUTTON_SIZE),
+	Visible = false,
+	Parent = screenGui,
+}, { corner(8), stroke() })
+
+-- Same "no icon yet? fall back to plain text" pattern as makeItemTile's placeholder — looked up
+-- via getItemIcon("LuckPotion"), so dropping an ImageLabel/ImageButton/Decal named exactly
+-- "LuckPotion" into ReplicatedStorage.ItemIcons picks it up automatically, same convention as
+-- every other icon in this project.
+local potionPlaceholderLabel = new("TextLabel", {
+	BackgroundTransparency = 1,
+	Position = UDim2.new(0, 3, 0, 3),
+	Size = UDim2.new(1, -6, 1, -6),
+	Font = Enum.Font.SourceSansBold,
+	TextColor3 = COLOR.Muted,
+	TextSize = 12,
+	TextWrapped = true,
+	Text = "Luck\nPotion",
+	Parent = potionButton,
+})
+
+local potionBadge = new("TextLabel", {
+	BackgroundColor3 = COLOR.Panel,
+	Position = UDim2.new(1, -24, 1, -18),
+	Size = UDim2.new(0, 22, 0, 16),
+	Font = Enum.Font.Code,
+	TextColor3 = COLOR.Text,
+	TextSize = 11,
+	Text = "0",
+	Parent = potionButton,
+}, { corner(4) })
+
+-- Assigns into the `local refreshPotionButton` forward-declared up in the Forge tab section, same
+-- reason as refreshPityBar above.
+refreshPotionButton = function()
+	local icon = getItemIcon("LuckPotion")
+	potionButton.Image = icon or ""
+	potionPlaceholderLabel.Visible = not icon
+	potionBadge.Text = tostring(profile.LuckPotions or 0)
+	potionButton.BackgroundColor3 = forgeUsePotion and COLOR.AccentDark or COLOR.PanelLight
+end
+refreshPotionButton()
+
+potionButton.MouseButton1Click:Connect(function()
+	if (profile.LuckPotions or 0) <= 0 then
+		return
+	end
+	forgeUsePotion = not forgeUsePotion
+	refreshPotionButton() -- the button's own highlight is the only thing that needs to react to this
+end)
+
+-- Shows/hides both widgets together — called from openStationMenu (true only when the station
+-- just opened is specifically the Forge, false for Workbench/Welding) and from craftCloseButton's
+-- handler (always false, whichever menu was open). Kept as one function so the two widgets can
+-- never end up toggled independently by a future edit that only remembers to update one of them.
+local function setForgeWidgetsVisible(visible: boolean)
+	pityBarFrame.Visible = visible
+	potionButton.Visible = visible
+	-- The docked row can sit low enough (on shorter viewports) to overlap the bottom action row
+	-- (Inventory/Start Defense/etc.) — hide that row while the Forge ones are up, restore it the
+	-- moment they're hidden again, so the two never visually collide.
+	actionRow.Visible = not visible
+end
+
+----------------------------------------------------------------------
+-- Ore Smelting — the Forge's second mechanic, alongside rolling weapons (see RefinedOreConfig.lua
+-- /SmeltService.lua). A single square panel inside the Forge's "Smelting" tab with three states:
+-- (1) nothing picked yet — one big centered icon that opens a popup grid into your raw ore
+-- inventory; (2) an ore picked but not started — a quantity stepper (in RefineRatio-sized steps)
+-- plus a "Smelt" button that appears once something's actually pickable; (3) a job running
+-- server-side — a live countdown/progress bar, re-rendered once a second by the task.spawn loop
+-- at the bottom of this section (InventoryUpdate patches only arrive on start/finish, not every
+-- tick in between).
+----------------------------------------------------------------------
+
+-- All 5 raw ores can be smelted — unlike ORE_DISPLAY_ORDER (trimmed for the old currency readout,
+-- see that variable's own comment), this includes VoidiumShard.
+local SMELT_ORE_ORDER = { "ScrapIron", "CopperWire", "SteelPlating", "GoldContacts", "VoidiumShard" }
+
+-- Which raw ore is picked but not yet started (nil = nothing picked, showing the "click to pick"
+-- icon instead) and how much of it. Purely client-side UI state until StartSmelt actually
+-- succeeds — reset back to nil/0 the instant it does, since profile.SmeltJob being truthy takes
+-- over the panel from there (state 3 above always wins over state 2 in renderSmeltingTab below).
+local smeltSelectedOreKey = nil
+local smeltQuantity = 0
+
+local function formatDuration(seconds: number): string
+	seconds = math.max(0, math.ceil(seconds))
+	local minutes = math.floor(seconds / 60)
+	local secs = seconds % 60
+	return ("%d:%02d"):format(minutes, secs)
+end
+
+-- Same screenGui-sibling popup pattern as modPickerFrame above, just a grid of ore tiles (reusing
+-- makeItemTile/getItemIcon from the Inventory panel section) instead of a list of makeRow entries —
+-- this IS "a GUI directly into your ore inventory," per the ask.
+local orePickerFrame = new("Frame", {
+	Name = "OrePicker",
+	BackgroundColor3 = COLOR.Panel,
+	Position = UDim2.new(0.5, -170, 0.5, -180),
+	Size = UDim2.new(0, 340, 0, 360),
+	Visible = false,
+	ZIndex = 5,
+	Parent = screenGui,
+}, { corner(10), stroke() })
+
+new("TextLabel", {
+	BackgroundTransparency = 1,
+	Position = UDim2.new(0, 12, 0, 10),
+	Size = UDim2.new(1, -60, 0, 24),
+	Font = Enum.Font.SourceSansBold,
+	TextXAlignment = Enum.TextXAlignment.Left,
+	TextColor3 = COLOR.Text,
+	TextSize = 18,
+	Text = "Select Ore",
+	Parent = orePickerFrame,
+})
+
+local orePickerClose = new("TextButton", {
+	BackgroundColor3 = COLOR.PanelLight,
+	Position = UDim2.new(1, -40, 0, 8),
+	Size = UDim2.new(0, 28, 0, 28),
+	Font = Enum.Font.SourceSansBold,
+	TextColor3 = COLOR.Text,
+	TextSize = 16,
+	Text = "X",
+	Parent = orePickerFrame,
+}, { corner(6) })
+
+local orePickerList = new("ScrollingFrame", {
+	BackgroundTransparency = 1,
+	Position = UDim2.new(0, 12, 0, 44),
+	Size = UDim2.new(1, -24, 1, -56),
+	CanvasSize = UDim2.new(0, 0, 0, 0),
+	AutomaticCanvasSize = Enum.AutomaticSize.Y,
+	ScrollBarThickness = 6,
+	Parent = orePickerFrame,
+}, { new("UIGridLayout", { CellSize = UDim2.new(0, TILE_SIZE, 0, TILE_SIZE), CellPadding = UDim2.new(0, 8, 0, 8) }) })
+
+local function closeOrePicker()
+	orePickerFrame.Visible = false
+end
+orePickerClose.MouseButton1Click:Connect(closeOrePicker)
+
+local function selectOreForSmelt(oreKey: string)
+	local oreData = RefinedOreConfig.Ores[oreKey]
+	smeltSelectedOreKey = oreKey
+	smeltQuantity = oreData.RefineRatio -- smallest legal batch to start with
+	closeOrePicker()
+	renderCraftList()
+end
+
+-- Only lists ores you actually own AT LEAST one legal batch of (owned >= RefineRatio) — picking
+-- one you can't afford a single unit of would just land you straight back on an empty stepper.
+local function renderOrePickerList()
+	for _, child in ipairs(orePickerList:GetChildren()) do
+		if child:IsA("ImageButton") then
+			child:Destroy()
+		end
+	end
+	for _, oreKey in ipairs(SMELT_ORE_ORDER) do
+		local oreData = RefinedOreConfig.Ores[oreKey]
+		local owned = (profile.OreCounts or {})[oreKey] or 0
+		if owned >= oreData.RefineRatio then
+			local oreDisplayName = OreConfig.Ores[oreKey].DisplayName
+			makeItemTile(oreKey, oreDisplayName, ("x%d"):format(owned), oreKey == smeltSelectedOreKey, function()
+				selectOreForSmelt(oreKey)
+			end).Parent = orePickerList
+		end
+	end
+end
+
+local function openOrePicker()
+	renderOrePickerList()
+	orePickerFrame.Visible = true
+end
+
+local SMELT_SQUARE_SIZE = 260
+
+-- Assigns into the `local renderSmeltingTab` forward-declared up in the Forge tab section — see
+-- that comment for why. Builds one square panel (per the exact "background that is like a square"
+-- ask) as the Smelting tab's only listFrame child; state picked by profile.SmeltJob (server-
+-- authoritative, wins over everything) then smeltSelectedOreKey (client-only, pending a click).
+renderSmeltingTab = function()
+	local outer = new("Frame", {
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, SMELT_SQUARE_SIZE + 20),
+		Parent = listFrame,
+	})
+
+	local square = new("Frame", {
+		BackgroundColor3 = COLOR.PanelLight,
+		Position = UDim2.new(0.5, -SMELT_SQUARE_SIZE / 2, 0, 0),
+		Size = UDim2.new(0, SMELT_SQUARE_SIZE, 0, SMELT_SQUARE_SIZE),
+		Parent = outer,
+	}, { corner(10), stroke() })
+
+	local job = profile.SmeltJob
+
+	if job then
+		local oreDisplayName = (OreConfig.Ores[job.OreKey] and OreConfig.Ores[job.OreKey].DisplayName) or job.OreKey
+		local refinedInfo = RefinedOreConfig.ByRefinedKey[job.RefinedKey]
+		local refinedDisplayName = refinedInfo and refinedInfo.DisplayName or job.RefinedKey
+
+		new("ImageLabel", {
+			BackgroundTransparency = 1,
+			Image = getItemIcon(job.RefinedKey) or getItemIcon(job.OreKey) or "",
+			ScaleType = Enum.ScaleType.Fit,
+			Position = UDim2.new(0.5, -40, 0, 16),
+			Size = UDim2.new(0, 80, 0, 80),
+			Parent = square,
+		})
+
+		new("TextLabel", {
+			BackgroundTransparency = 1,
+			Position = UDim2.new(0, 12, 0, 104),
+			Size = UDim2.new(1, -24, 0, 20),
+			Font = Enum.Font.SourceSansBold,
+			TextColor3 = COLOR.Text,
+			TextSize = 15,
+			TextXAlignment = Enum.TextXAlignment.Center,
+			Text = ("Smelting %d %s"):format(job.Quantity, oreDisplayName),
+			Parent = square,
+		})
+
+		new("TextLabel", {
+			BackgroundTransparency = 1,
+			Position = UDim2.new(0, 12, 0, 126),
+			Size = UDim2.new(1, -24, 0, 18),
+			Font = Enum.Font.Code,
+			TextColor3 = COLOR.Muted,
+			TextSize = 13,
+			TextXAlignment = Enum.TextXAlignment.Center,
+			Text = ("-> %d %s"):format(job.RefinedAmount, refinedDisplayName),
+			Parent = square,
+		})
+
+		-- Re-derives the batch's original duration from the same shared formula rather than storing
+		-- it separately on the job — remaining/duration then gives a 0..1 progress ratio directly.
+		local duration = math.max(RefinedOreConfig.ComputeSmeltSeconds(job.Quantity), 1)
+		local remaining = job.FinishTime - os.time()
+		local ratio = math.clamp(1 - (remaining / duration), 0, 1)
+
+		new("TextLabel", {
+			BackgroundTransparency = 1,
+			Position = UDim2.new(0, 12, 0, 152),
+			Size = UDim2.new(1, -24, 0, 20),
+			Font = Enum.Font.Code,
+			TextColor3 = COLOR.Text,
+			TextSize = 14,
+			TextXAlignment = Enum.TextXAlignment.Center,
+			Text = remaining > 0 and ("Ready in " .. formatDuration(remaining)) or "Finishing up...",
+			Parent = square,
+		})
+
+		local track = new("Frame", {
+			BackgroundColor3 = COLOR.Panel,
+			Position = UDim2.new(0, 12, 0, 176),
+			Size = UDim2.new(1, -24, 0, 12),
+			Parent = square,
+		}, { corner(4) })
+		new("Frame", {
+			BackgroundColor3 = COLOR.Accent,
+			Size = UDim2.new(ratio, 0, 1, 0),
+			Parent = track,
+		}, { corner(4) })
+
+		new("TextLabel", {
+			BackgroundTransparency = 1,
+			Position = UDim2.new(0, 12, 0, 200),
+			Size = UDim2.new(1, -24, 0, 40),
+			Font = Enum.Font.Code,
+			TextColor3 = COLOR.Muted,
+			TextSize = 12,
+			TextWrapped = true,
+			TextXAlignment = Enum.TextXAlignment.Center,
+			Text = "One smelt at a time — the next batch can start the moment this one finishes.",
+			Parent = square,
+		})
+	elseif smeltSelectedOreKey then
+		local oreData = RefinedOreConfig.Ores[smeltSelectedOreKey]
+		local refinedInfo = RefinedOreConfig.ByRefinedKey[oreData.RefinedKey]
+		local oreDisplayName = OreConfig.Ores[smeltSelectedOreKey].DisplayName
+		local owned = (profile.OreCounts or {})[smeltSelectedOreKey] or 0
+		local maxQuantity = math.max(math.floor(owned / oreData.RefineRatio) * oreData.RefineRatio, oreData.RefineRatio)
+		smeltQuantity = math.clamp(smeltQuantity, oreData.RefineRatio, maxQuantity)
+
+		local iconButton = new("ImageButton", {
+			BackgroundTransparency = 1,
+			AutoButtonColor = false,
+			Image = getItemIcon(smeltSelectedOreKey) or "",
+			ScaleType = Enum.ScaleType.Fit,
+			Position = UDim2.new(0.5, -32, 0, 8),
+			Size = UDim2.new(0, 64, 0, 64),
+			Parent = square,
+		})
+		iconButton.MouseButton1Click:Connect(openOrePicker) -- click the icon again to change ore
+
+		new("TextLabel", {
+			BackgroundTransparency = 1,
+			Position = UDim2.new(0, 12, 0, 76),
+			Size = UDim2.new(1, -24, 0, 18),
+			Font = Enum.Font.SourceSansBold,
+			TextColor3 = COLOR.Text,
+			TextSize = 14,
+			TextXAlignment = Enum.TextXAlignment.Center,
+			Text = ("%s (owned %d)"):format(oreDisplayName, owned),
+			Parent = square,
+		})
+
+		-- Quantity readout on the left, a small Reset (back down to one batch) on the right, sharing
+		-- one row so the four bulk-add buttons below get their own row instead of fighting for space.
+		new("TextLabel", {
+			BackgroundTransparency = 1,
+			Position = UDim2.new(0, 12, 0, 96),
+			Size = UDim2.new(0, 130, 0, 22),
+			Font = Enum.Font.Code,
+			TextColor3 = COLOR.Text,
+			TextSize = 18,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			Text = ("%d ore"):format(smeltQuantity),
+			Parent = square,
+		})
+
+		local resetButton = new("TextButton", {
+			BackgroundColor3 = COLOR.PanelLight,
+			Position = UDim2.new(1, -78, 0, 97),
+			Size = UDim2.new(0, 66, 0, 20),
+			Font = Enum.Font.Code,
+			TextColor3 = COLOR.Muted,
+			TextSize = 12,
+			Text = "Reset",
+			Parent = square,
+		}, { corner(4) })
+		resetButton.MouseButton1Click:Connect(function()
+			smeltQuantity = oreData.RefineRatio
+			renderCraftList()
+		end)
+
+		-- Bulk-add row — "+1"/"+10"/"+100"/"MAX" ADD BATCHES (RefineRatio-sized steps), not raw ore
+		-- 1-at-a-time, so the quantity landed on is always a legal multiple without any rounding —
+		-- e.g. "+10" on a 3:1 ore adds 30 raw ore (10 batches), not 10 raw ore. Much faster than the
+		-- old lone +/- stepper for stocking up a big batch.
+		local stepButtonsRow = new("Frame", {
+			BackgroundTransparency = 1,
+			Position = UDim2.new(0, 12, 0, 122),
+			Size = UDim2.new(1, -24, 0, 28),
+			Parent = square,
+		}, { new("UIListLayout", {
+			FillDirection = Enum.FillDirection.Horizontal,
+			Padding = UDim.new(0, 6),
+			HorizontalAlignment = Enum.HorizontalAlignment.Center,
+		}) })
+
+		local function makeBulkAddButton(label: string, batches: number?)
+			local button = new("TextButton", {
+				BackgroundColor3 = COLOR.PanelLight,
+				Size = UDim2.new(0, 52, 1, 0),
+				Font = Enum.Font.SourceSansBold,
+				TextColor3 = COLOR.Text,
+				TextSize = 14,
+				Text = label,
+				Parent = stepButtonsRow,
+			}, { corner(6) })
+			button.MouseButton1Click:Connect(function()
+				if batches then
+					smeltQuantity = math.min(smeltQuantity + batches * oreData.RefineRatio, maxQuantity)
+				else
+					smeltQuantity = maxQuantity -- MAX
+				end
+				renderCraftList()
+			end)
+			return button
+		end
+
+		makeBulkAddButton("+1", 1)
+		makeBulkAddButton("+10", 10)
+		makeBulkAddButton("+100", 100)
+		makeBulkAddButton("MAX", nil)
+
+		local estSeconds = RefinedOreConfig.ComputeSmeltSeconds(smeltQuantity)
+		new("TextLabel", {
+			BackgroundTransparency = 1,
+			Position = UDim2.new(0, 12, 0, 154),
+			Size = UDim2.new(1, -24, 0, 18),
+			Font = Enum.Font.Code,
+			TextColor3 = COLOR.Muted,
+			TextSize = 13,
+			TextXAlignment = Enum.TextXAlignment.Center,
+			Text = ("-> %d %s · %s"):format(
+				smeltQuantity / oreData.RefineRatio,
+				refinedInfo.DisplayName,
+				formatDuration(estSeconds)
+			),
+			Parent = square,
+		})
+
+		-- The "button [that] would allow you to smelt the ore" — only ever appears once an ore is
+		-- actually selected, per the ask.
+		local smeltButton = new("TextButton", {
+			BackgroundColor3 = COLOR.Accent,
+			Position = UDim2.new(0.5, -60, 0, 180),
+			Size = UDim2.new(0, 120, 0, 36),
+			Font = Enum.Font.SourceSansBold,
+			TextColor3 = Color3.new(1, 1, 1),
+			TextSize = 15,
+			Text = "Smelt",
+			Parent = square,
+		}, { corner(6) })
+		smeltButton.MouseButton1Click:Connect(function()
+			local oreKey, quantity = smeltSelectedOreKey, smeltQuantity
+			local result = Remotes.StartSmelt:InvokeServer(oreKey, quantity)
+			if not result.Success then
+				warn("[HUD] Start smelt failed:", result.Reason)
+			else
+				smeltSelectedOreKey = nil
+				smeltQuantity = 0
+				renderCraftList()
+			end
+		end)
+	else
+		-- State 1: nothing picked yet — "on the middle of it you would have a clickable icon where
+		-- it would [open] a gui directly into your ore inventory."
+		local icon = getItemIcon("Smelting")
+		local iconButton = new("ImageButton", {
+			BackgroundColor3 = COLOR.Panel,
+			AutoButtonColor = false,
+			Image = icon or "",
+			ScaleType = Enum.ScaleType.Fit,
+			Position = UDim2.new(0.5, -48, 0, 60),
+			Size = UDim2.new(0, 96, 0, 96),
+			Parent = square,
+		}, { corner(8), stroke() })
+
+		if not icon then
+			new("TextLabel", {
+				BackgroundTransparency = 1,
+				Position = UDim2.new(0, 4, 0, 4),
+				Size = UDim2.new(1, -8, 1, -8),
+				Font = Enum.Font.SourceSansBold,
+				TextColor3 = COLOR.Muted,
+				TextSize = 13,
+				TextWrapped = true,
+				Text = "Select\nOre",
+				Parent = iconButton,
+			})
+		end
+		iconButton.MouseButton1Click:Connect(openOrePicker)
+
+		new("TextLabel", {
+			BackgroundTransparency = 1,
+			Position = UDim2.new(0, 12, 0, 168),
+			Size = UDim2.new(1, -24, 0, 20),
+			Font = Enum.Font.SourceSansBold,
+			TextColor3 = COLOR.Text,
+			TextSize = 15,
+			TextXAlignment = Enum.TextXAlignment.Center,
+			Text = "Select Ore to Smelt",
+			Parent = square,
+		})
+
+		new("TextLabel", {
+			BackgroundTransparency = 1,
+			Position = UDim2.new(0, 12, 0, 190),
+			Size = UDim2.new(1, -24, 0, 40),
+			Font = Enum.Font.Code,
+			TextColor3 = COLOR.Muted,
+			TextSize = 12,
+			TextWrapped = true,
+			TextXAlignment = Enum.TextXAlignment.Center,
+			Text = "Click the icon to open your ore inventory and pick something to refine.",
+			Parent = square,
+		})
+	end
+end
+
+-- Keeps the countdown/progress bar live while the Smelting tab is actually open and a job is
+-- running — InventoryUpdate patches only arrive when a job starts or finishes, not every second
+-- in between, so without this the bar would sit frozen until the next patch happened to land.
+task.spawn(function()
+	while true do
+		task.wait(1)
+		if craftFrame.Visible and currentTab == "Smelting" and profile.SmeltJob then
+			renderCraftList()
+		end
+	end
+end)
 
 ----------------------------------------------------------------------
 -- Wave panel (bottom-center)
@@ -1047,31 +2422,38 @@ end)
 -- Bottom action buttons
 ----------------------------------------------------------------------
 
-local actionRow = new("Frame", {
+-- Assigns into the `local actionRow` forward-declared up in the Forge tab section — see that
+-- comment for why setForgeWidgetsVisible needs to reach this row before it technically exists yet.
+actionRow = new("Frame", {
 	BackgroundTransparency = 1,
 	AnchorPoint = Vector2.new(0.5, 1),
 	Position = UDim2.new(0.5, 0, 1, -16),
-	Size = UDim2.new(0, 570, 0, 44), -- widened from 450 to also fit the Recall button
+	Size = UDim2.new(0, 550, 0, 44), -- Inventory + Defend + Return to Base + Recall, at most
 	Parent = screenGui,
 }, { new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 10), HorizontalAlignment = Enum.HorizontalAlignment.Center }) })
 
-local craftToggleButton = new("TextButton", {
+-- No standalone "Workbench" toggle button anymore — per-station gating (openStationMenu, near
+-- the base-station setup further down) is the only way this menu opens now, so there's nothing
+-- generic left to toggle from here. craftCloseButton (declared alongside craftFrame above) is the
+-- only way to close it.
+craftCloseButton.MouseButton1Click:Connect(function()
+	craftFrame.Visible = false
+	setForgeWidgetsVisible(false) -- no-op if a non-Forge station was open, harmless either way
+	closeModPicker() -- don't leave the mod picker orphaned open behind a closed Workbench
+end)
+
+-- Inventory, unlike the Workbench, isn't gated to a physical station — it's just a view onto
+-- `profile` — so it gets a normal always-available button here instead.
+local inventoryButton = new("TextButton", {
 	BackgroundColor3 = COLOR.PanelLight,
-	Size = UDim2.new(0, 140, 1, 0),
+	Size = UDim2.new(0, 130, 1, 0),
 	Font = Enum.Font.SourceSansBold,
 	TextColor3 = COLOR.Text,
 	TextSize = 16,
-	Text = "Workbench",
+	Text = "Inventory",
 	Parent = actionRow,
 }, { corner(8), stroke() })
-craftToggleButton.MouseButton1Click:Connect(function()
-	craftFrame.Visible = not craftFrame.Visible
-	if craftFrame.Visible then
-		renderCraftList()
-	else
-		closeModPicker() -- don't leave the mod picker orphaned open behind a closed Workbench
-	end
-end)
+inventoryButton.MouseButton1Click:Connect(openInventory)
 
 local defendButton = new("TextButton", {
 	BackgroundColor3 = COLOR.Accent,
@@ -1149,8 +2531,14 @@ Remotes.InventoryUpdate.OnClientEvent:Connect(function(patch)
 		profile[key] = value
 	end
 	refreshCurrency()
+	refreshPityBar()
+	refreshPotionButton()
 	if craftFrame.Visible then
 		renderCraftList()
+	end
+	if invFrame.Visible then
+		renderInvList()
+		refreshInvDetailIfShowing()
 	end
 end)
 
@@ -1460,16 +2848,32 @@ end
 CollectionService:GetInstanceAddedSignal(NODE_TAG):Connect(setupNode)
 
 ----------------------------------------------------------------------
--- Base stations — Workbench / Welding Station / (Forge, later) props inside a player's base.
--- Tag a Part or Model "Station" (StationConfig.Tag) with a child StringValue "StationType"
--- matching a key in StationConfig.Types. Clicking one jumps the Workbench menu straight to that
--- station's tab — pure convenience; the actual gate (must be standing near the right station,
--- not just anywhere in your plot) is enforced server-side by StationService.lua independently of
--- whatever this does. A station with no DefaultTab (the Forge, for now) has no menu to jump to
--- yet — clicking it just prints a "not built yet" notice instead of opening anything.
+-- Base stations — Workbench / Welding Station / Forge props inside a player's base. Tag a Part or
+-- Model "Station" (StationConfig.Tag) with a child StringValue "StationType" matching a key in
+-- StationConfig.Types. Clicking one is now the ONLY way to open the Workbench menu at all (the old
+-- standalone toggle button is gone), and it opens scoped to just that station's own tabs
+-- (StationConfig.Types[x].Tabs) — a Welding Station's menu physically cannot show you the Suit
+-- tab, not just "doesn't default to it." This is more than convenience: the actual gate (must be
+-- standing near the right station, not just anywhere in your plot) is still enforced independently
+-- server-side by StationService.lua, but the client no longer even offers an action it knows will
+-- be rejected. A station with no DefaultTab has no menu to open yet — clicking it just prints a
+-- "not built yet" notice instead (every current station type has one now that the Forge is live).
 ----------------------------------------------------------------------
 
 local STATION_TAG = StationConfig.Tag
+
+-- Opens the Workbench menu scoped to exactly this station's role: rebuilds the tab row down to
+-- stationData.Tabs, labels the header with stationData.DisplayName, and selects DefaultTab.
+-- stationData is one of the literal tables in StationConfig.Types (identity, not a copy) — the
+-- Forge-only pity bar / Luck Potion button use that identity to tell whether THIS station is
+-- specifically the Forge, since StationConfig doesn't otherwise hand back a type key here.
+local function openStationMenu(stationData)
+	rebuildTabs(stationData.Tabs)
+	craftTitleLabel.Text = stationData.DisplayName
+	craftFrame.Visible = true
+	selectTab(stationData.DefaultTab)
+	setForgeWidgetsVisible(stationData == StationConfig.Types.Forge)
+end
 
 local function setupStation(station: Instance)
 	if station:FindFirstChildOfClass("ClickDetector") then
@@ -1511,8 +2915,7 @@ local function setupStation(station: Instance)
 			warn(("[HUD] %s doesn't do anything yet — check back later."):format(stationData.DisplayName))
 			return
 		end
-		craftFrame.Visible = true
-		selectTab(stationData.DefaultTab)
+		openStationMenu(stationData)
 	end)
 end
 
@@ -1532,5 +2935,7 @@ task.spawn(function()
 			profile[key] = value
 		end
 		refreshCurrency()
+		refreshPityBar()
+		refreshPotionButton()
 	end
 end)

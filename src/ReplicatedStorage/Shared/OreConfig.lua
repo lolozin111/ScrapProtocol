@@ -38,6 +38,7 @@ OreConfig.ToolTierCosts = {
 OreConfig.Ores = {
 	ScrapIron = {
 		DisplayName = "Scrap Iron",
+		Description = "Common scrap metal — the backbone of almost everything you'll build.",
 		BaseYield = 3,
 		MinWaveUnlock = 0,
 		MaxHits = 8,
@@ -45,6 +46,7 @@ OreConfig.Ores = {
 	},
 	CopperWire = {
 		DisplayName = "Copper Wire",
+		Description = "Salvaged wiring, stripped and coiled. Essential for anything electronic.",
 		BaseYield = 2,
 		MinWaveUnlock = 0,
 		MaxHits = 7,
@@ -52,6 +54,7 @@ OreConfig.Ores = {
 	},
 	SteelPlating = {
 		DisplayName = "Steel Plating",
+		Description = "Heavier armor plate — harder to cut loose, but worth the extra swing.",
 		BaseYield = 1,
 		MinWaveUnlock = 0,       -- physically minable early, but nodes require ToolTier >= 2 (see MiningService)
 		MinToolTier = 2,
@@ -60,6 +63,7 @@ OreConfig.Ores = {
 	},
 	GoldContacts = {
 		DisplayName = "Gold Contacts",
+		Description = "Corroded gold-plated contacts pulled from old circuit boards. Rare and valuable.",
 		BaseYield = 1,
 		MinWaveUnlock = 5,       -- locked until the player has cleared wave 5 at least once
 		MinToolTier = 3,
@@ -68,6 +72,7 @@ OreConfig.Ores = {
 	},
 	VoidiumShard = {
 		DisplayName = "Voidium Shard",
+		Description = "A shard of something that isn't from around here. Handle carefully.",
 		BaseYield = 1,
 		MinWaveUnlock = 15,      -- post-MVP content; leave nodes out of the map until you ship this
 		MinToolTier = 4,
