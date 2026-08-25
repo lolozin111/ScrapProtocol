@@ -32,7 +32,10 @@ StationConfig.InteractDistance = 12 -- studs; same ballpark as MiningService.MAX
 StationConfig.Types = {
 	Crafting = {
 		DisplayName = "Workbench",
-		Tabs = { "Tools", "Auto-Miner", "Suit" }, -- general equipment/utility upgrades
+		Tabs = { "Tools", "Auto-Miner", "Suit", "Base" }, -- general equipment/utility upgrades —
+			-- "Base" added for the Base Defense phase: upgrading BaseTier plus placing/repositioning
+			-- physical Turrets (deployed robots given a real spot in the world) both live here, since
+			-- both are "how my base itself is laid out" decisions, not combat loadout ones.
 		DefaultTab = "Tools",
 		NotThereMessage = "You need to be at your Workbench to do that.",
 	},
@@ -49,6 +52,19 @@ StationConfig.Types = {
 			-- RefinedOreConfig.lua
 		DefaultTab = "Weapons",
 		NotThereMessage = "You need to be at your Forge to do that.",
+	},
+	Shop = {
+		DisplayName = "Hub Shop",
+		Tabs = { "Blueprints" }, -- rotating Turret blueprint stock — see TurretConfig
+			-- .GetRotatingStock/TurretShopService.lua.
+		DefaultTab = "Blueprints",
+		NotThereMessage = "You need to be at the Hub Shop to do that.",
+		-- Deliberately NOT gated behind PlotService.IsPlayerInOwnPlot by any of its remote handlers
+		-- (see TurretShopService.lua) — the Hub is its own shared location out in the world, not
+		-- part of any player's base, same as a loose testing block with no OwnerUserId stays open
+		-- to everyone (BaseService.tagStationOwnership only ever stamps ownership onto stations
+		-- that are descendants of a cloned per-player base Model). Place the Shop's Station-tagged
+		-- Part/Model directly in the world (e.g. a "Hub" area), NOT inside BaseTemplates.
 	},
 }
 

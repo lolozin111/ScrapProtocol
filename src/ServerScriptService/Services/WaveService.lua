@@ -2,37 +2,71 @@
 	WaveService.lua
 	Runs a player's wave-defense session. Matches "Wave defense" section of the design doc.
 
-	IMPORTANT — this is a headless combat SIMULATION, not real spawned enemies. It exists so
-	the full loop (mine -> craft -> deploy -> defend -> earn -> repeat) is playable and
-	testable end to end from week one, without you first having to build enemy AI, gun
-	firing, and hit detection. Total DPS (your best weapon + deployed robots) is compared
-	against each wave's enemy HP pool once per second; the objective takes chip damage from
-	however many enemies are still alive.
+	Used to be a headless combat SIMULATION (compare total DPS against an abstract enemy HP pool
+	once per second, chip an abstract "objective" HP down) — that scaffold's retired now.
+	CombatEncounterService.lua spawns real enemies and resolves real damage through
+	DamagePipeline.lua; this file keeps owning what it always owned — StartRun/EndRun, the Revive
+	Token retry, and WaveConfig's per-wave reward math — and just hands each wave's actual fight
+	off to RunWave.
 
-	Swap this out incrementally: keep StartRun/EndRun and the reward math, replace the
-	`task.wait(1)` tick loop with real NPC spawns + damage events from your gun and robot
-	scripts. The RemoteEvent contract (WaveUpdate payload shape) can stay the same so the
-	HUD you build against this scaffold doesn't need to change later.
+	Loss condition, REWORKED again after playtest feedback: real enemies at first meant the
+	player's own real Humanoid health was the loss condition — but direct feedback afterward was
+	that base defense should be about defending the BASE, not the player personally. Every enemy
+	now walks to and attacks the base's own position instead of the player, chipping down a WallHP
+	pool (BaseConfig.GetWallMaxHP(profile.BaseTier)) that CombatEncounterService owns internally
+	per-run. This file only ever sees the RESULT ("Cleared"/"Defeated"/"Interrupted") — it doesn't
+	need to know WallHP exists at all, same as it never needed to know about the old ObjectiveHP
+	internals either.
+
+	WaveUpdate's payload shape changed alongside this: "WaveStart"/"WaveCleared"/"Revived"/
+	"RunEnded"/"NoGear"/"NotInBase" are unchanged in spirit, but "Tick" now reports real numbers
+	(WallHP/WallMaxHP/Shield/EnemiesRemaining/EnemiesTotal) fired by CombatEncounterService itself
+	roughly once a second, instead of this file computing a fake HP-pool percentage.
+
+	REWORKED AGAIN (Base Defense & Turrets phase round 2, direct instruction): base defense no
+	longer grants Scrap or Cores at all — WaveConfig.GetScrapReward/GetCoresReward are defined but
+	unused now. Every 5th wave (WaveConfig.EliteWaveInterval/IsEliteWave, cadence unchanged) is a
+	BOSS wave that guarantees one CoreItem (profile.CoreItems — see RewardTables
+	.CoreKeyForMilestone/DataService.AddCoreItem) plus a good chance at a small utility item;
+	regular waves only get the small "here and there" chance. See RewardTables.lua's own header for
+	the full reasoning — this file just calls it and applies whatever it rolls.
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local WaveConfig = require(ReplicatedStorage.Shared.WaveConfig)
 local PlotConfig = require(ReplicatedStorage.Shared.PlotConfig)
+local RewardTables = require(ReplicatedStorage.Shared.RewardTables)
 local DataService = require(script.Parent.DataService)
 local CombatMath = require(script.Parent.CombatMath)
 local PlotService = require(script.Parent.PlotService)
+local CombatEncounterService = require(script.Parent.CombatEncounterService)
 
 local Remotes = ReplicatedStorage.Remotes
 local StartWave = Remotes.StartWave
 local WaveUpdate = Remotes.WaveUpdate
 
-local OBJECTIVE_MAX_HP = 500
-local ENEMY_HP_EACH = 10
-local ENEMY_DPS_EACH = 2 -- damage a single live enemy deals to the objective per second
-
 local WaveService = {}
 
 local activeRuns: { [number]: boolean } = {} -- userId -> true while a run is in progress
+
+-- Applies a RewardTables.Roll() result (a list of { Type, Key, Amount }) to the player's profile
+-- and returns it unchanged for the caller to also relay to the HUD. nil in, nil out — a stage
+-- with no bonus table configured just means no bonus this time, not an error worth surfacing.
+-- Only "Utility" entries exist in base defense's own tables now (BossUtility/RegularUtility, see
+-- RewardTables.lua) — DataService.AddCurrency is generic enough to increment ANY flat profile
+-- field, not just Scrap/Cores (ShopService.lua already relies on the same thing for
+-- InstantCraftTokens/WaveReviveTokens), so no new DataService helper was needed for this.
+local function grantRolledLoot(player: Player, granted)
+	if not granted then
+		return nil
+	end
+	for _, entry in ipairs(granted) do
+		if entry.Type == "Utility" then
+			DataService.AddCurrency(player, entry.Key, entry.Amount)
+		end
+	end
+	return granted
+end
 
 local function runWaves(player: Player)
 	local userId = player.UserId
@@ -42,76 +76,73 @@ local function runWaves(player: Player)
 		return
 	end
 
-	local totalDPS = CombatMath.GetPlayerCombatDPS(profile)
-	if totalDPS <= 0 then
+	-- Rough pre-flight only, same purpose the old totalDPS check always served: don't let a
+	-- player with literally nothing to fight with walk into a wave they can't affect at all.
+	-- Actual combat no longer uses this number — CombatEncounterService resolves real per-hit
+	-- damage — but "no weapon and no robots" is still a real, cheap-to-check signal worth gating.
+	if CombatMath.GetPlayerCombatDPS(profile) <= 0 then
 		WaveUpdate:FireClient(player, { Status = "NoGear", Message = "Craft a weapon or deploy a robot before starting a run." })
 		activeRuns[userId] = nil
 		return
 	end
 
-	local objectiveHP = OBJECTIVE_MAX_HP
 	local wave = 1
 	local usedRevive = false
 
 	while activeRuns[userId] and player.Parent do
-		local enemyCount = WaveConfig.GetEnemyCount(wave)
-		local multiplier = WaveConfig.GetEnemyMultiplier(wave)
-		local enemyHPPool = enemyCount * ENEMY_HP_EACH * multiplier
-		local remainingEnemyHP = enemyHPPool
+		local isElite = WaveConfig.IsEliteWave(wave)
 
 		WaveUpdate:FireClient(player, {
 			Status = "WaveStart",
 			Wave = wave,
-			IsElite = WaveConfig.IsEliteWave(wave),
-			EnemyCount = enemyCount,
-			EnemyHPPool = enemyHPPool,
-			ObjectiveHP = objectiveHP,
-			ObjectiveMaxHP = OBJECTIVE_MAX_HP,
+			IsElite = isElite,
 		})
 
-		while remainingEnemyHP > 0 and activeRuns[userId] and player.Parent do
-			task.wait(1)
-			remainingEnemyHP -= totalDPS
+		local result = CombatEncounterService.RunWave(player, wave, { IsElite = isElite })
 
-			local remainingEnemyCount = math.max(0, math.ceil(remainingEnemyHP / (ENEMY_HP_EACH * multiplier)))
-			objectiveHP -= remainingEnemyCount * ENEMY_DPS_EACH
-
-			WaveUpdate:FireClient(player, {
-				Status = "Tick",
-				Wave = wave,
-				RemainingEnemyHP = math.max(0, remainingEnemyHP),
-				RemainingEnemyCount = remainingEnemyCount,
-				ObjectiveHP = math.max(0, objectiveHP),
-			})
-
-			if objectiveHP <= 0 then
-				break
-			end
-		end
-
-		if objectiveHP <= 0 then
+		if result == "Interrupted" then
+			-- character/profile vanished mid-fight (disconnect, reset) — nothing left to retry.
+			break
+		elseif result == "Defeated" then
 			if not usedRevive and profile.WaveReviveTokens > 0 then
 				usedRevive = true
 				profile.WaveReviveTokens -= 1
-				objectiveHP = OBJECTIVE_MAX_HP
+				-- No explicit heal needed here anymore — "Defeated" now means the WALL hit 0, and
+				-- retrying just calls CombatEncounterService.RunWave again below, which always
+				-- builds a brand-new WallHP pool from scratch at the top of the run. A revive is
+				-- "redo this wave with a fresh wall," same as it was always "redo this wave" —
+				-- only what gets reset changed.
 				WaveUpdate:FireClient(player, { Status = "Revived", Wave = wave })
 				-- retry the same wave rather than advancing
 			else
 				break
 			end
 		else
-			-- wave cleared
-			local scrapReward = WaveConfig.GetScrapReward(wave)
-			local coresReward = WaveConfig.GetCoresReward(wave)
-			DataService.AddCurrency(player, "Scrap", scrapReward)
-			DataService.AddCurrency(player, "Cores", coresReward)
+			-- wave cleared — NO Scrap/Cores anymore (direct instruction, see RewardTables.lua's own
+			-- header). Boss waves (every EliteWaveInterval-th) guarantee one CoreItem plus a good
+			-- chance at a utility item; regular waves only get the small "here and there" chance.
 			DataService.SetHighestWave(player, wave)
+
+			local coreGrant = nil
+			local bonusLoot
+			if isElite then
+				local milestoneIndex = WaveConfig.BossMilestoneIndex(wave)
+				local coreKey = RewardTables.CoreKeyForMilestone(milestoneIndex)
+				DataService.AddCoreItem(player, coreKey, 1)
+				coreGrant = { Key = coreKey, Amount = 1 }
+				bonusLoot = grantRolledLoot(player, RewardTables.Roll("BossUtility"))
+			else
+				bonusLoot = grantRolledLoot(player, RewardTables.Roll("RegularUtility"))
+			end
 
 			WaveUpdate:FireClient(player, {
 				Status = "WaveCleared",
 				Wave = wave,
-				ScrapReward = scrapReward,
-				CoresReward = coresReward,
+				IsElite = isElite, -- "boss wave" now, same field name as WaveStart's IsElite —
+					-- see WaveConfig.lua's own comment on why the name itself stayed.
+				CoreGrant = coreGrant or false, -- `or false`, same nil-drop reasoning as every other
+					-- optional field this codebase broadcasts — see ForgeService's comment.
+				BonusLoot = bonusLoot or false,
 			})
 
 			wave += 1

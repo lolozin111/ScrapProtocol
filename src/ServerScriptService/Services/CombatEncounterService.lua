@@ -1,0 +1,945 @@
+--[[
+	CombatEncounterService.lua
+	The shared real-time combat engine — spawn enemies, resolve real damage through
+	DamagePipeline, run deployed robots' behaviors, decide win/loss. Built once so both base
+	defense (WaveService, wired up in this same pass) and, later, raid Combat rooms (once the
+	Phase 2 room system exists to give them somewhere physical to spawn into) call the same
+	engine instead of two copies quietly drifting apart. See DESIGN_NOTES.md for the roadmap this
+	came from.
+
+	SCOPE NOTE (deliberate, not an oversight): DEPLOYED ROBOTS (CraftingRecipes.Robots,
+	profile.DeployedRobots) stay fully ABSTRACT here — no physical Model, no position,
+	targeting/damage is nearest-to-player and instant, exactly as originally written. They're a
+	separate system from TURRETS (TurretConfig.lua/TurretService.lua, Base Defense & Turrets phase
+	round 2) — dedicated instances a player buys as blueprints and places into fixed base slots,
+	with their own real range-checked targeting from their OWN physical position (see fireTurrets
+	below, called from RunWave only). Turrets still don't take damage themselves and enemies still
+	never target them (same reasoning as the player never being directly targeted — every enemy
+	attacks the base/wall). Raids (RunRaidCombat below) get NEITHER layer — DeployedRobots stays
+	purely abstract there same as always, and turrets don't exist in a raid room at all.
+
+	SCOPE NOTE 2: only WaveService (base defense) calls into this in this pass. NodeService's
+	Combat Outposts are untouched — they're still the older chip-damage-per-second placeholder,
+	and rebuilding them properly belongs to the Raid Rooms phase, which will actually have physical
+	spawn points to hand this engine. Wiring them to this engine now would just mean rebuilding
+	that wiring again once rooms exist.
+
+	Public API: CombatEncounterService.RunWave(player, waveNumber, opts) — BLOCKS (yields on
+	task.wait internally) until the wave resolves, returns one of "Cleared" / "Defeated" /
+	"Interrupted". opts: { IsElite: boolean }.
+
+	WALL DEFENSE (reworked from the original player-HP version — see DESIGN_NOTES.md): the loss
+	condition is no longer the player's own Humanoid dying. Every enemy now chases and attacks the
+	player's PLOT — its own anchor position (PlotService.GetPlayerPlot), not the player — and deals
+	damage to a per-run WallHP pool (BaseConfig.GetWallMaxHP(profile.BaseTier)) instead of the
+	player's Humanoid. The player still fights back the same way (RequestFireWeapon), just to keep
+	the wall standing rather than to keep themselves alive. The player's own Humanoid health is
+	untouched by this system entirely now — dying to something unrelated just ends the run as
+	"Interrupted" (character gone), not "Defeated".
+]]
+
+local Players = game:GetService("Players")
+local ServerStorage = game:GetService("ServerStorage")
+local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local PhysicsService = game:GetService("PhysicsService")
+
+local EnemyConfig = require(ReplicatedStorage.Shared.EnemyConfig)
+local WaveConfig = require(ReplicatedStorage.Shared.WaveConfig)
+local RobotBehaviorConfig = require(ReplicatedStorage.Shared.RobotBehaviorConfig)
+local CraftingRecipes = require(ReplicatedStorage.Shared.CraftingRecipes)
+local PlotConfig = require(ReplicatedStorage.Shared.PlotConfig)
+local BaseConfig = require(ReplicatedStorage.Shared.BaseConfig)
+local DataService = require(script.Parent.DataService)
+local CombatMath = require(script.Parent.CombatMath)
+local DamagePipeline = require(script.Parent.DamagePipeline)
+local EnemyAI = require(script.Parent.EnemyAI)
+local RobotBehaviors = require(script.Parent.RobotBehaviors)
+local PlotService = require(script.Parent.PlotService)
+local BaseService = require(script.Parent.BaseService)
+local TurretService = require(script.Parent.TurretService)
+
+local Remotes = ReplicatedStorage:WaitForChild("Remotes")
+local RequestFireWeapon = Remotes.RequestFireWeapon
+local WaveUpdate = Remotes.WaveUpdate
+
+local EnemyModelsFolder = ServerStorage:WaitForChild("EnemyModels")
+
+local TICK_SECONDS = 0.15
+
+-- How often the HUD-facing "Tick" event actually fires — the tick loop itself runs much faster
+-- (TICK_SECONDS) for AI/robot responsiveness, but the HUD only needs a number to move about once a
+-- second. Module-scoped (not a local inside RunWave) since RunRaidCombat shares this same broadcast
+-- cadence — it used to live only inside RunWave, which left RunRaidCombat reading an undefined
+-- global (silently nil) the moment it was added as a sibling function.
+local BROADCAST_INTERVAL = 1
+
+-- Spawn ring sits OUTSIDE the wall-attack boundary by this much padding (studs), on top of
+-- whatever getWallAttackRange() below actually measures — so enemies always visibly walk in from
+-- beyond the wall rather than popping into "already attacking" range, regardless of how big the
+-- real base footprint turns out to be.
+local SPAWN_RADIUS_PADDING_MIN = 15
+local SPAWN_RADIUS_PADDING_MAX = 40
+
+-- Each enemy gets an evenly-spaced angle slot around the base (2*pi / spawn count) plus a small
+-- random wiggle, instead of a fully independent random angle per enemy — a naive independent draw
+-- let two enemies land right next to each other by chance, especially on later waves with bigger
+-- spawn counts, which read as "enemies spawning in a clump." Evenly spacing the slots first
+-- guarantees real separation between neighbors; the jitter just keeps the ring from looking like a
+-- perfectly robotic formation.
+local SPAWN_ANGLE_JITTER = math.rad(15)
+
+-- Spawn ring for RunRaidCombat (raid rooms) — unlike base defense, there's no real base footprint
+-- to measure, just a room built around an arbitrary center point, so this is a flat guess. Sized to
+-- land enemies a real distance out — "enemies spawn at least on the first time they spawn on the
+-- map, at 50-70 magnitude from the player" — rather than right on top of the player, while still
+-- comfortably fitting inside RaidConfig.FallbackRoomSize's 260x260 (130-stud half-extent).
+local RAID_SPAWN_RADIUS_MIN = 50
+local RAID_SPAWN_RADIUS_MAX = 70
+
+-- Extra breathing room (studs) added on top of the measured wall boundary before an enemy is
+-- considered "close enough" — accounts for the enemy's own character width (the stop point below
+-- is measured from the HumanoidRootPart, a single point, but the body has real radius) plus a
+-- flat safety buffer, so enemies stop with their WHOLE body clear of the base footprint instead of
+-- just their root point touching its edge.
+local WALL_STOP_MARGIN = 6
+
+local ORIGIN_SANITY_STUDS = 12 -- how far a client-claimed fire Origin may drift from the player's
+	-- actual server-known position before the shot is rejected outright — not full anti-cheat,
+	-- just enough to catch an obviously spoofed value. See RequestFireWeapon handler below.
+
+local CombatEncounterService = {}
+
+local activeEncounters: { [number]: any } = {} -- userId -> encounter state, ONLY while a wave is live
+
+local encounterFolder = Workspace:FindFirstChild("CombatEncounters")
+if not encounterFolder then
+	encounterFolder = Instance.new("Folder")
+	encounterFolder.Name = "CombatEncounters"
+	encounterFolder.Parent = Workspace
+end
+
+-- All spawned enemies share one CollisionGroup with enemy-vs-enemy collision turned OFF. Without
+-- this, every enemy converging on the same small wall boundary from different angles ends up
+-- physically shoving into each other as they arrive — Roblox's physics solver resolves those
+-- overlaps with a hard separating impulse in a single frame, which reads exactly like "clipping
+-- through" or "a little teleport" (reported directly after the wall-boundary fix, once enemies
+-- were actually reaching and clustering around the wall instead of walking straight to the
+-- player). They still collide normally with the world/floor (so they don't fall through) and with
+-- the player (unchanged) — only enemy-on-enemy collision is disabled, so a crowd at the wall can
+-- stand shoulder-to-shoulder without fighting the physics engine for space.
+local ENEMY_COLLISION_GROUP = "CombatEnemies"
+do
+	local groups = PhysicsService:GetRegisteredCollisionGroups()
+	local exists = false
+	for _, group in ipairs(groups) do
+		if group.name == ENEMY_COLLISION_GROUP then
+			exists = true
+			break
+		end
+	end
+	if not exists then
+		PhysicsService:RegisterCollisionGroup(ENEMY_COLLISION_GROUP)
+	end
+	PhysicsService:CollisionGroupSetCollidable(ENEMY_COLLISION_GROUP, ENEMY_COLLISION_GROUP, false)
+end
+
+----------------------------------------------------------------------
+-- Spawning
+----------------------------------------------------------------------
+
+-- Picks which enemy type keys to spawn this wave: WaveConfig.GetEnemyCount(waveNumber) normal
+-- types drawn from WaveConfig.EnemyTypes, plus exactly one EliteTypes pick on an elite wave (a
+-- single tougher unit joining the crowd — "mini-boss," not "every enemy is now a mini-boss").
+local function pickSpawnKeys(waveNumber: number, isElite: boolean): { string }
+	local keys = {}
+	local normalCount = WaveConfig.GetEnemyCount(waveNumber)
+	for _ = 1, normalCount do
+		local pick = WaveConfig.EnemyTypes[math.random(1, #WaveConfig.EnemyTypes)]
+		if EnemyConfig.Types[pick] then
+			table.insert(keys, pick)
+		end
+	end
+	if isElite then
+		local eliteKeys = {}
+		for key in pairs(EnemyConfig.EliteTypes) do
+			table.insert(eliteKeys, key)
+		end
+		if #eliteKeys > 0 then
+			table.insert(keys, eliteKeys[math.random(1, #eliteKeys)])
+		end
+	end
+	return keys
+end
+
+local function getEnemyTypeData(typeKey: string)
+	return EnemyConfig.Types[typeKey] or EnemyConfig.EliteTypes[typeKey]
+end
+
+-- Exported so callers OUTSIDE this file (RaidRoomService, validating a room-authored SpawnPoint's
+-- EnemyType Attribute before ever calling RunRaidCombat) can check a key without duplicating
+-- getEnemyTypeData's own Types/EliteTypes lookup logic here and there.
+function CombatEncounterService.IsValidEnemyType(typeKey: string): boolean
+	return getEnemyTypeData(typeKey) ~= nil
+end
+
+-- Exported for the same reason as IsValidEnemyType above, but checking one step further: does this
+-- type actually have a built Model in ServerStorage.EnemyModels right now? RaidRoomService's own
+-- pickRaidSpawnKeys/pickBossSpawnKeys use this to filter their random draw down to types that can
+-- actually spawn — without it, an unlucky run of picks landing on a not-yet-built type could spawn
+-- NOTHING for an entire Combat/Ambush wave (spawnEnemy below just warns and skips), which reads to
+-- the player as that wave being silently skipped even though nothing was actually broken, just
+-- missing art.
+function CombatEncounterService.HasModelFor(typeKey: string): boolean
+	local typeData = getEnemyTypeData(typeKey)
+	return typeData ~= nil and EnemyModelsFolder:FindFirstChild(typeData.ModelName) ~= nil
+end
+
+-- Clones the template named `typeData.ModelName` out of ServerStorage.EnemyModels (FindFirstChild,
+-- never WaitForChild — a missing template should skip this one spawn, not freeze the whole wave;
+-- same reasoning as MainHud.client.lua's getItemIcon avoiding the "Infinite yield" class of bug).
+-- Returns nil (with a warn()) if the template doesn't exist yet — build one in Studio named
+-- exactly `typeData.ModelName`, any size/rig/proportions, same placeholder-first convention as
+-- every other system in this project.
+local function spawnEnemy(typeKey: string, typeData, spawnPosition: Vector3, multiplier: number, parentFolder: Instance, contactRange: number)
+	local template = EnemyModelsFolder:FindFirstChild(typeData.ModelName)
+	if not template then
+		warn("[CombatEncounterService] No enemy model found for", typeData.ModelName, "— add one to ServerStorage.EnemyModels")
+		return nil
+	end
+
+	local model = template:Clone()
+	model.Parent = parentFolder
+	if model.PrimaryPart then
+		model:PivotTo(CFrame.new(spawnPosition))
+	end
+
+	-- See ENEMY_COLLISION_GROUP's own comment above — every part of every spawned enemy joins the
+	-- same group so they never physically shove each other while crowding the wall.
+	for _, part in ipairs(model:GetDescendants()) do
+		if part:IsA("BasePart") then
+			part.CollisionGroup = ENEMY_COLLISION_GROUP
+		end
+	end
+
+	local humanoid = model:FindFirstChildOfClass("Humanoid")
+	if not humanoid then
+		warn("[CombatEncounterService] Enemy model", typeData.ModelName, "has no Humanoid — destroying spawn")
+		model:Destroy()
+		return nil
+	end
+
+	humanoid.WalkSpeed = typeData.MoveSpeed
+	humanoid.MaxHealth = typeData.HP * multiplier
+	humanoid.Health = humanoid.MaxHealth
+
+	-- Housekeeping only, not gameplay logic — the tick loop still finds out about a death by
+	-- polling Health each tick (see RunWave), same as everywhere else in this codebase avoids
+	-- event-driven state in favor of simple polling. This just clears the corpse out a couple
+	-- seconds later instead of leaving it sitting in the world for the rest of the wave.
+	humanoid.Died:Connect(function()
+		task.delay(2, function()
+			if model.Parent then
+				model:Destroy()
+			end
+		end)
+	end)
+
+	return {
+		Model = model,
+		Humanoid = humanoid,
+		TypeKey = typeKey,
+		SpawnTime = os.clock(), -- EnemyAI.lua's SPAWN_GRACE_SECONDS reads this — no damage in the
+			-- first second after spawning, "so it avoid player feeling like the game is unfair"
+		ContactDamage = typeData.ContactDamage * multiplier,
+		-- Caller-supplied, not always the same meaning: base defense (RunWave) passes the REAL
+		-- measured wall boundary (see getWallAttackRange below) since it's "close enough to attack
+		-- the base," not the player — raid rooms (RunRaidCombat) pass typeData.ContactRange
+		-- straight through instead, since there enemies really are chasing the player and should
+		-- use their own natural per-type melee range.
+		ContactRange = contactRange,
+		AttackCooldown = typeData.AttackCooldown,
+		Defense = typeData.Defense * multiplier,
+		AIPattern = typeData.AIPattern,
+		LastAttackTime = 0,
+		LastMoveThink = 0,
+	}
+end
+
+-- Measures the REAL "close enough to attack the wall" boundary off the player's actual built base
+-- Model (BaseService.GetPlayerBaseModel — real BaseTier art, or the small fallback floor most
+-- testing uses today) instead of a fixed guess. A hardcoded BaseConfig.WallAttackRange tuned
+-- against PlotConfig.FootprintHalfSize (the max CLAIMED plot area, 40 studs) turned out to be
+-- roughly DOUBLE the actual placeholder floor's real half-extent (BaseService's
+-- FALLBACK_FLOOR_SIZE is only 40x40, i.e. 20 studs center-to-edge) — so the whole visible platform
+-- sat well inside the "attack range" circle, and enemies stopping there looked exactly like no
+-- boundary existed at all, right in the middle next to the player. Using the model's own measured
+-- footprint means this is automatically correct for the placeholder today AND for whatever size a
+-- real BaseTier Model turns out to be later, with zero further tuning.
+--
+-- CIRCUMSCRIBED circle, not inscribed: this measures half the footprint's DIAGONAL
+-- (Vector3.new(size.X, 0, size.Z).Magnitude / 2), not the smaller of X/Z. Using min(X,Z)/2
+-- (the previous approach) is the circle INSCRIBED in the footprint rectangle — tangent to the
+-- nearest edge at only four points, and strictly INSIDE the rectangle everywhere else, so enemies
+-- stopping at that radius were still standing on the platform for most approach angles (that's
+-- exactly what the "they cannot come inside the base" screenshots showed — enemies had stopped,
+-- but still visibly on the base). The half-diagonal is the smallest radius that clears every point
+-- of the rectangle, including its corners, on every bearing — plus WALL_STOP_MARGIN on top for the
+-- enemy's own body width and a safety buffer, so the stop point sits fully outside, not just
+-- touching the edge.
+local function getWallAttackRange(player: Player): number
+	local baseModel = BaseService.GetPlayerBaseModel(player)
+	local halfExtent
+	if baseModel then
+		local ok, _, size = pcall(function()
+			return baseModel:GetBoundingBox()
+		end)
+		if ok and size then
+			halfExtent = Vector3.new(size.X, 0, size.Z).Magnitude / 2
+		end
+	end
+	if not halfExtent or halfExtent <= 0 then
+		halfExtent = BaseConfig.WallAttackRange -- fallback only — see that field's own comment
+	end
+	return halfExtent + WALL_STOP_MARGIN
+end
+
+----------------------------------------------------------------------
+-- Damage application (shared by player fire and robot ticks)
+----------------------------------------------------------------------
+
+-- One place that actually runs DamagePipeline and applies the result to an enemy's Humanoid —
+-- used both by RequestFireWeapon (player-sourced) and RobotBehaviors' context.DamageEnemy
+-- (robot-sourced), so the two never resolve damage two different ways.
+local function resolveAndApplyDamage(enemyRecord, baseDamage: number, origin: Vector3, hitPosition: Vector3, rangeProfile, penetration: number?)
+	local finalDamage = DamagePipeline.Resolve({
+		BaseDamage = baseDamage,
+		Origin = origin,
+		HitPosition = hitPosition,
+		RangeProfile = rangeProfile,
+		Penetration = penetration or 0,
+		TargetDefense = enemyRecord.Defense,
+	})
+	enemyRecord.Humanoid:TakeDamage(finalDamage)
+	return finalDamage
+end
+
+----------------------------------------------------------------------
+-- Turret firing (base defense only — see TurretService.lua's own header on why raids don't get
+-- this at all). Unlike robots, a turret's targeting is genuinely range-limited from its OWN
+-- physical position, not "always hits whoever's nearest the player" — so this can't just reuse
+-- RobotBehaviors' Cleave/SingleTarget, it needs its own nearest-to-the-TURRET-and-in-range pass.
+----------------------------------------------------------------------
+
+-- Reused per turret per tick — module-scoped so it isn't reallocated every single call.
+local turretInRangeScratch = {}
+
+local function fireTurrets(turretRecords, aliveEnemies, now: number)
+	for _, turret in ipairs(turretRecords) do
+		local cooldown = 1 / math.max(turret.FireRate, 0.01)
+		if now - turret.LastFireTime >= cooldown then
+			table.clear(turretInRangeScratch)
+			for _, record in ipairs(aliveEnemies) do
+				if record.Model.PrimaryPart then
+					local distance = (record.Model.PrimaryPart.Position - turret.WorldPosition).Magnitude
+					if distance <= turret.Range then
+						table.insert(turretInRangeScratch, { Record = record, Distance = distance })
+					end
+				end
+			end
+
+			if #turretInRangeScratch > 0 then
+				table.sort(turretInRangeScratch, function(a, b)
+					return a.Distance < b.Distance
+				end)
+				turret.LastFireTime = now
+
+				local hitCount = math.min(turret.AOE or 1, #turretInRangeScratch)
+				for i = 1, hitCount do
+					local targetRecord = turretInRangeScratch[i].Record
+					resolveAndApplyDamage(
+						targetRecord, turret.Damage, turret.WorldPosition,
+						targetRecord.Model.PrimaryPart.Position, nil, 0)
+				end
+
+				-- Visual only — "make sure turrets shoot a particle when they are shooting smth so
+				-- it looks cool." Orienting the Muzzle Attachment toward the primary target first
+				-- means the burst at least roughly points the right way even without a real
+				-- projectile/tracer. Damage above is already fully resolved regardless of whether
+				-- any of this succeeds — a torn-down/missing Muzzle just means no particle, never a
+				-- missed or dropped hit.
+				if turret.Muzzle and turret.Muzzle.Parent then
+					local primaryTargetPosition = turretInRangeScratch[1].Record.Model.PrimaryPart.Position
+					pcall(function()
+						turret.Muzzle.WorldCFrame = CFrame.new(turret.Muzzle.WorldPosition, primaryTargetPosition)
+					end)
+					local emitter = turret.Muzzle:FindFirstChildOfClass("ParticleEmitter")
+					if emitter then
+						emitter:Emit(14)
+					end
+				end
+			end
+		end
+	end
+end
+
+----------------------------------------------------------------------
+-- RunWave
+----------------------------------------------------------------------
+
+function CombatEncounterService.RunWave(player: Player, waveNumber: number, opts): string
+	local profile = DataService.Get(player)
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+	local plot = PlotService.GetPlayerPlot(player)
+	if not profile or not humanoid or not rootPart or humanoid.Health <= 0 or not plot then
+		return "Interrupted"
+	end
+
+	local isElite = opts and opts.IsElite or false
+	local multiplier = WaveConfig.GetEnemyMultiplier(waveNumber)
+	local spawnKeys = pickSpawnKeys(waveNumber, isElite)
+
+	local playerFolder = Instance.new("Folder")
+	playerFolder.Name = tostring(player.UserId)
+	playerFolder.Parent = encounterFolder
+
+	-- Every enemy chases/attacks the BASE now, not the player — see this file's header. Spawned
+	-- (and later chased) relative to the plot's own anchor position, offset up by the same
+	-- SpawnHeightOffset the player's own respawn uses, so enemies land roughly at floor height
+	-- instead of half-buried at the anchor's exact Y.
+	local basePosition = plot.Position + Vector3.new(0, PlotConfig.SpawnHeightOffset, 0)
+
+	-- Measured off the player's REAL base Model this run, not a fixed guess — see
+	-- getWallAttackRange's own comment on why that matters. Spawn ring sits this + a padding band
+	-- further out, so enemies always visibly walk in from beyond wherever the real wall is.
+	local wallAttackRange = getWallAttackRange(player)
+	-- math.random(m, n) requires integer bounds in Luau — wallAttackRange comes from a measured
+	-- bounding box (GetBoundingBox), almost never a whole number, so these get floored/ceiled
+	-- rather than passed through raw (that would error at runtime the first time it wasn't an
+	-- exact integer).
+	local spawnRadiusMin = math.floor(wallAttackRange + SPAWN_RADIUS_PADDING_MIN)
+	local spawnRadiusMax = math.ceil(wallAttackRange + SPAWN_RADIUS_PADDING_MAX)
+
+	local enemyByModel = {}
+	local spawnCount = #spawnKeys
+	local angleStep = spawnCount > 0 and (math.pi * 2 / spawnCount) or 0
+	for i, typeKey in ipairs(spawnKeys) do
+		local typeData = getEnemyTypeData(typeKey)
+		local jitter = (math.random() * 2 - 1) * SPAWN_ANGLE_JITTER
+		local angle = (i - 1) * angleStep + jitter
+		local radius = math.random(spawnRadiusMin, spawnRadiusMax)
+		local spawnPosition = basePosition + Vector3.new(math.cos(angle) * radius, 0, math.sin(angle) * radius)
+		local record = spawnEnemy(typeKey, typeData, spawnPosition, multiplier, playerFolder, wallAttackRange)
+		if record then
+			enemyByModel[record.Model] = record
+		end
+	end
+
+	local totalSpawned = 0
+	for _ in pairs(enemyByModel) do
+		totalSpawned += 1
+	end
+
+	-- Deployed robots stay abstract this pass — see this file's header. Each gets its own
+	-- LastActionTime so behaviors' cooldowns are tracked per-robot, not shared.
+	local robotRecords = {}
+	for _, robotKey in ipairs(profile.DeployedRobots) do
+		local behaviorConfig = RobotBehaviorConfig.Robots[robotKey]
+		local effectiveStats = CombatMath.GetEffectiveStats("Robots", robotKey, profile)
+		if behaviorConfig and effectiveStats then
+			table.insert(robotRecords, {
+				Key = robotKey,
+				BehaviorConfig = behaviorConfig,
+				EffectiveStats = effectiveStats,
+				LastActionTime = 0,
+			})
+		end
+	end
+
+	-- Placed Turrets (TurretService.lua) — a snapshot taken once here, not re-fetched every tick.
+	-- These are the SAME table objects TurretService's own cache holds, so mutating
+	-- record.LastFireTime below is really just updating that cache in place — see
+	-- TurretService.GetActiveTurretRecords's own comment. Base-defense only; RunRaidCombat never
+	-- calls this, turrets have no presence in a raid room.
+	local turretRecords = TurretService.GetActiveTurretRecords(player)
+
+	local wallMaxHP = BaseConfig.GetWallMaxHP(profile.BaseTier)
+
+	local playerState = {
+		WallHP = wallMaxHP,
+		WallMaxHP = wallMaxHP,
+		Shield = 0, -- now absorbs incoming hits on the WALL's behalf, not the player's — see
+			-- RobotBehaviors.lua's Utility.Shield header comment
+		LastFireTime = 0,
+		BaseWalkSpeed = humanoid.WalkSpeed,
+		SpeedBoostUntil = 0,
+	}
+
+	-- Drains Shield first, then the wall itself — same absorb-pool-before-real-health shape the
+	-- old player-HP version used, just protecting WallHP instead of a Humanoid now.
+	local function damageTarget(amount: number)
+		if playerState.Shield > 0 then
+			local absorbed = math.min(playerState.Shield, amount)
+			playerState.Shield -= absorbed
+			amount -= absorbed
+		end
+		if amount > 0 then
+			playerState.WallHP -= amount
+		end
+	end
+
+	local function grantSpeedBoost(multiplier_: number, duration: number)
+		humanoid.WalkSpeed = playerState.BaseWalkSpeed * multiplier_
+		playerState.SpeedBoostUntil = os.clock() + duration
+	end
+
+	local encounter = {
+		Player = player,
+		EnemyByModel = enemyByModel,
+		PlayerState = playerState,
+		DamageTarget = damageTarget,
+	}
+	activeEncounters[player.UserId] = encounter
+
+	local status = "Cleared"
+	local lastBroadcast = 0
+
+	while true do
+		if #spawnKeys > 0 then
+			-- only wait/tick if anything was actually spawned — an entirely-unconfigured
+			-- EnemyModels folder (nothing built yet) shouldn't hang the run forever, see spawnEnemy.
+			local anyAlive = false
+			for _, record in pairs(enemyByModel) do
+				if record.Humanoid.Health > 0 then
+					anyAlive = true
+					break
+				end
+			end
+			if not anyAlive then
+				break
+			end
+		else
+			break
+		end
+
+		character = player.Character
+		humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		rootPart = character and character:FindFirstChild("HumanoidRootPart")
+		if not character or not humanoid or not rootPart then
+			status = "Interrupted"
+			break
+		end
+		-- The player's own Humanoid dying is no longer the loss condition (see this file's
+		-- header) — only their character/connection vanishing ends the run early, and that's
+		-- "Interrupted" (nothing to retry), not "Defeated". The real loss condition is below.
+		if playerState.WallHP <= 0 then
+			status = "Defeated"
+			break
+		end
+
+		local now = os.clock()
+		if playerState.SpeedBoostUntil > 0 and now >= playerState.SpeedBoostUntil then
+			humanoid.WalkSpeed = playerState.BaseWalkSpeed
+			playerState.SpeedBoostUntil = 0
+		end
+
+		-- Nearest-first so Combat robot behaviors (SingleTarget/Cleave) read as "focus the closest
+		-- threat" for free — see RobotBehaviors.lua.
+		local aliveEnemies = {}
+		for _, record in pairs(enemyByModel) do
+			if record.Humanoid.Health > 0 and record.Model.PrimaryPart then
+				table.insert(aliveEnemies, record)
+			end
+		end
+		table.sort(aliveEnemies, function(a, b)
+			return (a.Model.PrimaryPart.Position - rootPart.Position).Magnitude
+				< (b.Model.PrimaryPart.Position - rootPart.Position).Magnitude
+		end)
+
+		if now - lastBroadcast >= BROADCAST_INTERVAL then
+			lastBroadcast = now
+			WaveUpdate:FireClient(player, {
+				Status = "Tick",
+				Wave = waveNumber,
+				WallHP = math.ceil(math.max(playerState.WallHP, 0)),
+				WallMaxHP = playerState.WallMaxHP,
+				Shield = math.ceil(playerState.Shield),
+				EnemiesRemaining = #aliveEnemies,
+				EnemiesTotal = totalSpawned,
+			})
+		end
+
+		-- TargetPosition is the base's own anchor point, not the player — every enemy is chasing
+		-- and attacking the wall now, see this file's header.
+		local aiContext = {
+			TargetPosition = basePosition,
+			Now = now,
+			DamageTarget = damageTarget,
+		}
+		for _, record in ipairs(aliveEnemies) do
+			EnemyAI.Patterns[record.AIPattern](record, aiContext)
+		end
+
+		local robotContext = {
+			AliveEnemies = aliveEnemies,
+			Now = now,
+			PlayerState = playerState,
+			GrantSpeedBoost = grantSpeedBoost,
+			DamageEnemy = function(enemyRecord, baseDamage)
+				resolveAndApplyDamage(enemyRecord, baseDamage, rootPart.Position, rootPart.Position, nil, 0)
+			end,
+		}
+		for _, robot in ipairs(robotRecords) do
+			local fn = RobotBehaviors[robot.BehaviorConfig.Mode][robot.BehaviorConfig.Behavior]
+			if fn then
+				fn(robot, robotContext)
+			end
+		end
+
+		fireTurrets(turretRecords, aliveEnemies, now)
+
+		task.wait(TICK_SECONDS)
+	end
+
+	if humanoid and playerState.SpeedBoostUntil > 0 then
+		humanoid.WalkSpeed = playerState.BaseWalkSpeed
+	end
+
+	activeEncounters[player.UserId] = nil
+	playerFolder:Destroy()
+
+	return status
+end
+
+----------------------------------------------------------------------
+-- RunRaidCombat — the Raid Rooms Combat node (RaidRoomService.lua). Same underlying engine as
+-- RunWave (spawnEnemy, resolveAndApplyDamage, EnemyAI, RobotBehaviors, activeEncounters/
+-- RequestFireWeapon), but enemies chase the PLAYER'S own live position instead of a fixed wall
+-- anchor, and the loss condition is the player's own Humanoid health instead of a WallHP pool —
+-- this file's header (SCOPE NOTE 2) and EnemyAI.lua's TargetPosition comment both called this out
+-- as the intended next step once Raid Rooms had real physical spawn points to hand this engine to.
+--
+-- Deliberately takes an explicit spawnKeys list + multiplier rather than a "Tier" number: this file
+-- has zero Raid-specific knowledge (no RaidConfig require) the same way it has zero base-defense-
+-- specific knowledge beyond what RunWave itself needs. RaidRoomService resolves the actual
+-- composition (RaidConfig.CombatTierComposition + WaveConfig.EnemyTypes) and hands it over already
+-- decided — this file just spawns whatever list it's given.
+--
+-- onEvent(status, payload), if provided, fires at the same points RunWave fires WaveUpdate — a
+-- plain callback instead of a hardcoded Remote, so this file doesn't need to know the raid system's
+-- remote names either. RaidRoomService relays these into its own RaidRoomUpdate remote.
+--
+-- explicitSpawns (optional): a room-authored spawn list ({ {Position: Vector3, TypeKey: string} }),
+-- straight from RaidConfig.SpawnPointName Parts placed in a hand-built Room Model. When given
+-- (non-nil, non-empty) it's used INSTEAD of spawnKeys/the circle-around-arenaCenter placement below
+-- — spawn exactly what the room says, exactly where it says — so spawnKeys is only ever consulted
+-- when explicitSpawns is nil, same as before this parameter existed.
+----------------------------------------------------------------------
+
+function CombatEncounterService.RunRaidCombat(player: Player, arenaCenter: Vector3, spawnKeys: { string }, multiplier: number, onEvent: ((string, any) -> ())?, explicitSpawns: { { Position: Vector3, TypeKey: string } }?): string
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+	local profile = DataService.Get(player)
+	if not profile or not humanoid or not rootPart or humanoid.Health <= 0 then
+		return "Interrupted"
+	end
+
+	local playerFolder = Instance.new("Folder")
+	playerFolder.Name = tostring(player.UserId) .. "_Raid"
+	playerFolder.Parent = encounterFolder
+
+	local enemyByModel = {}
+	if explicitSpawns and #explicitSpawns > 0 then
+		-- Room-authored spawn points — see this function's own header. Every entry here already
+		-- passed RaidRoomService's own EnemyType validation (missing/unknown attributes are warned
+		-- about and filtered out before this ever runs), so this just spawns exactly what's left.
+		for _, spawnInfo in ipairs(explicitSpawns) do
+			local typeData = getEnemyTypeData(spawnInfo.TypeKey)
+			if typeData then
+				local record = spawnEnemy(spawnInfo.TypeKey, typeData, spawnInfo.Position, multiplier, playerFolder, typeData.ContactRange)
+				if record then
+					enemyByModel[record.Model] = record
+				end
+			end
+		end
+	else
+		local spawnCount = #spawnKeys
+		local angleStep = spawnCount > 0 and (math.pi * 2 / spawnCount) or 0
+		for i, typeKey in ipairs(spawnKeys) do
+			local typeData = getEnemyTypeData(typeKey)
+			if typeData then
+				local jitter = (math.random() * 2 - 1) * SPAWN_ANGLE_JITTER
+				local angle = (i - 1) * angleStep + jitter
+				local radius = math.random(RAID_SPAWN_RADIUS_MIN, RAID_SPAWN_RADIUS_MAX)
+				local spawnPosition = arenaCenter + Vector3.new(math.cos(angle) * radius, 0, math.sin(angle) * radius)
+				-- typeData.ContactRange, not a measured boundary — see this function's own header.
+				local record = spawnEnemy(typeKey, typeData, spawnPosition, multiplier, playerFolder, typeData.ContactRange)
+				if record then
+					enemyByModel[record.Model] = record
+				end
+			end
+		end
+	end
+
+	local totalSpawned = 0
+	for _ in pairs(enemyByModel) do
+		totalSpawned += 1
+	end
+
+	if totalSpawned == 0 then
+		-- No enemy models built yet for anything in spawnKeys (spawnEnemy warns per-type already) —
+		-- don't hang the raid on a room that can never resolve; treat an empty room as cleared. This
+		-- extra warn() names the actual keys that were attempted so a run of missing-model picks
+		-- (see HasModelFor above, meant to prevent exactly this) is diagnosable from the log if it
+		-- ever still happens — previously the only signal was spawnEnemy's per-type warns, easy to
+		-- miss, and the encounter just silently resolved as an instant, unremarked "Cleared."
+		warn(("[CombatEncounterService] RunRaidCombat spawned 0 enemies (attempted: %s) — treating as trivially cleared. Check ServerStorage.EnemyModels for missing templates."):format(
+			#spawnKeys > 0 and table.concat(spawnKeys, ", ") or "explicitSpawns only, all invalid"))
+		playerFolder:Destroy()
+		if onEvent then
+			-- Result (not Status) — the caller's onEvent wrapper typically stamps its own Status
+			-- field on this payload before relaying it onward (see RaidRoomService), so this uses a
+			-- different key to avoid that collision rather than getting silently overwritten.
+			onEvent("End", { Result = "Cleared" })
+		end
+		return "Cleared"
+	end
+
+	local robotRecords = {}
+	for _, robotKey in ipairs(profile.DeployedRobots) do
+		local behaviorConfig = RobotBehaviorConfig.Robots[robotKey]
+		local effectiveStats = CombatMath.GetEffectiveStats("Robots", robotKey, profile)
+		if behaviorConfig and effectiveStats then
+			table.insert(robotRecords, {
+				Key = robotKey,
+				BehaviorConfig = behaviorConfig,
+				EffectiveStats = effectiveStats,
+				LastActionTime = 0,
+			})
+		end
+	end
+
+	local playerState = {
+		Shield = 0,
+		LastFireTime = 0,
+		BaseWalkSpeed = humanoid.WalkSpeed,
+		SpeedBoostUntil = 0,
+	}
+
+	-- Drains Shield first, then the player's own Humanoid directly — same absorb-then-real-health
+	-- shape RunWave uses for WallHP, just protecting the player themselves since there's no wall
+	-- to stand in for them here.
+	local function damageTarget(amount: number)
+		if playerState.Shield > 0 then
+			local absorbed = math.min(playerState.Shield, amount)
+			playerState.Shield -= absorbed
+			amount -= absorbed
+		end
+		if amount > 0 then
+			humanoid:TakeDamage(amount)
+		end
+	end
+
+	local function grantSpeedBoost(multiplier_: number, duration: number)
+		humanoid.WalkSpeed = playerState.BaseWalkSpeed * multiplier_
+		playerState.SpeedBoostUntil = os.clock() + duration
+	end
+
+	local encounter = {
+		Player = player,
+		EnemyByModel = enemyByModel,
+		PlayerState = playerState,
+		DamageTarget = damageTarget,
+	}
+	activeEncounters[player.UserId] = encounter
+
+	local status = "Cleared"
+	local lastBroadcast = 0
+
+	if onEvent then
+		onEvent("Start", { EnemiesTotal = totalSpawned })
+	end
+
+	while true do
+		local anyAlive = false
+		for _, record in pairs(enemyByModel) do
+			if record.Humanoid.Health > 0 then
+				anyAlive = true
+				break
+			end
+		end
+		if not anyAlive then
+			break
+		end
+
+		character = player.Character
+		humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		rootPart = character and character:FindFirstChild("HumanoidRootPart")
+		if not character or not humanoid or not rootPart then
+			status = "Interrupted"
+			break
+		end
+		if humanoid.Health <= 0 then
+			status = "Defeated"
+			break
+		end
+
+		local now = os.clock()
+		if playerState.SpeedBoostUntil > 0 and now >= playerState.SpeedBoostUntil then
+			humanoid.WalkSpeed = playerState.BaseWalkSpeed
+			playerState.SpeedBoostUntil = 0
+		end
+
+		local aliveEnemies = {}
+		for _, record in pairs(enemyByModel) do
+			if record.Humanoid.Health > 0 and record.Model.PrimaryPart then
+				table.insert(aliveEnemies, record)
+			end
+		end
+		table.sort(aliveEnemies, function(a, b)
+			return (a.Model.PrimaryPart.Position - rootPart.Position).Magnitude
+				< (b.Model.PrimaryPart.Position - rootPart.Position).Magnitude
+		end)
+
+		if now - lastBroadcast >= BROADCAST_INTERVAL then
+			lastBroadcast = now
+			if onEvent then
+				onEvent("Tick", {
+					PlayerHealth = math.ceil(math.max(humanoid.Health, 0)),
+					PlayerMaxHealth = humanoid.MaxHealth,
+					Shield = math.ceil(playerState.Shield),
+					EnemiesRemaining = #aliveEnemies,
+					EnemiesTotal = totalSpawned,
+				})
+			end
+		end
+
+		-- TargetPosition tracks the player's own LIVE position every tick, not a fixed point — see
+		-- this function's own header and EnemyAI.lua's TargetPosition comment.
+		local aiContext = {
+			TargetPosition = rootPart.Position,
+			Now = now,
+			DamageTarget = damageTarget,
+		}
+		for _, record in ipairs(aliveEnemies) do
+			EnemyAI.Patterns[record.AIPattern](record, aiContext)
+		end
+
+		local robotContext = {
+			AliveEnemies = aliveEnemies,
+			Now = now,
+			PlayerState = playerState,
+			GrantSpeedBoost = grantSpeedBoost,
+			DamageEnemy = function(enemyRecord, baseDamage)
+				resolveAndApplyDamage(enemyRecord, baseDamage, rootPart.Position, rootPart.Position, nil, 0)
+			end,
+		}
+		for _, robot in ipairs(robotRecords) do
+			local fn = RobotBehaviors[robot.BehaviorConfig.Mode][robot.BehaviorConfig.Behavior]
+			if fn then
+				fn(robot, robotContext)
+			end
+		end
+
+		task.wait(TICK_SECONDS)
+	end
+
+	if humanoid and playerState.SpeedBoostUntil > 0 then
+		humanoid.WalkSpeed = playerState.BaseWalkSpeed
+	end
+
+	activeEncounters[player.UserId] = nil
+	playerFolder:Destroy()
+
+	if onEvent then
+		onEvent("End", { Result = status }) -- Result, not Status — see the other onEvent("End", ...) call's comment above
+	end
+
+	return status
+end
+
+----------------------------------------------------------------------
+-- Player weapon fire
+----------------------------------------------------------------------
+
+-- Client raycasts locally (instant visual feedback, see CombatClient.client.lua) and reports what
+-- it thinks it hit — the actual damage number is entirely recomputed server-side from server-known
+-- state (equipped weapon, player position, the target's real Defense). A spoofed client can at
+-- worst claim a hit that the distance/encounter-membership checks below reject; it can never
+-- inject its own damage number, since `baseDamage` always comes from CombatMath here, not from
+-- anything the client sent.
+RequestFireWeapon.OnServerEvent:Connect(function(player: Player, hitInstance: Instance, claimedOrigin: Vector3, claimedHitPosition: Vector3)
+	local encounter = activeEncounters[player.UserId]
+	if not encounter then
+		return
+	end
+
+	local model = hitInstance
+	if model and not encounter.EnemyByModel[model] then
+		model = model:FindFirstAncestorOfClass("Model")
+	end
+	local enemyRecord = model and encounter.EnemyByModel[model]
+	if not enemyRecord or enemyRecord.Humanoid.Health <= 0 then
+		return
+	end
+
+	local character = player.Character
+	local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+	if not rootPart then
+		return
+	end
+	if (claimedOrigin - rootPart.Position).Magnitude > ORIGIN_SANITY_STUDS then
+		return -- claimed firing position is too far from where the server knows the player actually is
+	end
+
+	local profile = DataService.Get(player)
+	if not profile or not profile.EquippedWeaponId then
+		return
+	end
+	local weaponInstance
+	for _, w in ipairs(profile.Weapons) do
+		if w.Id == profile.EquippedWeaponId then
+			weaponInstance = w
+			break
+		end
+	end
+	if not weaponInstance then
+		return
+	end
+
+	local stats = CombatMath.GetEffectiveWeaponStats(weaponInstance, profile)
+	if not stats then
+		return
+	end
+
+	local cooldown = 1 / math.max(stats.FireRate, 0.01)
+	local now = os.clock()
+	if now - encounter.PlayerState.LastFireTime < cooldown then
+		return -- firing faster than this weapon's FireRate allows
+	end
+	encounter.PlayerState.LastFireTime = now
+
+	local recipe = CraftingRecipes.Weapons[weaponInstance.WeaponKey]
+	resolveAndApplyDamage(
+		enemyRecord,
+		stats.Damage,
+		claimedOrigin,
+		claimedHitPosition,
+		recipe and recipe.RangeProfile, -- optional field, most weapons don't define one — see
+			-- DamagePipeline.lua's applyRangeFalloff
+		recipe and recipe.Penetration
+	)
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+	activeEncounters[player.UserId] = nil
+	local playerFolder = encounterFolder:FindFirstChild(tostring(player.UserId))
+	if playerFolder then
+		playerFolder:Destroy()
+	end
+end)
+
+return CombatEncounterService

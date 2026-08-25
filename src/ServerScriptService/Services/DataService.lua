@@ -38,7 +38,8 @@ local function defaultProfile()
 		SuitTier = 1,           -- environmental protection for the mine shaft's depth hazards — see
 		                        -- MineShaftConfig.SuitTiers/SuitTierCosts, purchased via Workbench -> Suit
 		BaseTier = 1,           -- which BaseConfig.Tiers Model BaseService clones onto the player's
-		                        -- plot — see BaseConfig.lua; no purchase flow yet, always 1 for now
+		                        -- plot — see BaseConfig.lua; bumped by the UpgradeBase remote
+		                        -- (BaseService.lua), gated at the Workbench same as Tool/Suit tier.
 		OwnedGamePasses = {},   -- [gamePassKey] = true
 		CraftedWeapons = {},    -- [weaponKey] = true — LEGACY, superseded by Weapons below. Kept
 			-- around only as the migration source for saves written before the Forge existed (see
@@ -76,7 +77,27 @@ local function defaultProfile()
 			-- that file's completion loop).
 		CraftedRobots = {},     -- [robotKey] = count owned
 		CraftedStructures = {}, -- [structureKey] = true (e.g. "AutoMiner" — see AutoMinerService)
-		DeployedRobots = {},    -- list of robotKeys currently on defense duty
+		DeployedRobots = {},    -- list of robotKeys currently on defense duty — STILL abstract,
+			-- still used by RunRaidCombat's own DPS support. No longer doubles as "turrets" — see
+			-- the dedicated Turret system below (profile.Turrets and friends).
+		ResearchTier = 1,       -- SKELETON field for the not-yet-built Research phase — gates how
+			-- many turret slots a base has (TurretConfig.GetSlotCount) and which turret Tiers (every
+			-- 10 levels, see TurretConfig.GetTurretTier) can actually be upgraded into. No
+			-- purchase/unlock flow yet — always 1 for everyone until the real Research system ships.
+		CoreItems = {},         -- [coreKey] = amount owned (e.g. CoreItems.CoreT1) — the "boss
+			-- wave" reward currency (see WaveService.lua/RewardTables.lua), spent by
+			-- BaseService.UpgradeBase's BaseConfig.BaseTierCoreRequirement gate. Placeholder names
+			-- (CoreT1/CoreT2/...) until real flavor names get picked.
+		UnlockedTurretBlueprints = {}, -- [turretTypeKey] = true — purchased at the Hub's rotating
+			-- Shop station (TurretShopService.lua). Currently just purchase history/bookkeeping:
+			-- buying a blueprint mints a Turret instance immediately (see Turrets below) rather than
+			-- unlocking a separate craft step, so nothing else reads this yet.
+		Turrets = {},           -- list of turret instances: { Id, TypeKey, Level, SlotIndex }.
+			-- SlotIndex is nil while the turret sits in storage (bought but not currently placed in a
+			-- base slot) — see TurretService.lua for placement/leveling. Level starts at 1;
+			-- TurretConfig.GetTurretTier(Level) derives which Tier that maps to (every 10 levels).
+		NextTurretId = 1,       -- incrementing counter minting each Turrets instance's Id ("t1",
+			-- "t2", ...), same convention as NextWeaponId above — never reused.
 		CraftedMods = {},       -- [modKey] = true (permanent unlock, same shape as CraftedWeapons) — see ModConfig
 		EquippedMods = {},      -- [itemKey][slotIndex] = modKey — itemKey is a weaponKey or robotKey,
 		                        -- slotIndex runs 1..ModConfig.SlotsPerItem. Applies per item TYPE, not
@@ -194,6 +215,33 @@ function DataService.AddRefinedOre(player: Player, refinedKey: string, amount: n
 		return
 	end
 	profile.RefinedOreCounts[refinedKey] = (profile.RefinedOreCounts[refinedKey] or 0) + amount
+end
+
+-- coreKey is a RewardTables.BossCoreForMilestone value (e.g. "CoreT1") — see WaveService.lua's
+-- boss-wave payout. Same shape as AddOre/AddRefinedOre, just backed by profile.CoreItems instead.
+function DataService.AddCoreItem(player: Player, coreKey: string, amount: number)
+	local profile = cache[player.UserId]
+	if not profile then
+		return
+	end
+	profile.CoreItems[coreKey] = (profile.CoreItems[coreKey] or 0) + amount
+end
+
+-- Single-item version of TrySpend, for BaseConfig.BaseTierCoreRequirement — a plain cost TABLE
+-- doesn't fit CoreItems since TrySpend's Scrap/Cores-vs-OreCounts branching has no CoreItems case,
+-- and a base-tier upgrade only ever needs exactly one CoreItem key anyway. Returns true and
+-- deducts, or false and deducts nothing, same contract as TrySpend.
+function DataService.TrySpendCoreItem(player: Player, coreKey: string, amount: number): boolean
+	local profile = cache[player.UserId]
+	if not profile then
+		return false
+	end
+	local available = profile.CoreItems[coreKey] or 0
+	if available < amount then
+		return false
+	end
+	profile.CoreItems[coreKey] = available - amount
+	return true
 end
 
 -- costTable example: { ScrapIron = 25, CopperWire = 10 } — ore keys and/or "Scrap"/"Cores".

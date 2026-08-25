@@ -18,6 +18,7 @@ local StationConfig = require(ReplicatedStorage.Shared.StationConfig)
 local DataService = require(script.Parent.DataService)
 local PlotService = require(script.Parent.PlotService)
 local StationService = require(script.Parent.StationService)
+local WeaponToolService = require(script.Parent.WeaponToolService)
 
 local Remotes = ReplicatedStorage.Remotes
 
@@ -164,6 +165,7 @@ Remotes.ForgeWeapon.OnServerInvoke = function(player: Player, weaponKey: string,
 	-- choice made via EquipWeapon (now in the Inventory panel, not this station's own tab).
 	if not profile.EquippedWeaponId and #profile.Weapons == 1 then
 		profile.EquippedWeaponId = id
+		WeaponToolService.SyncEquippedTool(player, instance)
 	end
 
 	Remotes.InventoryUpdate:FireClient(player, {
@@ -178,39 +180,40 @@ Remotes.ForgeWeapon.OnServerInvoke = function(player: Player, weaponKey: string,
 end
 
 -- EquipWeapon: sets which single owned weapon INSTANCE actually counts toward combat DPS (see
--- CombatMath.GetPlayerCombatDPS). weaponInstanceId=nil clears the explicit choice, falling back to
--- CombatMath's "auto-pick best owned instance" behavior. Rejects equipping an instance not owned;
--- otherwise this never fails on its own merit, only on the plot/station gate above. Moved here from
--- CraftingService.lua now that it targets a per-instance Id instead of a shared weaponKey, and the
--- Forge (not the Welding Station) is where weapons live. Called from the Inventory panel now, not
--- this station's own Weapons tab — the Forge tab itself is craft-only.
+-- CombatMath.GetPlayerCombatDPS) AND syncs the physical gun Tool into the player's hotbar (see
+-- WeaponToolService.lua) — the two always change together, there's no path where EquippedWeaponId
+-- and "what Tool is in your Backpack" can drift apart. weaponInstanceId=nil clears the explicit
+-- choice AND empties the hotbar of any gun Tool, falling back to CombatMath's "auto-pick best owned
+-- instance" behavior for the DPS number even though nothing physical is equipped to fire it with.
+-- Rejects equipping an instance not owned; otherwise this never fails on its own merit.
+--
+-- Deliberately NOT gated behind plot/station anymore — direct player feedback was that browsing
+-- and changing your loadout should work from anywhere, only the Forge/Welding Station's own
+-- CRAFTING actions (ForgeWeapon, CraftItem, etc.) should require standing at the right prop. Moved
+-- here from CraftingService.lua now that it targets a per-instance Id instead of a shared
+-- weaponKey, and the Forge (not the Welding Station) is where weapons live. Called from the
+-- Inventory panel now, not this station's own Weapons tab — the Forge tab itself is craft-only.
 Remotes.EquipWeapon.OnServerInvoke = function(player: Player, weaponInstanceId: string?)
-	if not PlotService.IsPlayerInOwnPlot(player) then
-		return { Success = false, Reason = PlotConfig.NotInBaseMessage }
-	end
-	if not StationService.IsPlayerNearStation(player, "Forge") then
-		return { Success = false, Reason = StationConfig.Types.Forge.NotThereMessage }
-	end
-
 	local profile = DataService.Get(player)
 	if not profile then
 		return { Success = false, Reason = "Profile not loaded" }
 	end
 
+	local matchedInstance = nil
 	if weaponInstanceId ~= nil then
-		local found = false
 		for _, weaponInstance in ipairs(profile.Weapons) do
 			if weaponInstance.Id == weaponInstanceId then
-				found = true
+				matchedInstance = weaponInstance
 				break
 			end
 		end
-		if not found then
+		if not matchedInstance then
 			return { Success = false, Reason = "You don't own this weapon" }
 		end
 	end
 
 	profile.EquippedWeaponId = weaponInstanceId
+	WeaponToolService.SyncEquippedTool(player, matchedInstance)
 
 	-- `weaponInstanceId or false`, same reasoning as every other nil-able field this codebase
 	-- broadcasts: a Lua table constructor drops a field entirely when its value is nil, so clearing

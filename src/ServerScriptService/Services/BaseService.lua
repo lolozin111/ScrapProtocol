@@ -28,8 +28,12 @@ local Workspace = game:GetService("Workspace")
 
 local BaseConfig = require(ReplicatedStorage.Shared.BaseConfig)
 local StationConfig = require(ReplicatedStorage.Shared.StationConfig)
+local PlotConfig = require(ReplicatedStorage.Shared.PlotConfig)
 local DataService = require(script.Parent.DataService)
 local PlotService = require(script.Parent.PlotService)
+local StationService = require(script.Parent.StationService)
+
+local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 
 local FALLBACK_FLOOR_SIZE = Vector3.new(40, 2, 40)
 local FALLBACK_FLOOR_COLOR = Color3.fromRGB(90, 80, 70)
@@ -123,6 +127,77 @@ function BaseService.RebuildPlayerBase(player: Player, plot: Instance)
 
 	baseModel.Parent = Workspace
 	playerBaseModel[player] = baseModel
+end
+
+-- Exposes the actual currently-built base Model (real BaseTier art, or the fallback floor if none
+-- exists yet) so other systems can measure its REAL size instead of guessing. Added for
+-- CombatEncounterService.lua's wall-defense boundary — see that file's getWallAttackRange — after
+-- a hardcoded BaseConfig.WallAttackRange guess (tuned against PlotConfig.FootprintHalfSize, the
+-- max CLAIMED plot area) turned out much bigger than FALLBACK_FLOOR_SIZE (the actual placeholder
+-- floor most testing uses today), so enemies were "stopping at the wall" well past the visible
+-- platform's real edge — nowhere close to a wall, right in the middle. Returns nil if the base
+-- hasn't finished building yet (RebuildPlayerBase yields on the profile load).
+function BaseService.GetPlayerBaseModel(player: Player): Model?
+	return playerBaseModel[player]
+end
+
+-- UpgradeBase: spends BaseConfig.BaseTierCosts[nextTier], bumps profile.BaseTier, and rebuilds the
+-- physical base Model in place — same shape as UpgradeTool/UpgradeSuit (MiningService.lua/
+-- MineShaftService.lua), gated at the same "Crafting" (Workbench) station those use, since
+-- upgrading your base is exactly the same kind of general equipment/utility decision as those.
+Remotes.UpgradeBase.OnServerInvoke = function(player: Player)
+	if not PlotService.IsPlayerInOwnPlot(player) then
+		return { Success = false, Reason = PlotConfig.NotInBaseMessage }
+	end
+	if not StationService.IsPlayerNearStation(player, "Crafting") then
+		return { Success = false, Reason = StationConfig.Types.Crafting.NotThereMessage }
+	end
+
+	local profile = DataService.Get(player)
+	if not profile then
+		return { Success = false, Reason = "Profile not loaded" }
+	end
+
+	local nextTier = (profile.BaseTier or 1) + 1
+	local nextTierData = BaseConfig.Tiers[nextTier]
+	if not nextTierData then
+		return { Success = false, Reason = "Max tier reached" }
+	end
+
+	local cost = BaseConfig.BaseTierCosts[nextTier]
+	if not cost then
+		return { Success = false, Reason = "Not configured" }
+	end
+
+	-- CoreItem gate (see BaseConfig.BaseTierCoreRequirement's own comment) — checked READ-ONLY
+	-- before either spend commits anything, so a missing core rejects the whole upgrade without
+	-- silently burning the resource cost. Nothing yields between this check and TrySpendCoreItem
+	-- below, so there's no window for another call to spend the same CoreItems out from under us.
+	local coreRequirement = BaseConfig.BaseTierCoreRequirement[nextTier]
+	if coreRequirement and (profile.CoreItems[coreRequirement.Key] or 0) < coreRequirement.Amount then
+		return { Success = false, Reason = ("Requires %d x %s from a base-defense boss wave"):format(
+			coreRequirement.Amount, coreRequirement.Key) }
+	end
+
+	if not DataService.TrySpend(player, cost) then
+		return { Success = false, Reason = "Not enough resources" }
+	end
+	if coreRequirement then
+		DataService.TrySpendCoreItem(player, coreRequirement.Key, coreRequirement.Amount)
+	end
+
+	profile.BaseTier = nextTier
+
+	local plot = PlotService.GetPlayerPlot(player)
+	if plot then
+		-- Yields on the profile (already loaded here, so effectively instant) — safe to call inline
+		-- rather than task.spawn, since the remote's own caller is already waiting on a response.
+		BaseService.RebuildPlayerBase(player, plot)
+	end
+
+	Remotes.InventoryUpdate:FireClient(player, { BaseTier = profile.BaseTier, CoreItems = profile.CoreItems })
+
+	return { Success = true, BaseTier = profile.BaseTier }
 end
 
 PlotService.PlotAssigned:Connect(function(player, plot)

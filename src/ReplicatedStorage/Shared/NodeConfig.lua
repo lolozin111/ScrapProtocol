@@ -18,6 +18,17 @@ local NodeConfig = {}
 -- enemy HP pool isn't yet cleared — weak gear means a slower fight means more damage,
 -- which is the actual risk/reward lever. A raid that reaches 0 player HP fails: no loot.
 
+-- Optional per-entry tags any Loot table below (or a Shop item's Grant in ShopCatalog further down)
+-- MAY set: RunLocked, RunRoomService.settleRunLoot (RaidRoomService.lua) reads it when a Raid Room
+-- run ends WITHOUT a clean Extract (Defeated or Abandoned) — a RunLocked drop is lost on that kind
+-- of exit ("if they abandon it they lose such run items"), UNLESS Permanent is ALSO set on the same
+-- entry, which carries it over regardless ("unless the item has a tag called permanent, where it
+-- can be carried over"). Neither tag is set on anything below yet — every drop here currently
+-- behaves exactly as it always has (always kept) until specific entries are tagged later. This only
+-- applies to Raid Rooms; Expedition's older Combat Outposts read these same tables but don't have
+-- any concept of a "run" to lock things to, so the tags are simply inert there. Scrap/Cores
+-- currency loot is exempt from RunLocked entirely regardless of the tag — see RaidRoomService's own
+-- comment on why currency is always kept.
 NodeConfig.CombatTiers = {
 	[1] = {
 		Name = "Scrap Camp",
@@ -52,6 +63,19 @@ NodeConfig.CombatTiers = {
 			{ Kind = "Currency", CurrencyKey = "Scrap", Min = 30, Max = 60, Chance = 1.0 },
 		},
 	},
+}
+
+----------------------------------------------------------------------
+-- Boss loot (Raid Rooms only) — richer than a Tier-3 Combat room's own table, on top of the same
+-- run-progression multiplier RaidRoomService already applies to every encounter's rewards
+-- (RaidConfig.GetLootMultiplier). Placeholder amounts, same as the Boss/card system generally —
+-- tune once real combat balance exists.
+----------------------------------------------------------------------
+
+NodeConfig.BossLoot = {
+	{ Kind = "Ore", OreKey = "GoldContacts", Min = 10, Max = 20, Chance = 1.0 },
+	{ Kind = "Currency", CurrencyKey = "Cores", Min = 5, Max = 12, Chance = 1.0 },
+	{ Kind = "Currency", CurrencyKey = "Scrap", Min = 50, Max = 90, Chance = 1.0 },
 }
 
 ----------------------------------------------------------------------

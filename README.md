@@ -256,10 +256,19 @@ no manual copy-pasting scripts into Studio.
   simply doubles the tick rate rather than making it a must-buy. MVP-scoped as pure data, same
   as wave defense: no physical structure to place in the world yet.
 - **Wave defense** — fire the `StartWave` RemoteEvent to begin a run; listen to `WaveUpdate`
-  on the client to drive your HUD. **This combat is a headless simulation** (your total DPS
-  vs. an enemy HP pool, ticking once per second) so the whole loop is playable before you've
-  built any enemy models or gun-firing code — see the big comment at the top of
-  `WaveService.lua` for exactly how to swap in real spawned enemies later.
+  on the client to drive your HUD. **This is now real combat**, not the old headless DPS-vs-HP-pool
+  simulation: `CombatEncounterService.lua` spawns real enemies from `ServerStorage.EnemyModels`
+  (see "Enemy models" setup below), `EnemyAI.lua`/`RobotBehaviors.lua` drive them and your
+  deployed robots on one shared tick loop, and `DamagePipeline.lua` resolves every hit
+  server-side. **You're defending the base, not yourself** — every enemy walks to and attacks
+  your plot's own position, chipping down a WallHP pool (`BaseConfig.GetWallMaxHP`) instead of
+  your character's Humanoid health; your own HP is untouched by this system. To actually fire,
+  equip a weapon from the Inventory panel — that puts a real Tool in your hotbar
+  (`WeaponToolService.lua`), which you pick up like any Roblox tool; `CombatClient.client.lua`
+  fires it (click-and-hold, camera raycast, `RequestFireWeapon` remote) only while it's actually
+  held. See `DESIGN_NOTES.md`'s "Combat Engine" section (including the "first playtest revisions"
+  sub-section) for the full writeup, including what's deliberately still deferred (raid Combat
+  Outposts still use the old placeholder; deployed robots are still abstract, no physical model).
 - **Data & saving** — every player's Scrap, Cores, ore counts, crafted items, and highest wave
   autosave every two minutes and on leave. Swap `DataService.lua` for
   [ProfileService](https://github.com/MadStudioRoblox/ProfileService) before you have real
@@ -442,10 +451,23 @@ actually visible before any real art or UI design happens. To test end to end:
    a new **Steel Ingot** tile with the refined count. Close the Forge and reopen it on the
    **Smelting** tab again to confirm the panel remembers there's nothing in progress (it should, not
    get stuck showing a stale state).
-8. Click **Start Defense** — the wave panel appears and the objective/enemy bars move as the
-   simulated combat resolves (see the big comment in `WaveService.lua` for what this is
-   standing in for). This one only needs you inside your plot generally, not near a specific
-   station.
+8. Open the **Inventory** panel's Weapons tab and click your Pipe Pistol to **Equip** it — you can
+   do this from anywhere now, not just standing at the Forge (loadout actions dropped their
+   plot/station gate; only actual crafting still needs the right station). A real gun Tool should
+   appear on your hotbar at the bottom of the screen; select it (click it or press its number key)
+   so it's actually held in your character's hand — `CombatClient.client.lua` only fires while a
+   gun Tool is held, not just "equipped" in the abstract. (No Tool template built yet? You'll still
+   get a plain gray placeholder box — that's expected, see `WeaponToolService.lua`.) Then click
+   **Start Defense** — the wave panel appears showing your base's **Wall HP**/Shield and a live
+   enemies-remaining count. This is real combat now: enemies spawn in a ring outside your base and
+   walk INWARD toward it — they're attacking the wall, not you, so your own HP doesn't move.
+   **You need at least one Model in `ServerStorage.EnemyModels`** matching an
+   `EnemyConfig.Types[key].ModelName` (e.g. `Scavenger`) with a `Humanoid` + `PrimaryPart` for
+   anything to actually spawn — with none placed, a wave will look like it clears instantly
+   (nothing spawned, so nothing to fight) rather than erroring. With your gun held, click-and-hold
+   left mouse to fire at whatever your camera is pointed at; a Neon tracer confirms the client
+   fired, and the enemy's health should visibly drop as hits land — kill them all before they chip
+   Wall HP to 0. This one only needs you inside your plot generally, not near a specific station.
 9. Place three more Parts and tag one each `Node` with `NodeType` = `Heal`, `Shop`, and
    `Combat` (give the Combat one a `Tier` NumberValue set to `1`). Left-click the Combat node
    (within 50 studs) to raid it — this spends 1 Energy (top-left readout, starts full at 5/5) —
@@ -533,9 +555,10 @@ actually visible before any real art or UI design happens. To test end to end:
     buttons (clicking one should open the same mod picker popup from before), and an **Equip**
     button at the bottom (or **Equipped**, highlighted, if it's your current pick). While standing
     away from your Forge, click **Equip** on a weapon instance that isn't already equipped and
-    confirm it's rejected with a "You need to be at your Forge" reason; walk back and confirm it
-    succeeds — the button should flip to "Equipped" and the tile itself should pick up the accent
-    highlight without needing to reopen the panel. Craft a second copy of a robot you already own
+    confirm it succeeds anyway — loadout actions (Equip/Deploy/Undeploy/mod slots) work from
+    anywhere now, only actual crafting is station-gated (see step 8) — the button should flip to
+    "Equipped" and the tile itself should pick up the accent highlight without needing to reopen
+    the panel. Craft a second copy of a robot you already own
     (needs 2+ owned) and deploy both from the **Robots** tab detail panel — its stats line should
     read "owned 2, deployed 2" and the button should flip to **Undeploy**; click it and confirm one
     instance comes back off duty ("deployed 1") and the button flips back to **Deploy**. Confirm
@@ -549,6 +572,39 @@ actually visible before any real art or UI design happens. To test end to end:
     picture instead of the placeholder text. The same convention covers the persistent **Luck
     Potion** button from step 6 — add one named exactly `LuckPotion` and confirm that square button
     (not a tile, but same `getItemIcon` lookup) picks up the picture too.
+15. **Raid Rooms** (separate from the Expedition conveyor in step 10 — this is the newer, instanced
+    version, see `DESIGN_NOTES.md`'s "Raid Rooms" sections). No Studio setup needed — click the
+    orange **Start Raid** button, top-right. You should teleport somewhere new immediately (a
+    private area, high in the sky, invisible from your base) and land in an Entry room, then the
+    **Raid Map** should pop up automatically: a handful of colored circles (orange=Combat,
+    blue=Shop, green=Heal, gold=Extraction, dark red=Ambush) connected by lines, laid out left to
+    right in stages. Click a bright/outlined circle (the only ones that respond) to travel there —
+    dim circles are locked. Pick a Combat node: you land in a plain grey placeholder room (**you
+    need at least one Model per type in `ServerStorage.RaidRoomModels`** — e.g. a Model named
+    `Combat` with a `PrimaryPart` — for real rooms; with none placed, the fallback square is
+    expected, not a bug — it's a big 260x260 floor now with an invisible edge barrier, not a visible
+    wall) and a small panel shows an Enemies bar ticking as you fight (same real combat engine as
+    base defense — your equipped gun/robots work here too). Clear it and confirm you're kicked back
+    to the map automatically with a "Room cleared!" toast naming whatever loot dropped. Pick a Heal
+    node: confirms an instant "Fully healed." message and a **Continue** button — click it to go
+    back to the map. Pick a Shop node: confirms a list of buy buttons (same catalog as the
+    Expedition Shop node) plus **Continue**; buying with insufficient currency should toast a
+    rejection instead of charging you. Pick an Ambush node (rarer — you may need a couple of raids
+    before one shows up): confirms the same panel but prefixed **"Wave X/Y"**, with a toast after
+    each wave and another fight starting a couple seconds later, for however many waves got rolled.
+    The red **Abandon Raid** button (bottom-right) should be visible any time you're in a raid
+    EXCEPT mid-Combat/Ambush — try clicking it during a fight (nothing should happen) and again
+    between rooms (should immediately end the raid and return you to your base plot, healed). Let a
+    branch run all the way to the gold **Extraction** node — reaching it should NOT end the raid;
+    confirm a "Map cleared!" toast, an immediate teleport into a freshly-shaped new map, and a green
+    **Extract** button now appearing next to Abandon. Click Extract from there (or after clearing a
+    later map) and confirm it does end the raid and return you home. Try starting a second raid with
+    Energy at 0 (see step 9) and confirm a "Not enough Energy" toast instead of teleporting you
+    anywhere. **Room-authored spawns (optional):** in a Combat or Ambush Room Model, place a Part
+    named exactly `SpawnPoint` with a string Attribute named `EnemyType` set to a valid key (e.g.
+    `Raider`) — enter that room and confirm exactly that enemy spawns at that Part's position
+    instead of a random composition; try a typo'd `EnemyType` too and confirm the Output window
+    warns instead of spawning anything there.
 
 ## 5. Environment effects (optional polish)
 
@@ -581,8 +637,24 @@ and that are easy to get subtly wrong (economy math, save data, purchase handlin
 
 - Ore node / base / arena 3D art (see "Art & the icon" in the design doc for the palette and
   a shortlist of what to model)
-- Real enemy NPCs, pathfinding, and gun-firing/hit detection (replaces the WaveService
-  simulation loop)
+- **Enemy character models.** The combat engine's AI/damage/spawn logic is built and real (see
+  "Wave defense" above and `DESIGN_NOTES.md`'s "Combat Engine" section) — what's still missing is
+  the actual R15 rigs. Every key in `EnemyConfig.Types`/`EnemyConfig.EliteTypes` has a
+  `ModelName` field; build (or place a placeholder dummy for) a Model with that exact name inside
+  `ServerStorage.EnemyModels`, R15 "blocky" style specifically (not R6, not Rthro — see that
+  section for why), with a `Humanoid` and a `PrimaryPart` set. A type whose model is missing just
+  skips spawning that one enemy (with a `warn()`), it won't error the whole wave.
+- **Gun models.** Same idea, different folder: build a real Tool per weaponKey (e.g.
+  `PipePistol`) inside `ReplicatedStorage.WeaponTools`, with a Part named `Handle` so it's
+  actually holdable. Without one, `WeaponToolService.lua` auto-builds a plain gray placeholder box
+  Tool so equipping still works end-to-end — swap in the real thing whenever the art exists, no
+  code changes needed.
+- **Raid Room models.** Same convention again: one Model per node type (`Start`/`Combat`/`Shop`/
+  `Heal`/`Extraction`/`Ambush`) inside `ServerStorage.RaidRoomModels`, each with a `PrimaryPart` set
+  at floor level. Without one, `RaidRoomService.lua` falls back to a plain big square per that node
+  type — see `DESIGN_NOTES.md`'s "Raid Rooms" sections and this file's step 15. A Combat/Ambush
+  Model can additionally place `SpawnPoint`-named Parts with an `EnemyType` string Attribute to
+  hand-author exactly what spawns there instead of a random roll — same section for the convention.
 - Real UI *design* — `MainHud.client.lua` is functional, not styled; treat it as scaffolding
   to reskin once the loop feels right, not a finished screen
 - Sound design, icon, and thumbnail

@@ -27,6 +27,8 @@ local ModConfig = require(ReplicatedStorage.Shared.ModConfig)
 local StationConfig = require(ReplicatedStorage.Shared.StationConfig)
 local ForgeConfig = require(ReplicatedStorage.Shared.ForgeConfig)
 local RefinedOreConfig = require(ReplicatedStorage.Shared.RefinedOreConfig)
+local BaseConfig = require(ReplicatedStorage.Shared.BaseConfig)
+local TurretConfig = require(ReplicatedStorage.Shared.TurretConfig)
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 local LocalPlayer = Players.LocalPlayer
@@ -806,6 +808,202 @@ local function renderForgeWeapons()
 	end
 end
 
+----------------------------------------------------------------------
+-- Base tab (Workbench) — Base Defense & Turrets phase, round 2. BaseConfig.Tiers upgrade row (same
+-- shape as renderToolRow/renderSuitRow above), then a Research Tier readout, then one row per fixed
+-- turret SLOT (TurretConfig.GetSlotCount(profile.ResearchTier)) showing whatever's placed there (if
+-- anything) with Upgrade/Unplace buttons, then a Storage section listing owned-but-unplaced Turret
+-- instances (bought as blueprints at the Hub Shop — see the Blueprints tab / renderBlueprintsRow
+-- below) with a one-click "Place" that auto-picks the first open slot. This REPLACES last round's
+-- "every deployed robot gets a physical body, place it anywhere" section entirely — Turrets are now
+-- their own dedicated system, fully decoupled from CraftingRecipes.Robots/DeployedRobots (those
+-- still exist, still power raid combat support, they just don't drive this tab anymore). See
+-- TurretConfig.lua/TurretService.lua for the full picture.
+----------------------------------------------------------------------
+
+local function renderBaseRow()
+	local currentTier = profile.BaseTier or 1
+	local currentTierData = BaseConfig.Tiers[currentTier]
+	local nextTier = currentTier + 1
+	local nextTierData = BaseConfig.Tiers[nextTier]
+
+	if not nextTierData then
+		makeRow(
+			currentTierData and currentTierData.Name or "Base",
+			("%d Wall HP · max tier reached"):format(currentTierData and currentTierData.WallHP or 0),
+			"Maxed",
+			function() end
+		).Parent = listFrame
+	else
+		local cost = BaseConfig.BaseTierCosts[nextTier]
+		makeRow(
+			("%s -> %s"):format(currentTierData and currentTierData.Name or "?", nextTierData.Name),
+			("Wall HP %d -> %d · %s"):format(
+				currentTierData and currentTierData.WallHP or 0, nextTierData.WallHP,
+				cost and costString(cost) or "Not configured"),
+			"Upgrade",
+			function()
+				local result = Remotes.UpgradeBase:InvokeServer()
+				if not result.Success then
+					warn("[HUD] Base upgrade failed:", result.Reason)
+				end
+			end
+		).Parent = listFrame
+	end
+
+	-- Research Tier — a skeleton field for now (always 1 until the real Research phase ships, next
+	-- roadmap step per direct instruction). Purely informational here: it drives GetSlotCount below
+	-- and gates crossing into a new turret Tier server-side (see TurretService.UpgradeTurret).
+	local researchTier = profile.ResearchTier or 1
+	local slotCount = TurretConfig.GetSlotCount(researchTier)
+	makeRow(
+		("Research Tier %d"):format(researchTier),
+		("%d turret slots unlocked · higher tiers (and bigger slot counts) need the Research system — coming next"):format(slotCount),
+		"OK",
+		function() end
+	).Parent = listFrame
+
+	-- Index owned turrets by slot for O(1) lookup below, and collect whatever's NOT placed for the
+	-- Storage section further down. profile.Turrets entries with no SlotIndex are unplaced.
+	local turretBySlot = {}
+	local unplacedTurrets = {}
+	for _, turret in ipairs(profile.Turrets or {}) do
+		if turret.SlotIndex then
+			turretBySlot[turret.SlotIndex] = turret
+		else
+			table.insert(unplacedTurrets, turret)
+		end
+	end
+
+	-- One row per fixed slot (direct request: "make sure that the player is able to see possible
+	-- slots where they can put their turret") — occupied slots get a stats/Upgrade row plus a
+	-- separate Unplace row (same two-row pattern the old Place/Reset section used), empty slots get
+	-- a plain placeholder row so the count itself is always visible even with nothing placed yet.
+	for slotIndex = 1, slotCount do
+		local turret = turretBySlot[slotIndex]
+		if turret then
+			local typeData = TurretConfig.Types[turret.TypeKey]
+			local level = turret.Level or 1
+			local stats = TurretConfig.GetTurretEffectiveStats(turret.TypeKey, level)
+			local nextLevel = level + 1
+			local nextTurretTier = TurretConfig.GetTurretTier(nextLevel)
+			local tierLocked = stats and nextTurretTier > stats.Tier and researchTier < nextTurretTier
+			local upgradeCost = TurretConfig.GetTurretUpgradeCost(level)
+
+			makeRow(
+				("Slot %d — %s (Lv %d, T%d)"):format(slotIndex, typeData and typeData.DisplayName or turret.TypeKey, level, stats and stats.Tier or 1),
+				stats and ("%.0f dmg · %.0f range · %.1f shots/s · %d AOE"):format(stats.Damage, stats.Range, stats.FireRate, stats.AOE) or "Unknown turret type",
+				tierLocked and ("Needs Research T%d"):format(nextTurretTier) or ("Upgrade (%d %s)"):format(upgradeCost, TurretConfig.UpgradeCurrency),
+				function()
+					if tierLocked then
+						return
+					end
+					local result = Remotes.UpgradeTurret:InvokeServer(turret.Id)
+					if not result.Success then
+						warn("[HUD] Upgrade turret failed:", result.Reason)
+					end
+				end
+			).Parent = listFrame
+
+			makeRow(
+				("Slot %d — Unplace"):format(slotIndex),
+				"Sends this turret back to Storage (still owned), freeing the slot",
+				"Unplace",
+				function()
+					local result = Remotes.UnplaceTurret:InvokeServer(turret.Id)
+					if not result.Success then
+						warn("[HUD] Unplace turret failed:", result.Reason)
+					end
+				end
+			).Parent = listFrame
+		else
+			makeRow(
+				("Slot %d — Empty"):format(slotIndex),
+				"Place an unplaced turret from Storage below into this slot",
+				"OK",
+				function() end
+			).Parent = listFrame
+		end
+	end
+
+	-- Storage — owned Turret instances (from Hub Shop blueprint purchases, see renderBlueprintsRow)
+	-- not currently occupying a slot. "Place" auto-picks the first open slot rather than asking the
+	-- player to type a slot number — simplest thing that works given the slot rows right above
+	-- already show exactly what's open.
+	if #unplacedTurrets > 0 then
+		makeRow(
+			"Storage",
+			("%d turret(s) bought but not placed — buy more blueprints at the Hub Shop"):format(#unplacedTurrets),
+			"OK",
+			function() end
+		).Parent = listFrame
+
+		for _, turret in ipairs(unplacedTurrets) do
+			local typeData = TurretConfig.Types[turret.TypeKey]
+			makeRow(
+				("%s (Lv %d)"):format(typeData and typeData.DisplayName or turret.TypeKey, turret.Level or 1),
+				"In storage — places into the first open slot",
+				"Place",
+				function()
+					local targetSlot = nil
+					for slotIndex = 1, slotCount do
+						if not turretBySlot[slotIndex] then
+							targetSlot = slotIndex
+							break
+						end
+					end
+					if not targetSlot then
+						warn("[HUD] Place turret failed: no open slots")
+						return
+					end
+					local result = Remotes.PlaceTurretInSlot:InvokeServer(turret.Id, targetSlot)
+					if not result.Success then
+						warn("[HUD] Place turret failed:", result.Reason)
+					end
+				end
+			).Parent = listFrame
+		end
+	end
+end
+
+----------------------------------------------------------------------
+-- Blueprints tab (Hub Shop) — StationConfig.Types.Shop's only tab. Lists today's rotating stock
+-- (TurretConfig.GetRotatingStock, the same pure time-based function TurretShopService re-derives
+-- server-side to validate the purchase) with a Buy button per type. Buying doesn't remove it from
+-- the visible stock — nothing stops a player owning more than one of the same turret type, since
+-- each purchase mints an independent instance (see TurretShopService.lua).
+----------------------------------------------------------------------
+
+local function renderBlueprintsRow()
+	local stock = TurretConfig.GetRotatingStock(os.time())
+
+	makeRow(
+		"Hub Shop",
+		("Stock rotates every %d hours · buying a blueprint unlocks the type and mints one turret into Storage"):format(TurretConfig.ShopRotationPeriodSeconds / 3600),
+		"OK",
+		function() end
+	).Parent = listFrame
+
+	for _, typeKey in ipairs(stock) do
+		local typeData = TurretConfig.Types[typeKey]
+		if typeData then
+			makeRow(
+				typeData.DisplayName,
+				("%s · %s"):format(typeData.Description, costString(typeData.BlueprintCost)),
+				"Buy",
+				function()
+					local result = Remotes.BuyTurretBlueprint:InvokeServer(typeKey)
+					if not result.Success then
+						warn("[HUD] Buy blueprint failed:", result.Reason)
+					else
+						renderCraftList()
+					end
+				end
+			).Parent = listFrame
+		end
+	end
+end
+
 renderCraftList = function()
 	for _, child in ipairs(listFrame:GetChildren()) do
 		if child:IsA("Frame") then
@@ -821,6 +1019,12 @@ renderCraftList = function()
 		return
 	elseif currentTab == "Suit" then
 		renderSuitRow()
+		return
+	elseif currentTab == "Base" then
+		renderBaseRow()
+		return
+	elseif currentTab == "Blueprints" then
+		renderBlueprintsRow()
 		return
 	elseif currentTab == "Mods" then
 		renderModsRow()
@@ -915,12 +1119,12 @@ end
 -- Unlike the Workbench (which only opens from a physical station and is for crafting NEW
 -- things), this is viewable from anywhere — it's just a window onto data already sitting in
 -- `profile`. The Equip/Deploy/Undeploy buttons inside it call the same remotes as everywhere
--- else (EquipWeapon, DeployRobot, UndeployRobot, EquipMod via the shared mod picker), and those
--- still enforce the plot+station gate independently server-side — so browsing works from anywhere,
--- but actually changing your loadout only works while standing at the right station: weapons
--- (EquipWeapon, and EquipMod on the Weapons tree) gate to the Forge, robots (DeployRobot/
--- UndeployRobot, and EquipMod on the Robots tree) still gate to the Welding Station, same rule as
--- crafting. Also replaces the old cluttered top-left ore breakdown — see the Materials tab below
+-- else (EquipWeapon, DeployRobot, UndeployRobot, EquipMod via the shared mod picker). Per direct
+-- player feedback, none of those four are plot/station gated anymore — changing your loadout
+-- works from anywhere in the world, not just standing at the right station. Only actually
+-- CRAFTING a new item (CraftItem, ForgeWeapon, and the Forge's other station actions) still
+-- requires being physically at the right prop — see ForgeService.lua/CraftingService.lua's own
+-- header comments. Also replaces the old cluttered top-left ore breakdown — see the Materials tab below
 -- and the trimmed-down currencyFrame near the top of this file.
 --
 -- Presentation: an icon grid (one square tile per owned item/material) instead of the Workbench's
@@ -2133,7 +2337,7 @@ local function makeBar(yOffset, fillColor, initialText)
 	return caption, fill
 end
 
-local objCaption, objFill = makeBar(30, COLOR.Good, "Objective: — / —")
+local wallCaption, wallFill = makeBar(30, COLOR.Good, "Wall: — / —")
 local enemyCaption, enemyFill = makeBar(72, COLOR.Bad, "Enemies: —")
 
 ----------------------------------------------------------------------
@@ -2579,8 +2783,13 @@ Remotes.DepthUpdate.OnClientEvent:Connect(function(depth: number?)
 	end
 end)
 
-local objectiveMaxHP = 500  -- overwritten from the server's WaveStart payload below
-local enemyHPPool = 1       -- ditto; guarded at 1 so an early Tick can't divide by zero
+-- CombatEncounterService now owns the real numbers (real WallHP, real enemy counts) and reports
+-- them on "Tick" roughly once a second. Base defense is about defending the BASE now, not the
+-- player's own Humanoid — see CombatEncounterService.lua's header for the reasoning. WaveStart
+-- fires BEFORE any enemy exists yet, so it can't hand us a max wall HP or enemy total — this just
+-- resets the panel to a neutral "waiting for the first Tick" state and lets that Tick fill in real
+-- numbers moments later.
+local wallMaxHP = 150  -- guarded default so an early divide can't blow up; overwritten by Tick
 
 Remotes.WaveUpdate.OnClientEvent:Connect(function(update)
 	if update.Status == "NoGear" or update.Status == "NotInBase" then
@@ -2592,28 +2801,44 @@ Remotes.WaveUpdate.OnClientEvent:Connect(function(update)
 
 	if update.Status == "WaveStart" then
 		runActive = true
-		objectiveMaxHP = update.ObjectiveMaxHP or objectiveMaxHP
-		enemyHPPool = update.EnemyHPPool or 1
 		defendButton.Text = "In progress…"
-		waveLabel.Text = ("Wave %d%s"):format(update.Wave, update.IsElite and "  (ELITE)" or "")
-		objCaption.Text = ("Objective: %d / %d"):format(update.ObjectiveHP, objectiveMaxHP)
-		enemyCaption.Text = ("Enemies: %d"):format(update.EnemyCount)
-		objFill.Size = UDim2.new(1, 0, 1, 0)
+		waveLabel.Text = ("Wave %d%s"):format(update.Wave, update.IsElite and "  (BOSS WAVE)" or "")
+		wallCaption.Text = "Wall: — / —"
+		enemyCaption.Text = "Enemies: —"
+		wallFill.Size = UDim2.new(1, 0, 1, 0)
 		enemyFill.Size = UDim2.new(1, 0, 1, 0)
 	elseif update.Status == "Tick" then
-		local objPct = math.clamp(update.ObjectiveHP / objectiveMaxHP, 0, 1)
-		objFill.Size = UDim2.new(objPct, 0, 1, 0)
-		objCaption.Text = ("Objective: %d / %d"):format(update.ObjectiveHP, objectiveMaxHP)
+		wallMaxHP = update.WallMaxHP or wallMaxHP
+		local wallPct = math.clamp(update.WallHP / wallMaxHP, 0, 1)
+		wallFill.Size = UDim2.new(wallPct, 0, 1, 0)
+		if update.Shield and update.Shield > 0 then
+			wallCaption.Text = ("Wall: %d / %d  (+%d Shield)"):format(update.WallHP, wallMaxHP, update.Shield)
+		else
+			wallCaption.Text = ("Wall: %d / %d"):format(update.WallHP, wallMaxHP)
+		end
 
-		local enemyPct = math.clamp(update.RemainingEnemyHP / enemyHPPool, 0, 1)
+		local enemyPct = update.EnemiesTotal and update.EnemiesTotal > 0
+			and math.clamp(update.EnemiesRemaining / update.EnemiesTotal, 0, 1)
+			or 0
 		enemyFill.Size = UDim2.new(enemyPct, 0, 1, 0)
-		enemyCaption.Text = ("Enemies: ~%d remaining"):format(update.RemainingEnemyCount or 0)
+		enemyCaption.Text = ("Enemies: %d / %d remaining"):format(update.EnemiesRemaining or 0, update.EnemiesTotal or 0)
 	elseif update.Status == "WaveCleared" then
-		waveLabel.Text = ("Wave %d cleared! +%d Scrap, +%d Cores"):format(update.Wave, update.ScrapReward, update.CoresReward)
+		-- No more Scrap/Cores from base defense — boss waves (update.CoreGrant) drop the real prize
+		-- now, see WaveService.lua/RewardTables.lua.
+		if update.CoreGrant then
+			waveLabel.Text = ("Wave %d cleared! Boss down — +%d %s"):format(update.Wave, update.CoreGrant.Amount, update.CoreGrant.Key)
+		else
+			waveLabel.Text = ("Wave %d cleared!"):format(update.Wave)
+		end
 		enemyCaption.Text = "Enemies: 0 remaining"
+		enemyFill.Size = UDim2.new(0, 0, 1, 0)
+		if update.BonusLoot then
+			waveLabel.Text = waveLabel.Text .. "  (+bonus item!)"
+		end
 	elseif update.Status == "Revived" then
-		waveLabel.Text = "Revived — objective restored"
-		objCaption.Text = ("Objective: %d / %d"):format(objectiveMaxHP, objectiveMaxHP)
+		waveLabel.Text = "Revived — wall repaired"
+		wallCaption.Text = ("Wall: %d / %d"):format(wallMaxHP, wallMaxHP)
+		wallFill.Size = UDim2.new(1, 0, 1, 0)
 	elseif update.Status == "RunEnded" then
 		runActive = false
 		defendButton.Text = "Start Defense"

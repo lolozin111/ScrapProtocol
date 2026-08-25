@@ -11,6 +11,9 @@
       "ItemIcons": {
         "$className": "Folder"
       },
+      "WeaponTools": {
+        "$className": "Folder"
+      },
       "Remotes": {
         "$className": "Folder",
         "MineNode": { "$className": "RemoteEvent" },
@@ -41,13 +44,39 @@
         "ForgeWeapon": { "$className": "RemoteFunction" },
         "CraftLuckPotion": { "$className": "RemoteFunction" },
         "UpgradeForgeTier": { "$className": "RemoteFunction" },
-        "StartSmelt": { "$className": "RemoteFunction" }
+        "StartSmelt": { "$className": "RemoteFunction" },
+        "RequestFireWeapon": { "$className": "RemoteEvent" },
+        "RequestStartRaid": { "$className": "RemoteEvent" },
+        "RaidMapUpdate": { "$className": "RemoteEvent" },
+        "ChooseRaidNode": { "$className": "RemoteEvent" },
+        "RaidRoomUpdate": { "$className": "RemoteEvent" },
+        "RaidRoomAction": { "$className": "RemoteEvent" },
+        "AbandonRaid": { "$className": "RemoteEvent" },
+        "RequestExtractRaid": { "$className": "RemoteEvent" },
+        "UpgradeBase": { "$className": "RemoteFunction" },
+        "BuyTurretBlueprint": { "$className": "RemoteFunction" },
+        "PlaceTurretInSlot": { "$className": "RemoteFunction" },
+        "UnplaceTurret": { "$className": "RemoteFunction" },
+        "UpgradeTurret": { "$className": "RemoteFunction" }
       }
     },
 
     "ServerScriptService": {
       "$className": "ServerScriptService",
       "$path": "src/ServerScriptService"
+    },
+
+    "ServerStorage": {
+      "$className": "ServerStorage",
+      "EnemyModels": {
+        "$className": "Folder"
+      },
+      "RaidRoomModels": {
+        "$className": "Folder"
+      },
+      "TurretModels": {
+        "$className": "Folder"
+      }
     },
 
     "StarterPlayer": {

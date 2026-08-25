@@ -17,10 +17,11 @@
 	design as robots always had.
 
 	And owns UndeployRobot (the missing other half of DeployRobot — was craftable/deployable but
-	never un-deployable until the Inventory panel needed it). DeployRobot/UndeployRobot/EquipMod
-	share the same plot+Welding-Station gate (Weapons-tree EquipMod calls are gated to the Forge
-	instead — see below), so browsing the Inventory panel works from anywhere but actually
-	changing anything only works while physically at the right station, same rule as crafting.
+	never un-deployable until the Inventory panel needed it). DeployRobot/UndeployRobot/EquipMod are
+	NOT plot/station gated — direct player feedback was that changing your loadout (equipping,
+	deploying, un-deploying) should work from anywhere; only actually CRAFTING a new item
+	(CraftItem below) still requires being at the right station. This matches EquipWeapon's own
+	gate removal in ForgeService.lua — see that file's header comment for the same reasoning.
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -94,15 +95,9 @@ CraftItem.OnServerInvoke = function(player: Player, tree: string, key: string)
 end
 
 -- DeployRobot: separate RemoteFunction so a robot can be crafted once and deployed/
--- undeployed freely, capped at CraftingRecipes.BaseMaxDeployedRobots (+ pass bonus).
+-- undeployed freely, capped at CraftingRecipes.BaseMaxDeployedRobots (+ pass bonus). Not
+-- plot/station gated — see this file's header comment.
 Remotes.DeployRobot.OnServerInvoke = function(player: Player, robotKey: string)
-	if not PlotService.IsPlayerInOwnPlot(player) then
-		return { Success = false, Reason = PlotConfig.NotInBaseMessage }
-	end
-	if not StationService.IsPlayerNearStation(player, "Welding") then
-		return { Success = false, Reason = StationConfig.Types.Welding.NotThereMessage }
-	end
-
 	local profile = DataService.Get(player)
 	if not profile then
 		return { Success = false, Reason = "Profile not loaded" }
@@ -151,15 +146,9 @@ end
 -- UndeployRobot: the other half of DeployRobot — pulls ONE instance of robotKey off defense duty
 -- (if more than one copy is deployed, only the first match found is removed; which physical
 -- instance doesn't matter since they're identical). Doesn't touch CraftedRobots — undeploying
--- never destroys the robot, it just stops counting toward combat DPS.
+-- never destroys the robot, it just stops counting toward combat DPS. Not plot/station gated —
+-- see this file's header comment.
 Remotes.UndeployRobot.OnServerInvoke = function(player: Player, robotKey: string)
-	if not PlotService.IsPlayerInOwnPlot(player) then
-		return { Success = false, Reason = PlotConfig.NotInBaseMessage }
-	end
-	if not StationService.IsPlayerNearStation(player, "Welding") then
-		return { Success = false, Reason = StationConfig.Types.Welding.NotThereMessage }
-	end
-
 	local profile = DataService.Get(player)
 	if not profile then
 		return { Success = false, Reason = "Profile not loaded" }
@@ -188,21 +177,11 @@ end
 -- EquipMod: swaps whichever mod (or nil for "none") sits in one slot of a weapon/robot TYPE's
 -- loadout. modKey=nil clears the slot. Rejects equipping the same mod into two slots of the same
 -- item at once (would just double-apply one multiplier for no reason) and validates ownership of
--- both the item and the mod before writing anything.
---
--- Station gate depends on tree: weapon mod-slots live at the Forge now (that's where Weapons
--- are Forged and equipped), robot mod-slots stay at the Welding Station — same split as
--- StationConfig.Types' Tabs.
+-- both the item and the mod before writing anything. Not plot/station gated — see this file's
+-- header comment.
 Remotes.EquipMod.OnServerInvoke = function(player: Player, tree: string, itemKey: string, slotIndex: number, modKey: string?)
-	if not PlotService.IsPlayerInOwnPlot(player) then
-		return { Success = false, Reason = PlotConfig.NotInBaseMessage }
-	end
 	if tree ~= "Weapons" and tree ~= "Robots" then
 		return { Success = false, Reason = "Unknown tree" }
-	end
-	local gateStation = tree == "Weapons" and "Forge" or "Welding"
-	if not StationService.IsPlayerNearStation(player, gateStation) then
-		return { Success = false, Reason = StationConfig.Types[gateStation].NotThereMessage }
 	end
 	if type(slotIndex) ~= "number" or slotIndex < 1 or slotIndex > ModConfig.SlotsPerItem then
 		return { Success = false, Reason = "Invalid slot" }

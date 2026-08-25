@@ -25,6 +25,7 @@ require(Services.NodeService)
 require(Services.ExpeditionService)
 require(Services.AutoMinerService)
 require(Services.MineShaftService)
+require(Services.RaidRoomService)
 -- ResourceZoneService (the old scattered-ring ore layout) is no longer required — it's been
 -- replaced by the dig-down MineShaftService above. The file's still on disk for reference; see
 -- DESIGN_NOTES.md for why it was retired instead of tuned further.
