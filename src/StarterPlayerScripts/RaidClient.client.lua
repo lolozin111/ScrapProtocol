@@ -910,5 +910,11 @@ RaidRoomUpdate.OnClientEvent:Connect(function(payload)
 
 	elseif status == "NoSlotsFree" then
 		showToast("The raid area is full right now — try again shortly.", 3)
+
+	elseif status == "Busy" then
+		-- Already defending the base or in an outpost fight — a raid would fight the same
+		-- CombatEncounterService slot out from under it, so the server refuses. See
+		-- PlayerActivityService.
+		showToast(payload.Reason or "You're busy with something else right now.", 3)
 	end
 end)

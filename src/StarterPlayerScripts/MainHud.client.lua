@@ -2792,7 +2792,10 @@ end)
 local wallMaxHP = 150  -- guarded default so an early divide can't blow up; overwritten by Tick
 
 Remotes.WaveUpdate.OnClientEvent:Connect(function(update)
-	if update.Status == "NoGear" or update.Status == "NotInBase" then
+	-- "Busy" = the player is already in a raid or an outpost fight, so a wave can't start (see
+	-- PlayerActivityService). Grouped with the other pre-flight refusals: all three carry a
+	-- Message and none of them should open the wave panel.
+	if update.Status == "NoGear" or update.Status == "NotInBase" or update.Status == "Busy" then
 		warn("[HUD]", update.Message)
 		return
 	end
@@ -2887,6 +2890,10 @@ Remotes.OutpostUpdate.OnClientEvent:Connect(function(update)
 		return
 	elseif update.Status == "NoEnergy" then
 		warn("[HUD] Not enough Energy to raid — wait for it to regen or find an Energy Drink while mining.")
+		return
+	elseif update.Status == "Busy" then
+		-- Already in a base-defense wave or an instanced raid — see PlayerActivityService.
+		warn("[HUD]", update.Message)
 		return
 	elseif update.Status == "RaidCancelled" then
 		-- The node this raid was fighting got wiped out from under it (e.g. Return to Base

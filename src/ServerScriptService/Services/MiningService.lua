@@ -33,6 +33,7 @@ local DataService = require(script.Parent.DataService)
 local RaidEnergyService = require(script.Parent.RaidEnergyService)
 local PlotService = require(script.Parent.PlotService)
 local StationService = require(script.Parent.StationService)
+local RateLimiter = require(script.Parent.RateLimiter)
 
 local Remotes = ReplicatedStorage.Remotes
 local MineNode = Remotes.MineNode
@@ -177,6 +178,26 @@ MineNode.OnServerEvent:Connect(function(player: Player, node: Instance)
 		return
 	end
 
+	-- Swing pacing, enforced server-side. MineNode is a fire-and-forget RemoteEvent with only a
+	-- distance check in front of it, so before this a modified client could fire it in a tight
+	-- loop and drain any node as fast as it could send packets — every hit granting full yield.
+	-- OreConfig.ToolTiers[].SwingTime had described this pacing since the config was first
+	-- written but was never actually read by anything; this is where it finally applies.
+	--
+	-- Read from the player's CURRENT tier, not cached: upgrading your tool is supposed to make
+	-- you mine faster (1.2s at Rusty Pickaxe down to 0.3s at Plasma Drill), which is half the
+	-- point of buying the upgrade at all. The client's own ProximityPrompt HoldDuration is a UX
+	-- nicety on top of this, exactly like the Depleted attribute is — this check is what's real.
+	-- checkCanMine above already proved the profile exists. The `or ToolTiers[1]` fallback guards
+	-- the index itself, not the profile: a ToolTier past the end of the ladder (a save written
+	-- against a longer one, a bad value) would otherwise error inside the remote handler.
+	local profile = DataService.Get(player)
+	local toolData = OreConfig.ToolTiers[profile.ToolTier] or OreConfig.ToolTiers[1]
+	if not RateLimiter.Check(player, "MineNode", toolData.SwingTime) then
+		Remotes.MineFailed:FireClient(player, "Swinging too fast — wait for your tool to reset")
+		return
+	end
+
 	local oreData = OreConfig.Ores[oreKey]
 
 	-- Never trust the client's ProximityPrompt state — it's only a UX nicety, this check is
@@ -187,9 +208,7 @@ MineNode.OnServerEvent:Connect(function(player: Player, node: Instance)
 		return
 	end
 
-	local profile = DataService.Get(player)
-	local toolData = OreConfig.ToolTiers[profile.ToolTier]
-
+	-- profile/toolData were already resolved for the swing-pacing check above.
 	local yield = math.floor(oreData.BaseYield * toolData.YieldMultiplier + 0.5)
 	DataService.AddOre(player, oreKey, yield)
 

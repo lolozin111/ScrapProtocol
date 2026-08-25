@@ -102,13 +102,24 @@ end
 -- clicking during a Raid Room fight did nothing at all — RaidRoomUpdate never touched this flag.
 ----------------------------------------------------------------------
 
-local combatActive = false
+-- Tracked as two INDEPENDENT flags rather than one shared boolean. They were one, which meant
+-- either feed could switch the other off: a base-defense run ending ("RunEnded") while a Raid
+-- Room fight was live cleared the same flag the raid was relying on, and clicking went dead
+-- mid-fight for no visible reason. Server-side these two can no longer overlap at all now (see
+-- PlayerActivityService), but keeping them separate here means the client stays correct on its
+-- own terms instead of depending on that guarantee holding forever.
+local waveActive = false
+local raidActive = false
+
+local function isCombatActive(): boolean
+	return waveActive or raidActive
+end
 
 WaveUpdate.OnClientEvent:Connect(function(update)
 	if update.Status == "WaveStart" then
-		combatActive = true
+		waveActive = true
 	elseif update.Status == "RunEnded" or update.Status == "Interrupted" then
-		combatActive = false
+		waveActive = false
 	end
 end)
 
@@ -117,10 +128,15 @@ RaidRoomUpdate.OnClientEvent:Connect(function(update)
 	-- relabeled "AmbushStart"/"AmbushEnd" instead of "CombatStart"/"CombatEnd" — see that function's
 	-- own comment. Toggling per wave (true during each wave, false during the short breather between
 	-- them) is correct here, same as it already is for a single Combat encounter.
-	if update.Status == "CombatStart" or update.Status == "AmbushStart" then
-		combatActive = true
-	elseif update.Status == "CombatEnd" or update.Status == "AmbushEnd" then
-		combatActive = false
+	-- BossStart/BossEnd included alongside Combat/Ambush: a Boss node runs the same RunRaidCombat
+	-- engine and is just as much a live fight, but its events were never listened for here, so
+	-- clicking did nothing during a boss (see RaidRoomService.beginBoss's payload.Status).
+	if update.Status == "CombatStart" or update.Status == "AmbushStart" or update.Status == "BossStart" then
+		raidActive = true
+	elseif update.Status == "CombatEnd" or update.Status == "AmbushEnd" or update.Status == "BossEnd" then
+		raidActive = false
+	elseif update.Status == "Defeated" or update.Status == "Extracted" or update.Status == "Abandoned" then
+		raidActive = false -- raid ended outright; CombatEnd may never arrive for this run
 	end
 end)
 
@@ -205,7 +221,7 @@ end
 local holding = false
 
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
-	if gameProcessed or not combatActive then
+	if gameProcessed or not isCombatActive() then
 		return
 	end
 	if input.UserInputType == Enum.UserInputType.MouseButton1 then
@@ -220,7 +236,7 @@ UserInputService.InputEnded:Connect(function(input)
 end)
 
 game:GetService("RunService").Heartbeat:Connect(function()
-	if holding and combatActive then
+	if holding and isCombatActive() then
 		fireOnce()
 	end
 end)

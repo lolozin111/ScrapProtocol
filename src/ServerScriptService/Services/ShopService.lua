@@ -32,7 +32,11 @@ for key, data in pairs(ShopConfig.GamePasses) do
 	end
 end
 
-local function grantDeveloperProduct(player: Player, key: string)
+-- Grants the product AND records its PurchaseId, then persists both in a single save. Recording
+-- the id in the same save as the grant is the whole point — if they were saved separately, a
+-- crash between them would leave a granted-but-unrecorded purchase that gets granted a second
+-- time on the next redelivery.
+local function grantDeveloperProduct(player: Player, key: string, purchaseId: string)
 	local data = ShopConfig.DeveloperProducts[key]
 	if not data then
 		return false
@@ -41,11 +45,25 @@ local function grantDeveloperProduct(player: Player, key: string)
 	if data.Grant then
 		DataService.AddCurrency(player, data.Grant.Currency, data.Grant.Amount)
 	end
+	DataService.MarkPurchaseHandled(player, purchaseId)
 
 	DataService.Save(player) -- persist immediately, see DataService.Save's comment
 	return true
 end
 
+-- Roblox re-delivers a receipt until it's acknowledged with PurchaseGranted, so the same
+-- PurchaseId can (and eventually will) arrive more than once: an acknowledgement lost to a crash,
+-- a network blip, or the player leaving mid-purchase all replay it, sometimes in a later session
+-- entirely. Granting is therefore guarded by profile.HandledPurchaseIds (see DataService) rather
+-- than assumed to happen once.
+--
+-- Note the asymmetry between the two "already handled" and "profile missing" paths below — both
+-- are the safe answer for their case:
+--   already handled -> PurchaseGranted, WITHOUT granting again. The player has their item; the
+--     only thing that failed last time was telling Roblox so. Returning NotProcessedYet here
+--     would put the receipt in an infinite redelivery loop.
+--   profile missing -> NotProcessedYet. Nothing was granted and nothing was recorded, so letting
+--     Roblox retry is exactly right; the player keeps their Robux until it lands.
 MarketplaceService.ProcessReceipt = function(receiptInfo)
 	local player = Players:GetPlayerByUserId(receiptInfo.PlayerId)
 	if not player then
@@ -58,7 +76,19 @@ MarketplaceService.ProcessReceipt = function(receiptInfo)
 		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end
 
-	local ok = grantDeveloperProduct(player, key)
+	local purchaseId = tostring(receiptInfo.PurchaseId)
+
+	-- The profile has to be loaded before either half of this can be trusted — HasHandledPurchase
+	-- returns false on a missing profile, which would read as "not yet granted" and re-grant.
+	if not DataService.Get(player) then
+		return Enum.ProductPurchaseDecision.NotProcessedYet
+	end
+
+	if DataService.HasHandledPurchase(player, purchaseId) then
+		return Enum.ProductPurchaseDecision.PurchaseGranted
+	end
+
+	local ok = grantDeveloperProduct(player, key, purchaseId)
 	if not ok then
 		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end

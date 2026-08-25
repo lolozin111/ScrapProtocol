@@ -10,6 +10,12 @@
 local Services = script.Parent.Services
 
 require(Services.DataService)
+-- Shared cross-service state, required early and deliberately: both connect PlayerRemoving
+-- handlers, and PlayerRemoving fires in CONNECTION order, which is this list's order. Requiring
+-- them here (rather than letting whichever gameplay service happens to touch one first pull it
+-- in) is what makes their teardown position predictable instead of an accident of require order.
+require(Services.RateLimiter)
+require(Services.PlayerActivityService)
 require(Services.PlotService)
 require(Services.BaseService)
 require(Services.StationService)

@@ -40,6 +40,7 @@ local DataService = require(script.Parent.DataService)
 local CombatMath = require(script.Parent.CombatMath)
 local PlotService = require(script.Parent.PlotService)
 local CombatEncounterService = require(script.Parent.CombatEncounterService)
+local PlayerActivityService = require(script.Parent.PlayerActivityService)
 
 local Remotes = ReplicatedStorage.Remotes
 local StartWave = Remotes.StartWave
@@ -161,8 +162,30 @@ StartWave.OnServerEvent:Connect(function(player: Player)
 		WaveUpdate:FireClient(player, { Status = "NotInBase", Message = PlotConfig.NotInBaseMessage })
 		return
 	end
+
+	-- Claim the player's combat state (see PlayerActivityService). CombatEncounterService keeps a
+	-- SINGLE activeEncounters slot per UserId, shared by RunWave and RunRaidCombat — so before
+	-- this, starting a raid mid-wave silently corrupted both fights. activeRuns above stays as the
+	-- local "is a run already going" guard; this is the cross-system one.
+	local acquired, busyReason = PlayerActivityService.TryAcquire(player, PlayerActivityService.Activities.Wave)
+	if not acquired then
+		WaveUpdate:FireClient(player, { Status = "Busy", Message = busyReason })
+		return
+	end
+
 	activeRuns[player.UserId] = true
-	task.spawn(runWaves, player)
+
+	-- Released once here rather than at runWaves' own exit, and pcall'd so an error inside the
+	-- wave loop can't strand the activity and lock the player out of fighting for the session.
+	task.spawn(function()
+		local ok, err = pcall(runWaves, player)
+		if not ok then
+			warn("[WaveService] runWaves errored:", err)
+			activeRuns[player.UserId] = nil
+			WaveUpdate:FireClient(player, { Status = "RunEnded", HighestWave = 0 })
+		end
+		PlayerActivityService.Release(player, PlayerActivityService.Activities.Wave)
+	end)
 end)
 
 game.Players.PlayerRemoving:Connect(function(player)

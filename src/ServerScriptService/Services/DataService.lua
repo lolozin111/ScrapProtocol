@@ -23,6 +23,13 @@ local DataService = {}
 local cache: { [number]: any } = {}
 local AUTOSAVE_INTERVAL = 120 -- seconds
 
+-- How many granted PurchaseIds to remember per player (see profile.HandledPurchaseIds). Roblox
+-- only re-delivers receipts that haven't been acknowledged yet, so the window that actually
+-- needs covering is "the last few purchases," not "everything ever bought" — and this list is
+-- saved with the profile, so it can't be allowed to grow forever. Oldest entries are dropped
+-- once the list passes this length.
+local MAX_HANDLED_PURCHASES = 50
+
 local function defaultProfile()
 	return {
 		Scrap = 0,
@@ -105,6 +112,11 @@ local function defaultProfile()
 		HighestWave = 0,
 		InstantCraftTokens = 0,
 		WaveReviveTokens = 0,
+		HandledPurchaseIds = {}, -- ordered list of receiptInfo.PurchaseId strings already granted —
+			-- see ShopService.ProcessReceipt and DataService.HasHandledPurchase below. Roblox
+			-- re-delivers a receipt until it's acknowledged with PurchaseGranted (on retry, and
+			-- again on rejoin), so without this a network hiccup between the grant and the
+			-- acknowledgement double-grants the product. Bounded FIFO — see MAX_HANDLED_PURCHASES.
 		Energy = RaidEnergyConfig.MaxEnergy, -- starts full so a fresh player isn't stuck waiting — see RaidEnergyService
 	}
 end
@@ -270,6 +282,39 @@ function DataService.TrySpend(player: Player, costTable: { [string]: number }): 
 	end
 
 	return true
+end
+
+-- Receipt de-duplication for developer-product purchases (ShopService.ProcessReceipt).
+--
+-- Roblox keeps re-delivering a receipt until the game acknowledges it with PurchaseGranted, and
+-- that acknowledgement can be lost — a crash, a network blip, or the player leaving mid-purchase
+-- all result in the same receipt arriving again, sometimes on a later session entirely. The
+-- purchase must be granted exactly once, so the PurchaseId is recorded alongside the grant and
+-- checked on every subsequent delivery.
+--
+-- Stored as an ordered LIST rather than a set keyed by PurchaseId, specifically so the oldest can
+-- be trimmed: a plain [purchaseId] = true table has no order to trim by and would grow with every
+-- purchase the player ever makes, inside a value that gets serialized to the DataStore on every
+-- save. Linear scan over <= MAX_HANDLED_PURCHASES entries is nothing next to that.
+function DataService.HasHandledPurchase(player: Player, purchaseId: string): boolean
+	local profile = cache[player.UserId]
+	if not profile then
+		return false
+	end
+	return table.find(profile.HandledPurchaseIds, purchaseId) ~= nil
+end
+
+-- Records a PurchaseId as granted. Caller must persist with DataService.Save before reporting
+-- PurchaseGranted back to Roblox — see ShopService.
+function DataService.MarkPurchaseHandled(player: Player, purchaseId: string)
+	local profile = cache[player.UserId]
+	if not profile then
+		return
+	end
+	table.insert(profile.HandledPurchaseIds, purchaseId)
+	while #profile.HandledPurchaseIds > MAX_HANDLED_PURCHASES do
+		table.remove(profile.HandledPurchaseIds, 1)
+	end
 end
 
 function DataService.SetHighestWave(player: Player, wave: number)

@@ -112,6 +112,11 @@ local CombatEncounterService = {}
 
 local activeEncounters: { [number]: any } = {} -- userId -> encounter state, ONLY while a wave is live
 
+-- One warn per unknown AIPattern name, not one per enemy per tick — see the guarded dispatch in
+-- the encounter loops below. Without the dedupe a single mis-typed EnemyConfig entry would flood
+-- the Output window several times a second for the whole wave.
+local warnedMissingPattern: { [string]: boolean } = {}
+
 local encounterFolder = Workspace:FindFirstChild("CombatEncounters")
 if not encounterFolder then
 	encounterFolder = Instance.new("Folder")
@@ -209,10 +214,23 @@ local function spawnEnemy(typeKey: string, typeData, spawnPosition: Vector3, mul
 	end
 
 	local model = template:Clone()
-	model.Parent = parentFolder
-	if model.PrimaryPart then
-		model:PivotTo(CFrame.new(spawnPosition))
+
+	-- A model with no PrimaryPart is rejected outright, exactly like one with no Humanoid below.
+	-- This used to just skip the PivotTo and spawn the enemy anyway, which was far worse than it
+	-- looks: the record came back alive, but every system that can DEAL damage iterates
+	-- aliveEnemies (which requires PrimaryPart), while the loop's own "is anything still alive"
+	-- test only checked Humanoid.Health. So the enemy was permanently alive, sitting unmoved at
+	-- the template's original coordinates, untargetable and unkillable — and the wave never
+	-- ended. See isEnemyAlive below, which now keeps those two questions from diverging again.
+	-- Checked before parenting so a rejected clone never touches the workspace at all.
+	if not model.PrimaryPart then
+		warn("[CombatEncounterService] Enemy model", typeData.ModelName, "has no PrimaryPart set — skipping spawn. Set one in Studio (see README).")
+		model:Destroy()
+		return nil
 	end
+
+	model.Parent = parentFolder
+	model:PivotTo(CFrame.new(spawnPosition))
 
 	-- See ENEMY_COLLISION_GROUP's own comment above — every part of every spawned enemy joins the
 	-- same group so they never physically shove each other while crowding the wall.
@@ -302,6 +320,19 @@ local function getWallAttackRange(player: Player): number
 		halfExtent = BaseConfig.WallAttackRange -- fallback only — see that field's own comment
 	end
 	return halfExtent + WALL_STOP_MARGIN
+end
+
+-- The ONE definition of "this enemy still counts as a live participant," used by both the
+-- encounter loops' exit test and the aliveEnemies list they build for AI/robots/turrets.
+--
+-- These were two separate inline conditions and they did not agree: the exit test checked only
+-- Humanoid.Health > 0, while aliveEnemies additionally required Model.PrimaryPart. Any enemy
+-- matching the first but not the second was immortal — nothing could target it, and the loop
+-- would not exit while it lived. spawnEnemy now rejects PrimaryPart-less models up front, so
+-- that gap is closed at the source too; this exists so a future change to either question is
+-- forced to be a change to both.
+local function isEnemyAlive(record): boolean
+	return record.Humanoid.Health > 0 and record.Model.PrimaryPart ~= nil
 end
 
 ----------------------------------------------------------------------
@@ -501,6 +532,14 @@ function CombatEncounterService.RunWave(player: Player, waveNumber: number, opts
 		PlayerState = playerState,
 		DamageTarget = damageTarget,
 	}
+	-- Belt-and-braces. This slot is shared by RunWave and RunRaidCombat, and overwriting a live
+	-- one used to be reachable (start a raid mid-wave) — it corrupted both fights, since
+	-- RequestFireWeapon resolves against whichever encounter is in here and whichever fight ends
+	-- first nils the survivor's entry. PlayerActivityService should now make that impossible at
+	-- the two entry points; this catches it loudly if some future caller finds a third way in.
+	if activeEncounters[player.UserId] then
+		warn(("[CombatEncounterService] Overwriting a live encounter for %s — two combat systems think they own this player. See PlayerActivityService."):format(player.Name))
+	end
 	activeEncounters[player.UserId] = encounter
 
 	local status = "Cleared"
@@ -512,7 +551,7 @@ function CombatEncounterService.RunWave(player: Player, waveNumber: number, opts
 			-- EnemyModels folder (nothing built yet) shouldn't hang the run forever, see spawnEnemy.
 			local anyAlive = false
 			for _, record in pairs(enemyByModel) do
-				if record.Humanoid.Health > 0 then
+				if isEnemyAlive(record) then
 					anyAlive = true
 					break
 				end
@@ -549,7 +588,7 @@ function CombatEncounterService.RunWave(player: Player, waveNumber: number, opts
 		-- threat" for free — see RobotBehaviors.lua.
 		local aliveEnemies = {}
 		for _, record in pairs(enemyByModel) do
-			if record.Humanoid.Health > 0 and record.Model.PrimaryPart then
+			if isEnemyAlive(record) then
 				table.insert(aliveEnemies, record)
 			end
 		end
@@ -579,7 +618,20 @@ function CombatEncounterService.RunWave(player: Player, waveNumber: number, opts
 			DamageTarget = damageTarget,
 		}
 		for _, record in ipairs(aliveEnemies) do
-			EnemyAI.Patterns[record.AIPattern](record, aiContext)
+			-- Guarded like the RobotBehaviors dispatch below it. Unguarded, an EnemyConfig entry
+			-- naming an AIPattern that doesn't exist in EnemyAI.Patterns (a typo, or a pattern
+			-- planned but not written yet) threw from inside this tick loop — killing the whole
+			-- encounter coroutine and stranding activeRuns/activeEncounters, which locked the
+			-- player out of starting another run for the rest of the session. A missing pattern
+			-- should cost one enemy its brain, not the entire run.
+			local pattern = EnemyAI.Patterns[record.AIPattern]
+			if pattern then
+				pattern(record, aiContext)
+			elseif not warnedMissingPattern[record.AIPattern] then
+				warnedMissingPattern[record.AIPattern] = true
+				warn(("[CombatEncounterService] No EnemyAI pattern named %q (used by enemy type %s) — that enemy will stand still. Add it to EnemyAI.Patterns."):format(
+					tostring(record.AIPattern), tostring(record.TypeKey)))
+			end
 		end
 
 		local robotContext = {
@@ -754,6 +806,14 @@ function CombatEncounterService.RunRaidCombat(player: Player, arenaCenter: Vecto
 		PlayerState = playerState,
 		DamageTarget = damageTarget,
 	}
+	-- Belt-and-braces. This slot is shared by RunWave and RunRaidCombat, and overwriting a live
+	-- one used to be reachable (start a raid mid-wave) — it corrupted both fights, since
+	-- RequestFireWeapon resolves against whichever encounter is in here and whichever fight ends
+	-- first nils the survivor's entry. PlayerActivityService should now make that impossible at
+	-- the two entry points; this catches it loudly if some future caller finds a third way in.
+	if activeEncounters[player.UserId] then
+		warn(("[CombatEncounterService] Overwriting a live encounter for %s — two combat systems think they own this player. See PlayerActivityService."):format(player.Name))
+	end
 	activeEncounters[player.UserId] = encounter
 
 	local status = "Cleared"
@@ -766,7 +826,7 @@ function CombatEncounterService.RunRaidCombat(player: Player, arenaCenter: Vecto
 	while true do
 		local anyAlive = false
 		for _, record in pairs(enemyByModel) do
-			if record.Humanoid.Health > 0 then
+			if isEnemyAlive(record) then
 				anyAlive = true
 				break
 			end
@@ -795,7 +855,7 @@ function CombatEncounterService.RunRaidCombat(player: Player, arenaCenter: Vecto
 
 		local aliveEnemies = {}
 		for _, record in pairs(enemyByModel) do
-			if record.Humanoid.Health > 0 and record.Model.PrimaryPart then
+			if isEnemyAlive(record) then
 				table.insert(aliveEnemies, record)
 			end
 		end
@@ -825,7 +885,20 @@ function CombatEncounterService.RunRaidCombat(player: Player, arenaCenter: Vecto
 			DamageTarget = damageTarget,
 		}
 		for _, record in ipairs(aliveEnemies) do
-			EnemyAI.Patterns[record.AIPattern](record, aiContext)
+			-- Guarded like the RobotBehaviors dispatch below it. Unguarded, an EnemyConfig entry
+			-- naming an AIPattern that doesn't exist in EnemyAI.Patterns (a typo, or a pattern
+			-- planned but not written yet) threw from inside this tick loop — killing the whole
+			-- encounter coroutine and stranding activeRuns/activeEncounters, which locked the
+			-- player out of starting another run for the rest of the session. A missing pattern
+			-- should cost one enemy its brain, not the entire run.
+			local pattern = EnemyAI.Patterns[record.AIPattern]
+			if pattern then
+				pattern(record, aiContext)
+			elseif not warnedMissingPattern[record.AIPattern] then
+				warnedMissingPattern[record.AIPattern] = true
+				warn(("[CombatEncounterService] No EnemyAI pattern named %q (used by enemy type %s) — that enemy will stand still. Add it to EnemyAI.Patterns."):format(
+					tostring(record.AIPattern), tostring(record.TypeKey)))
+			end
 		end
 
 		local robotContext = {

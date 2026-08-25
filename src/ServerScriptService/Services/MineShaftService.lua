@@ -58,6 +58,7 @@ local DataService = require(script.Parent.DataService)
 local RaidEnergyService = require(script.Parent.RaidEnergyService)
 local PlotService = require(script.Parent.PlotService)
 local StationService = require(script.Parent.StationService)
+local RateLimiter = require(script.Parent.RateLimiter)
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 
@@ -425,6 +426,26 @@ Remotes.MineShaftHit.OnServerEvent:Connect(function(player: Player, block: Insta
 	end
 	-- Rock and Hazard blocks have no gate — they're filler/danger, not something you need to earn
 	-- access to.
+
+	-- Swing pacing, same OreConfig.ToolTiers[].SwingTime source MiningService uses — the mine
+	-- already gates ore on ToolTier, so a better tool paying off with faster digging here too is
+	-- the consistent behavior. Enforced server-side because MineShaftHit is fire-and-forget with
+	-- only a distance check in front of it: without this, a modified client could clear a block
+	-- (and then the whole grid, revealing neighbors as it went) as fast as it could send packets.
+	--
+	-- Deliberately AFTER the Bedrock/ore-gate rejections above so a blocked hit doesn't also burn
+	-- the player's swing timer, but BEFORE HitsRemaining is decremented — the decrement is the
+	-- thing actually worth protecting.
+	local swingProfile = DataService.Get(player)
+	local swingTier = swingProfile and swingProfile.ToolTier or 1
+	-- Falls back to tier 1 rather than indexing blind: this runs before the profile is known to
+	-- exist on every path, and a ToolTier past the end of the table (a save written against a
+	-- longer ladder, a bad value) would otherwise error inside the remote handler.
+	local swingToolData = OreConfig.ToolTiers[swingTier] or OreConfig.ToolTiers[1]
+	if not RateLimiter.Check(player, "MineShaftHit", swingToolData.SwingTime) then
+		Remotes.MineFailed:FireClient(player, "Swinging too fast — wait for your tool to reset")
+		return
+	end
 
 	local hitsRemaining = block:GetAttribute("HitsRemaining") or 0
 	if hitsRemaining <= 0 then

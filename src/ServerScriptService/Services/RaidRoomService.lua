@@ -70,6 +70,7 @@ local EnemyConfig = require(ReplicatedStorage.Shared.EnemyConfig)
 local DataService = require(script.Parent.DataService)
 local RaidEnergyService = require(script.Parent.RaidEnergyService)
 local CombatEncounterService = require(script.Parent.CombatEncounterService)
+local PlayerActivityService = require(script.Parent.PlayerActivityService)
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 local RequestStartRaid = Remotes.RequestStartRaid
@@ -394,8 +395,13 @@ local function advanceFromNode(state)
 	end
 end
 
+-- The single teardown funnel for a raid, however it ended — Extract, Defeat, Abandon, a mid-fight
+-- "Interrupted", or a disconnect all route through here. That's why the PlayerActivityService
+-- release lives here and nowhere else: every exit path already has to call this, so there's no
+-- branch left where the activity could leak and soft-lock the player out of raiding.
 local function cleanupRaid(state, sendReturnHome: boolean?)
 	activeRaids[state.Player.UserId] = nil
+	PlayerActivityService.Release(state.Player, PlayerActivityService.Activities.Raid)
 	if state.RoomFolder then
 		state.RoomFolder:Destroy()
 	end
@@ -781,14 +787,31 @@ RequestStartRaid.OnServerEvent:Connect(function(player: Player)
 		return
 	end
 
-	if not RaidEnergyService.TrySpendEnergy(player, RaidConfig.EnergyCost) then
-		RaidRoomUpdate:FireClient(player, { Status = "NoEnergy" })
+	-- Claim the player's combat state BEFORE spending anything. Base defense and raids both write
+	-- CombatEncounterService's single activeEncounters slot for this UserId, so starting a raid
+	-- mid-wave used to corrupt both fights (see PlayerActivityService's header). Checked ahead of
+	-- the Energy spend and the slot allocation so a refused raid costs the player nothing.
+	local acquired, busyReason = PlayerActivityService.TryAcquire(player, PlayerActivityService.Activities.Raid)
+	if not acquired then
+		RaidRoomUpdate:FireClient(player, { Status = "Busy", Reason = busyReason })
 		return
 	end
 
+	-- Slot allocation moved AHEAD of the Energy spend. It used to sit after, which meant a player
+	-- who hit a full server (no free instance slot) had already been charged Energy for a raid
+	-- that then never started, with nothing refunding it. Ordering the two so the only failure
+	-- that can happen after the charge is "no failure" avoids needing a refund path at all.
 	local slotIndex = allocateSlot()
 	if not slotIndex then
+		PlayerActivityService.Release(player, PlayerActivityService.Activities.Raid)
 		RaidRoomUpdate:FireClient(player, { Status = "NoSlotsFree" })
+		return
+	end
+
+	if not RaidEnergyService.TrySpendEnergy(player, RaidConfig.EnergyCost) then
+		releaseSlot(slotIndex)
+		PlayerActivityService.Release(player, PlayerActivityService.Activities.Raid)
+		RaidRoomUpdate:FireClient(player, { Status = "NoEnergy" })
 		return
 	end
 

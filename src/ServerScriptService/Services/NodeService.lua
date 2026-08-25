@@ -20,6 +20,7 @@ local AdminConfig = require(ReplicatedStorage.Shared.AdminConfig)
 local DataService = require(script.Parent.DataService)
 local CombatMath = require(script.Parent.CombatMath)
 local ExpeditionService = require(script.Parent.ExpeditionService)
+local PlayerActivityService = require(script.Parent.PlayerActivityService)
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 local InteractHeal = Remotes.InteractHeal
@@ -334,8 +335,32 @@ StartOutpostRaid.OnServerEvent:Connect(function(player: Player, node: Instance)
 	local tierValue = node:FindFirstChild("Tier")
 	local tier = (tierValue and tierValue:IsA("NumberValue")) and tierValue.Value or 1
 
+	-- Claim the player's combat state (see PlayerActivityService) — an Outpost raid runs its own
+	-- damage loop against the player's Humanoid, so it can't overlap a base-defense wave or an
+	-- instanced Raid Room. activeRaids below stays as-is: it's the finer-grained mid-raid lockout
+	-- that Heal/Shop/Skip check, a different question from "what is this player doing at all."
+	local acquired, busyReason = PlayerActivityService.TryAcquire(player, PlayerActivityService.Activities.OutpostRaid)
+	if not acquired then
+		OutpostUpdate:FireClient(player, { Status = "Busy", Message = busyReason })
+		return
+	end
+
 	activeRaids[player.UserId] = true
-	task.spawn(runRaid, player, node, tier)
+
+	-- runRaid has nine separate exit paths, each clearing activeRaids itself. Rather than adding a
+	-- release to all nine (and every future one), release once here after it returns — and pcall it
+	-- so an unexpected error inside the loop can't strand BOTH flags and lock the player out of
+	-- fighting for the rest of the session, which is exactly the failure mode this whole activity
+	-- system exists to prevent.
+	task.spawn(function()
+		local ok, err = pcall(runRaid, player, node, tier)
+		if not ok then
+			warn("[NodeService] runRaid errored:", err)
+			activeRaids[player.UserId] = nil
+			OutpostUpdate:FireClient(player, { Status = "RaidCancelled" })
+		end
+		PlayerActivityService.Release(player, PlayerActivityService.Activities.OutpostRaid)
+	end)
 end)
 
 ----------------------------------------------------------------------
