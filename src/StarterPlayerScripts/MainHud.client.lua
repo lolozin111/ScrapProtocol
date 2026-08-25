@@ -97,6 +97,63 @@ local screenGui = new("ScreenGui", {
 })
 
 ----------------------------------------------------------------------
+-- Toast — on-screen feedback for actions the server refused.
+--
+-- Every failure path in this file used to be a bare warn(), which writes to the Studio OUTPUT
+-- WINDOW and is completely invisible to someone actually playing. So a rejected action — not
+-- enough Cores, too far from the station, slot occupied — looked identical to a dead button:
+-- "I click Buy and nothing happens." The server was answering correctly the whole time; the
+-- answer just had nowhere to go.
+--
+-- Same shape as RaidClient.client.lua's own toast (that file already had one) so the two read
+-- consistently. The token guard means a newer toast always wins rather than an older one's timer
+-- hiding it early.
+----------------------------------------------------------------------
+
+local toastLabel = new("TextLabel", {
+	Name = "Toast",
+	BackgroundColor3 = COLOR.Panel,
+	Position = UDim2.new(0.5, 0, 0, 70),
+	AnchorPoint = Vector2.new(0.5, 0),
+	Size = UDim2.new(0, 420, 0, 0),
+	AutomaticSize = Enum.AutomaticSize.Y,
+	Visible = false,
+	ZIndex = 20, -- above the craft/inventory panels, which is exactly when these fire
+	Font = Enum.Font.SourceSans,
+	Text = "",
+	TextColor3 = COLOR.Text,
+	TextSize = 16,
+	TextWrapped = true,
+	Parent = screenGui,
+}, { corner(6), stroke(), new("UIPadding", {
+	PaddingTop = UDim.new(0, 10), PaddingBottom = UDim.new(0, 10),
+	PaddingLeft = UDim.new(0, 14), PaddingRight = UDim.new(0, 14),
+}) })
+
+local toastToken = 0
+
+local function showToast(text: string, seconds: number?)
+	toastToken += 1
+	local myToken = toastToken
+	toastLabel.Text = text
+	toastLabel.Visible = true
+	task.delay(seconds or 3.5, function()
+		if toastToken == myToken then
+			toastLabel.Visible = false
+		end
+	end)
+end
+
+-- Use this for every rejected action instead of a bare warn(). Keeps the Output line (useful when
+-- testing in Studio, and it carries the context prefix) while ALSO telling the player something
+-- in-game. `reason` comes straight from the server's { Success = false, Reason = ... } payload.
+local function showFailure(context: string, reason: string?)
+	local text = reason or "That didn't work."
+	warn(("[HUD] %s: %s"):format(context, text))
+	showToast(text)
+end
+
+----------------------------------------------------------------------
 -- Currency readout (top-left)
 ----------------------------------------------------------------------
 
@@ -296,7 +353,7 @@ local function renderToolRow()
 		function()
 			local result = Remotes.UpgradeTool:InvokeServer()
 			if not result.Success then
-				warn("[HUD] Upgrade failed:", result.Reason)
+				showFailure("Upgrade failed", result.Reason)
 			end
 		end
 	).Parent = listFrame
@@ -327,7 +384,7 @@ local function renderAutoMinerRow()
 			if owned then return end
 			local result = Remotes.CraftAutoMiner:InvokeServer()
 			if not result.Success then
-				warn("[HUD] Build failed:", result.Reason)
+				showFailure("Build failed", result.Reason)
 			end
 		end
 	).Parent = listFrame
@@ -362,7 +419,7 @@ local function renderSuitRow()
 		function()
 			local result = Remotes.UpgradeSuit:InvokeServer()
 			if not result.Success then
-				warn("[HUD] Suit upgrade failed:", result.Reason)
+				showFailure("Suit upgrade failed", result.Reason)
 			end
 		end
 	).Parent = listFrame
@@ -395,7 +452,7 @@ local function renderModsRow()
 				if owned then return end
 				local result = Remotes.CraftItem:InvokeServer("Mods", key)
 				if not result.Success then
-					warn("[HUD] Craft failed:", result.Reason)
+					showFailure("Craft failed", result.Reason)
 				end
 			end
 		).Parent = listFrame
@@ -489,7 +546,7 @@ local function selectMod(modKey: string?)
 	closeModPicker() -- close first so a slow round trip doesn't leave a stale popup hanging open
 	local result = Remotes.EquipMod:InvokeServer(tree, itemKey, slotIndex, modKey)
 	if not result.Success then
-		warn("[HUD] Equip mod failed:", result.Reason)
+		showFailure("Equip mod failed", result.Reason)
 	end
 end
 
@@ -660,12 +717,12 @@ renderTurretPanel = function()
 				or ("Upgrade (%d %s)"):format(upgradeCost, TurretConfig.UpgradeCurrency),
 			function()
 				if tierLocked then
-					warn(("[HUD] Level %d needs Research Tier %d — that system isn't built yet."):format(level + 1, nextTurretTier))
+					showFailure("Locked", ("Level %d needs Research Tier %d — that system isn't built yet."):format(level + 1, nextTurretTier))
 					return
 				end
 				local result = Remotes.UpgradeTurret:InvokeServer(occupant.Id)
 				if not result.Success then
-					warn("[HUD] Upgrade turret failed:", result.Reason)
+					showFailure("Upgrade turret failed", result.Reason)
 				end
 			end
 		).Parent = turretPanelList
@@ -677,7 +734,7 @@ renderTurretPanel = function()
 			function()
 				local result = Remotes.UnplaceTurret:InvokeServer(occupant.Id)
 				if not result.Success then
-					warn("[HUD] Unplace turret failed:", result.Reason)
+					showFailure("Unplace turret failed", result.Reason)
 					return
 				end
 				closeTurretPanel() -- the turret you were managing isn't here anymore
@@ -707,7 +764,7 @@ renderTurretPanel = function()
 			function()
 				local result = Remotes.PlaceTurretInSlot:InvokeServer(turret.Id, slotIndex)
 				if not result.Success then
-					warn("[HUD] Place turret failed:", result.Reason)
+					showFailure("Place turret failed", result.Reason)
 					return
 				end
 				closeTurretPanel() -- it's placed; the slot is now what you can see in the world
@@ -843,12 +900,12 @@ local function makeRobotRow(key: string)
 			if canDeployMore then
 				local result = Remotes.DeployRobot:InvokeServer(key)
 				if not result.Success then
-					warn("[HUD] Deploy failed:", result.Reason)
+					showFailure("Deploy failed", result.Reason)
 				end
 			else
 				local result = Remotes.UndeployRobot:InvokeServer(key)
 				if not result.Success then
-					warn("[HUD] Undeploy failed:", result.Reason)
+					showFailure("Undeploy failed", result.Reason)
 				end
 			end
 		end
@@ -922,7 +979,7 @@ local function renderForgeWeapons()
 			function()
 				local result = Remotes.UpgradeForgeTier:InvokeServer()
 				if not result.Success then
-					warn("[HUD] Forge upgrade failed:", result.Reason)
+					showFailure("Forge upgrade failed", result.Reason)
 				end
 			end
 		).Parent = listFrame
@@ -942,7 +999,7 @@ local function renderForgeWeapons()
 		function()
 			local result = Remotes.CraftLuckPotion:InvokeServer()
 			if not result.Success then
-				warn("[HUD] Craft Luck Potion failed:", result.Reason)
+				showFailure("Craft Luck Potion failed", result.Reason)
 			end
 		end
 	).Parent = listFrame
@@ -983,7 +1040,7 @@ local function renderForgeWeapons()
 				local usePotion = forgeUsePotion and (profile.LuckPotions or 0) > 0
 				local result = Remotes.ForgeWeapon:InvokeServer(key, usePotion)
 				if not result.Success then
-					warn("[HUD] Forge failed:", result.Reason)
+					showFailure("Forge failed", result.Reason)
 				else
 					forgeUsePotion = false -- one-shot regardless of whether a Potion actually got spent
 					lastForgedResult = result.Weapon
@@ -1033,7 +1090,7 @@ local function renderBaseRow()
 			function()
 				local result = Remotes.UpgradeBase:InvokeServer()
 				if not result.Success then
-					warn("[HUD] Base upgrade failed:", result.Reason)
+					showFailure("Base upgrade failed", result.Reason)
 				end
 			end
 		).Parent = listFrame
@@ -1107,7 +1164,7 @@ local function renderBlueprintsRow()
 				function()
 					local result = Remotes.BuyTurretBlueprint:InvokeServer(typeKey)
 					if not result.Success then
-						warn("[HUD] Buy blueprint failed:", result.Reason)
+						showFailure("Buy blueprint failed", result.Reason)
 					else
 						renderCraftList()
 					end
@@ -1175,7 +1232,7 @@ renderCraftList = function()
 				function()
 					local result = Remotes.CraftItem:InvokeServer("Robots", key)
 					if not result.Success then
-						warn("[HUD] Craft failed:", result.Reason)
+						showFailure("Craft failed", result.Reason)
 					end
 				end
 			).Parent = listFrame
@@ -1472,7 +1529,7 @@ invDetailButton.MouseButton1Click:Connect(function()
 		end
 		local result = Remotes.EquipWeapon:InvokeServer(key)
 		if not result.Success then
-			warn("[HUD] Equip weapon failed:", result.Reason)
+			showFailure("Equip weapon failed", result.Reason)
 		end
 	elseif category == "Robots" then
 		local owned = profile.CraftedRobots[key] or 0
@@ -1480,12 +1537,12 @@ invDetailButton.MouseButton1Click:Connect(function()
 		if deployed < owned then
 			local result = Remotes.DeployRobot:InvokeServer(key)
 			if not result.Success then
-				warn("[HUD] Deploy failed:", result.Reason)
+				showFailure("Deploy failed", result.Reason)
 			end
 		else
 			local result = Remotes.UndeployRobot:InvokeServer(key)
 			if not result.Success then
-				warn("[HUD] Undeploy failed:", result.Reason)
+				showFailure("Undeploy failed", result.Reason)
 			end
 		end
 	end
@@ -2321,7 +2378,7 @@ renderSmeltingTab = function()
 			local oreKey, quantity = smeltSelectedOreKey, smeltQuantity
 			local result = Remotes.StartSmelt:InvokeServer(oreKey, quantity)
 			if not result.Success then
-				warn("[HUD] Start smelt failed:", result.Reason)
+				showFailure("Start smelt failed", result.Reason)
 			else
 				smeltSelectedOreKey = nil
 				smeltQuantity = 0
@@ -2719,7 +2776,7 @@ local function renderShopList()
 			function()
 				local result = Remotes.BuyOutpostItem:InvokeServer(currentShopNode, itemKey)
 				if not result.Success then
-					warn("[HUD] Purchase failed:", result.Reason)
+					showFailure("Purchase failed", result.Reason)
 				else
 					shopFrame.Visible = false -- expedition shop nodes are consumed on purchase — nothing left to browse
 				end
@@ -2865,6 +2922,18 @@ Remotes.InventoryUpdate.OnClientEvent:Connect(function(patch)
 	end
 end)
 
+-- MineFailed is fired by BOTH MiningService (ore nodes) and MineShaftService (mine blocks), and is
+-- already listened to by MiningController/MineShaftController — which only warn() to Output. A
+-- RemoteEvent supports any number of client listeners, so this adds an on-screen toast without
+-- either of those files needing to know the HUD exists.
+--
+-- This matters most for the mine shaft: blocks are click-based with no client-side pacing, so
+-- server-side swing pacing rejecting a too-fast click would otherwise look like the block simply
+-- ignoring you.
+Remotes.MineFailed.OnClientEvent:Connect(function(reason: string)
+	showToast(reason, 2.5) -- short: these fire often and shouldn't linger over the next swing
+end)
+
 Remotes.EnergyDrinkFound.OnClientEvent:Connect(function()
 	print(("[HUD] Found an Energy Drink! +%d Energy"):format(RaidEnergyConfig.EnergyDrinkBonus))
 end)
@@ -2915,7 +2984,7 @@ Remotes.WaveUpdate.OnClientEvent:Connect(function(update)
 	-- PlayerActivityService). Grouped with the other pre-flight refusals: all three carry a
 	-- Message and none of them should open the wave panel.
 	if update.Status == "NoGear" or update.Status == "NotInBase" or update.Status == "Busy" then
-		warn("[HUD]", update.Message)
+		showFailure("Refused", update.Message)
 		return
 	end
 
@@ -2999,20 +3068,20 @@ end
 
 Remotes.OutpostUpdate.OnClientEvent:Connect(function(update)
 	if update.Status == "NoGear" then
-		warn("[HUD]", update.Message)
+		showFailure("Refused", update.Message)
 		return
 	elseif update.Status == "OnCooldown" then
-		warn("[HUD] This outpost is still recovering — try again shortly.")
+		showFailure("Outpost", "This outpost is still recovering — try again shortly.")
 		return
 	elseif update.Status == "Locked" then
-		warn("[HUD] Clear the node in front of you before this one opens up.")
+		showFailure("Locked", "Clear the node in front of you before this one opens up.")
 		return
 	elseif update.Status == "NoEnergy" then
-		warn("[HUD] Not enough Energy to raid — wait for it to regen or find an Energy Drink while mining.")
+		showFailure("No Energy", "Not enough Energy to raid — wait for it to regen, or find an Energy Drink while mining.")
 		return
 	elseif update.Status == "Busy" then
 		-- Already in a base-defense wave or an instanced raid — see PlayerActivityService.
-		warn("[HUD]", update.Message)
+		showFailure("Refused", update.Message)
 		return
 	elseif update.Status == "RaidCancelled" then
 		-- The node this raid was fighting got wiped out from under it (e.g. Return to Base
@@ -3116,15 +3185,15 @@ local function setupNode(node: Instance)
 		clickDetector.MouseClick:Connect(function(player)
 			if player ~= LocalPlayer then return end
 			if not isNodeCurrentlyAccessible(node) then
-				warn("[HUD] That node is further down the queue — clear the one in front of you first.")
+				showFailure("Locked", "That node is further down the queue — clear the one in front of you first.")
 				return
 			end
 			local result = Remotes.InteractHeal:InvokeServer(node)
 			if not result.Success then
 				if result.Reason == "On cooldown" then
-					warn(("[HUD] Heal Station recovering (%ds left)."):format(result.SecondsLeft or 0))
+					showFailure("Cooldown", ("Heal Station recovering — %ds left."):format(result.SecondsLeft or 0))
 				else
-					warn("[HUD] Heal failed:", result.Reason)
+					showFailure("Heal failed", result.Reason)
 				end
 			end
 		end)
@@ -3132,7 +3201,7 @@ local function setupNode(node: Instance)
 		clickDetector.MouseClick:Connect(function(player)
 			if player ~= LocalPlayer then return end
 			if not isNodeCurrentlyAccessible(node) then
-				warn("[HUD] That node is further down the queue — clear the one in front of you first.")
+				showFailure("Locked", "That node is further down the queue — clear the one in front of you first.")
 				return
 			end
 			Remotes.StartOutpostRaid:FireServer(node)
@@ -3141,11 +3210,11 @@ local function setupNode(node: Instance)
 		clickDetector.MouseClick:Connect(function(player)
 			if player ~= LocalPlayer then return end
 			if not isNodeCurrentlyAccessible(node) then
-				warn("[HUD] That node is further down the queue — clear the one in front of you first.")
+				showFailure("Locked", "That node is further down the queue — clear the one in front of you first.")
 				return
 			end
 			if raidInProgress then
-				warn("[HUD] Finish your raid before visiting the shop.")
+				showFailure("Busy", "Finish your raid before visiting the shop.")
 				return
 			end
 			currentShopNode = node
@@ -3263,7 +3332,7 @@ local function setupStation(station: Instance)
 	clickDetector.MouseClick:Connect(function(player)
 		if player ~= LocalPlayer then return end
 		if not stationData.DefaultTab then
-			warn(("[HUD] %s doesn't do anything yet — check back later."):format(stationData.DisplayName))
+			showFailure("Nothing here yet", ("%s doesn't do anything yet — check back later."):format(stationData.DisplayName))
 			return
 		end
 		openStationMenu(stationData)
