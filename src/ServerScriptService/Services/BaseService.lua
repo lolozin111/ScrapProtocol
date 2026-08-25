@@ -195,7 +195,11 @@ Remotes.UpgradeBase.OnServerInvoke = function(player: Player)
 		BaseService.RebuildPlayerBase(player, plot)
 	end
 
-	Remotes.InventoryUpdate:FireClient(player, { BaseTier = profile.BaseTier, CoreItems = profile.CoreItems })
+	-- PushWallet covers the raw-material cost (BaseTierCosts) as well as the CoreItem — this
+	-- payload listed CoreItems but not OreCounts, so the ore spent on a base upgrade stayed
+	-- visible in the HUD until something else happened to refresh it. See DataService.PushWallet.
+	Remotes.InventoryUpdate:FireClient(player, { BaseTier = profile.BaseTier })
+	DataService.PushWallet(player)
 
 	return { Success = true, BaseTier = profile.BaseTier }
 end

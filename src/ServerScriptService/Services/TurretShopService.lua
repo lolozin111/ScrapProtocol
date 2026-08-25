@@ -68,6 +68,9 @@ Remotes.BuyTurretBlueprint.OnServerInvoke = function(player: Player, typeKey: st
 		UnlockedTurretBlueprints = profile.UnlockedTurretBlueprints,
 		NextTurretId = profile.NextTurretId,
 	})
+	-- The blueprint's Cores cost was deducted above but wasn't in that payload, so the HUD's
+	-- currency readout stayed stale and the purchase looked free. See DataService.PushWallet.
+	DataService.PushWallet(player)
 
 	return { Success = true, Turret = instance }
 end

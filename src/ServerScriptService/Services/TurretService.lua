@@ -436,7 +436,11 @@ Remotes.UpgradeTurret.OnServerInvoke = function(player: Player, turretId: string
 	if turret.SlotIndex then
 		TurretService.RebuildPlayerTurrets(player)
 	end
+	-- PushWallet as well as the Turrets patch: the Cores spent above were deducted server-side but
+	-- never broadcast, so the HUD's currency readout kept showing the pre-upgrade number and the
+	-- upgrade looked free. See DataService.PushWallet.
 	Remotes.InventoryUpdate:FireClient(player, { Turrets = profile.Turrets })
+	DataService.PushWallet(player)
 
 	return { Success = true, Level = turret.Level }
 end

@@ -389,6 +389,34 @@ end)
 -- spawning) instead of waiting for the next push-based InventoryUpdate, which
 -- avoids a race where the HUD builds before the first update ever fires.
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
+
+-- Broadcasts everything a player can SPEND, in one call. Use this after any TrySpend/
+-- TrySpendCoreItem rather than hand-listing currency keys in a handler's own InventoryUpdate
+-- payload.
+--
+-- WHY: InventoryUpdate is a partial patch — the client merges only the keys it's handed (see
+-- MainHud's listener). So a handler that spends Cores but broadcasts only its own domain fields
+-- leaves the client's mirrored Cores stale, and the top-left readout keeps showing the old
+-- number. The spend really happened; it just looks like it didn't, which is indistinguishable
+-- from a bug and much harder to diagnose than one. Three handlers had drifted this way
+-- (UpgradeTurret, BuyTurretBlueprint, UpgradeBase) — each spent correctly and under-reported.
+--
+-- Sending the whole wallet every time is deliberately blunt: it's a handful of numbers, and
+-- "remembered to list exactly the right keys" is precisely the thing that keeps going wrong.
+function DataService.PushWallet(player: Player)
+	local profile = cache[player.UserId]
+	if not profile then
+		return
+	end
+	Remotes.InventoryUpdate:FireClient(player, {
+		Scrap = profile.Scrap,
+		Cores = profile.Cores,
+		OreCounts = profile.OreCounts,
+		CoreItems = profile.CoreItems,
+		RefinedOreCounts = profile.RefinedOreCounts,
+	})
+end
+
 Remotes.GetProfile.OnServerInvoke = function(player: Player)
 	local profile = cache[player.UserId]
 	local attempts = 0
