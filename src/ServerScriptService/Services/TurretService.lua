@@ -176,7 +176,11 @@ local function buildSlotMarker(slotIndex: number): Model
 	part.Size = Vector3.new(4, 0.2, 4)
 	part.Anchored = true
 	part.CanCollide = false
-	part.CanQuery = false
+	-- MUST stay queryable. This was CanQuery = false back when the pad was purely decorative, and
+	-- that single property is what made the whole slot unclickable once placement moved in-world:
+	-- CanQuery = false means mouse/raycasts pass straight THROUGH the part, so the ClickDetector
+	-- can never be hit and clicking it does nothing at all, silently.
+	part.CanQuery = true
 	part.Material = Enum.Material.Neon
 	part.Color = Color3.fromRGB(90, 200, 255)
 	part.Transparency = 0.45
@@ -203,6 +207,22 @@ local function buildSlotMarker(slotIndex: number): Model
 	model.Name = ("TurretSlot_%d"):format(slotIndex)
 	model.PrimaryPart = part
 	part.Parent = model
+
+	-- Invisible click volume standing on top of the pad. The pad itself is a 0.2-stud-thin plate
+	-- lying flat on the ground, which is a genuinely awkward thing to hit with the mouse from a
+	-- standing player's camera angle — you have to look almost straight down at it. This gives the
+	-- slot a body-height target instead. Invisible and non-colliding, so it changes nothing about
+	-- how the slot looks or how you walk through it; the ClickDetector lives on the Model, so a
+	-- click on either part opens the same panel.
+	local clickVolume = Instance.new("Part")
+	clickVolume.Name = "ClickVolume"
+	clickVolume.Size = Vector3.new(4, 6, 4)
+	clickVolume.Anchored = true
+	clickVolume.CanCollide = false
+	clickVolume.CanQuery = true
+	clickVolume.Transparency = 1
+	clickVolume.CFrame = part.CFrame * CFrame.new(0, 3, 0)
+	clickVolume.Parent = model
 
 	return model
 end

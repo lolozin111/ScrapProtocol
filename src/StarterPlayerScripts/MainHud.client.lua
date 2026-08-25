@@ -3312,6 +3312,15 @@ local function setupTurretSlot(slot: Instance)
 		OutlineTransparency = 0,
 		Parent = slot,
 	})
+	-- An EMPTY slot carries an invisible body-height ClickVolume above its pad (see
+	-- TurretService.buildSlotMarker) so the thin ground plate is actually hittable. Highlight
+	-- outlines every part of its adornee regardless of transparency, so left alone it would draw a
+	-- floating box in mid-air on hover. Adorning the visible pad specifically keeps the hover
+	-- looking like the pad lighting up. Placed turrets have no ClickVolume and stay whole-model.
+	if slot:FindFirstChild("ClickVolume") and slot:IsA("Model") and slot.PrimaryPart then
+		highlight.Adornee = slot.PrimaryPart
+	end
+
 	clickDetector.MouseHoverEnter:Connect(function(player)
 		if player == LocalPlayer then
 			highlight.Enabled = true
