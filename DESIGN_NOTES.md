@@ -667,10 +667,26 @@ Several distinct pieces bundled under "the base":
   via `PlotService.IsPlayerInOwnPlot`, since placement/leveling — unlike buying the blueprint — does
   happen in your own base). **Direct request: "make sure the player is able to see possible slots
   where they can put their turret"** — every EMPTY slot gets a real physical marker in the world too
-  (`TurretService.buildSlotMarker`: a translucent neon pad + floating "Turret Slot N — Empty"
-  BillboardGui), not just an occupied/nothing binary. Base physical size growing alongside Research
+  (`TurretService.buildSlotMarker`: a translucent neon pad + floating BillboardGui), not just an
+  occupied/nothing binary. Base physical size growing alongside Research
   Tier (to make room for the growing slot count) is a Studio-authoring/art concern, not something
   code auto-generates — flagged for whoever builds the BaseTier Models next, not deferred silently.
+
+  **Placement is IN-WORLD, not a menu (revised after playtest — the first pass was half-baked).**
+  Originally every slot was a row in the Workbench's Base tab: one row per slot, an Unplace row
+  under each occupied one, and a "Storage" list whose Place button silently auto-picked the first
+  open slot. That made "which slot" not a real choice and put turret management nowhere near the
+  turrets. Now **clicking a slot in the world is the interaction** — direct instruction: *"when you
+  click the blue turret zone it opens up your turret inventory and you can place down turrets that
+  you own, not something that you change on the base tab on the crafting table."*
+  `TurretService.makeSlotInteractive` tags every slot (empty pad AND placed turret alike)
+  `TurretSlot`, stamps `SlotIndex`/`OwnerUserId`, and parents a named `SlotClick` ClickDetector;
+  `MainHud.client.lua`'s `setupTurretSlot`/`openTurretPanel` render a popup that shows either your
+  unplaced turrets (empty slot → "Place here") or the occupant's live stats with Upgrade/Unplace
+  (occupied slot). Interaction range is `TurretConfig.SlotInteractDistance` (24 studs — roomier
+  than `StationConfig.InteractDistance` on purpose, since the slot ring sits out near the plot
+  edge). The Base tab keeps only what has no physical thing to click: the BaseTier upgrade and the
+  Research/slot-count readout, plus a placed/stored count pointing at the pads.
 
   **Combat resolution moved OUT of the placement layer**, unlike round 1 (which left combat fully
   abstract): `CombatEncounterService.lua`'s new local `fireTurrets(turretRecords, aliveEnemies, now)`
@@ -1180,3 +1196,62 @@ suggested) of whatever the raider actually got from the invasion.
   retired — replaced by `MineShaftService.lua`'s dig-down shafts, see the Mining zone section
   above. The files are left on disk for reference/rollback but are no longer required by
   `Main.server.lua`; don't re-enable or tune them.
+
+## Session context — decisions not yet captured
+
+Loose ends from the Base Defense & Turrets round-2 chat (Hub Shop/blueprints/turret
+slots-and-leveling/boss-wave Core economy — see the "Turrets" and "Wave defense rewards" bullets
+under `## Base` for what actually shipped) that didn't make it into the writeup above or into
+`README.md`. Everything below is either a real open question or a discarded alternative, not a
+restatement of anything already documented.
+
+- **Turret "effects" — likely NOT built as a real gameplay trait, unconfirmed whether that's
+  actually a gap.** The original request listed turret variety as "specific ranges, damage, speed,
+  AOE, effects and all that." Range/`BaseDamage`/AOE landed as literal fields; `FireRate` stood in
+  for "speed" (no real projectile-travel exists to give speed its own meaning). But "effects" as a
+  distinct per-type GAMEPLAY trait — a slow, a burn, a stun, anything beyond raw damage — was never
+  built. The only per-type field that could be mistaken for it is `ParticleColor`, which is purely
+  cosmetic (feeds the muzzle-burst particle from the separate "make it look cool when firing" ask,
+  a different request in the same message). **Unconfirmed** whether "effects" meant real gameplay
+  effects (a genuine gap, worth a follow-up type-differentiator later) or was loosely gesturing at
+  the visual burst that did ship — flag before treating the 6 turret types as fully varied.
+- **Hub Shop "buy/sell" — only buy shipped.** The original ask described the Hub as somewhere
+  players "can go and buy/sell what they want." `TurretShopService.lua` only has
+  `BuyTurretBlueprint` — there's no sell-back path for turrets, blueprints, or anything else.
+  Whether that half was a deliberate scope cut or just hasn't been gotten to yet was never actually
+  discussed — **unconfirmed**, don't assume it's intentionally out of scope.
+- **An earlier recommendation was superseded, not built — don't resurrect it.** Before the
+  build-it green light, one design option floated for the Hub Shop was blueprints unlocking a
+  separate craft-with-materials step rather than minting the turret directly. The user's own
+  follow-up instructions were explicit enough ("turrets will be bought their blueprint... and then
+  the turrets will be placed in base") that the simpler direct-purchase-mints-an-instance model
+  shipped instead — confirmed decided, not an oversight. Noting it only so a future session doesn't
+  see "no separate craft step" and think it's an unaddressed idea.
+- **Research Tier is confirmed as the explicit next roadmap step, but the top-of-file build order
+  doesn't say so yet.** "Status at a glance" and the "Agreed build order" paragraph at the top of
+  this file still read "Next up: main shop, then PvP invasion," with no mention of Research at all
+  — stale relative to this chat, where the user stated directly that Research is next
+  ("research level, which we will be making that on the next step of roadmap"). Worth updating that
+  table/paragraph (and probably adding a Research row) before starting the next session, rather
+  than trusting the old "main shop next" framing.
+- **Hub Shop vs. the still-unbuilt "Main shop" — never reconciled, unconfirmed how they relate.**
+  The not-yet-built shop described elsewhere in this file (rotating stock, sells armor/mods/
+  cosmetics, geode/extractor sink) and this round's Hub Shop (rotating stock, sells turret
+  blueprints only) both landed on the same "rotating stock" shape independently — this chat never
+  connected the two. **Unconfirmed** whether the Main shop is a separate station, the same Hub
+  station with more tabs, or should eventually reuse `TurretConfig.GetRotatingStock`'s
+  deterministic time-hash approach for its own rotation.
+- **Possible tie-in to an older planned hook — never connected in this chat, unconfirmed.** The
+  Combat Engine section's `VoidwakenHulk` elite-type comment (written in an earlier session)
+  already plants the seed for "a future boss-drop reward hook (Research Level's 'Special Core')."
+  This round's `profile.ResearchTier`/`profile.CoreItems`/boss-wave Core drops line up suspiciously
+  well with that old idea, but nobody in this chat actually pointed the two at each other. Flagging
+  so a future session checks whether `VoidwakenHulk` (or elites generally) should eventually feed
+  into the same boss-wave Core-drop path this round built, rather than treating them as unrelated.
+- **Two Studio TODOs surfaced in chat that never made it into this file:** (1) nothing in the world
+  currently satisfies the Hub Shop's requirement — a `Station`-tagged Part/Model needs to exist
+  somewhere outside any `BaseTemplates` Model, with a child `StringValue` `StationType` set to
+  exactly `"Shop"`, or the Blueprints tab is unreachable in-game. (2) `ServerStorage.TurretModels`
+  can optionally hold a real Model per `TurretConfig.Types` key (same convention as
+  `EnemyModels`/`BaseTemplates` — floor at local Y=0, `PrimaryPart` set); every type currently falls
+  back to a small colored placeholder pedestal since none exist yet.

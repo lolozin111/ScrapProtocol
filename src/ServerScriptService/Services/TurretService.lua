@@ -30,6 +30,7 @@
 	PrimaryPart. No Model at all yet? Falls back to a small colored placeholder pedestal.
 ]]
 
+local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerStorage = game:GetService("ServerStorage")
@@ -59,6 +60,23 @@ if not turretsRootFolder then
 end
 
 local warnedMissingModel: { [string]: boolean } = {}
+
+-- Tag every slot in the world — empty marker pads AND placed turret models alike — so the client
+-- can find them by tag and wire up its own ClickDetector handling, the same way it already does
+-- for expedition Nodes and mine ShaftBlocks. Placement moved from a list of rows buried in the
+-- Workbench's Base tab to clicking the actual slot in the world, per direct request ("when you
+-- click the blue turret zone it opens up your turret inventory... not something that you change
+-- on the base tab on the crafting table").
+--
+-- Attributes the client reads off each tagged instance:
+--   SlotIndex   (number) — which ring position this is
+--   OwnerUserId (number) — whose base it belongs to; the client ignores other people's slots
+--
+-- Deliberately NOT stamped: which turret currently occupies the slot. The client already has
+-- profile.Turrets (kept current by InventoryUpdate) and derives occupancy from SlotIndex there,
+-- so an attribute saying the same thing would be a second copy of the truth that a rebuild could
+-- leave stale — and this codebase already has enough written-but-never-read fields.
+local SLOT_TAG = "TurretSlot"
 
 -- Same defensive polling pattern BaseService.lua's own waitForProfile uses — PlotAssigned can fire
 -- before DataService's asynchronous profile load finishes, and a returning player may already have
@@ -176,7 +194,9 @@ local function buildSlotMarker(slotIndex: number): Model
 	text.TextColor3 = Color3.fromRGB(140, 220, 255)
 	text.TextStrokeTransparency = 0.4
 	text.TextSize = 14
-	text.Text = ("Turret Slot %d — Empty"):format(slotIndex)
+	-- Says what to DO with it, not just what it is — this pad is the entry point to placement now,
+	-- so the label has to advertise that it's clickable.
+	text.Text = ("Turret Slot %d — Click to place"):format(slotIndex)
 	text.Parent = label
 
 	local model = Instance.new("Model")
@@ -185,6 +205,25 @@ local function buildSlotMarker(slotIndex: number): Model
 	part.Parent = model
 
 	return model
+end
+
+-- Makes one slot (empty marker or placed turret) clickable and identifiable to the client. The
+-- ClickDetector is created server-side so it exists for everyone automatically; the OwnerUserId
+-- attribute is what actually scopes it, exactly like BaseService stamps station ownership.
+local function makeSlotInteractive(model: Model, slotIndex: number, player: Player)
+	model:SetAttribute("SlotIndex", slotIndex)
+	model:SetAttribute("OwnerUserId", player.UserId)
+
+	local clickDetector = Instance.new("ClickDetector")
+	clickDetector.Name = "SlotClick" -- named, not left as the default, so the client can
+		-- WaitForChild it by name rather than racing FindFirstChildOfClass against replication
+	clickDetector.MaxActivationDistance = TurretConfig.SlotInteractDistance
+	clickDetector.CursorIcon = ""
+	clickDetector.Parent = model
+
+	-- Tagged LAST, after the attributes and the ClickDetector are already parented, so that by the
+	-- time the client's tag-added signal fires everything it needs to read is present on the model.
+	CollectionService:AddTag(model, SLOT_TAG)
 end
 
 local function findTurret(profile, turretId: string)
@@ -242,6 +281,10 @@ function TurretService.RebuildPlayerTurrets(player: Player)
 			if model.PrimaryPart then
 				model:PivotTo(worldCFrame)
 			end
+			-- Clicking a PLACED turret opens the same slot panel, showing this turret's stats with
+			-- Upgrade/Unplace instead of a list to place from — so managing a turret happens at the
+			-- turret, not in a menu somewhere else.
+			makeSlotInteractive(model, slotIndex, player)
 			model.Parent = folder
 
 			local effectiveStats = TurretConfig.GetTurretEffectiveStats(turret.TypeKey, turret.Level)
@@ -263,6 +306,7 @@ function TurretService.RebuildPlayerTurrets(player: Player)
 			local marker = buildSlotMarker(slotIndex)
 			local worldCFrame = plot.CFrame * CFrame.new(offsetX, (marker.PrimaryPart :: BasePart).Size.Y / 2, offsetZ)
 			marker:PivotTo(worldCFrame)
+			makeSlotInteractive(marker, slotIndex, player)
 			marker.Parent = folder
 		end
 	end

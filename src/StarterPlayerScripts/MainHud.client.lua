@@ -534,6 +534,194 @@ local function openModPicker(tree: string, itemKey: string, slotIndex: number)
 	modPickerFrame.Visible = true
 end
 
+----------------------------------------------------------------------
+-- Turret slot panel — opened by clicking a turret slot out in the world (the blue pad for an
+-- empty one, or the turret itself for an occupied one), NOT from a tab in the Workbench.
+--
+-- Placement used to live as a wall of rows in the Workbench's Base tab: one row per slot, a
+-- separate Unplace row under each occupied one, and a "Storage" list whose Place button silently
+-- auto-picked the first open slot for you. That meant choosing WHERE a turret went wasn't really
+-- a choice, and managing turrets happened nowhere near the turrets. Now the slot in the world is
+-- the interaction point — click it, see what you own, pick one.
+--
+-- Same popup shape as the mod picker directly above (frame, title, X, scrolling list of makeRows)
+-- because it's the same interaction: "this slot is empty, here's what you own that fits."
+----------------------------------------------------------------------
+
+local turretPanelFrame = new("Frame", {
+	Name = "TurretSlotPanel",
+	BackgroundColor3 = COLOR.Panel,
+	Position = UDim2.new(0.5, -190, 0.5, -190),
+	Size = UDim2.new(0, 380, 0, 380),
+	Visible = false,
+	ZIndex = 5,
+	Parent = screenGui,
+}, { corner(10), stroke() })
+
+local turretPanelTitle = new("TextLabel", {
+	BackgroundTransparency = 1,
+	Position = UDim2.new(0, 12, 0, 10),
+	Size = UDim2.new(1, -60, 0, 24),
+	Font = Enum.Font.SourceSansBold,
+	TextXAlignment = Enum.TextXAlignment.Left,
+	TextColor3 = COLOR.Text,
+	TextSize = 18,
+	Text = "Turret Slot",
+	Parent = turretPanelFrame,
+})
+
+local turretPanelClose = new("TextButton", {
+	BackgroundColor3 = COLOR.PanelLight,
+	Position = UDim2.new(1, -40, 0, 8),
+	Size = UDim2.new(0, 28, 0, 28),
+	Font = Enum.Font.SourceSansBold,
+	TextColor3 = COLOR.Text,
+	TextSize = 16,
+	Text = "X",
+	Parent = turretPanelFrame,
+}, { corner(6) })
+
+local turretPanelList = new("ScrollingFrame", {
+	BackgroundTransparency = 1,
+	Position = UDim2.new(0, 12, 0, 44),
+	Size = UDim2.new(1, -24, 1, -56),
+	CanvasSize = UDim2.new(0, 0, 0, 0),
+	AutomaticCanvasSize = Enum.AutomaticSize.Y,
+	ScrollBarThickness = 6,
+	Parent = turretPanelFrame,
+}, { new("UIListLayout", { Padding = UDim.new(0, 6) }) })
+
+-- Which slot the panel is currently open for, so an InventoryUpdate arriving while it's open can
+-- re-render it in place (a placed/upgraded/unplaced turret changes what this panel should show).
+local turretPanelState = { slotIndex = nil :: number? }
+
+local function closeTurretPanel()
+	turretPanelFrame.Visible = false
+	turretPanelState.slotIndex = nil
+end
+turretPanelClose.MouseButton1Click:Connect(closeTurretPanel)
+
+local renderTurretPanel -- forward-declared: the row callbacks below re-render through it
+
+-- Formats one turret instance's live stats line, shared by the occupied-slot view and the
+-- storage list so a turret reads the same in both places.
+local function turretStatsLine(turret): string
+	local stats = TurretConfig.GetTurretEffectiveStats(turret.TypeKey, turret.Level or 1)
+	if not stats then
+		return "Unknown turret type"
+	end
+	return ("%.0f dmg · %.0f range · %.1f shots/s · %d AOE"):format(
+		stats.Damage, stats.Range, stats.FireRate, stats.AOE)
+end
+
+renderTurretPanel = function()
+	local slotIndex = turretPanelState.slotIndex
+	if not slotIndex then
+		return
+	end
+
+	for _, child in ipairs(turretPanelList:GetChildren()) do
+		if child:IsA("Frame") then
+			child:Destroy()
+		end
+	end
+
+	-- Re-derived from the live profile every render rather than captured when the panel opened —
+	-- placing or unplacing fires InventoryUpdate, which re-renders this, and the slot's occupancy
+	-- has changed by then.
+	local occupant = nil
+	local unplaced = {}
+	for _, turret in ipairs(profile.Turrets or {}) do
+		if turret.SlotIndex == slotIndex then
+			occupant = turret
+		elseif not turret.SlotIndex then
+			table.insert(unplaced, turret)
+		end
+	end
+
+	turretPanelTitle.Text = ("Turret Slot %d"):format(slotIndex)
+
+	if occupant then
+		local typeData = TurretConfig.Types[occupant.TypeKey]
+		local level = occupant.Level or 1
+		local stats = TurretConfig.GetTurretEffectiveStats(occupant.TypeKey, level)
+		local researchTier = profile.ResearchTier or 1
+		local nextTurretTier = TurretConfig.GetTurretTier(level + 1)
+		-- Crossing into a new Tier needs Research to have caught up — a deliberate skeleton gate
+		-- until the Research system ships (the confirmed next roadmap step), not a bug.
+		local tierLocked = stats and nextTurretTier > stats.Tier and researchTier < nextTurretTier
+		local upgradeCost = TurretConfig.GetTurretUpgradeCost(level)
+
+		makeRow(
+			("%s — Level %d (Tier %d)"):format(
+				typeData and typeData.DisplayName or occupant.TypeKey, level, stats and stats.Tier or 1),
+			turretStatsLine(occupant),
+			tierLocked and ("Needs Research T%d"):format(nextTurretTier)
+				or ("Upgrade (%d %s)"):format(upgradeCost, TurretConfig.UpgradeCurrency),
+			function()
+				if tierLocked then
+					warn(("[HUD] Level %d needs Research Tier %d — that system isn't built yet."):format(level + 1, nextTurretTier))
+					return
+				end
+				local result = Remotes.UpgradeTurret:InvokeServer(occupant.Id)
+				if not result.Success then
+					warn("[HUD] Upgrade turret failed:", result.Reason)
+				end
+			end
+		).Parent = turretPanelList
+
+		makeRow(
+			"Remove from this slot",
+			"Sends it back to storage — still owned, just not defending",
+			"Unplace",
+			function()
+				local result = Remotes.UnplaceTurret:InvokeServer(occupant.Id)
+				if not result.Success then
+					warn("[HUD] Unplace turret failed:", result.Reason)
+					return
+				end
+				closeTurretPanel() -- the turret you were managing isn't here anymore
+			end
+		).Parent = turretPanelList
+		return
+	end
+
+	-- Empty slot — this is the "turret inventory" view: everything you own that isn't already
+	-- placed somewhere, each one placeable into THIS slot.
+	if #unplaced == 0 then
+		makeRow(
+			"Nothing to place",
+			"Buy a turret blueprint at the Hub Shop — each purchase mints a turret into storage",
+			"OK",
+			function() end
+		).Parent = turretPanelList
+		return
+	end
+
+	for _, turret in ipairs(unplaced) do
+		local typeData = TurretConfig.Types[turret.TypeKey]
+		makeRow(
+			("%s (Level %d)"):format(typeData and typeData.DisplayName or turret.TypeKey, turret.Level or 1),
+			turretStatsLine(turret),
+			"Place here",
+			function()
+				local result = Remotes.PlaceTurretInSlot:InvokeServer(turret.Id, slotIndex)
+				if not result.Success then
+					warn("[HUD] Place turret failed:", result.Reason)
+					return
+				end
+				closeTurretPanel() -- it's placed; the slot is now what you can see in the world
+			end
+		).Parent = turretPanelList
+	end
+end
+
+local function openTurretPanel(slotIndex: number)
+	turretPanelState.slotIndex = slotIndex
+	renderTurretPanel()
+	turretPanelFrame.Visible = true
+end
+
 -- Taller than makeRow's fixed 52px — same title/subtitle/button layout up top, plus a row of
 -- ModConfig.SlotsPerItem slot buttons underneath for owned weapons/robots. Clicking a slot opens
 -- the mod picker popup (see openModPicker above) instead of cycling in place.
@@ -863,107 +1051,32 @@ local function renderBaseRow()
 		function() end
 	).Parent = listFrame
 
-	-- Index owned turrets by slot for O(1) lookup below, and collect whatever's NOT placed for the
-	-- Storage section further down. profile.Turrets entries with no SlotIndex are unplaced.
-	local turretBySlot = {}
-	local unplacedTurrets = {}
+	-- Turret placement/upgrading/unplacing is NOT here anymore. It used to be this tab's bulk: one
+	-- row per slot, an Unplace row under each occupied one, and a Storage list whose Place button
+	-- auto-picked the first open slot for you. That put the decision in a menu and made "which
+	-- slot" not a real choice. Clicking the slot itself in the world is the interaction now — see
+	-- openTurretPanel and setupTurretSlot at the bottom of this file.
+	--
+	-- What stays on this tab is the part that genuinely has no physical thing to click: the base
+	-- tier upgrade above, and the Research/slot-count readout below as a pointer to where turrets
+	-- actually live now.
+	local placedCount, storedCount = 0, 0
 	for _, turret in ipairs(profile.Turrets or {}) do
 		if turret.SlotIndex then
-			turretBySlot[turret.SlotIndex] = turret
+			placedCount += 1
 		else
-			table.insert(unplacedTurrets, turret)
+			storedCount += 1
 		end
 	end
 
-	-- One row per fixed slot (direct request: "make sure that the player is able to see possible
-	-- slots where they can put their turret") — occupied slots get a stats/Upgrade row plus a
-	-- separate Unplace row (same two-row pattern the old Place/Reset section used), empty slots get
-	-- a plain placeholder row so the count itself is always visible even with nothing placed yet.
-	for slotIndex = 1, slotCount do
-		local turret = turretBySlot[slotIndex]
-		if turret then
-			local typeData = TurretConfig.Types[turret.TypeKey]
-			local level = turret.Level or 1
-			local stats = TurretConfig.GetTurretEffectiveStats(turret.TypeKey, level)
-			local nextLevel = level + 1
-			local nextTurretTier = TurretConfig.GetTurretTier(nextLevel)
-			local tierLocked = stats and nextTurretTier > stats.Tier and researchTier < nextTurretTier
-			local upgradeCost = TurretConfig.GetTurretUpgradeCost(level)
-
-			makeRow(
-				("Slot %d — %s (Lv %d, T%d)"):format(slotIndex, typeData and typeData.DisplayName or turret.TypeKey, level, stats and stats.Tier or 1),
-				stats and ("%.0f dmg · %.0f range · %.1f shots/s · %d AOE"):format(stats.Damage, stats.Range, stats.FireRate, stats.AOE) or "Unknown turret type",
-				tierLocked and ("Needs Research T%d"):format(nextTurretTier) or ("Upgrade (%d %s)"):format(upgradeCost, TurretConfig.UpgradeCurrency),
-				function()
-					if tierLocked then
-						return
-					end
-					local result = Remotes.UpgradeTurret:InvokeServer(turret.Id)
-					if not result.Success then
-						warn("[HUD] Upgrade turret failed:", result.Reason)
-					end
-				end
-			).Parent = listFrame
-
-			makeRow(
-				("Slot %d — Unplace"):format(slotIndex),
-				"Sends this turret back to Storage (still owned), freeing the slot",
-				"Unplace",
-				function()
-					local result = Remotes.UnplaceTurret:InvokeServer(turret.Id)
-					if not result.Success then
-						warn("[HUD] Unplace turret failed:", result.Reason)
-					end
-				end
-			).Parent = listFrame
-		else
-			makeRow(
-				("Slot %d — Empty"):format(slotIndex),
-				"Place an unplaced turret from Storage below into this slot",
-				"OK",
-				function() end
-			).Parent = listFrame
-		end
-	end
-
-	-- Storage — owned Turret instances (from Hub Shop blueprint purchases, see renderBlueprintsRow)
-	-- not currently occupying a slot. "Place" auto-picks the first open slot rather than asking the
-	-- player to type a slot number — simplest thing that works given the slot rows right above
-	-- already show exactly what's open.
-	if #unplacedTurrets > 0 then
-		makeRow(
-			"Storage",
-			("%d turret(s) bought but not placed — buy more blueprints at the Hub Shop"):format(#unplacedTurrets),
-			"OK",
-			function() end
-		).Parent = listFrame
-
-		for _, turret in ipairs(unplacedTurrets) do
-			local typeData = TurretConfig.Types[turret.TypeKey]
-			makeRow(
-				("%s (Lv %d)"):format(typeData and typeData.DisplayName or turret.TypeKey, turret.Level or 1),
-				"In storage — places into the first open slot",
-				"Place",
-				function()
-					local targetSlot = nil
-					for slotIndex = 1, slotCount do
-						if not turretBySlot[slotIndex] then
-							targetSlot = slotIndex
-							break
-						end
-					end
-					if not targetSlot then
-						warn("[HUD] Place turret failed: no open slots")
-						return
-					end
-					local result = Remotes.PlaceTurretInSlot:InvokeServer(turret.Id, targetSlot)
-					if not result.Success then
-						warn("[HUD] Place turret failed:", result.Reason)
-					end
-				end
-			).Parent = listFrame
-		end
-	end
+	makeRow(
+		("Turrets — %d placed, %d in storage"):format(placedCount, storedCount),
+		storedCount > 0
+			and "Walk to a blue slot pad at your base and click it to place one"
+			or "Buy a blueprint at the Hub Shop, then click a blue slot pad at your base",
+		"OK",
+		function() end
+	).Parent = listFrame
 end
 
 ----------------------------------------------------------------------
@@ -2744,6 +2857,12 @@ Remotes.InventoryUpdate.OnClientEvent:Connect(function(patch)
 		renderInvList()
 		refreshInvDetailIfShowing()
 	end
+	-- Keeps an open turret slot panel current: upgrading a turret changes its level/stats, and the
+	-- Cores spent change what the next upgrade costs. Place/Unplace close the panel themselves
+	-- (the slot's contents moved), so this is really about Upgrade re-rendering in place.
+	if turretPanelFrame.Visible then
+		renderTurretPanel()
+	end
 end)
 
 Remotes.EnergyDrinkFound.OnClientEvent:Connect(function()
@@ -3155,6 +3274,73 @@ for _, station in ipairs(CollectionService:GetTagged(STATION_TAG)) do
 	setupStation(station)
 end
 CollectionService:GetInstanceAddedSignal(STATION_TAG):Connect(setupStation)
+
+----------------------------------------------------------------------
+-- Turret slots — clicking one in the world opens the turret panel (see openTurretPanel). Tagged
+-- and given a ClickDetector server-side by TurretService.makeSlotInteractive, so this only has to
+-- add the hover highlight and the click handler, same as setupNode/setupStation above.
+--
+-- TurretService fully rebuilds a player's turret folder on every place/unplace/upgrade, so these
+-- instances are destroyed and recreated constantly and the tag-added signal re-runs this each
+-- time. Nothing here holds state across a rebuild, which is what makes that safe.
+----------------------------------------------------------------------
+
+local TURRET_SLOT_TAG = "TurretSlot"
+
+local function setupTurretSlot(slot: Instance)
+	-- Bounded WaitForChild, not FindFirstChildOfClass: the tag can reach the client a moment
+	-- before the model's children finish replicating, and a plain Find would silently return nil
+	-- and leave this slot permanently dead. The timeout (rather than an unbounded wait) means a
+	-- genuinely malformed slot logs nothing worse than doing nothing.
+	local clickDetector = slot:WaitForChild("SlotClick", 10)
+	if not clickDetector then
+		return
+	end
+
+	-- Checked AFTER the wait — everything else in this base's folder replicates alongside the
+	-- ClickDetector, so by here the attribute is reliably present. Other players' bases carry
+	-- tagged slots too (one shared Workspace), so scope to our own; same OwnerUserId check
+	-- StationService already does server-side for stations.
+	if slot:GetAttribute("OwnerUserId") ~= LocalPlayer.UserId then
+		return
+	end
+
+	local highlight = new("Highlight", {
+		Enabled = false,
+		FillTransparency = 1,
+		OutlineColor = COLOR.Accent,
+		OutlineTransparency = 0,
+		Parent = slot,
+	})
+	clickDetector.MouseHoverEnter:Connect(function(player)
+		if player == LocalPlayer then
+			highlight.Enabled = true
+		end
+	end)
+	clickDetector.MouseHoverLeave:Connect(function(player)
+		if player == LocalPlayer then
+			highlight.Enabled = false
+		end
+	end)
+
+	clickDetector.MouseClick:Connect(function(player)
+		if player ~= LocalPlayer then return end
+		local slotIndex = slot:GetAttribute("SlotIndex")
+		if type(slotIndex) ~= "number" then
+			return
+		end
+		openTurretPanel(slotIndex)
+	end)
+end
+
+-- task.spawn'd because setupTurretSlot yields on WaitForChild: run inline, a slow-replicating
+-- slot would block every slot behind it in this loop for up to its full timeout.
+for _, slot in ipairs(CollectionService:GetTagged(TURRET_SLOT_TAG)) do
+	task.spawn(setupTurretSlot, slot)
+end
+CollectionService:GetInstanceAddedSignal(TURRET_SLOT_TAG):Connect(function(slot)
+	task.spawn(setupTurretSlot, slot)
+end)
 
 ----------------------------------------------------------------------
 -- Initial load

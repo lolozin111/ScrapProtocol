@@ -142,6 +142,13 @@ end
 -- deal"). Numbers below are a first guess worth a playtest, same as everything else in this file.
 ----------------------------------------------------------------------
 
+-- How close you have to stand to click a turret slot (empty pad or placed turret) to open its
+-- panel. Turrets are placed and managed by clicking them in the world rather than through a menu
+-- — see TurretService.makeSlotInteractive. Roomier than StationConfig.InteractDistance (12) on
+-- purpose: the slot ring sits out toward the edge of the plot, so demanding you stand right on
+-- top of a pad would mean awkward shuffling between slots.
+TurretConfig.SlotInteractDistance = 24
+
 TurretConfig.LevelsPerTier = 10
 
 function TurretConfig.GetTurretTier(level: number): number
