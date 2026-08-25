@@ -50,6 +50,7 @@ local Workspace = game:GetService("Workspace")
 local ExpeditionConfig = require(ReplicatedStorage.Shared.ExpeditionConfig)
 local AdminConfig = require(ReplicatedStorage.Shared.AdminConfig)
 local RaidEnergyService = require(script.Parent.RaidEnergyService)
+local RateLimiter = require(script.Parent.RateLimiter)
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 
@@ -419,8 +420,44 @@ end)
 -- NOTE: this is still the one shared queue every player sees (see the big comment up top) — one
 -- player ending it wipes it for everyone on it, same caveat as the lever always had.
 Remotes.EndExpedition.OnServerEvent:Connect(function(player: Player)
+	-- This remote had NO validation whatsoever, which made it two exploits at once: a free
+	-- full-heal callable from anywhere at any time (bind it to a key and you're unkillable,
+	-- including mid-raid while NodeService.runRaid ticks damage at you), and a griefing tool,
+	-- since ending the run wipes the ONE shared queue every player is using.
+	--
+	-- Gated on three things now: a run has to actually be in progress, the player has to be at
+	-- the expedition itself rather than anywhere in the world, and it's paced.
+	if #activeRows == 0 then
+		Remotes.OutpostUpdate:FireClient(player, {
+			Status = "Busy",
+			Message = "There's no expedition running to return from.",
+		})
+		return
+	end
+
+	-- Must be at the expedition to leave it. Measured against the ExpeditionStart anchor rather
+	-- than any particular node, because the whole lane counts as "on the run" — and generously,
+	-- since the lane extends SlotSpacing * targetRowCount studs out from that anchor.
+	local anchor = CollectionService:GetTagged(START_TAG)[1]
 	local character = player.Character
-	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+	if not anchor or not rootPart then
+		return
+	end
+	local laneLength = slotDistance(targetRowCount) + ExpeditionConfig.EndRangePadding
+	if (rootPart.Position - anchor.Position).Magnitude > laneLength then
+		Remotes.OutpostUpdate:FireClient(player, {
+			Status = "Busy",
+			Message = "You're not on the expedition — walk back to it to return to base.",
+		})
+		return
+	end
+
+	if not RateLimiter.Check(player, "EndExpedition", ExpeditionConfig.EndCooldownSeconds) then
+		return
+	end
+
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
 	if humanoid then
 		humanoid.Health = humanoid.MaxHealth
 	end

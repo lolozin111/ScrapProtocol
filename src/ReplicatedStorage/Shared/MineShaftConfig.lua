@@ -243,4 +243,15 @@ MineShaftConfig.ResetLockSeconds = 5     -- how long the mine stays locked (no m
                                           -- seconds," not instant, so a reset actually reads as an
                                           -- event rather than blocks silently swapping underfoot
 
+----------------------------------------------------------------------
+-- Recall
+----------------------------------------------------------------------
+
+-- Recall respawns the player at full health (MineShaftService's RecallFromMine handler), which
+-- makes it a heal as much as an exit. Tuned as a real escape hatch, not a panic button: long
+-- enough that it can't be leaned on to out-heal the depth hazards while you keep digging, short
+-- enough that genuinely getting stuck never means waiting around. The handler also refuses
+-- outright unless the player is actually down in the mine — this only paces the legitimate use.
+MineShaftConfig.RecallCooldownSeconds = 30
+
 return MineShaftConfig

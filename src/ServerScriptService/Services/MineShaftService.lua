@@ -133,6 +133,12 @@ local isLocked = false
 -- forward-declare pattern for that.
 local performReset
 
+-- Same forward-declare, same reason: the RecallFromMine handler needs this to check the player is
+-- genuinely down in the mine, and that handler is wired up above getPlayerDepth's own definition.
+-- Without the declaration here, the name inside that closure would resolve as a GLOBAL (nil) at
+-- runtime rather than picking up the local defined later in the file.
+local getPlayerDepth
+
 ----------------------------------------------------------------------
 -- Rolling what a cell is, and (if Ore) which ore
 ----------------------------------------------------------------------
@@ -550,6 +556,31 @@ end
 ----------------------------------------------------------------------
 
 Remotes.RecallFromMine.OnServerEvent:Connect(function(player: Player)
+	-- This remote had NO validation at all, which made it a free full-heal on demand: LoadCharacter
+	-- respawns at full health, so binding this to a key made the player effectively unkillable
+	-- anywhere in the game — including mid-Combat-Outpost raid, while NodeService.runRaid was
+	-- actively ticking damage against them. The two checks below scope it back to what it's
+	-- actually for: getting OUT of the mine when there's no way to climb back up.
+	local character = player.Character
+	if not character then
+		return
+	end
+
+	-- Actually in the mine? getPlayerDepth raycasts down onto live shaft blocks, so this is nil
+	-- for anyone standing anywhere else in the world — including on the mine's own surface guard
+	-- rail, which is correct: you can walk off that.
+	if getPlayerDepth(character) == nil then
+		Remotes.MineFailed:FireClient(player, "Recall only works while you're down in the mine")
+		return
+	end
+
+	-- Paced as well as gated. Recall is a full heal, so even legitimately inside the mine it
+	-- shouldn't be spammable as a heal button during the depth-hazard damage loop.
+	if not RateLimiter.Check(player, "RecallFromMine", MineShaftConfig.RecallCooldownSeconds) then
+		Remotes.MineFailed:FireClient(player, "Recall is still recharging")
+		return
+	end
+
 	-- LoadCharacter respawns the player at a normal Roblox SpawnLocation, at full health — same
 	-- "you're safely out, here's a clean slate" idea as Return to Base healing you on Expedition
 	-- exit. Inventory/profile data is untouched (that all lives in DataService, not on the
@@ -567,7 +598,8 @@ end)
 -- shaftFolder. If they're standing on (or falling toward) a live block, its Depth attribute tells
 -- us exactly how deep they are — no separate per-player depth tracking needed, the world geometry
 -- already knows.
-local function getPlayerDepth(character: Model): number?
+-- Assigned (not declared) — see the forward declaration near the top of this file.
+getPlayerDepth = function(character: Model): number?
 	local hrp = character:FindFirstChild("HumanoidRootPart")
 	if not hrp then
 		return nil

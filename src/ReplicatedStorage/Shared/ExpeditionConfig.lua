@@ -17,6 +17,15 @@ ExpeditionConfig.ForkLateralOffset = 7 -- how far apart the two fork options sit
 
 ExpeditionConfig.ShiftDuration = 0.5   -- seconds the "everyone moves down one slot" animation takes when the front row is cleared — this is the ONLY time anything moves; there's no time-based drift
 
+-- "Return to Base" (the EndExpedition remote) full-heals the requesting player and wipes the
+-- shared queue, so it's gated on actually being at the expedition rather than callable from
+-- anywhere. EndRangePadding is slack added past the far end of the lane (SlotSpacing *
+-- targetRowCount) before a player counts as "not on the run" — generous on purpose, since the
+-- point is only to stop it being used as a heal button from across the map, not to police exactly
+-- where you're standing on your own lane.
+ExpeditionConfig.EndRangePadding = 60
+ExpeditionConfig.EndCooldownSeconds = 3 -- paces the wipe; it resets the queue for EVERY player on it
+
 ExpeditionConfig.MaxCombatNodes = 4    -- Combat nodes stop being rolled once this many are simultaneously active in the queue
 ExpeditionConfig.MinCombatNodes = 1    -- the queue is never allowed to have FEWER than this many Combat nodes active at once — the moment a
                                         -- freshly-spawned row's count would still be under this, that row is forced to include a Combat node

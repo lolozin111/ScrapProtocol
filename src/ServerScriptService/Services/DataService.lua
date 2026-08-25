@@ -338,13 +338,40 @@ Players.PlayerAdded:Connect(function(player)
 	cache[player.UserId] = loadProfile(player.UserId)
 end)
 
+-- Fires immediately before a player's profile is saved and dropped from the cache, giving other
+-- services a last chance to write to it. Connect to THIS, never to Players.PlayerRemoving, if you
+-- need to persist something on disconnect.
+--
+-- WHY this exists: Players.PlayerRemoving handlers fire in CONNECTION order, and a service
+-- connects its handler the first time it's require()d — so Main.server.lua's require list is
+-- effectively the teardown order. DataService is required first, which means its handler (the one
+-- below) ran before every other service's. Anything that tried to write profile data on
+-- disconnect therefore called DataService.Get on an already-cleared cache, got nil, and silently
+-- discarded the write. RaidRoomService lost an entire raid's collected loot to exactly this.
+--
+-- Reordering the require list would have "fixed" it for that one caller while leaving the trap
+-- fully armed for the next one, since nothing about the ordering is visible from the calling
+-- side. A hook that runs at a guaranteed point instead makes the correct thing the easy thing.
+--
+-- Handlers run SYNCHRONOUSLY here, before the save: a handler that yields delays the save, which
+-- is the right tradeoff (a slow save beats a lost one), but keep them short — Roblox does not
+-- wait indefinitely for PlayerRemoving to finish. Same BindableEvent pattern as
+-- PlotService.PlotAssigned.
+local playerSavingSignal = Instance.new("BindableEvent")
+DataService.PlayerSaving = playerSavingSignal.Event -- (player: Player)
+
 Players.PlayerRemoving:Connect(function(player)
+	playerSavingSignal:Fire(player)
 	saveProfile(player.UserId)
 	cache[player.UserId] = nil
 end)
 
 game:BindToClose(function()
+	-- Same last-write-in ordering as the per-player path above. The cache is deliberately NOT
+	-- cleared here — the server is going down anyway, and clearing it would only risk a
+	-- concurrently-running handler seeing a half-torn-down state.
 	for _, player in ipairs(Players:GetPlayers()) do
+		playerSavingSignal:Fire(player)
 		saveProfile(player.UserId)
 	end
 end)

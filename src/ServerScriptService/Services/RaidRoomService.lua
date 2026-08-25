@@ -58,7 +58,8 @@
 	also Permanent) on its loot-table entry — see NodeConfig.lua's own comment on those tags.
 ]]
 
-local Players = game:GetService("Players")
+-- No Players service here anymore — the only thing that used it was a PlayerRemoving handler,
+-- since replaced by DataService.PlayerSaving (see the bottom of this file for why).
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerStorage = game:GetService("ServerStorage")
 local Workspace = game:GetService("Workspace")
@@ -968,7 +969,14 @@ RequestExtractRaid.OnServerEvent:Connect(function(player: Player)
 	completeRaid(state)
 end)
 
-Players.PlayerRemoving:Connect(function(player)
+-- DataService.PlayerSaving, NOT Players.PlayerRemoving. This handler writes to the player's
+-- profile, and PlayerRemoving handlers run in connection order — DataService is required first in
+-- Main.server.lua, so its own handler (which saves and then clears the cache) always ran before
+-- this one. settleRunLoot's DataService.Get therefore returned nil and every bit of currency and
+-- loot collected during the raid was silently dropped, which is the exact opposite of what the
+-- comment below describes. PlayerSaving fires before the save and before the cache clear, so the
+-- write actually lands and gets persisted in the same pass. See DataService's own comment there.
+DataService.PlayerSaving:Connect(function(player)
 	local state = activeRaids[player.UserId]
 	if state then
 		-- Treated the same as Abandon for run-loot purposes (forfeit RunLocked non-Permanent drops)

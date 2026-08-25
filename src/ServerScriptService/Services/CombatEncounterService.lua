@@ -489,12 +489,21 @@ function CombatEncounterService.RunWave(player: Player, waveNumber: number, opts
 		end
 	end
 
-	-- Placed Turrets (TurretService.lua) — a snapshot taken once here, not re-fetched every tick.
-	-- These are the SAME table objects TurretService's own cache holds, so mutating
-	-- record.LastFireTime below is really just updating that cache in place — see
-	-- TurretService.GetActiveTurretRecords's own comment. Base-defense only; RunRaidCombat never
-	-- calls this, turrets have no presence in a raid room.
-	local turretRecords = TurretService.GetActiveTurretRecords(player)
+	-- Placed Turrets (TurretService.lua) are re-fetched every tick inside the loop below, NOT
+	-- snapshotted here. This used to be a single snapshot taken at wave start, which quietly went
+	-- stale: PlaceTurretInSlot/UnplaceTurret/UpgradeTurret all call RebuildPlayerTurrets, which
+	-- replaces the record list and destroys the old Models — and all three are usable mid-wave,
+	-- since they only require standing in your own plot, which is exactly where you fight. So an
+	-- upgrade bought during a wave didn't apply until the next one, and a turret you unplaced kept
+	-- firing from a model that no longer existed.
+	--
+	-- The fetch is just a table lookup, so doing it per tick costs nothing. One consequence worth
+	-- knowing: a rebuild hands back fresh records with LastFireTime = 0, so placing or upgrading a
+	-- turret mid-wave resets every turret's cooldown. That's a small, one-off free volley in the
+	-- player's favor at the moment they spend resources — acceptable, and far better than the
+	-- alternative of firing on behalf of destroyed models.
+	--
+	-- Base-defense only; RunRaidCombat never calls this, turrets have no presence in a raid room.
 
 	local wallMaxHP = BaseConfig.GetWallMaxHP(profile.BaseTier)
 
@@ -650,7 +659,8 @@ function CombatEncounterService.RunWave(player: Player, waveNumber: number, opts
 			end
 		end
 
-		fireTurrets(turretRecords, aliveEnemies, now)
+		-- Live read, not a wave-start snapshot — see the comment where this used to be captured.
+		fireTurrets(TurretService.GetActiveTurretRecords(player), aliveEnemies, now)
 
 		task.wait(TICK_SECONDS)
 	end
