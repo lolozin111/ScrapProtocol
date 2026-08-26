@@ -608,7 +608,11 @@ end
 -- because it's the same interaction: "this slot is empty, here's what you own that fits."
 ----------------------------------------------------------------------
 
-local turretPanelFrame = new("Frame", {
+-- One table instead of 5 separate top-level locals: Luau caps a function scope at 200
+-- locals and this file's main chunk hit that ceiling. Grouping UI element references costs
+-- nothing at runtime and buys back a register per element.
+local turretPanel = {}
+turretPanel.frame = new("Frame", {
 	Name = "TurretSlotPanel",
 	BackgroundColor3 = COLOR.Panel,
 	Position = UDim2.new(0.5, -190, 0.5, -190),
@@ -618,7 +622,7 @@ local turretPanelFrame = new("Frame", {
 	Parent = screenGui,
 }, { corner(10), stroke() })
 
-local turretPanelTitle = new("TextLabel", {
+turretPanel.title = new("TextLabel", {
 	BackgroundTransparency = 1,
 	Position = UDim2.new(0, 12, 0, 10),
 	Size = UDim2.new(1, -60, 0, 24),
@@ -627,10 +631,10 @@ local turretPanelTitle = new("TextLabel", {
 	TextColor3 = COLOR.Text,
 	TextSize = 18,
 	Text = "Turret Slot",
-	Parent = turretPanelFrame,
+	Parent = turretPanel.frame,
 })
 
-local turretPanelClose = new("TextButton", {
+turretPanel.close = new("TextButton", {
 	BackgroundColor3 = COLOR.PanelLight,
 	Position = UDim2.new(1, -40, 0, 8),
 	Size = UDim2.new(0, 28, 0, 28),
@@ -638,28 +642,28 @@ local turretPanelClose = new("TextButton", {
 	TextColor3 = COLOR.Text,
 	TextSize = 16,
 	Text = "X",
-	Parent = turretPanelFrame,
+	Parent = turretPanel.frame,
 }, { corner(6) })
 
-local turretPanelList = new("ScrollingFrame", {
+turretPanel.list = new("ScrollingFrame", {
 	BackgroundTransparency = 1,
 	Position = UDim2.new(0, 12, 0, 44),
 	Size = UDim2.new(1, -24, 1, -56),
 	CanvasSize = UDim2.new(0, 0, 0, 0),
 	AutomaticCanvasSize = Enum.AutomaticSize.Y,
 	ScrollBarThickness = 6,
-	Parent = turretPanelFrame,
+	Parent = turretPanel.frame,
 }, { new("UIListLayout", { Padding = UDim.new(0, 6) }) })
 
 -- Which slot the panel is currently open for, so an InventoryUpdate arriving while it's open can
 -- re-render it in place (a placed/upgraded/unplaced turret changes what this panel should show).
-local turretPanelState = { slotIndex = nil :: number? }
+turretPanel.state = { slotIndex = nil :: number? }
 
 local function closeTurretPanel()
-	turretPanelFrame.Visible = false
-	turretPanelState.slotIndex = nil
+	turretPanel.frame.Visible = false
+	turretPanel.state.slotIndex = nil
 end
-turretPanelClose.MouseButton1Click:Connect(closeTurretPanel)
+turretPanel.close.MouseButton1Click:Connect(closeTurretPanel)
 
 local renderTurretPanel -- forward-declared: the row callbacks below re-render through it
 
@@ -675,12 +679,12 @@ local function turretStatsLine(turret): string
 end
 
 renderTurretPanel = function()
-	local slotIndex = turretPanelState.slotIndex
+	local slotIndex = turretPanel.state.slotIndex
 	if not slotIndex then
 		return
 	end
 
-	for _, child in ipairs(turretPanelList:GetChildren()) do
+	for _, child in ipairs(turretPanel.list:GetChildren()) do
 		if child:IsA("Frame") then
 			child:Destroy()
 		end
@@ -699,7 +703,7 @@ renderTurretPanel = function()
 		end
 	end
 
-	turretPanelTitle.Text = ("Turret Slot %d"):format(slotIndex)
+	turretPanel.title.Text = ("Turret Slot %d"):format(slotIndex)
 
 	if occupant then
 		local typeData = TurretConfig.Types[occupant.TypeKey]
@@ -728,7 +732,7 @@ renderTurretPanel = function()
 					showFailure("Upgrade turret failed", result.Reason)
 				end
 			end
-		).Parent = turretPanelList
+		).Parent = turretPanel.list
 
 		makeRow(
 			"Remove from this slot",
@@ -742,7 +746,7 @@ renderTurretPanel = function()
 				end
 				closeTurretPanel() -- the turret you were managing isn't here anymore
 			end
-		).Parent = turretPanelList
+		).Parent = turretPanel.list
 		return
 	end
 
@@ -754,7 +758,7 @@ renderTurretPanel = function()
 			"Buy a turret blueprint at the Hub Shop — each purchase mints a turret into storage",
 			"OK",
 			function() end
-		).Parent = turretPanelList
+		).Parent = turretPanel.list
 		return
 	end
 
@@ -772,14 +776,14 @@ renderTurretPanel = function()
 				end
 				closeTurretPanel() -- it's placed; the slot is now what you can see in the world
 			end
-		).Parent = turretPanelList
+		).Parent = turretPanel.list
 	end
 end
 
 local function openTurretPanel(slotIndex: number)
-	turretPanelState.slotIndex = slotIndex
+	turretPanel.state.slotIndex = slotIndex
 	renderTurretPanel()
-	turretPanelFrame.Visible = true
+	turretPanel.frame.Visible = true
 end
 
 -- Taller than makeRow's fixed 52px — same title/subtitle/button layout up top, plus a row of
@@ -1433,7 +1437,11 @@ end
 
 local TILE_SIZE = 76
 
-local invFrame = new("Frame", {
+-- One table instead of 15 separate top-level locals: Luau caps a function scope at 200
+-- locals and this file's main chunk hit that ceiling. Grouping UI element references costs
+-- nothing at runtime and buys back a register per element.
+local inv = {}
+inv.frame = new("Frame", {
 	Name = "Inventory",
 	BackgroundColor3 = COLOR.Panel,
 	Position = UDim2.new(0.5, -320, 0.5, -200),
@@ -1451,11 +1459,11 @@ new("TextLabel", {
 	TextColor3 = COLOR.Text,
 	TextSize = 18,
 	Text = "Inventory",
-	Parent = invFrame,
+	Parent = inv.frame,
 })
 
 -- Instance only — connected at the very bottom of this section, once closeInvDetail exists.
-local invCloseButton = new("TextButton", {
+inv.closeButton = new("TextButton", {
 	BackgroundColor3 = COLOR.PanelLight,
 	Position = UDim2.new(1, -40, 0, 8),
 	Size = UDim2.new(0, 28, 0, 28),
@@ -1463,31 +1471,31 @@ local invCloseButton = new("TextButton", {
 	TextColor3 = COLOR.Text,
 	TextSize = 16,
 	Text = "X",
-	Parent = invFrame,
+	Parent = inv.frame,
 }, { corner(6) })
 
-local invTabRow = new("Frame", {
+inv.tabRow = new("Frame", {
 	BackgroundTransparency = 1,
 	Position = UDim2.new(0, 12, 0, 40),
 	Size = UDim2.new(1, -24, 0, 32),
-	Parent = invFrame,
+	Parent = inv.frame,
 }, { new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 8) }) })
 
-local invListFrame = new("ScrollingFrame", {
+inv.listFrame = new("ScrollingFrame", {
 	BackgroundTransparency = 1,
 	Position = UDim2.new(0, 12, 0, 80),
 	Size = UDim2.new(1, -24, 1, -92),
 	CanvasSize = UDim2.new(0, 0, 0, 0),
 	AutomaticCanvasSize = Enum.AutomaticSize.Y,
 	ScrollBarThickness = 6,
-	Parent = invFrame,
+	Parent = inv.frame,
 }, { new("UIGridLayout", { CellSize = UDim2.new(0, TILE_SIZE, 0, TILE_SIZE), CellPadding = UDim2.new(0, 8, 0, 8) }) })
 
--- Overlays invListFrame's area with a plain message when the current tab has nothing to show —
+-- Overlays inv.listFrame's area with a plain message when the current tab has nothing to show —
 -- UIGridLayout forces every child to CellSize, so a full-width "nothing here" message can't be a
 -- grid child without looking cramped; this sits outside the grid instead and is only ever shown
 -- when the grid has zero tiles in it, so the two never actually overlap in practice.
-local invEmptyLabel = new("TextLabel", {
+inv.emptyLabel = new("TextLabel", {
 	BackgroundTransparency = 1,
 	Position = UDim2.new(0, 12, 0, 80),
 	Size = UDim2.new(1, -24, 1, -92),
@@ -1499,7 +1507,7 @@ local invEmptyLabel = new("TextLabel", {
 	TextYAlignment = Enum.TextYAlignment.Top,
 	Visible = false,
 	Text = "",
-	Parent = invFrame,
+	Parent = inv.frame,
 })
 
 ----------------------------------------------------------------------
@@ -1507,7 +1515,7 @@ local invEmptyLabel = new("TextLabel", {
 -- four tabs; which parts are visible (mod slots, the action button) depends on the category.
 ----------------------------------------------------------------------
 
-local invDetailFrame = new("Frame", {
+inv.detailFrame = new("Frame", {
 	Name = "InventoryDetail",
 	BackgroundColor3 = COLOR.Panel,
 	Position = UDim2.new(0.5, 330, 0.5, -200),
@@ -1516,7 +1524,7 @@ local invDetailFrame = new("Frame", {
 	Parent = screenGui,
 }, { corner(10), stroke() })
 
-local invDetailTitle = new("TextLabel", {
+inv.detailTitle = new("TextLabel", {
 	BackgroundTransparency = 1,
 	Position = UDim2.new(0, 10, 0, 8),
 	Size = UDim2.new(1, -50, 0, 24),
@@ -1526,11 +1534,11 @@ local invDetailTitle = new("TextLabel", {
 	TextSize = 17,
 	TextWrapped = true,
 	Text = "",
-	Parent = invDetailFrame,
+	Parent = inv.detailFrame,
 })
 
 -- Instance only — connected once closeInvDetail exists, just below.
-local invDetailCloseButton = new("TextButton", {
+inv.detailCloseButton = new("TextButton", {
 	BackgroundColor3 = COLOR.PanelLight,
 	Position = UDim2.new(1, -36, 0, 8),
 	Size = UDim2.new(0, 28, 0, 28),
@@ -1538,19 +1546,19 @@ local invDetailCloseButton = new("TextButton", {
 	TextColor3 = COLOR.Text,
 	TextSize = 16,
 	Text = "X",
-	Parent = invDetailFrame,
+	Parent = inv.detailFrame,
 }, { corner(6) })
 
-local invDetailImage = new("ImageLabel", {
+inv.detailImage = new("ImageLabel", {
 	BackgroundColor3 = COLOR.PanelLight,
 	Position = UDim2.new(0, 10, 0, 42),
 	Size = UDim2.new(1, -20, 0, 140),
 	ScaleType = Enum.ScaleType.Fit,
 	Image = "",
-	Parent = invDetailFrame,
+	Parent = inv.detailFrame,
 }, { corner(8) })
 
-local invDetailStats = new("TextLabel", {
+inv.detailStats = new("TextLabel", {
 	BackgroundTransparency = 1,
 	Position = UDim2.new(0, 10, 0, 190),
 	Size = UDim2.new(1, -20, 0, 36),
@@ -1561,10 +1569,10 @@ local invDetailStats = new("TextLabel", {
 	TextXAlignment = Enum.TextXAlignment.Left,
 	TextYAlignment = Enum.TextYAlignment.Top,
 	Text = "",
-	Parent = invDetailFrame,
+	Parent = inv.detailFrame,
 })
 
-local invDetailDescription = new("TextLabel", {
+inv.detailDescription = new("TextLabel", {
 	BackgroundTransparency = 1,
 	Position = UDim2.new(0, 10, 0, 230),
 	Size = UDim2.new(1, -20, 0, 70),
@@ -1575,22 +1583,22 @@ local invDetailDescription = new("TextLabel", {
 	TextXAlignment = Enum.TextXAlignment.Left,
 	TextYAlignment = Enum.TextYAlignment.Top,
 	Text = "",
-	Parent = invDetailFrame,
+	Parent = inv.detailFrame,
 })
 
 -- Weapons/Robots only — same slot-button idea as makeEquipmentRow's slotRow, just rebuilt for
 -- whichever item the detail panel currently shows instead of being baked into a row.
-local invDetailSlotRow = new("Frame", {
+inv.detailSlotRow = new("Frame", {
 	BackgroundTransparency = 1,
 	Position = UDim2.new(0, 10, 0, 306),
 	Size = UDim2.new(1, -20, 0, 30),
 	Visible = false,
-	Parent = invDetailFrame,
+	Parent = inv.detailFrame,
 }, { new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 6) }) })
 
 -- Weapons/Robots only — Equip, or Deploy/Undeploy. Hidden for Mods/Materials (nothing to toggle).
--- Connected further down, once invDetailState/deployedCountForRobot are in scope.
-local invDetailButton = new("TextButton", {
+-- Connected further down, once inv.detailState/deployedCountForRobot are in scope.
+inv.detailButton = new("TextButton", {
 	BackgroundColor3 = COLOR.Accent,
 	Position = UDim2.new(0, 10, 1, -42),
 	Size = UDim2.new(1, -20, 0, 32),
@@ -1599,13 +1607,13 @@ local invDetailButton = new("TextButton", {
 	TextSize = 15,
 	Visible = false,
 	Text = "",
-	Parent = invDetailFrame,
+	Parent = inv.detailFrame,
 }, { corner(6) })
 
-local invDetailState = { category = nil :: string?, key = nil :: string? }
+inv.detailState = { category = nil :: string?, key = nil :: string? }
 
-invDetailButton.MouseButton1Click:Connect(function()
-	local category, key = invDetailState.category, invDetailState.key
+inv.detailButton.MouseButton1Click:Connect(function()
+	local category, key = inv.detailState.category, inv.detailState.key
 	if not category or not key then
 		return
 	end
@@ -1637,7 +1645,7 @@ invDetailButton.MouseButton1Click:Connect(function()
 end)
 
 local function rebuildInvDetailSlots(tree: string, itemKey: string)
-	for _, child in ipairs(invDetailSlotRow:GetChildren()) do
+	for _, child in ipairs(inv.detailSlotRow:GetChildren()) do
 		if child:IsA("TextButton") then
 			child:Destroy()
 		end
@@ -1654,25 +1662,25 @@ local function rebuildInvDetailSlots(tree: string, itemKey: string)
 			TextSize = 11,
 			TextWrapped = true,
 			Text = mod and mod.DisplayName or ("Slot %d"):format(slotIndex),
-			Parent = invDetailSlotRow,
+			Parent = inv.detailSlotRow,
 		}, { corner(4), stroke() })
 		slotButton.MouseButton1Click:Connect(function()
 			openModPicker(tree, itemKey, slotIndex)
 		end)
 	end
-	invDetailSlotRow.Visible = true
+	inv.detailSlotRow.Visible = true
 end
 
 local function closeInvDetail()
-	invDetailFrame.Visible = false
-	invDetailState.category = nil
-	invDetailState.key = nil
+	inv.detailFrame.Visible = false
+	inv.detailState.category = nil
+	inv.detailState.key = nil
 end
-invDetailCloseButton.MouseButton1Click:Connect(closeInvDetail)
+inv.detailCloseButton.MouseButton1Click:Connect(closeInvDetail)
 
 local function showInvDetail(category: string, key: string)
-	invDetailState.category = category
-	invDetailState.key = key
+	inv.detailState.category = category
+	inv.detailState.key = key
 
 	-- Icon lookup key differs from the selection key for Weapons only: `key` there is the Forged
 	-- instance's unique Id (see renderInvWeapons below), but icons are per weapon TYPE (see this
@@ -1699,34 +1707,34 @@ local function showInvDetail(category: string, key: string)
 		local rarityData = ModConfig.Rarities[instance.Rarity]
 		local rarityName = rarityData and rarityData.DisplayName or instance.Rarity
 		local equipped = profile.EquippedWeaponId == instance.Id
-		invDetailTitle.Text = ("[%s] T%d  %s"):format(rarityName, recipe.Tier, recipe.DisplayName)
-		invDetailStats.Text = ("Base: %.1f dmg x %.1f/s"):format(recipe.BaseDamage, recipe.FireRate)
-		invDetailDescription.Text = ("%s\n\n%s"):format(recipe.Description or "", affixSummary(instance.Affixes))
+		inv.detailTitle.Text = ("[%s] T%d  %s"):format(rarityName, recipe.Tier, recipe.DisplayName)
+		inv.detailStats.Text = ("Base: %.1f dmg x %.1f/s"):format(recipe.BaseDamage, recipe.FireRate)
+		inv.detailDescription.Text = ("%s\n\n%s"):format(recipe.Description or "", affixSummary(instance.Affixes))
 		rebuildInvDetailSlots("Weapons", instance.WeaponKey)
-		invDetailButton.Visible = true
-		invDetailButton.Text = equipped and "Equipped" or "Equip"
-		invDetailButton.BackgroundColor3 = equipped and COLOR.AccentDark or COLOR.Accent
+		inv.detailButton.Visible = true
+		inv.detailButton.Text = equipped and "Equipped" or "Equip"
+		inv.detailButton.BackgroundColor3 = equipped and COLOR.AccentDark or COLOR.Accent
 	elseif category == "Robots" then
 		local recipe = CraftingRecipes.Robots[key]
 		local owned = profile.CraftedRobots[key] or 0
 		local deployed = deployedCountForRobot(key)
-		invDetailTitle.Text = ("T%d  %s"):format(recipe.Tier, recipe.DisplayName)
-		invDetailStats.Text = ("Base: %.1f dmg x %.1f/s · %d HP · owned %d, deployed %d"):format(
+		inv.detailTitle.Text = ("T%d  %s"):format(recipe.Tier, recipe.DisplayName)
+		inv.detailStats.Text = ("Base: %.1f dmg x %.1f/s · %d HP · owned %d, deployed %d"):format(
 			recipe.BaseDamage, recipe.FireRate, recipe.HP, owned, deployed)
-		invDetailDescription.Text = recipe.Description or ""
+		inv.detailDescription.Text = recipe.Description or ""
 		rebuildInvDetailSlots("Robots", key)
-		invDetailButton.Visible = true
-		invDetailButton.Text = (deployed < owned) and "Deploy" or "Undeploy"
-		invDetailButton.BackgroundColor3 = COLOR.Accent
+		inv.detailButton.Visible = true
+		inv.detailButton.Text = (deployed < owned) and "Deploy" or "Undeploy"
+		inv.detailButton.BackgroundColor3 = COLOR.Accent
 	elseif category == "Mods" then
 		local mod = ModConfig.Mods[key]
 		local rarityData = ModConfig.Rarities[mod.Rarity]
 		local rarityName = rarityData and rarityData.DisplayName or mod.Rarity
-		invDetailTitle.Text = ("[%s] %s"):format(rarityName, mod.DisplayName)
-		invDetailStats.Text = "Equip from a Weapon/Robot's own mod slots"
-		invDetailDescription.Text = mod.Description or ""
-		invDetailSlotRow.Visible = false
-		invDetailButton.Visible = false
+		inv.detailTitle.Text = ("[%s] %s"):format(rarityName, mod.DisplayName)
+		inv.detailStats.Text = "Equip from a Weapon/Robot's own mod slots"
+		inv.detailDescription.Text = mod.Description or ""
+		inv.detailSlotRow.Visible = false
+		inv.detailButton.Visible = false
 	elseif category == "Materials" then
 		local displayName, description, count
 		if key == "Scrap" then
@@ -1750,23 +1758,23 @@ local function showInvDetail(category: string, key: string)
 			description = refinedInfo and refinedInfo.Description or ""
 			count = (profile.RefinedOreCounts or {})[key] or 0
 		end
-		invDetailTitle.Text = displayName
-		invDetailStats.Text = ("You have: %d"):format(count)
-		invDetailDescription.Text = description
-		invDetailSlotRow.Visible = false
-		invDetailButton.Visible = false
+		inv.detailTitle.Text = displayName
+		inv.detailStats.Text = ("You have: %d"):format(count)
+		inv.detailDescription.Text = description
+		inv.detailSlotRow.Visible = false
+		inv.detailButton.Visible = false
 	end
 
-	invDetailImage.Image = getItemIcon(iconKey) or ""
-	invDetailFrame.Visible = true
+	inv.detailImage.Image = getItemIcon(iconKey) or ""
+	inv.detailFrame.Visible = true
 end
 
 -- Called whenever InventoryUpdate patches profile — keeps the detail panel's Equip/Deploy button
 -- and stats in sync with a change made from anywhere (including the Workbench's own tabs) without
 -- needing the player to re-click the tile.
 local function refreshInvDetailIfShowing()
-	if invDetailFrame.Visible and invDetailState.category and invDetailState.key then
-		showInvDetail(invDetailState.category, invDetailState.key)
+	if inv.detailFrame.Visible and inv.detailState.category and inv.detailState.key then
+		showInvDetail(inv.detailState.category, inv.detailState.key)
 	end
 end
 
@@ -1820,8 +1828,8 @@ local currentInvTab = "Weapons"
 local function renderInvWeapons()
 	local instances = profile.Weapons or {}
 	if #instances == 0 then
-		invEmptyLabel.Text = "No weapons owned yet — Forge one at your Forge station."
-		invEmptyLabel.Visible = true
+		inv.emptyLabel.Text = "No weapons owned yet — Forge one at your Forge station."
+		inv.emptyLabel.Visible = true
 		return
 	end
 	-- Copy before sorting — profile.Weapons is the live table, don't mutate its order.
@@ -1844,7 +1852,7 @@ local function renderInvWeapons()
 		-- the tile opens the detail panel on this specific instance.Id.
 		makeItemTile(instance.WeaponKey, recipe.DisplayName, rarityData and rarityData.Badge or "?", equipped, function()
 			showInvDetail("Weapons", instance.Id)
-		end).Parent = invListFrame
+		end).Parent = inv.listFrame
 	end
 end
 
@@ -1856,8 +1864,8 @@ local function renderInvRobots()
 		end
 	end
 	if #keys == 0 then
-		invEmptyLabel.Text = "No robots owned yet — craft one at your Welding Station."
-		invEmptyLabel.Visible = true
+		inv.emptyLabel.Text = "No robots owned yet — craft one at your Welding Station."
+		inv.emptyLabel.Visible = true
 		return
 	end
 	table.sort(keys, function(a, b)
@@ -1868,22 +1876,22 @@ local function renderInvRobots()
 		local deployed = deployedCountForRobot(key)
 		makeItemTile(key, recipe.DisplayName, ("x%d"):format(profile.CraftedRobots[key]), deployed > 0, function()
 			showInvDetail("Robots", key)
-		end).Parent = invListFrame
+		end).Parent = inv.listFrame
 	end
 end
 
 local function renderInvMods()
 	local keys = ownedModKeysSorted()
 	if #keys == 0 then
-		invEmptyLabel.Text = "No mods owned yet — craft one at your Welding Station."
-		invEmptyLabel.Visible = true
+		inv.emptyLabel.Text = "No mods owned yet — craft one at your Welding Station."
+		inv.emptyLabel.Visible = true
 		return
 	end
 	for _, key in ipairs(keys) do
 		local mod = ModConfig.Mods[key]
 		makeItemTile(key, mod.DisplayName, nil, false, function()
 			showInvDetail("Mods", key)
-		end).Parent = invListFrame
+		end).Parent = inv.listFrame
 	end
 end
 
@@ -1896,33 +1904,33 @@ end
 local function renderInvMaterials()
 	makeItemTile("Scrap", "Scrap", nil, false, function()
 		showInvDetail("Materials", "Scrap")
-	end).Parent = invListFrame
+	end).Parent = inv.listFrame
 	makeItemTile("Cores", "Cores", nil, false, function()
 		showInvDetail("Materials", "Cores")
-	end).Parent = invListFrame
+	end).Parent = inv.listFrame
 	for _, oreKey in ipairs(ORE_DISPLAY_ORDER) do
 		local displayName = OreConfig.Ores[oreKey].DisplayName
 		makeItemTile(oreKey, displayName, nil, false, function()
 			showInvDetail("Materials", oreKey)
-		end).Parent = invListFrame
+		end).Parent = inv.listFrame
 	end
 	for _, refineData in pairs(RefinedOreConfig.Ores) do
 		local owned = (profile.RefinedOreCounts or {})[refineData.RefinedKey] or 0
 		if owned > 0 then
 			makeItemTile(refineData.RefinedKey, refineData.DisplayName, ("x%d"):format(owned), false, function()
 				showInvDetail("Materials", refineData.RefinedKey)
-			end).Parent = invListFrame
+			end).Parent = inv.listFrame
 		end
 	end
 end
 
 local function renderInvList()
-	for _, child in ipairs(invListFrame:GetChildren()) do
+	for _, child in ipairs(inv.listFrame:GetChildren()) do
 		if child:IsA("ImageButton") then
 			child:Destroy()
 		end
 	end
-	invEmptyLabel.Visible = false
+	inv.emptyLabel.Visible = false
 
 	if currentInvTab == "Weapons" then
 		renderInvWeapons()
@@ -1937,7 +1945,7 @@ end
 
 local function selectInvTab(name: string)
 	currentInvTab = name
-	for _, sibling in ipairs(invTabRow:GetChildren()) do
+	for _, sibling in ipairs(inv.tabRow:GetChildren()) do
 		if sibling:IsA("TextButton") then
 			sibling.BackgroundColor3 = sibling.Text == name and COLOR.Accent or COLOR.PanelLight
 		end
@@ -1954,7 +1962,7 @@ local function makeInvTabButton(name: string)
 		TextColor3 = COLOR.Text,
 		TextSize = 15,
 		Text = name,
-		Parent = invTabRow,
+		Parent = inv.tabRow,
 	}, { corner(6) })
 	button.MouseButton1Click:Connect(function()
 		selectInvTab(name)
@@ -1970,13 +1978,13 @@ makeInvTabButton("Mods")
 makeInvTabButton("Materials")
 
 local function openInventory()
-	invFrame.Visible = true
+	inv.frame.Visible = true
 	closeInvDetail()
 	renderInvList()
 end
 
-invCloseButton.MouseButton1Click:Connect(function()
-	invFrame.Visible = false
+inv.closeButton.MouseButton1Click:Connect(function()
+	inv.frame.Visible = false
 	closeInvDetail()
 	closeModPicker() -- don't leave the mod picker orphaned open behind a closed Inventory
 end)
@@ -1996,10 +2004,14 @@ end)
 local POTION_BUTTON_SIZE = 64
 
 -- Docked under craftFrame's bottom edge (Position 0.5,-200 + Size 0,400 -> bottom sits at
--- 0.5,+200), 10px gap. potionButton is a fixed 64-wide square on the left; pityBarFrame fills the
+-- One table instead of 4 separate top-level locals: Luau caps a function scope at 200
+-- locals and this file's main chunk hit that ceiling. Grouping UI element references costs
+-- nothing at runtime and buys back a register per element.
+local pity = {}
+-- 0.5,+200), 10px gap. potionButton is a fixed 64-wide square on the left; pity.barFrame fills the
 -- remaining width to craftFrame's own right edge (0.5,+320) — together they span exactly as wide
 -- as the Forge menu above them, not just huddled off to one side of it.
-local pityBarFrame = new("Frame", {
+pity.barFrame = new("Frame", {
 	Name = "ForgePity",
 	BackgroundColor3 = COLOR.Panel,
 	Position = UDim2.new(0.5, -320 + POTION_BUTTON_SIZE + 10, 0.5, 220),
@@ -2008,7 +2020,7 @@ local pityBarFrame = new("Frame", {
 	Parent = screenGui,
 }, { corner(8), stroke() })
 
-local pityCaption = new("TextLabel", {
+pity.caption = new("TextLabel", {
 	BackgroundTransparency = 1,
 	Position = UDim2.new(0, 10, 0, 4),
 	Size = UDim2.new(1, -20, 0, 16),
@@ -2017,20 +2029,20 @@ local pityCaption = new("TextLabel", {
 	TextColor3 = COLOR.Muted,
 	TextSize = 13,
 	Text = "Forge Pity: 0 / 0",
-	Parent = pityBarFrame,
+	Parent = pity.barFrame,
 })
 
-local pityTrack = new("Frame", {
+pity.track = new("Frame", {
 	BackgroundColor3 = COLOR.PanelLight,
 	Position = UDim2.new(0, 10, 0, 24),
 	Size = UDim2.new(1, -20, 0, 12),
-	Parent = pityBarFrame,
+	Parent = pity.barFrame,
 }, { corner(4) })
 
-local pityFill = new("Frame", {
+pity.fill = new("Frame", {
 	BackgroundColor3 = COLOR.Accent,
 	Size = UDim2.new(0, 0, 1, 0),
-	Parent = pityTrack,
+	Parent = pity.track,
 }, { corner(4) })
 
 -- Assigns into the `local refreshPityBar` forward-declared up in the Forge tab section, so the
@@ -2040,9 +2052,9 @@ local pityFill = new("Frame", {
 refreshPityBar = function()
 	local counter = profile.ForgePityCounter or 0
 	local threshold = ForgeConfig.Pity.Threshold
-	pityCaption.Text = ("Forge Pity: %d / %d (%s+)"):format(counter, threshold, ForgeConfig.Pity.MinRarity)
+	pity.caption.Text = ("Forge Pity: %d / %d (%s+)"):format(counter, threshold, ForgeConfig.Pity.MinRarity)
 	local ratio = threshold > 0 and math.clamp(counter / threshold, 0, 1) or 0
-	pityFill.Size = UDim2.new(ratio, 0, 1, 0)
+	pity.fill.Size = UDim2.new(ratio, 0, 1, 0)
 end
 refreshPityBar()
 
@@ -2109,7 +2121,7 @@ end)
 -- handler (always false, whichever menu was open). Kept as one function so the two widgets can
 -- never end up toggled independently by a future edit that only remembers to update one of them.
 local function setForgeWidgetsVisible(visible: boolean)
-	pityBarFrame.Visible = visible
+	pity.barFrame.Visible = visible
 	potionButton.Visible = visible
 	-- The docked row can sit low enough (on shorter viewports) to overlap the bottom action row
 	-- (Inventory/Start Defense/etc.) — hide that row while the Forge ones are up, restore it the
@@ -2822,7 +2834,11 @@ local statusHealthCaption, statusHealthFill = makeStatusBar(1, "Health", COLOR.G
 -- rather than a bar that lies about a stat nothing drives. Wire it up when dashing is built.
 local _staminaCaption, _staminaFill = makeStatusBar(2, "Stamina — not built yet", COLOR.Muted, true)
 
-local researchButton = new("TextButton", {
+-- One table instead of 5 separate top-level locals: Luau caps a function scope at 200
+-- locals and this file's main chunk hit that ceiling. Grouping UI element references costs
+-- nothing at runtime and buys back a register per element.
+local research = {}
+research.button = new("TextButton", {
 	BackgroundColor3 = COLOR.PanelLight,
 	Size = UDim2.new(1, 0, 0, 30),
 	LayoutOrder = 3,
@@ -2841,7 +2857,7 @@ local researchButton = new("TextButton", {
 -- what is actually enforced can never drift apart.
 ----------------------------------------------------------------------
 
-local researchFrame = new("Frame", {
+research.frame = new("Frame", {
 	Name = "ResearchPanel",
 	BackgroundColor3 = COLOR.Panel,
 	Position = UDim2.new(0, 16, 1, -160),
@@ -2852,7 +2868,7 @@ local researchFrame = new("Frame", {
 	Parent = screenGui,
 }, { corner(10), stroke() })
 
-local researchTitle = new("TextLabel", {
+research.title = new("TextLabel", {
 	BackgroundTransparency = 1,
 	Position = UDim2.new(0, 12, 0, 10),
 	Size = UDim2.new(1, -60, 0, 24),
@@ -2861,10 +2877,10 @@ local researchTitle = new("TextLabel", {
 	TextColor3 = COLOR.Text,
 	TextSize = 18,
 	Text = "Research",
-	Parent = researchFrame,
+	Parent = research.frame,
 })
 
-local researchClose = new("TextButton", {
+research.close = new("TextButton", {
 	BackgroundColor3 = COLOR.PanelLight,
 	Position = UDim2.new(1, -40, 0, 8),
 	Size = UDim2.new(0, 28, 0, 28),
@@ -2872,21 +2888,21 @@ local researchClose = new("TextButton", {
 	TextColor3 = COLOR.Text,
 	TextSize = 16,
 	Text = "X",
-	Parent = researchFrame,
+	Parent = research.frame,
 }, { corner(6) })
 
-local researchList = new("ScrollingFrame", {
+research.list = new("ScrollingFrame", {
 	BackgroundTransparency = 1,
 	Position = UDim2.new(0, 12, 0, 44),
 	Size = UDim2.new(1, -24, 1, -56),
 	CanvasSize = UDim2.new(0, 0, 0, 0),
 	AutomaticCanvasSize = Enum.AutomaticSize.Y,
 	ScrollBarThickness = 6,
-	Parent = researchFrame,
+	Parent = research.frame,
 }, { new("UIListLayout", { Padding = UDim.new(0, 6) }) })
 
-researchClose.MouseButton1Click:Connect(function()
-	researchFrame.Visible = false
+research.close.MouseButton1Click:Connect(function()
+	research.frame.Visible = false
 end)
 
 local refreshResearchButton -- forward-declared; renderResearchPanel refreshes it after a claim
@@ -2894,14 +2910,14 @@ local refreshResearchButton -- forward-declared; renderResearchPanel refreshes i
 -- Kept current by the InventoryUpdate listener, so the panel updates live as you gather materials
 -- rather than going stale the moment you opened it.
 local function renderResearchPanel()
-	for _, child in ipairs(researchList:GetChildren()) do
+	for _, child in ipairs(research.list:GetChildren()) do
 		if child:IsA("Frame") then
 			child:Destroy()
 		end
 	end
 
 	local currentTier, currentIndex = ResearchConfig.GetTier(profile.ResearchTier or 1)
-	researchTitle.Text = ("Research Tier %d"):format(currentIndex)
+	research.title.Text = ("Research Tier %d"):format(currentIndex)
 
 	makeRow(
 		currentTier.Name,
@@ -2911,11 +2927,11 @@ local function renderResearchPanel()
 			currentTier.FootprintHalfSize.X * 2),
 		"Current",
 		function() end
-	).Parent = researchList
+	).Parent = research.list
 
 	local req = ResearchConfig.GetNextTierRequirements(profile)
 	if not req then
-		makeRow("Fully researched", "You are at the highest tier there is.", "Max", function() end).Parent = researchList
+		makeRow("Fully researched", "You are at the highest tier there is.", "Max", function() end).Parent = research.list
 		return
 	end
 
@@ -2939,7 +2955,7 @@ local function renderResearchPanel()
 				refreshResearchButton()
 			end
 		end
-	).Parent = researchList
+	).Parent = research.list
 
 	-- One row per requirement, each showing have-vs-needed, so it is obvious WHICH part is missing
 	-- rather than a flat "not enough resources".
@@ -2948,7 +2964,7 @@ local function renderResearchPanel()
 		("Best wave so far: %d"):format(req.HighestWave),
 		req.WaveMet and "Done" or "Missing",
 		function() end
-	).Parent = researchList
+	).Parent = research.list
 
 	if req.CoreRequirement then
 		local core = req.CoreRequirement
@@ -2957,7 +2973,7 @@ local function renderResearchPanel()
 			("You have %d — drops from base-defense boss waves"):format(core.Have),
 			core.Met and "Done" or "Missing",
 			function() end
-		).Parent = researchList
+		).Parent = research.list
 	end
 
 	for _, entry in ipairs(req.Cost) do
@@ -2970,13 +2986,13 @@ local function renderResearchPanel()
 			("You have %d"):format(entry.Have),
 			entry.Met and "Done" or "Missing",
 			function() end
-		).Parent = researchList
+		).Parent = research.list
 	end
 end
 
-researchButton.MouseButton1Click:Connect(function()
-	researchFrame.Visible = not researchFrame.Visible
-	if researchFrame.Visible then
+research.button.MouseButton1Click:Connect(function()
+	research.frame.Visible = not research.frame.Visible
+	if research.frame.Visible then
 		renderResearchPanel()
 	end
 end)
@@ -2987,11 +3003,11 @@ refreshResearchButton = function()
 	local currentTier, currentIndex = ResearchConfig.GetTier(profile.ResearchTier or 1)
 	local req = ResearchConfig.GetNextTierRequirements(profile)
 	if req and req.CanClaim then
-		researchButton.Text = ("Research T%d — UPGRADE READY"):format(currentIndex)
-		researchButton.TextColor3 = COLOR.Good
+		research.button.Text = ("Research T%d — UPGRADE READY"):format(currentIndex)
+		research.button.TextColor3 = COLOR.Good
 	else
-		researchButton.Text = ("Research T%d — %s"):format(currentIndex, currentTier.Name)
-		researchButton.TextColor3 = COLOR.Accent
+		research.button.Text = ("Research T%d — %s"):format(currentIndex, currentTier.Name)
+		research.button.TextColor3 = COLOR.Accent
 	end
 end
 
@@ -3035,7 +3051,11 @@ LocalPlayer.CharacterAdded:Connect(bindHealth)
 -- Shop panel (opened only by standing at a Shop node — see node setup below)
 ----------------------------------------------------------------------
 
-local shopFrame = new("Frame", {
+-- One table instead of 5 separate top-level locals: Luau caps a function scope at 200
+-- locals and this file's main chunk hit that ceiling. Grouping UI element references costs
+-- nothing at runtime and buys back a register per element.
+local shopUI = {}
+shopUI.frame = new("Frame", {
 	Name = "ShopMenu",
 	BackgroundColor3 = COLOR.Panel,
 	Position = UDim2.new(0.5, -200, 0.5, -190),
@@ -3053,10 +3073,10 @@ new("TextLabel", {
 	TextColor3 = COLOR.Text,
 	TextSize = 18,
 	Text = "Outpost Shop",
-	Parent = shopFrame,
+	Parent = shopUI.frame,
 })
 
-local shopCloseButton = new("TextButton", {
+shopUI.closeButton = new("TextButton", {
 	BackgroundColor3 = COLOR.PanelLight,
 	Position = UDim2.new(1, -40, 0, 8),
 	Size = UDim2.new(0, 28, 0, 28),
@@ -3064,26 +3084,26 @@ local shopCloseButton = new("TextButton", {
 	TextColor3 = COLOR.Text,
 	TextSize = 16,
 	Text = "X",
-	Parent = shopFrame,
+	Parent = shopUI.frame,
 }, { corner(6) })
-shopCloseButton.MouseButton1Click:Connect(function()
-	shopFrame.Visible = false
+shopUI.closeButton.MouseButton1Click:Connect(function()
+	shopUI.frame.Visible = false
 end)
 
-local shopListFrame = new("ScrollingFrame", {
+shopUI.listFrame = new("ScrollingFrame", {
 	BackgroundTransparency = 1,
 	Position = UDim2.new(0, 12, 0, 44),
 	Size = UDim2.new(1, -24, 1, -100),
 	CanvasSize = UDim2.new(0, 0, 0, 0),
 	AutomaticCanvasSize = Enum.AutomaticSize.Y,
 	ScrollBarThickness = 6,
-	Parent = shopFrame,
+	Parent = shopUI.frame,
 }, { new("UIListLayout", { Padding = UDim.new(0, 6) }) })
 
 -- Expedition Shop nodes are one-time — if you can't (or don't want to) buy anything, Skip
 -- destroys the node outright and lets the queue move on rather than leaving you stuck standing
 -- in front of a shop you can't use.
-local shopSkipButton = new("TextButton", {
+shopUI.skipButton = new("TextButton", {
 	BackgroundColor3 = COLOR.PanelLight,
 	Position = UDim2.new(0, 12, 1, -40),
 	Size = UDim2.new(1, -24, 0, 32),
@@ -3091,14 +3111,14 @@ local shopSkipButton = new("TextButton", {
 	TextColor3 = COLOR.Text,
 	TextSize = 15,
 	Text = "Skip — move to the next node",
-	Parent = shopFrame,
+	Parent = shopUI.frame,
 }, { corner(6) })
 
 local currentShopNode = nil -- set right before the Shop panel opens, see node setup below
-local shopNodeDestroyingConn = nil -- auto-closes the panel if the node vanishes out from under it (bought, skipped, or otherwise)
+shopUI.nodeDestroyingConn = nil -- auto-closes the panel if the node vanishes out from under it (bought, skipped, or otherwise)
 
 local function renderShopList()
-	for _, child in ipairs(shopListFrame:GetChildren()) do
+	for _, child in ipairs(shopUI.listFrame:GetChildren()) do
 		if child:IsA("Frame") then
 			child:Destroy()
 		end
@@ -3114,18 +3134,18 @@ local function renderShopList()
 				if not result.Success then
 					showFailure("Purchase failed", result.Reason)
 				else
-					shopFrame.Visible = false -- expedition shop nodes are consumed on purchase — nothing left to browse
+					shopUI.frame.Visible = false -- expedition shop nodes are consumed on purchase — nothing left to browse
 				end
 			end
-		).Parent = shopListFrame
+		).Parent = shopUI.listFrame
 	end
 end
 
-shopSkipButton.MouseButton1Click:Connect(function()
+shopUI.skipButton.MouseButton1Click:Connect(function()
 	if currentShopNode then
 		Remotes.SkipNode:FireServer(currentShopNode)
 	end
-	shopFrame.Visible = false
+	shopUI.frame.Visible = false
 end)
 
 ----------------------------------------------------------------------
@@ -3154,7 +3174,7 @@ end)
 
 -- Inventory, unlike the Workbench, isn't gated to a physical station — it's just a view onto
 -- `profile` — so it gets a normal always-available button here instead.
-local inventoryButton = new("TextButton", {
+inv.openButton = new("TextButton", {
 	BackgroundColor3 = COLOR.PanelLight,
 	Size = UDim2.new(0, 130, 1, 0),
 	Font = Enum.Font.SourceSansBold,
@@ -3163,7 +3183,7 @@ local inventoryButton = new("TextButton", {
 	Text = "Inventory",
 	Parent = actionRow,
 }, { corner(8), stroke() })
-inventoryButton.MouseButton1Click:Connect(openInventory)
+inv.openButton.MouseButton1Click:Connect(openInventory)
 
 local defendButton = new("TextButton", {
 	BackgroundColor3 = COLOR.Accent,
@@ -3253,21 +3273,21 @@ Remotes.InventoryUpdate.OnClientEvent:Connect(function(patch)
 	if craftFrame.Visible then
 		renderCraftList()
 	end
-	if invFrame.Visible then
+	if inv.frame.Visible then
 		renderInvList()
 		refreshInvDetailIfShowing()
 	end
 	-- Keeps an open turret slot panel current: upgrading a turret changes its level/stats, and the
 	-- Cores spent change what the next upgrade costs. Place/Unplace close the panel themselves
 	-- (the slot's contents moved), so this is really about Upgrade re-rendering in place.
-	if turretPanelFrame.Visible then
+	if turretPanel.frame.Visible then
 		renderTurretPanel()
 	end
 	-- The Research claim depends on Scrap/ore/Cores/HighestWave, all of which arrive through this
 	-- same patch — so the button's "UPGRADE READY" state and the open requirements popup both have
 	-- to re-evaluate here rather than only when reopened.
 	refreshResearchButton()
-	if researchFrame.Visible then
+	if research.frame.Visible then
 		renderResearchPanel()
 	end
 end)
@@ -3575,15 +3595,15 @@ local function setupNode(node: Instance)
 				return
 			end
 			currentShopNode = node
-			shopFrame.Visible = true
+			shopUI.frame.Visible = true
 			renderShopList()
 
-			if shopNodeDestroyingConn then
-				shopNodeDestroyingConn:Disconnect()
+			if shopUI.nodeDestroyingConn then
+				shopUI.nodeDestroyingConn:Disconnect()
 			end
-			shopNodeDestroyingConn = node.Destroying:Connect(function()
+			shopUI.nodeDestroyingConn = node.Destroying:Connect(function()
 				if currentShopNode == node then
-					shopFrame.Visible = false
+					shopUI.frame.Visible = false
 				end
 			end)
 		end)
