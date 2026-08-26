@@ -64,14 +64,43 @@ end
 
 -- Case-insensitive lookup of whatever the player typed against a set of real keys, so /give cores
 -- and /give Cores both work. Returns the CANONICAL key, since that's what the profile is keyed by.
-local function resolveKey(input: string, candidates: { string }): string?
+-- Resolves a typed fragment to one key. Three passes, narrowest first: exact, then prefix, then
+-- substring. Exact HAS to win outright — "scrap" must mean the Scrap currency and not be treated as
+-- an ambiguous prefix of ScrapIron.
+--
+-- Returns (key) on a clean match, or (nil, candidates) when a fragment matched several things, so
+-- the caller can say which rather than "unknown". Typing the full CamelCase key for every material
+-- is the kind of friction that makes a dev command not get used.
+local function resolveKey(input: string, candidates: { string }): (string?, { string }?)
 	local lowered = input:lower()
+
 	for _, key in ipairs(candidates) do
 		if key:lower() == lowered then
 			return key
 		end
 	end
-	return nil
+
+	local matches = {}
+	for _, key in ipairs(candidates) do
+		if key:lower():sub(1, #lowered) == lowered then
+			table.insert(matches, key)
+		end
+	end
+
+	-- Only falls back to substring when nothing started with the fragment, so "gold" still prefers
+	-- GoldContacts over matching in the middle of something else.
+	if #matches == 0 then
+		for _, key in ipairs(candidates) do
+			if key:lower():find(lowered, 1, true) then
+				table.insert(matches, key)
+			end
+		end
+	end
+
+	if #matches == 1 then
+		return matches[1]
+	end
+	return nil, (#matches > 0 and matches or nil)
 end
 
 local function oreKeys(): { string }
@@ -112,6 +141,7 @@ local function pushProfile(player: Player, profile)
 	Remotes.InventoryUpdate:FireClient(player, {
 		Scrap = profile.Scrap,
 		Cores = profile.Cores,
+		Contraband = profile.Contraband,
 		OreCounts = profile.OreCounts,
 		RefinedOreCounts = profile.RefinedOreCounts,
 		CoreItems = profile.CoreItems,
@@ -127,7 +157,7 @@ end
 local function commandGive(player: Player, profile, args: { string })
 	local what = args[2]
 	if not what then
-		tell(player, "usage: /give <Scrap|Cores|OreKey|CoreT1..> [amount]")
+		tell(player, "usage: /give <Scrap|Cores|Contraband|OreKey|RefinedKey|CoreT1..> [amount] — partial names work, e.g. /give copper. Or /givemats for everything at once.")
 		return
 	end
 
@@ -142,6 +172,22 @@ local function commandGive(player: Player, profile, args: { string })
 	-- because RewardTables mints keys by milestone (CoreT1, CoreT2, ...) and there's no canonical
 	-- enumeration of them — anything starting "Core" that isn't the Cores currency is treated as
 	-- one, which is good enough for a dev command.
+	-- Every candidate in one list, so an ambiguous fragment can name everything it matched across
+	-- all four categories rather than only the one that happened to be checked first.
+	local everything = { "Scrap", "Cores", "Contraband" }
+	for _, key in ipairs(oreKeys()) do
+		table.insert(everything, key)
+	end
+	for _, key in ipairs(refinedKeys()) do
+		table.insert(everything, key)
+	end
+	local _, ambiguous = resolveKey(what, everything)
+	if ambiguous then
+		tell(player, ("'%s' matches %d things — be more specific: %s"):format(
+			what, #ambiguous, table.concat(ambiguous, ", ")))
+		return
+	end
+
 	local currencyKey = resolveKey(what, { "Scrap", "Cores", "Contraband" })
 	if currencyKey then
 		DataService.AddCurrency(player, currencyKey, amount)
@@ -177,7 +223,48 @@ local function commandGive(player: Player, profile, args: { string })
 		return
 	end
 
-	tell(player, ("unknown '%s' — try Scrap, Cores, %s, or CoreT1"):format(what, table.concat(oreKeys(), ", ")))
+	tell(player, ("unknown '%s' — try Scrap, Cores, Contraband, CoreT1, %s, or %s"):format(
+		what, table.concat(oreKeys(), ", "), table.concat(refinedKeys(), ", ")))
+end
+
+----------------------------------------------------------------------
+-- /givemats — everything a craft could possibly ask for, in one command.
+--
+-- Exists because getting kitted out to test one recipe otherwise means a dozen separate /give
+-- calls, and you have to remember every key. Amounts are scaled per category rather than flat: a
+-- Research tier costs Scrap in the thousands and refined materials in the tens, so one number
+-- handed to all of them would be either uselessly small or absurd.
+----------------------------------------------------------------------
+
+local function commandGiveMats(player: Player, profile, args: { string })
+	local base = math.floor(tonumber(args[2]) or 500)
+	if base <= 0 then
+		tell(player, "amount must be a positive number")
+		return
+	end
+
+	-- x40 on Scrap: it is the bulk currency and the top Research tier alone wants 12,000 of it, so
+	-- the default of 500 has to land well clear of that.
+	DataService.AddCurrency(player, "Scrap", base * 40)
+	DataService.AddCurrency(player, "Cores", base)
+	DataService.AddCurrency(player, "Contraband", math.max(1, math.floor(base / 5)))
+
+	for _, key in ipairs(oreKeys()) do
+		DataService.AddOre(player, key, base)
+	end
+	for _, key in ipairs(refinedKeys()) do
+		DataService.AddRefinedOre(player, key, base)
+	end
+
+	-- Boss-wave Cores, one tier per Research step. Small counts because each tier needs exactly one
+	-- and there is nothing else to spend them on.
+	for tier = 1, 5 do
+		DataService.AddCoreItem(player, "CoreT" .. tier, 10)
+	end
+
+	pushProfile(player, profile)
+	tell(player, ("+%d Scrap, %d Cores, %d of every ore and refined material, 10 of each boss Core"):format(
+		base * 40, base, base))
 end
 
 local function commandGiveTurret(player: Player, profile, args: { string })
@@ -369,7 +456,7 @@ local function commandSetWave(player: Player, profile, args: { string })
 end
 
 local function commandHelp(player: Player)
-	tell(player, "commands: /admin [on|off] · /give <what> [amount] · /giveturret [TypeKey] · /giveultimate [Key] · /dummy · /givecase [Key] [n] · /givefamily [Key] · /givetool [Key] · /givedrone [Key] · /setwave <n>")
+	tell(player, "commands: /admin [on|off] · /give <what> [amount] · /givemats [n] · /giveturret [TypeKey] · /giveultimate [Key] · /dummy · /givecase [Key] [n] · /givefamily [Key] · /givetool [Key] · /givedrone [Key] · /setwave <n>")
 	tell(player, ("givable: Scrap, Cores, CoreT1.., %s, %s"):format(table.concat(oreKeys(), ", "), table.concat(refinedKeys(), ", ")))
 	tell(player, ("turrets: %s"):format(table.concat(turretKeys(), ", ")))
 	tell(player, ("ultimates: %s"):format(table.concat(ultimateKeys(), ", ")))
@@ -418,7 +505,7 @@ local function handleChatted(player: Player, message: string)
 	end
 
 	if command ~= "/give" and command ~= "/giveturret" and command ~= "/giveultimate"
-		and command ~= "/dummy" and command ~= "/givecase" and command ~= "/givefamily" and command ~= "/givetool" and command ~= "/givedrone"
+		and command ~= "/dummy" and command ~= "/givecase" and command ~= "/givefamily" and command ~= "/givetool" and command ~= "/givedrone" and command ~= "/givemats"
 		and command ~= "/setwave" and command ~= "/help" then
 		return
 	end
@@ -435,7 +522,9 @@ local function handleChatted(player: Player, message: string)
 		return
 	end
 
-	if command == "/give" then
+	if command == "/givemats" then
+		commandGiveMats(player, profile, args)
+	elseif command == "/give" then
 		commandGive(player, profile, args)
 	elseif command == "/giveturret" then
 		commandGiveTurret(player, profile, args)

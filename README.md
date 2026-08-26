@@ -474,7 +474,8 @@ no manual copy-pasting scripts into Studio.
   | Command | What it does |
   |---|---|
   | `/admin [on\|off]` | Toggle your own admin shortcuts. `off` lets you experience the game as a normal player — note this disables the grants below too, deliberately. |
-  | `/give <what> [n]` | Scrap, Cores, Contraband, any ore, any refined material (Steel Ingot etc.), or `CoreT1`. Defaults to 100, case-insensitive. |
+  | `/givemats [n]` | **Everything a craft can ask for, in one go**: Scrap, Cores, Contraband, every ore, every refined material, and 10 of each boss Core. `n` defaults to 500 and scales per category (Scrap gets 40x, since the top Research tier alone wants 12,000). This is the one you want before a testing session. |
+| `/give <what> [n]` | One specific thing: Scrap, Cores, Contraband, any ore, any refined material, or `CoreT1`. Defaults to 100. **Partial names work** — `/give copper` finds Copper Wire, `/give void` finds Voidium Shard. An ambiguous fragment lists what it matched instead of failing. |
   | `/giveturret [Type]` | Mints an unplaced turret and unlocks its blueprint. |
   | `/giveultimate [Key]` | Grants an Ultimate mod — otherwise only obtainable from Black Market cases. |
   | `/givecase [Key] [n]` | Grants sealed cases, so the decode flow is testable without buying. |
