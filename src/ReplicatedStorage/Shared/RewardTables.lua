@@ -65,7 +65,7 @@ end
 
 -- Which CoreItem key a boss-wave milestone guarantees (milestoneIndex = which 5th-wave this is —
 -- 1 for wave 5, 2 for wave 10, 3 for wave 15, ... see WaveConfig.BossMilestoneIndex). Feeds
--- BaseConfig.BaseTierCoreRequirement's own tier mapping directly: wave-5's CoreT1 is what
+-- ResearchConfig's own per-tier CoreRequirement mapping directly: wave-5's CoreT1 is what
 -- BaseTier 2 requires, wave-10's CoreT2 is what BaseTier 3 requires, and so on. Placeholder names
 -- until real flavor names get picked, per direct instruction.
 RewardTables.BossCoreForMilestone = {

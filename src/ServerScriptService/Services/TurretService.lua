@@ -1,8 +1,8 @@
 --[[
 	TurretService.lua
 	Owns the physical/placement half of the dedicated Turret system (see TurretConfig.lua's own
-	header for the full picture and TurretShopService.lua for how a player actually gets a Turret
-	instance in the first place — buying a blueprint at the Hub). This file is what turns
+	header for the full picture; a player gets a Turret instance by buying its blueprint at the Hub
+	Shop and then CRAFTING it at the Welding Station). This file is what turns
 	profile.Turrets entries into real, positioned Models in the world, and the three remotes that
 	change that: PlaceTurretInSlot, UnplaceTurret, UpgradeTurret.
 
@@ -39,6 +39,7 @@ local Workspace = game:GetService("Workspace")
 local BaseConfig = require(ReplicatedStorage.Shared.BaseConfig)
 local PlotConfig = require(ReplicatedStorage.Shared.PlotConfig)
 local TurretConfig = require(ReplicatedStorage.Shared.TurretConfig)
+local ResearchConfig = require(ReplicatedStorage.Shared.ResearchConfig)
 local DataService = require(script.Parent.DataService)
 local PlotService = require(script.Parent.PlotService)
 
@@ -94,8 +95,12 @@ end
 
 -- Evenly-spaced ring position (plot-local X/Z offset) for the `index`-th (1-based) slot among
 -- `total` slots — fixed positions, not random, so slot 3 is always the same spot every rebuild.
-local function ringPosition(index: number, total: number): (number, number)
-	local radius = math.min(PlotConfig.FootprintHalfSize.X, PlotConfig.FootprintHalfSize.Z) * BaseConfig.TurretRingRadiusFraction
+local function ringPosition(index: number, total: number, researchTier: number?): (number, number)
+	-- Derived from the tier's own footprint, so the ring widens as the base does. That's what keeps
+	-- a growing slot count from cramming more and more pads into a fixed-size circle: a tier that
+	-- adds slots also adds room for them, with nothing extra to tune.
+	local footprint = ResearchConfig.GetFootprintHalfSize(researchTier)
+	local radius = math.min(footprint.X, footprint.Z) * BaseConfig.TurretRingRadiusFraction
 	local angleStep = total > 0 and (math.pi * 2 / total) or 0
 	local angle = (index - 1) * angleStep
 	return math.cos(angle) * radius, math.sin(angle) * radius
@@ -304,7 +309,7 @@ function TurretService.RebuildPlayerTurrets(player: Player)
 	local records = {}
 
 	for slotIndex = 1, slotCount do
-		local offsetX, offsetZ = ringPosition(slotIndex, slotCount)
+		local offsetX, offsetZ = ringPosition(slotIndex, slotCount, profile.ResearchTier)
 		local turret = turretBySlot[slotIndex]
 
 		if turret and TurretConfig.Types[turret.TypeKey] then

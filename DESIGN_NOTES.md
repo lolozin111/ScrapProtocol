@@ -12,13 +12,14 @@ already made (numbers, mechanics, sequencing), not just vague direction.
 | Raid Energy (Expedition gating) | **Built** |
 | Mining zone (dig-down/Y-levels) | **Built** — see below |
 | Base (crafting process, mods, tiers, turrets) | **Built** — see below (crafting process' "cute" animation step still not started) |
+| Research level (progression tiers) | **Built** — see below |
 | Main shop (rotating stock, geode/extractor) | Not started |
 | PvP base invasion | Not started, sequence last |
 
 Agreed build order (most recent discussion): Raid Energy → Mining zone rework → weapon mod
-slots → base building/tiers (+ turrets) → rotating shop → PvP invasion last. Re-confirm this
-order before starting each one — priorities may have shifted. Next up: main shop, then PvP
-invasion.
+slots → base building/tiers (+ turrets) → **Research level** → rotating shop → PvP invasion last.
+Re-confirm this order before starting each one — priorities may have shifted. Research is now
+BUILT (see "Research level" below). Next up: main shop, then PvP invasion.
 
 ## Mining zone — BUILT
 
@@ -1197,6 +1198,54 @@ suggested) of whatever the raider actually got from the invasion.
   above. The files are left on disk for reference/rollback but are no longer required by
   `Main.server.lua`; don't re-enable or tune them.
 
+## Research level — BUILT
+
+The progression rank, and the one number the player tracks. See `ResearchConfig.lua`.
+
+**Two ladders became one.** `profile.BaseTier` (bought; picked the base Model and WallHP) and
+`profile.ResearchTier` (hardcoded to 1; gated turret slots and turret tiers) both meant "how
+developed is my base", were both gated on boss-wave drops, and would have forced the player to
+track two numbers. `ResearchTier` is the survivor. `BaseTier` is legacy and migrates forward on
+load (`DataService.migrateBaseTierToResearch`, takes the max so it can never move anyone
+backwards, and is idempotent).
+
+One tier now drives: which `BaseTemplates` Model is cloned, the plot's claimed footprint, WallHP in
+defense, turret slot count, and how far a turret can be levelled.
+
+**How it's earned:** reaching `RequiredWave` unlocks the tier; claiming it then costs Scrap + ore
+plus one boss-wave `CoreItem`. The milestone gates it, the resources pay for it — wave defense sets
+the pace while mining and raiding fund it. Gates land on multiples of `WaveConfig.EliteWaveInterval`
+on purpose: the boss wave that unlocks a tier is the same wave that can drop the Core to pay for it.
+Claimed at the Workbench via the `UpgradeResearch` remote (which replaced `UpgradeBase`).
+
+`ResearchConfig.GetNextTierRequirements` is the SINGLE source of truth for what the next tier
+needs — the HUD renders the requirements list from it and `BaseService` decides the claim with it,
+so shown and enforced can never disagree.
+
+**Stations live INSIDE the base Model** — no separate per-tier station folder. A `BaseTier{n}` Model
+is expected to contain its own tier's Crafting/Welding/Forge stations as tagged descendants, and
+`BaseService.tagStationOwnership` already walks descendants and stamps `OwnerUserId`, so this needed
+no new code. Upgrading swaps shell and stations together, so a Tier 3 base can never end up wearing
+Tier 1 stations. (The alternative — a parallel `Stations T1/T2/...` folder tree — was considered and
+dropped: it only earns its complexity if stations need to vary independently of the shell.)
+
+**The base grows with tier.** `FootprintHalfSize` is per-tier (80 studs across at T1 up to 200 at
+T6), and `BaseConfig.TurretRingRadiusFraction` derives the turret ring from it — so a tier that
+unlocks more slots also widens the ring to fit them, with nothing extra to tune.
+`PlotService.IsPlayerInOwnPlot` reads the same per-tier footprint.
+
+⚠️ **PLOT SPACING is now a Studio concern.** Hand-placed `Plot` anchors must be spaced for the
+LARGEST tier (200 studs across at T6), not the smallest, or two maxed bases will physically overlap.
+
+**Displayed two ways:** a bottom-left status panel (health bar, a reserved-and-disabled stamina
+slot, and a Research row that opens the requirements popup) and a floating sign over the base
+showing owner + tier. The stamina bar is a deliberate placeholder — there is no stamina or dash
+system in the codebase at all yet (no input handling, no regen loop, no server validation), so it is
+shown visibly disabled rather than lying about a stat nothing drives.
+
+Six tiers exist as placeholders (Scrap Workbench → Foundry, waves 0/5/10/15/20/25). Extending the
+ladder is adding a table entry plus the matching Studio Model — no code changes.
+
 ## Turret economy — reworked so a turret is EARNED (BUILT)
 
 Supersedes the "blueprint purchase mints a turret instance immediately" model described in the
@@ -1256,11 +1305,8 @@ deliberately cuts them, rather than rediscovering them one at a time.
   the Inventory's Materials tab, but nothing accepts them as payment. Wiring them into
   `CraftingRecipes`/`ModConfig`/`TurretConfig` cost tables was always flagged as a separate
   follow-up; until then, smelting is a sink with no output.
-- **`profile.ResearchTier`** — hardcoded to 1, and it gates both turret slot count
-  (`TurretConfig.GetSlotCount`) and crossing into a new turret Tier every 10 levels
-  (`TurretService.UpgradeTurret`). So turret levels are effectively **capped at 10** with no in-game
-  path past it. This one is deliberate and already has an owner: Research is the confirmed next
-  roadmap step (see the Session context section below).
+- ~~**`profile.ResearchTier`**~~ — RESOLVED. It is now the game's progression ladder with a real
+  earn path (see "Research level" above), so turret levels are no longer capped at 10.
 
 Two previously-dead fields have since been fixed and are now live: `OreConfig.ToolTiers[].SwingTime`
 (now the server-side mining cooldown) and `profile.UnlockedTurretBlueprints` (now the blueprint

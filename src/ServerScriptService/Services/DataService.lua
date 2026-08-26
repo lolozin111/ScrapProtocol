@@ -44,9 +44,10 @@ local function defaultProfile()
 		ToolTier = 1,
 		SuitTier = 1,           -- environmental protection for the mine shaft's depth hazards — see
 		                        -- MineShaftConfig.SuitTiers/SuitTierCosts, purchased via Workbench -> Suit
-		BaseTier = 1,           -- which BaseConfig.Tiers Model BaseService clones onto the player's
-		                        -- plot — see BaseConfig.lua; bumped by the UpgradeBase remote
-		                        -- (BaseService.lua), gated at the Workbench same as Tool/Suit tier.
+		BaseTier = 1,           -- LEGACY. Superseded by ResearchTier below, which is now the single
+		                        -- progression ladder (see ResearchConfig.lua). Kept only as the
+		                        -- migration source for saves written before the merge — see
+		                        -- migrateBaseTierToResearch. Nothing writes a new value here.
 		OwnedGamePasses = {},   -- [gamePassKey] = true
 		CraftedWeapons = {},    -- [weaponKey] = true — LEGACY, superseded by Weapons below. Kept
 			-- around only as the migration source for saves written before the Forge existed (see
@@ -87,18 +88,19 @@ local function defaultProfile()
 		DeployedRobots = {},    -- list of robotKeys currently on defense duty — STILL abstract,
 			-- still used by RunRaidCombat's own DPS support. No longer doubles as "turrets" — see
 			-- the dedicated Turret system below (profile.Turrets and friends).
-		ResearchTier = 1,       -- SKELETON field for the not-yet-built Research phase — gates how
-			-- many turret slots a base has (TurretConfig.GetSlotCount) and which turret Tiers (every
-			-- 10 levels, see TurretConfig.GetTurretTier) can actually be upgraded into. No
-			-- purchase/unlock flow yet — always 1 for everyone until the real Research system ships.
+		ResearchTier = 1,       -- THE progression ladder — see ResearchConfig.lua. Drives which base
+			-- Model (and the stations inside it) gets built, the plot's claimed footprint size, WallHP
+			-- in defense, how many turret slots exist, and how far a turret can be levelled. Raised by
+			-- the UpgradeResearch remote (BaseService.lua): a wave milestone unlocks each tier, then
+			-- Scrap + ore + a boss-wave CoreItem pays for it.
 		CoreItems = {},         -- [coreKey] = amount owned (e.g. CoreItems.CoreT1) — the "boss
 			-- wave" reward currency (see WaveService.lua/RewardTables.lua), spent by
-			-- BaseService.UpgradeBase's BaseConfig.BaseTierCoreRequirement gate. Placeholder names
+			-- BaseService.UpgradeResearch's ResearchConfig CoreRequirement gate. Placeholder names
 			-- (CoreT1/CoreT2/...) until real flavor names get picked.
-		UnlockedTurretBlueprints = {}, -- [turretTypeKey] = true — purchased at the Hub's rotating
-			-- Shop station (TurretShopService.lua). Currently just purchase history/bookkeeping:
-			-- buying a blueprint mints a Turret instance immediately (see Turrets below) rather than
-			-- unlocking a separate craft step, so nothing else reads this yet.
+		UnlockedTurretBlueprints = {}, -- [turretTypeKey] = true — bought at the Hub's rotating Shop
+			-- station (TurretShopService.lua). A PERMANENT recipe unlock: buying it does not mint a
+			-- turret, it makes the type craftable at the Welding Station (CraftingService's "Turrets"
+			-- tree, cost in TurretConfig.CraftCost). Read by that handler as the gate.
 		Turrets = {},           -- list of turret instances: { Id, TypeKey, Level, SlotIndex }.
 			-- SlotIndex is nil while the turret sits in storage (bought but not currently placed in a
 			-- base slot) — see TurretService.lua for placement/leveling. Level starts at 1;
@@ -171,6 +173,25 @@ local function migrateLegacyWeapons(profile)
 	return profile
 end
 
+-- One-time merge of the old two-ladder progression into one. profile.BaseTier and
+-- profile.ResearchTier both used to mean "how developed is my base" — BaseTier bought and driving
+-- the physical Model, ResearchTier hardcoded to 1 and driving turret slots. ResearchTier is the
+-- survivor (see ResearchConfig.lua), so a save from before the merge has to carry its BaseTier
+-- progress across or the player silently loses every base upgrade they paid for.
+--
+-- Takes the MAX rather than overwriting: on a pre-merge save ResearchTier is always 1 and BaseTier
+-- holds the real progress, but taking the max means running this twice — or on a save that somehow
+-- has both — can never move a player backwards. Idempotent by construction: after the first pass
+-- ResearchTier is already >= BaseTier, so every later pass is a no-op.
+local function migrateBaseTierToResearch(profile)
+	local baseTier = profile.BaseTier or 1
+	local researchTier = profile.ResearchTier or 1
+	if baseTier > researchTier then
+		profile.ResearchTier = baseTier
+	end
+	return profile
+end
+
 local function loadProfile(userId: number)
 	local key = "Player_" .. userId
 	local data
@@ -182,6 +203,7 @@ local function loadProfile(userId: number)
 	end
 	local profile = backfillMissingFields(data or defaultProfile())
 	profile = migrateLegacyWeapons(profile)
+	profile = migrateBaseTierToResearch(profile)
 	return profile
 end
 
@@ -239,7 +261,7 @@ function DataService.AddCoreItem(player: Player, coreKey: string, amount: number
 	profile.CoreItems[coreKey] = (profile.CoreItems[coreKey] or 0) + amount
 end
 
--- Single-item version of TrySpend, for BaseConfig.BaseTierCoreRequirement — a plain cost TABLE
+-- Single-item version of TrySpend, for ResearchConfig's per-tier CoreRequirement — a plain cost TABLE
 -- doesn't fit CoreItems since TrySpend's Scrap/Cores-vs-OreCounts branching has no CoreItems case,
 -- and a base-tier upgrade only ever needs exactly one CoreItem key anyway. Returns true and
 -- deducts, or false and deducts nothing, same contract as TrySpend.

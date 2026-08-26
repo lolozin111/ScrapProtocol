@@ -34,6 +34,8 @@ local CollectionService = game:GetService("CollectionService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local PlotConfig = require(ReplicatedStorage.Shared.PlotConfig)
+local ResearchConfig = require(ReplicatedStorage.Shared.ResearchConfig)
+local DataService = require(script.Parent.DataService)
 
 local PlotService = {}
 
@@ -138,7 +140,12 @@ function PlotService.IsPlayerInOwnPlot(player: Player): boolean
 	end
 
 	local localPosition = plot.CFrame:PointToObjectSpace(rootPart.Position)
-	local half = PlotConfig.FootprintHalfSize
+	-- Per-tier, not fixed: the base Model physically grows with ResearchTier (see
+	-- ResearchConfig.Tiers), so a Tier 4 player standing at the far edge of their own much larger
+	-- base has to still count as being in it. Falls back to Tier 1's footprint if the profile
+	-- isn't loaded yet, which is the smallest and therefore the safest guess.
+	local profile = DataService.Get(player)
+	local half = ResearchConfig.GetFootprintHalfSize(profile and profile.ResearchTier or 1)
 
 	if math.abs(localPosition.X) > half.X then
 		return false

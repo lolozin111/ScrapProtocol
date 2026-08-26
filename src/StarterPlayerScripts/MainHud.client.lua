@@ -28,6 +28,7 @@ local StationConfig = require(ReplicatedStorage.Shared.StationConfig)
 local ForgeConfig = require(ReplicatedStorage.Shared.ForgeConfig)
 local RefinedOreConfig = require(ReplicatedStorage.Shared.RefinedOreConfig)
 local BaseConfig = require(ReplicatedStorage.Shared.BaseConfig)
+local ResearchConfig = require(ReplicatedStorage.Shared.ResearchConfig)
 local TurretConfig = require(ReplicatedStorage.Shared.TurretConfig)
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
@@ -1056,69 +1057,72 @@ local function renderForgeWeapons()
 end
 
 ----------------------------------------------------------------------
--- Base tab (Workbench) — Base Defense & Turrets phase, round 2. BaseConfig.Tiers upgrade row (same
--- shape as renderToolRow/renderSuitRow above), then a Research Tier readout, then one row per fixed
--- turret SLOT (TurretConfig.GetSlotCount(profile.ResearchTier)) showing whatever's placed there (if
--- anything) with Upgrade/Unplace buttons, then a Storage section listing owned-but-unplaced Turret
--- instances (bought as blueprints at the Hub Shop — see the Blueprints tab / renderBlueprintsRow
--- below) with a one-click "Place" that auto-picks the first open slot. This REPLACES last round's
--- "every deployed robot gets a physical body, place it anywhere" section entirely — Turrets are now
--- their own dedicated system, fully decoupled from CraftingRecipes.Robots/DeployedRobots (those
--- still exist, still power raid combat support, they just don't drive this tab anymore). See
--- TurretConfig.lua/TurretService.lua for the full picture.
+-- Base tab (Workbench) — now a thin summary plus the Research claim, because the two things that
+-- used to fill it both moved somewhere better:
+--   * turret placement moved into the world (click a slot pad — see openTurretPanel)
+--   * the base-tier upgrade became the Research claim, which lives on the always-visible status
+--     panel bottom-left so you can see progress without standing at a station
+-- What is left here is the CLAIM itself, which is station-gated server-side, plus a readout of what
+-- the current tier actually gives you.
 ----------------------------------------------------------------------
 
 local function renderBaseRow()
-	local currentTier = profile.BaseTier or 1
-	local currentTierData = BaseConfig.Tiers[currentTier]
-	local nextTier = currentTier + 1
-	local nextTierData = BaseConfig.Tiers[nextTier]
+	local currentTier, currentIndex = ResearchConfig.GetTier(profile.ResearchTier or 1)
+	local slotCount = TurretConfig.GetSlotCount(currentIndex)
 
-	if not nextTierData then
+	makeRow(
+		("Research Tier %d — %s"):format(currentIndex, currentTier.Name),
+		("Wall %d HP · %d turret slots · %d-stud base footprint"):format(
+			currentTier.WallHP, slotCount, currentTier.FootprintHalfSize.X * 2),
+		"Current",
+		function() end
+	).Parent = listFrame
+
+	local req = ResearchConfig.GetNextTierRequirements(profile)
+	if not req then
 		makeRow(
-			currentTierData and currentTierData.Name or "Base",
-			("%d Wall HP · max tier reached"):format(currentTierData and currentTierData.WallHP or 0),
+			"Fully researched",
+			"You are at the highest tier there is.",
 			"Maxed",
 			function() end
 		).Parent = listFrame
 	else
-		local cost = BaseConfig.BaseTierCosts[nextTier]
+		local nextTier = ResearchConfig.Tiers[req.TierIndex]
+		-- Summarises what is still missing rather than just saying no — the full breakdown lives in
+		-- the status panel's Research popup, which this points at.
+		local missing = {}
+		if not req.WaveMet then
+			table.insert(missing, ("Wave %d"):format(req.RequiredWave))
+		end
+		if req.CoreRequirement and not req.CoreRequirement.Met then
+			table.insert(missing, req.CoreRequirement.Key)
+		end
+		for _, entry in ipairs(req.Cost) do
+			if not entry.Met then
+				table.insert(missing, entry.Key)
+			end
+		end
+
 		makeRow(
-			("%s -> %s"):format(currentTierData and currentTierData.Name or "?", nextTierData.Name),
-			("Wall HP %d -> %d · %s"):format(
-				currentTierData and currentTierData.WallHP or 0, nextTierData.WallHP,
-				cost and costString(cost) or "Not configured"),
-			"Upgrade",
+			("Research Tier %d — %s"):format(req.TierIndex, req.Name),
+			#missing > 0
+				and ("Still need: %s"):format(table.concat(missing, ", "))
+				or ("Wall %d HP · %d turret slots · ready to claim"):format(
+					nextTier.WallHP, TurretConfig.GetSlotCount(req.TierIndex)),
+			req.CanClaim and "Claim" or "Locked",
 			function()
-				local result = Remotes.UpgradeBase:InvokeServer()
+				local result = Remotes.UpgradeResearch:InvokeServer()
 				if not result.Success then
-					showFailure("Base upgrade failed", result.Reason)
+					showFailure("Research failed", result.Reason)
+				else
+					showToast(("Research Tier %d — your base has been rebuilt."):format(result.ResearchTier), 4)
+					renderCraftList()
 				end
 			end
 		).Parent = listFrame
 	end
 
-	-- Research Tier — a skeleton field for now (always 1 until the real Research phase ships, next
-	-- roadmap step per direct instruction). Purely informational here: it drives GetSlotCount below
-	-- and gates crossing into a new turret Tier server-side (see TurretService.UpgradeTurret).
-	local researchTier = profile.ResearchTier or 1
-	local slotCount = TurretConfig.GetSlotCount(researchTier)
-	makeRow(
-		("Research Tier %d"):format(researchTier),
-		("%d turret slots unlocked · higher tiers (and bigger slot counts) need the Research system — coming next"):format(slotCount),
-		"OK",
-		function() end
-	).Parent = listFrame
-
-	-- Turret placement/upgrading/unplacing is NOT here anymore. It used to be this tab's bulk: one
-	-- row per slot, an Unplace row under each occupied one, and a Storage list whose Place button
-	-- auto-picked the first open slot for you. That put the decision in a menu and made "which
-	-- slot" not a real choice. Clicking the slot itself in the world is the interaction now — see
-	-- openTurretPanel and setupTurretSlot at the bottom of this file.
-	--
-	-- What stays on this tab is the part that genuinely has no physical thing to click: the base
-	-- tier upgrade above, and the Research/slot-count readout below as a pointer to where turrets
-	-- actually live now.
+	-- Turrets are placed by clicking a slot pad in the world now, not from here.
 	local placedCount, storedCount = 0, 0
 	for _, turret in ipairs(profile.Turrets or {}) do
 		if turret.SlotIndex then
@@ -1129,10 +1133,10 @@ local function renderBaseRow()
 	end
 
 	makeRow(
-		("Turrets — %d placed, %d in storage"):format(placedCount, storedCount),
+		("Turrets — %d placed of %d slots, %d in storage"):format(placedCount, slotCount, storedCount),
 		storedCount > 0
 			and "Walk to a blue slot pad at your base and click it to place one"
-			or "Buy a blueprint at the Hub Shop, then click a blue slot pad at your base",
+			or "Buy a blueprint at the Hub Shop, build it at the Welding Station, then click a slot pad",
 		"OK",
 		function() end
 	).Parent = listFrame
@@ -2750,6 +2754,248 @@ local function hazardStatusLine(hazardType, depth: number, suitTier: number): (s
 end
 
 ----------------------------------------------------------------------
+-- Status panel (bottom-left) — the always-on readout of how the PLAYER is doing, as opposed to the
+-- top-left currency readout (what they own) and the wave panel (how the current fight is going).
+--
+-- Health lived only inside the raid panel before this, so outside a raid there was no HP readout at
+-- all — despite mine hazards, lava and outpost fights all being able to kill you.
+--
+-- The Research row is a button: clicking it opens the requirements popup below. That is the answer
+-- to "what do I need for the next tier" — the one number that gates base size, station tier, turret
+-- slots and turret levels (see ResearchConfig.lua).
+----------------------------------------------------------------------
+
+local statusPanel = new("Frame", {
+	Name = "Status",
+	BackgroundColor3 = COLOR.Panel,
+	Position = UDim2.new(0, 16, 1, -16),
+	AnchorPoint = Vector2.new(0, 1),
+	Size = UDim2.new(0, 240, 0, 0),
+	AutomaticSize = Enum.AutomaticSize.Y,
+	Parent = screenGui,
+}, {
+	corner(8), stroke(),
+	new("UIListLayout", { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder }),
+	new("UIPadding", {
+		PaddingTop = UDim.new(0, 10), PaddingBottom = UDim.new(0, 10),
+		PaddingLeft = UDim.new(0, 12), PaddingRight = UDim.new(0, 12),
+	}),
+})
+
+-- Small labelled bar, reused for Health and Stamina so the two stay visually identical.
+local function makeStatusBar(order: number, label: string, fillColor: Color3, dimmed: boolean?)
+	local holder = new("Frame", {
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 30),
+		LayoutOrder = order,
+		Parent = statusPanel,
+	})
+	local caption = new("TextLabel", {
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 14),
+		Font = Enum.Font.SourceSansBold,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextColor3 = dimmed and COLOR.Muted or COLOR.Text,
+		TextSize = 13,
+		Text = label,
+		Parent = holder,
+	})
+	local track = new("Frame", {
+		BackgroundColor3 = COLOR.PanelLight,
+		Position = UDim2.new(0, 0, 0, 16),
+		Size = UDim2.new(1, 0, 0, 12),
+		Parent = holder,
+	}, { corner(4) })
+	local fill = new("Frame", {
+		BackgroundColor3 = fillColor,
+		Size = UDim2.new(dimmed and 0 or 1, 0, 1, 0),
+		BorderSizePixel = 0,
+		Parent = track,
+	}, { corner(4) })
+	return caption, fill
+end
+
+local statusHealthCaption, statusHealthFill = makeStatusBar(1, "Health", COLOR.Good)
+
+-- Stamina is a PLACEHOLDER. There is no stamina or dash system in this codebase yet — no input
+-- handling, no regen loop, no server validation — so this is a reserved, visibly-disabled slot
+-- rather than a bar that lies about a stat nothing drives. Wire it up when dashing is built.
+local _staminaCaption, _staminaFill = makeStatusBar(2, "Stamina — not built yet", COLOR.Muted, true)
+
+local researchButton = new("TextButton", {
+	BackgroundColor3 = COLOR.PanelLight,
+	Size = UDim2.new(1, 0, 0, 30),
+	LayoutOrder = 3,
+	Font = Enum.Font.SourceSansBold,
+	TextColor3 = COLOR.Accent,
+	TextSize = 14,
+	Text = "Research Tier 1",
+	Parent = statusPanel,
+}, { corner(6) })
+
+----------------------------------------------------------------------
+-- Research requirements popup — what the next tier needs, and which parts you already have.
+--
+-- Rendered from ResearchConfig.GetNextTierRequirements, the SAME function BaseService's
+-- UpgradeResearch handler uses to decide whether to allow the claim — so what is shown here and
+-- what is actually enforced can never drift apart.
+----------------------------------------------------------------------
+
+local researchFrame = new("Frame", {
+	Name = "ResearchPanel",
+	BackgroundColor3 = COLOR.Panel,
+	Position = UDim2.new(0, 16, 1, -160),
+	AnchorPoint = Vector2.new(0, 1),
+	Size = UDim2.new(0, 360, 0, 340),
+	Visible = false,
+	ZIndex = 6,
+	Parent = screenGui,
+}, { corner(10), stroke() })
+
+local researchTitle = new("TextLabel", {
+	BackgroundTransparency = 1,
+	Position = UDim2.new(0, 12, 0, 10),
+	Size = UDim2.new(1, -60, 0, 24),
+	Font = Enum.Font.SourceSansBold,
+	TextXAlignment = Enum.TextXAlignment.Left,
+	TextColor3 = COLOR.Text,
+	TextSize = 18,
+	Text = "Research",
+	Parent = researchFrame,
+})
+
+local researchClose = new("TextButton", {
+	BackgroundColor3 = COLOR.PanelLight,
+	Position = UDim2.new(1, -40, 0, 8),
+	Size = UDim2.new(0, 28, 0, 28),
+	Font = Enum.Font.SourceSansBold,
+	TextColor3 = COLOR.Text,
+	TextSize = 16,
+	Text = "X",
+	Parent = researchFrame,
+}, { corner(6) })
+
+local researchList = new("ScrollingFrame", {
+	BackgroundTransparency = 1,
+	Position = UDim2.new(0, 12, 0, 44),
+	Size = UDim2.new(1, -24, 1, -56),
+	CanvasSize = UDim2.new(0, 0, 0, 0),
+	AutomaticCanvasSize = Enum.AutomaticSize.Y,
+	ScrollBarThickness = 6,
+	Parent = researchFrame,
+}, { new("UIListLayout", { Padding = UDim.new(0, 6) }) })
+
+researchClose.MouseButton1Click:Connect(function()
+	researchFrame.Visible = false
+end)
+
+local refreshResearchButton -- forward-declared; renderResearchPanel refreshes it after a claim
+
+-- Kept current by the InventoryUpdate listener, so the panel updates live as you gather materials
+-- rather than going stale the moment you opened it.
+local function renderResearchPanel()
+	for _, child in ipairs(researchList:GetChildren()) do
+		if child:IsA("Frame") then
+			child:Destroy()
+		end
+	end
+
+	local currentTier, currentIndex = ResearchConfig.GetTier(profile.ResearchTier or 1)
+	researchTitle.Text = ("Research Tier %d"):format(currentIndex)
+
+	makeRow(
+		currentTier.Name,
+		("Wall %d HP · %d turret slots · %d-stud base"):format(
+			currentTier.WallHP,
+			TurretConfig.GetSlotCount(currentIndex),
+			currentTier.FootprintHalfSize.X * 2),
+		"Current",
+		function() end
+	).Parent = researchList
+
+	local req = ResearchConfig.GetNextTierRequirements(profile)
+	if not req then
+		makeRow("Fully researched", "You are at the highest tier there is.", "Max", function() end).Parent = researchList
+		return
+	end
+
+	local nextTier = ResearchConfig.Tiers[req.TierIndex]
+	makeRow(
+		("Next: %s (Tier %d)"):format(req.Name, req.TierIndex),
+		("Wall %d HP · %d turret slots · %d-stud base"):format(
+			nextTier.WallHP,
+			TurretConfig.GetSlotCount(req.TierIndex),
+			nextTier.FootprintHalfSize.X * 2),
+		req.CanClaim and "Claim" or "Locked",
+		function()
+			-- Claimed at the Workbench (server-side gate), so this can legitimately fail even when
+			-- every requirement is met — showFailure explains which.
+			local result = Remotes.UpgradeResearch:InvokeServer()
+			if not result.Success then
+				showFailure("Research failed", result.Reason)
+			else
+				showToast(("Research Tier %d — your base has been rebuilt."):format(result.ResearchTier), 4)
+				renderResearchPanel()
+				refreshResearchButton()
+			end
+		end
+	).Parent = researchList
+
+	-- One row per requirement, each showing have-vs-needed, so it is obvious WHICH part is missing
+	-- rather than a flat "not enough resources".
+	makeRow(
+		("Clear Wave %d"):format(req.RequiredWave),
+		("Best wave so far: %d"):format(req.HighestWave),
+		req.WaveMet and "Done" or "Missing",
+		function() end
+	).Parent = researchList
+
+	if req.CoreRequirement then
+		local core = req.CoreRequirement
+		makeRow(
+			("%s x%d"):format(core.Key, core.Needed),
+			("You have %d — drops from base-defense boss waves"):format(core.Have),
+			core.Met and "Done" or "Missing",
+			function() end
+		).Parent = researchList
+	end
+
+	for _, entry in ipairs(req.Cost) do
+		local displayName = entry.Key
+		if entry.Key ~= "Scrap" and entry.Key ~= "Cores" then
+			displayName = (OreConfig.Ores[entry.Key] and OreConfig.Ores[entry.Key].DisplayName) or entry.Key
+		end
+		makeRow(
+			("%s x%d"):format(displayName, entry.Needed),
+			("You have %d"):format(entry.Have),
+			entry.Met and "Done" or "Missing",
+			function() end
+		).Parent = researchList
+	end
+end
+
+researchButton.MouseButton1Click:Connect(function()
+	researchFrame.Visible = not researchFrame.Visible
+	if researchFrame.Visible then
+		renderResearchPanel()
+	end
+end)
+
+-- Shows the tier on the button itself, and flags when a tier is actually claimable so the player
+-- does not have to open the panel to find out.
+refreshResearchButton = function()
+	local currentTier, currentIndex = ResearchConfig.GetTier(profile.ResearchTier or 1)
+	local req = ResearchConfig.GetNextTierRequirements(profile)
+	if req and req.CanClaim then
+		researchButton.Text = ("Research T%d — UPGRADE READY"):format(currentIndex)
+		researchButton.TextColor3 = COLOR.Good
+	else
+		researchButton.Text = ("Research T%d — %s"):format(currentIndex, currentTier.Name)
+		researchButton.TextColor3 = COLOR.Accent
+	end
+end
+
+----------------------------------------------------------------------
 -- Player HP tracking — driven locally by the Humanoid, not by remote payloads,
 -- since Health already replicates on its own and this avoids a second source of truth.
 ----------------------------------------------------------------------
@@ -2764,8 +3010,14 @@ local function refreshHealthBar()
 	end
 	playerMaxHealth = humanoid.MaxHealth
 	local pct = math.clamp(humanoid.Health / playerMaxHealth, 0, 1)
+	-- Two readouts, one source: the raid panel's bar (visible only mid-raid) and the always-on
+	-- status panel's. Health replicates on its own, so both are driven straight off the Humanoid
+	-- rather than from any remote payload.
 	raidHealthFill.Size = UDim2.new(pct, 0, 1, 0)
 	raidHealthCaption.Text = ("Your HP: %d / %d"):format(math.ceil(humanoid.Health), math.ceil(playerMaxHealth))
+	statusHealthFill.Size = UDim2.new(pct, 0, 1, 0)
+	statusHealthFill.BackgroundColor3 = (pct <= 0.3) and COLOR.Bad or COLOR.Good
+	statusHealthCaption.Text = ("Health  %d / %d"):format(math.ceil(humanoid.Health), math.ceil(playerMaxHealth))
 end
 
 local function bindHealth(character: Model)
@@ -3010,6 +3262,13 @@ Remotes.InventoryUpdate.OnClientEvent:Connect(function(patch)
 	-- (the slot's contents moved), so this is really about Upgrade re-rendering in place.
 	if turretPanelFrame.Visible then
 		renderTurretPanel()
+	end
+	-- The Research claim depends on Scrap/ore/Cores/HighestWave, all of which arrive through this
+	-- same patch — so the button's "UPGRADE READY" state and the open requirements popup both have
+	-- to re-evaluate here rather than only when reopened.
+	refreshResearchButton()
+	if researchFrame.Visible then
+		renderResearchPanel()
 	end
 end)
 
@@ -3531,5 +3790,6 @@ task.spawn(function()
 		refreshCurrency()
 		refreshPityBar()
 		refreshPotionButton()
+		refreshResearchButton()
 	end
 end)

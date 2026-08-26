@@ -13,7 +13,7 @@
 	player's own real Humanoid health was the loss condition — but direct feedback afterward was
 	that base defense should be about defending the BASE, not the player personally. Every enemy
 	now walks to and attacks the base's own position instead of the player, chipping down a WallHP
-	pool (BaseConfig.GetWallMaxHP(profile.BaseTier)) that CombatEncounterService owns internally
+	pool (ResearchConfig.GetWallMaxHP(profile.ResearchTier)) that CombatEncounterService owns internally
 	per-run. This file only ever sees the RESULT ("Cleared"/"Defeated"/"Interrupted") — it doesn't
 	need to know WallHP exists at all, same as it never needed to know about the old ObjectiveHP
 	internals either.

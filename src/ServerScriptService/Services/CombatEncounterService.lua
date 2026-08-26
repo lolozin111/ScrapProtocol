@@ -31,7 +31,7 @@
 	WALL DEFENSE (reworked from the original player-HP version — see DESIGN_NOTES.md): the loss
 	condition is no longer the player's own Humanoid dying. Every enemy now chases and attacks the
 	player's PLOT — its own anchor position (PlotService.GetPlayerPlot), not the player — and deals
-	damage to a per-run WallHP pool (BaseConfig.GetWallMaxHP(profile.BaseTier)) instead of the
+	damage to a per-run WallHP pool (ResearchConfig.GetWallMaxHP(profile.ResearchTier)) instead of the
 	player's Humanoid. The player still fights back the same way (RequestFireWeapon), just to keep
 	the wall standing rather than to keep themselves alive. The player's own Humanoid health is
 	untouched by this system entirely now — dying to something unrelated just ends the run as
@@ -50,6 +50,7 @@ local RobotBehaviorConfig = require(ReplicatedStorage.Shared.RobotBehaviorConfig
 local CraftingRecipes = require(ReplicatedStorage.Shared.CraftingRecipes)
 local PlotConfig = require(ReplicatedStorage.Shared.PlotConfig)
 local BaseConfig = require(ReplicatedStorage.Shared.BaseConfig)
+local ResearchConfig = require(ReplicatedStorage.Shared.ResearchConfig)
 local DataService = require(script.Parent.DataService)
 local CombatMath = require(script.Parent.CombatMath)
 local DamagePipeline = require(script.Parent.DamagePipeline)
@@ -505,7 +506,7 @@ function CombatEncounterService.RunWave(player: Player, waveNumber: number, opts
 	--
 	-- Base-defense only; RunRaidCombat never calls this, turrets have no presence in a raid room.
 
-	local wallMaxHP = BaseConfig.GetWallMaxHP(profile.BaseTier)
+	local wallMaxHP = ResearchConfig.GetWallMaxHP(profile.ResearchTier)
 
 	local playerState = {
 		WallHP = wallMaxHP,

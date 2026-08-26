@@ -2,8 +2,13 @@
 	BaseService.lua
 	Physically builds each player's base once PlotService assigns them a plot: clones a Model from
 	ReplicatedStorage.BaseTemplates onto the plot's anchor CFrame, picking WHICH tier's Model from
-	profile.BaseTier (a saved field, same shape as ToolTier/SuitTier — currently always 1, no
-	purchase flow wired up yet, see BaseConfig.lua's header comment).
+	profile.ResearchTier — the single merged progression ladder, see ResearchConfig.lua. Also owns
+	the UpgradeResearch remote that raises it.
+
+	The cloned Model carries its OWN stations: a BaseTier{n} Model is expected to contain its tier's
+	Crafting/Welding/Forge stations as tagged descendants, and tagStationOwnership below stamps
+	ownership onto them automatically. So upgrading swaps shell and stations together and a Tier 3
+	base can never end up wearing Tier 1 stations.
 
 	Split out from PlotService on purpose: PlotService only owns WHERE a player's base lives
 	(picking/assigning/freeing a Plot anchor and moving the character there) and knows nothing
@@ -27,11 +32,13 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 
 local BaseConfig = require(ReplicatedStorage.Shared.BaseConfig)
+local ResearchConfig = require(ReplicatedStorage.Shared.ResearchConfig)
 local StationConfig = require(ReplicatedStorage.Shared.StationConfig)
 local PlotConfig = require(ReplicatedStorage.Shared.PlotConfig)
 local DataService = require(script.Parent.DataService)
 local PlotService = require(script.Parent.PlotService)
 local StationService = require(script.Parent.StationService)
+local TurretService = require(script.Parent.TurretService)
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 
@@ -55,10 +62,6 @@ local function waitForProfile(player: Player)
 		attempts += 1
 	end
 	return profile
-end
-
-local function tierData(tierIndex: number)
-	return BaseConfig.Tiers[tierIndex] or BaseConfig.Tiers[1]
 end
 
 -- Stamps every Station-tagged descendant of a player's freshly-built base with WHO it belongs to.
@@ -94,8 +97,67 @@ local function buildFallbackBase(player: Player, plot: Instance): Model
 	return model
 end
 
+
+-- Floating "whose base is this, and how far along are they" sign. Deliberately a separate Model
+-- parented alongside the base rather than inside it, so RebuildPlayerBase can tear the base down
+-- and re-clone it on every tier upgrade without having to preserve or recreate the sign's state.
+local playerBaseSign: { [Player]: Model } = {}
+
+local SIGN_HEIGHT_ABOVE_BASE = 14
+
+local function refreshBaseSign(player: Player, plot: Instance, tier, tierIndex: number)
+	local existing = playerBaseSign[player]
+	if existing then
+		existing:Destroy()
+	end
+
+	local anchorPart = Instance.new("Part")
+	anchorPart.Name = "SignAnchor"
+	anchorPart.Size = Vector3.new(1, 1, 1)
+	anchorPart.Transparency = 1
+	anchorPart.Anchored = true
+	anchorPart.CanCollide = false
+	anchorPart.CanQuery = false -- purely a label mount; must never eat a click meant for the base
+	anchorPart.CFrame = plot.CFrame * CFrame.new(0, SIGN_HEIGHT_ABOVE_BASE, 0)
+
+	local billboard = Instance.new("BillboardGui")
+	billboard.Name = "BaseSign"
+	billboard.Size = UDim2.new(0, 220, 0, 56)
+	billboard.AlwaysOnTop = false -- reads as a thing in the world, not a HUD element
+	billboard.MaxDistance = 250
+	billboard.Parent = anchorPart
+
+	local owner = Instance.new("TextLabel")
+	owner.BackgroundTransparency = 1
+	owner.Size = UDim2.new(1, 0, 0.55, 0)
+	owner.Font = Enum.Font.SourceSansBold
+	owner.TextColor3 = Color3.fromRGB(237, 231, 220)
+	owner.TextStrokeTransparency = 0.4
+	owner.TextScaled = true
+	owner.Text = ("%s's Base"):format(player.DisplayName)
+	owner.Parent = billboard
+
+	local tierLabel = Instance.new("TextLabel")
+	tierLabel.BackgroundTransparency = 1
+	tierLabel.Position = UDim2.new(0, 0, 0.55, 0)
+	tierLabel.Size = UDim2.new(1, 0, 0.45, 0)
+	tierLabel.Font = Enum.Font.SourceSans
+	tierLabel.TextColor3 = Color3.fromRGB(224, 122, 59)
+	tierLabel.TextStrokeTransparency = 0.5
+	tierLabel.TextScaled = true
+	tierLabel.Text = ("Research Tier %d — %s"):format(tierIndex, tier.Name)
+	tierLabel.Parent = billboard
+
+	local model = Instance.new("Model")
+	model.Name = ("%s_BaseSign"):format(player.Name)
+	model.PrimaryPart = anchorPart
+	anchorPart.Parent = model
+	model.Parent = Workspace
+	playerBaseSign[player] = model
+end
+
 -- Destroys whatever base Model is currently built for this player (if any) and clones/positions
--- the one matching their current profile.BaseTier in its place.
+-- the one matching their current profile.ResearchTier in its place.
 function BaseService.RebuildPlayerBase(player: Player, plot: Instance)
 	-- Put SOMETHING solid under the plot immediately, before the profile wait below.
 	--
@@ -123,8 +185,8 @@ function BaseService.RebuildPlayerBase(player: Player, plot: Instance)
 		return -- the bootstrap floor above stays; better to stand on a placeholder than on nothing
 	end
 
-	local tier = tierData(profile.BaseTier or 1)
-	local templateFolder = ReplicatedStorage:FindFirstChild(BaseConfig.TemplateFolderName)
+	local tier, tierIndex = ResearchConfig.GetTier(profile.ResearchTier or 1)
+	local templateFolder = ReplicatedStorage:FindFirstChild(ResearchConfig.TemplateFolderName)
 	local template = templateFolder and templateFolder:FindFirstChild(tier.ModelName)
 
 	local baseModel
@@ -134,7 +196,7 @@ function BaseService.RebuildPlayerBase(player: Player, plot: Instance)
 		baseModel:PivotTo(plot.CFrame)
 	else
 		warn(("[BaseService] No %q Model found in ReplicatedStorage.%s — using a plain placeholder floor. Build the real base Model in Studio to replace this."):format(
-			tier.ModelName, BaseConfig.TemplateFolderName))
+			tier.ModelName, ResearchConfig.TemplateFolderName))
 		baseModel = buildFallbackBase(player, plot)
 	end
 
@@ -147,6 +209,8 @@ function BaseService.RebuildPlayerBase(player: Player, plot: Instance)
 
 	baseModel.Parent = Workspace
 	playerBaseModel[player] = baseModel
+
+	refreshBaseSign(player, plot, tier, tierIndex)
 end
 
 -- Exposes the actual currently-built base Model (real BaseTier art, or the fallback floor if none
@@ -161,11 +225,21 @@ function BaseService.GetPlayerBaseModel(player: Player): Model?
 	return playerBaseModel[player]
 end
 
--- UpgradeBase: spends BaseConfig.BaseTierCosts[nextTier], bumps profile.BaseTier, and rebuilds the
--- physical base Model in place — same shape as UpgradeTool/UpgradeSuit (MiningService.lua/
--- MineShaftService.lua), gated at the same "Crafting" (Workbench) station those use, since
--- upgrading your base is exactly the same kind of general equipment/utility decision as those.
-Remotes.UpgradeBase.OnServerInvoke = function(player: Player)
+-- UpgradeResearch: claims the next tier on the merged progression ladder (ResearchConfig).
+-- Replaces the old UpgradeBase remote — see ResearchConfig's header for why BaseTier and
+-- ResearchTier became one number.
+--
+-- Three gates, checked in this order and all READ-ONLY before anything is spent, so a rejected
+-- claim never leaves the player out resources:
+--   1. wave milestone  — RequiredWave vs profile.HighestWave. This is what ties progression to
+--                        wave defense; the boss wave that unlocks a tier is also the only source
+--                        of the CoreItem it costs.
+--   2. CoreItem        — from a boss wave, not purchasable.
+--   3. Cost            — Scrap + ore.
+--
+-- Still gated at the Workbench (Crafting station), same as Tool/Suit upgrades: it's a "how my base
+-- is laid out" decision, and it visibly rebuilds the base around you.
+Remotes.UpgradeResearch.OnServerInvoke = function(player: Player)
 	if not PlotService.IsPlayerInOwnPlot(player) then
 		return { Success = false, Reason = PlotConfig.NotInBaseMessage }
 	end
@@ -178,50 +252,44 @@ Remotes.UpgradeBase.OnServerInvoke = function(player: Player)
 		return { Success = false, Reason = "Profile not loaded" }
 	end
 
-	local nextTier = (profile.BaseTier or 1) + 1
-	local nextTierData = BaseConfig.Tiers[nextTier]
-	if not nextTierData then
-		return { Success = false, Reason = "Max tier reached" }
+	-- ONE source of truth for what the next tier needs — the same function the HUD calls to render
+	-- the requirements list, so what's shown and what's enforced can never disagree.
+	local requirements = ResearchConfig.GetNextTierRequirements(profile)
+	if not requirements then
+		return { Success = false, Reason = "Already at the highest Research Tier" }
+	end
+	if not requirements.WaveMet then
+		return { Success = false, Reason = ("Reach Wave %d in base defense first (best so far: %d)"):format(
+			requirements.RequiredWave, requirements.HighestWave) }
+	end
+	if requirements.CoreRequirement and not requirements.CoreRequirement.Met then
+		return { Success = false, Reason = ("Needs %d x %s from a base-defense boss wave"):format(
+			requirements.CoreRequirement.Needed, requirements.CoreRequirement.Key) }
 	end
 
-	local cost = BaseConfig.BaseTierCosts[nextTier]
-	if not cost then
-		return { Success = false, Reason = "Not configured" }
-	end
-
-	-- CoreItem gate (see BaseConfig.BaseTierCoreRequirement's own comment) — checked READ-ONLY
-	-- before either spend commits anything, so a missing core rejects the whole upgrade without
-	-- silently burning the resource cost. Nothing yields between this check and TrySpendCoreItem
-	-- below, so there's no window for another call to spend the same CoreItems out from under us.
-	local coreRequirement = BaseConfig.BaseTierCoreRequirement[nextTier]
-	if coreRequirement and (profile.CoreItems[coreRequirement.Key] or 0) < coreRequirement.Amount then
-		return { Success = false, Reason = ("Requires %d x %s from a base-defense boss wave"):format(
-			coreRequirement.Amount, coreRequirement.Key) }
-	end
-
-	if not DataService.TrySpend(player, cost) then
+	local nextTier = ResearchConfig.Tiers[requirements.TierIndex]
+	if nextTier.Cost and not DataService.TrySpend(player, nextTier.Cost) then
 		return { Success = false, Reason = "Not enough resources" }
 	end
-	if coreRequirement then
-		DataService.TrySpendCoreItem(player, coreRequirement.Key, coreRequirement.Amount)
+	if nextTier.CoreRequirement then
+		DataService.TrySpendCoreItem(player, nextTier.CoreRequirement.Key, nextTier.CoreRequirement.Amount)
 	end
 
-	profile.BaseTier = nextTier
+	profile.ResearchTier = requirements.TierIndex
 
 	local plot = PlotService.GetPlayerPlot(player)
 	if plot then
-		-- Yields on the profile (already loaded here, so effectively instant) — safe to call inline
-		-- rather than task.spawn, since the remote's own caller is already waiting on a response.
+		-- Rebuilds the base Model (bigger shell, its own tier's stations) and, separately, the
+		-- turret ring — the new tier both widens the footprint the ring is derived from AND unlocks
+		-- more slots, so the pads have to be laid out again.
 		BaseService.RebuildPlayerBase(player, plot)
+		TurretService.RebuildPlayerTurrets(player)
 	end
 
-	-- PushWallet covers the raw-material cost (BaseTierCosts) as well as the CoreItem — this
-	-- payload listed CoreItems but not OreCounts, so the ore spent on a base upgrade stayed
-	-- visible in the HUD until something else happened to refresh it. See DataService.PushWallet.
-	Remotes.InventoryUpdate:FireClient(player, { BaseTier = profile.BaseTier })
+	Remotes.InventoryUpdate:FireClient(player, { ResearchTier = profile.ResearchTier })
 	DataService.PushWallet(player)
 
-	return { Success = true, BaseTier = profile.BaseTier }
+	return { Success = true, ResearchTier = profile.ResearchTier }
 end
 
 PlotService.PlotAssigned:Connect(function(player, plot)
@@ -234,6 +302,12 @@ Players.PlayerRemoving:Connect(function(player)
 		existing:Destroy()
 	end
 	playerBaseModel[player] = nil
+
+	local sign = playerBaseSign[player]
+	if sign then
+		sign:Destroy()
+	end
+	playerBaseSign[player] = nil
 end)
 
 return BaseService

@@ -54,7 +54,7 @@
         "RaidRoomAction": { "$className": "RemoteEvent" },
         "AbandonRaid": { "$className": "RemoteEvent" },
         "RequestExtractRaid": { "$className": "RemoteEvent" },
-        "UpgradeBase": { "$className": "RemoteFunction" },
+        "UpgradeResearch": { "$className": "RemoteFunction" },
         "BuyTurretBlueprint": { "$className": "RemoteFunction" },
         "PlaceTurretInSlot": { "$className": "RemoteFunction" },
         "UnplaceTurret": { "$className": "RemoteFunction" },

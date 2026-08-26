@@ -97,13 +97,24 @@ no manual copy-pasting scripts into Studio.
   it's only ever used as an anchor CFrame, never actually stood on. On join, `PlotService`
   randomly assigns one unclaimed tagged Part to the player and fires a `PlotAssigned` signal;
   `BaseService` picks that up and clones a Model from a `BaseTemplates` folder in
-  `ReplicatedStorage` onto that same CFrame — matching whichever `BaseConfig.Tiers` entry the
-  player's saved `profile.BaseTier` points at (always `1` for now — no purchase flow exists yet,
-  see `DESIGN_NOTES.md`'s "Base building/tiers" bullet). **If you haven't built a `BaseTier1`
-  Model yet**, `BaseService` clones a single plain gray placeholder floor instead (and warns in
-  Output) so nobody falls into the void while you're still building real base art — swap it out
-  by adding `ReplicatedStorage/BaseTemplates/BaseTier1` (a Model whose intended floor sits at
+  `ReplicatedStorage` onto that same CFrame — matching whichever `ResearchConfig.Tiers` entry the
+  player's saved `profile.ResearchTier` points at (see **Research** below). **If you haven't built a
+  `BaseTier1` Model yet**, `BaseService` clones a single plain gray placeholder floor instead (and
+  warns in Output) so nobody falls into the void while you're still building real base art — swap it
+  out by adding `ReplicatedStorage/BaseTemplates/BaseTier1` (a Model whose intended floor sits at
   local Y=0, e.g. its `PrimaryPart` is the floor piece) whenever you're ready.
+
+  **Build each tier's stations INTO its base Model.** A `BaseTier{n}` Model is expected to contain
+  that tier's own Workbench/Welding Station/Forge as ordinary `Station`-tagged descendants (see
+  **Base stations** below for the tagging). `BaseService` stamps ownership on every tagged
+  descendant automatically, so per-tier stations need no extra setup — and upgrading swaps the shell
+  and its stations together, so a Tier 3 base can never end up wearing Tier 1 stations. Loose
+  `Station` blocks placed directly in the world still work (unowned, open to everyone), which is what
+  makes placeholder testing possible before any base art exists.
+
+  ⚠️ **Space your `Plot` anchors for the LARGEST tier.** The base footprint grows with Research Tier
+  — 80 studs across at Tier 1 up to 200 at Tier 6 — so plots placed close together will overlap once
+  players start upgrading. Space them for the top tier, not the first.
 
   The character is repositioned onto its plot's anchor every time it spawns, not just the first
   time — Recall, End Expedition, and the mine's full-reset eviction all already call
@@ -111,6 +122,17 @@ no manual copy-pasting scripts into Studio.
   needed in any of the three. Plots free back to the pool when a player leaves. Add more `Plot`
   Parts to support more concurrent players — if none are free when someone joins, they just don't
   get a base yet (a warning prints server-side; nothing crashes).
+- **Research** — the game's progression rank, and the one number worth tracking. One tier drives
+  which base Model (and its stations) you get, how big your base footprint is, your Wall HP in
+  defense, how many turret slots you have, and how far a turret can be levelled. It's shown two
+  ways: a **bottom-left status panel** (health bar, a reserved stamina slot that isn't wired up
+  yet, and a Research row you can click) and a **floating sign over your base** showing owner and
+  tier. Clicking the Research row opens a breakdown of exactly what the next tier needs, with
+  have-vs-needed per line. Each tier is unlocked by reaching a wave milestone, then claimed at the
+  **Workbench** for Scrap + ore + one boss-wave Core — so wave defense sets the pace while mining
+  and raiding pay for it. Retune the whole ladder (names, wave gates, costs, Wall HP, footprint) in
+  `ResearchConfig.lua`; adding a tier is one table entry plus the matching `BaseTier{n}` Model.
+
 - **Base stations** — a second, more specific gate layer inside your base plot: several Workbench
   actions now also require standing near a particular physical prop, not just anywhere in the
   plot. Tag a Part or Model `Station` (`StationConfig.Tag`) and give it a child `StringValue`
