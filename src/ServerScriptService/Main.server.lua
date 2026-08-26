@@ -48,34 +48,58 @@ require(Services.TurretService)
 -- DESIGN_NOTES.md for why it was retired instead of tuned further.
 
 ----------------------------------------------------------------------
--- Boot check: every RemoteFunction must have a handler.
+-- Boot check: every service module must actually be loaded.
 --
--- A RemoteFunction whose OnServerInvoke was never assigned is the worst failure mode in this
--- codebase, because it produces NO symptom: the client's InvokeServer simply yields forever. No
--- error, no Output line, no timeout — the button just does nothing, and every obvious explanation
--- (wrong cost, wrong station, bad validation) sends you looking in the wrong place. That's exactly
--- what a missing `require(Services.TurretShopService)` above did to the Hub Shop's Buy button.
+-- A service that's never required never runs its top-level code, so the remote handlers it owns
+-- are never registered. That's the worst failure mode in this codebase because it produces NO
+-- symptom: invoking a RemoteFunction with no OnServerInvoke doesn't error, the client thread just
+-- yields forever. No error, no Output line, no timeout — the button simply does nothing, and every
+-- obvious explanation (wrong cost, wrong station, failed validation) sends you looking in entirely
+-- the wrong place. A missing `require(Services.TurretShopService)` did exactly that to the Hub
+-- Shop's Buy button, and cost real time to find.
 --
--- One pass at boot turns that into a loud, specific line in the Output window instead.
---
--- RemoteEvents deliberately aren't checked: there's no way to introspect whether OnServerEvent has
--- listeners, and an unhandled RemoteEvent fails far more gracefully anyway (the client fires into
--- the void and carries on, rather than hanging a thread mid-click).
+-- Checking the SERVICES rather than the remotes is deliberate. The obvious version of this check —
+-- looking for RemoteFunctions whose OnServerInvoke is nil — is impossible: Roblox callback members
+-- are write-only, and merely READING `remote.OnServerInvoke` throws "you can only set the callback
+-- value, get is not available." Services are introspectable, and an unloaded service is the actual
+-- root cause anyway, so this catches the same bug one level up.
 ----------------------------------------------------------------------
 
-task.defer(function()
-	local Remotes = game:GetService("ReplicatedStorage"):WaitForChild("Remotes")
-	local missing = {}
-	for _, remote in ipairs(Remotes:GetChildren()) do
-		if remote:IsA("RemoteFunction") and remote.OnServerInvoke == nil then
-			table.insert(missing, remote.Name)
+do
+	-- Modules deliberately NOT required, with why. Anything here is intentional; anything missing
+	-- from both this list and the requires above is a bug this check exists to shout about.
+	local INTENTIONALLY_UNLOADED = {
+		ResourceZoneService = "retired — replaced by MineShaftService, kept for reference",
+	}
+
+	local loaded = {}
+	for _, name in ipairs({
+		"DataService", "RateLimiter", "PlayerActivityService", "PlotService", "BaseService",
+		"StationService", "AdminService", "RaidEnergyService", "MiningService", "CraftingService",
+		"ForgeService", "SmeltService", "WaveService", "ShopService", "NodeService",
+		"ExpeditionService", "AutoMinerService", "MineShaftService", "RaidRoomService",
+		"TurretShopService", "TurretService",
+	}) do
+		loaded[name] = true
+	end
+	-- Required transitively by the list above rather than directly — still genuinely loaded, so
+	-- not a bug, just not visible in the require list.
+	for _, name in ipairs({ "CombatEncounterService", "CombatMath", "DamagePipeline", "EnemyAI", "RobotBehaviors", "WeaponToolService" }) do
+		loaded[name] = true
+	end
+
+	local unloaded = {}
+	for _, module in ipairs(Services:GetChildren()) do
+		if module:IsA("ModuleScript") and not loaded[module.Name] and not INTENTIONALLY_UNLOADED[module.Name] then
+			table.insert(unloaded, module.Name)
 		end
 	end
-	if #missing > 0 then
-		table.sort(missing)
-		warn(("[Salvage Protocol] %d RemoteFunction(s) have NO OnServerInvoke handler — calling these from the client will hang forever with no error: %s. The service that owns them is probably missing from Main.server.lua's require list."):format(
-			#missing, table.concat(missing, ", ")))
+
+	if #unloaded > 0 then
+		table.sort(unloaded)
+		warn(("[Salvage Protocol] %d service module(s) exist but are NEVER required, so their remote handlers are not registered — calling those remotes from the client will hang silently: %s. Add them to the require list above."):format(
+			#unloaded, table.concat(unloaded, ", ")))
 	end
-end)
+end
 
 print("[Salvage Protocol] Server services online.")

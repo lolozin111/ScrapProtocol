@@ -35,21 +35,46 @@ local function getStationType(inst: Instance): string?
 	return nil
 end
 
-local function getStationPosition(inst: Instance): Vector3?
+-- Distance from `position` to the station's nearest SURFACE, not its centre.
+--
+-- This used to measure centre-to-centre (inst.Position, or a Model's PrimaryPart/pivot), which
+-- silently punished big stations: StationConfig.InteractDistance is 12 studs, so a shop built as a
+-- 30-stud-wide model put its own centre ~15 studs from where you stand at the counter, and every
+-- interaction was rejected with "You need to be at the Hub Shop to do that" while you were plainly
+-- standing at it. Worse, it was inconsistent — walking to the side the pivot happened to sit on
+-- worked fine, so it looked like only SOME purchases failed.
+--
+-- Measuring to the bounding box means InteractDistance reads as "12 studs from the thing," which
+-- is what it always claimed to mean, and a station can be any size without retuning anything.
+local function distanceToStation(inst: Instance, position: Vector3): number?
+	local reference: CFrame, size: Vector3
+
 	if inst:IsA("BasePart") then
-		return inst.Position
+		reference, size = inst.CFrame, inst.Size
 	elseif inst:IsA("Model") then
-		if inst.PrimaryPart then
-			return inst.PrimaryPart.Position
-		end
-		local ok, cframe = pcall(function()
-			return inst:GetPivot()
+		local ok, cframe, boxSize = pcall(function()
+			return inst:GetBoundingBox()
 		end)
-		if ok then
-			return cframe.Position
+		if not ok or not cframe then
+			return nil
 		end
+		reference, size = cframe, boxSize
+	else
+		return nil
 	end
-	return nil
+
+	-- Point-to-box distance in the station's OWN space, so a rotated station is measured correctly
+	-- rather than against a world-axis-aligned approximation of itself. Clamping each axis to the
+	-- box's half-extent and taking the magnitude of whatever's left over gives 0 for a point inside
+	-- the box (standing on/in the station counts as distance 0, which is right).
+	local localPoint = reference:PointToObjectSpace(position)
+	local half = size / 2
+	local overshoot = Vector3.new(
+		math.max(math.abs(localPoint.X) - half.X, 0),
+		math.max(math.abs(localPoint.Y) - half.Y, 0),
+		math.max(math.abs(localPoint.Z) - half.Z, 0)
+	)
+	return overshoot.Magnitude
 end
 
 -- True if `player` is within StationConfig.InteractDistance of ANY Station-tagged instance whose
@@ -66,8 +91,8 @@ function StationService.IsPlayerNearStation(player: Player, stationType: string)
 			-- nil OwnerUserId = not part of any player's base yet (loose testing block) = open to all.
 			local ownerUserId = inst:GetAttribute("OwnerUserId")
 			if ownerUserId == nil or ownerUserId == player.UserId then
-				local position = getStationPosition(inst)
-				if position and (position - rootPart.Position).Magnitude <= StationConfig.InteractDistance then
+				local distance = distanceToStation(inst, rootPart.Position)
+				if distance and distance <= StationConfig.InteractDistance then
 					return true
 				end
 			end
