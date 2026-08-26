@@ -22,6 +22,8 @@ already made (numbers, mechanics, sequencing), not just vague direction.
 | Session-locked saves | **Built** — see "Data safety" |
 | Gun variants (14) + tools (3) | **Built** — 18 weapons across 6 families, 3 pickaxes |
 | Drone companion (4 Drone Cores) | **Built** — unlocks at Research Tier 3, follows you everywhere |
+| Early-game pacing & onboarding | **Planned, not built** — see below |
+| Raid shop rework (run-only perks) | **Planned, not built** — half the tag plumbing exists |
 | PvP base invasion | Not started, sequence last |
 
 Agreed build order (most recent discussion): Raid Energy → Mining zone rework → weapon mod
@@ -30,7 +32,9 @@ Re-confirm this order before starting each one — priorities may have shifted. 
 Black Market are both BUILT (the Black Market **superseded** the planned "main shop" rather than
 being built alongside it — same rotating-stock shape, so they were merged).
 
-**Next up: PvP base invasion**, the last item on the roadmap. The content backlog below is now
+**Next up: an art/visual pass**, then early-game pacing + the raid shop rework (both planned
+below), then PvP base invasion last. The mechanics roadmap is complete; what remains before PvP is
+tuning how the game OPENS and what the raid Shop is for. The content backlog below is now
 BUILT — kept as the record of what each weapon was specced to do, since the code says how they work
 and only this says what they were meant to feel like.
 
@@ -1582,6 +1586,115 @@ damage numbers existed.
 - **No drone art.** `ServerStorage.DroneModels.Drone` is honoured if you build one; until then it is
   a tinted neon ball that changes colour per Core. The colour is currently the fastest read on which
   Core is active.
+
+## Early-game pacing & onboarding — PLANNED, NOT BUILT
+
+Agreed after the roadmap was finished, while the user moved to art. Nothing here is implemented.
+Recorded now because the analysis behind it is the part that would otherwise be lost.
+
+### The problem
+
+The concern raised was "6 tiers feels too few, players will think the game is unfinished." Tracing
+the actual numbers said the opposite: rung count is not the risk, **the first five minutes are.**
+
+Progression already runs on roughly seventeen parallel axes — Research (6), Tool tiers (4), Suit
+tiers (3), Forge tiers (4), turret levels (to 60 across 2-9 slots), 6 weapon families, 18 weapons,
+per-instance rarity and affixes, 6 Ultimates, mods, 4 robots, 3 pickaxes, 4 drone cores, highest
+wave, mine depth, Contraband and cases. Nobody experiences that as "3 of 6 done"; they experience it
+as "I want the Longbow." The ladder length is not what makes a game read as unfinished.
+
+What IS a problem is the opening. A brand-new player currently:
+
+1. spawns with **0 Scrap, 0 ore, and no weapon**
+2. must mine ~9 hits of Scrap Iron to afford a Pipe Pistol
+3. forges and equips it
+4. can only THEN raid — and **raiding is the only source of Scrap in the game**, since base defense
+   was deliberately changed to grant none (see RewardTables.lua)
+5. needs **400 Scrap** for Research Tier 2, roughly 10-30 Combat nodes, plus clearing wave 5
+
+So the first sixty seconds hand the player nothing, and the whole combat system — the strongest part
+of the game — sits behind a mining errand.
+
+### The plan
+
+**1. Ore sells for Scrap.** Makes mining pay the currency everything is priced in, without reversing
+the "waves grant no Scrap" decision. Also turns ore into a choice (sell it, or keep it to craft with)
+rather than a one-way input.
+
+> **Pricing constraint — do not skip this.** Shop nodes already SELL ore for Scrap
+> (`NodeConfig.ShopCatalog`): 25 Scrap Iron for 40, 20 Copper Wire for 60, 15 Steel Plating for 90.
+> If the sell price exceeds the buy price there is an infinite-Scrap loop that never touches mining.
+> Ceilings are 1.6 / 3.0 / 6.0 Scrap per unit respectively; half the buy rate is the convention and
+> reads as fair. At 0.8 per Scrap Iron a full node (3 ore/hit x 8 hits) is ~19 Scrap.
+
+Open: WHERE selling happens. Hub Shop Sell tab is cheapest (station already exists). A dedicated
+"Scrapper" station is more thematic and gives a reason to walk somewhere, at the cost of another
+Studio prop and another `StationType`. Undecided.
+
+**2. Starter objectives, NOT a scripted tutorial.** The stated goal was a first-minute tutorial
+covering mine / Forge / Welding / Workbench. A guided step-by-step needs step tracking, forced
+prompts and skip handling, and Roblox players skip tutorials aggressively. A short objectives list
+teaches the same things, cannot be skipped past, and doubles as the early-economy injection the game
+needs anyway. Sketch:
+
+| Objective | Reward |
+|---|---|
+| Mine 20 Scrap Iron | +100 Scrap |
+| Sell ore | +50 Scrap |
+| Forge a weapon | +75 Scrap |
+| Craft anything at the Welding Station | +100 Scrap |
+| Clear wave 1 | +150 Scrap |
+
+~475 Scrap for doing the five things worth learning, which lands the player at Tier 2 on the
+intended 5-10 minute mark with no "click here" arrows. It teaches through the existing station gates
+instead of building a parallel tutorial system.
+
+**3. Pull Tier 2 forward** — roughly wave 3 and ~200 Scrap, so the first upgrade lands inside the
+first session. Tiers 3-6 stay where they are: late-game slowness is fine, early-game slowness is not.
+
+**4. Tiers 7-8 — DEFERRED, deliberately.** The request was more rungs for balancing headroom. The
+counter is art debt, not design: every tier needs a `BaseTier{n}` Studio model and **five are already
+unbuilt** (T2-T6). Going to 8 makes it seven. The same pacing control comes from moving the wave
+gates and costs of the six that exist, and `ResearchConfig`'s header already notes that adding a tier
+is one table entry plus a model, no code changes — so T7/T8 remain a twenty-minute job at any point,
+including after the curve has actually been played. **Build 6, play it, then decide where a rung
+would help.**
+
+Also still open from the same conversation, flagged rather than proposed because it reverses a direct
+past instruction: **base defense pays no Scrap or Cores at all**, which makes it economically a dead
+end despite being the mode most likely to be a new player's first real activity.
+`WaveConfig.GetScrapReward` is still defined and unused if this is ever revisited.
+
+## Raid shop rework — PLANNED, NOT BUILT
+
+Requested in an earlier session, never built there either. Recorded properly this time.
+
+**The idea:** the raid Shop node should stop selling ore bundles and instead sell **accessories that
+grant perks for the duration of the run** — things that help you push deeper on THIS raid and then
+break when you leave, so they cannot be farmed and carried out. Occasionally, at a legendary-ish
+rarity, it should offer something that DOES carry over — a special blueprint or similar.
+
+**Half of this is already built and inert.** `NodeConfig`'s loot and shop entries support two tags,
+both fully implemented in `RaidRoomService.settleRunLoot`, and **nothing is tagged with either yet**:
+
+- `RunLocked` — lost if the run ends in Defeat or Abandon; kept on a clean Extract.
+- `Permanent` — carried out regardless, even from a failed run. Overrides `RunLocked`.
+
+`Permanent` maps exactly onto the wanted "legendary thing that carries over". But the perk
+accessories need a **third state that does not exist yet**: expire on ANY exit, including a clean
+extract. `RunLocked` is not that — extract cleanly and you keep it.
+
+So the work is roughly:
+1. A third tag (`RunOnly` / `Consumed`) meaning "never leaves the raid", handled alongside the other
+   two in `settleRunLoot`.
+2. A perk-accessory config — what they do and how they attach. The obvious reuse is `StatusConfig`
+   for anything expressible as a buff, and `ModConfig`-shaped multipliers for the rest.
+3. Rotating stock per raid, so the Shop node is a decision rather than a fixed menu. Note that Raid
+   Rooms currently have NO stock rotation at all — every `ShopCatalog` item is always available,
+   which is already flagged as deferred in the Raid Rooms section above.
+4. Tag the rare carry-over item `Permanent` and it works with no further changes.
+
+A placeholder set was explicitly acceptable for the first pass.
 
 ## PvP base invasion
 
