@@ -40,6 +40,7 @@
         "DepthUpdate": { "$className": "RemoteEvent" },
         "RecallFromMine": { "$className": "RemoteEvent" },
         "EquipMod": { "$className": "RemoteFunction" },
+        "EquipUltimate": { "$className": "RemoteFunction" },
         "EquipWeapon": { "$className": "RemoteFunction" },
         "UndeployRobot": { "$className": "RemoteFunction" },
         "ForgeWeapon": { "$className": "RemoteFunction" },

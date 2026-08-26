@@ -37,6 +37,7 @@ local AdminConfig = require(ReplicatedStorage.Shared.AdminConfig)
 local OreConfig = require(ReplicatedStorage.Shared.OreConfig)
 local RefinedOreConfig = require(ReplicatedStorage.Shared.RefinedOreConfig)
 local TurretConfig = require(ReplicatedStorage.Shared.TurretConfig)
+local UltimateConfig = require(ReplicatedStorage.Shared.UltimateConfig)
 local DataService = require(script.Parent.DataService)
 local TurretService = require(script.Parent.TurretService)
 
@@ -84,6 +85,10 @@ local function refinedKeys(): { string }
 	end
 	table.sort(keys)
 	return keys
+end
+
+local function ultimateKeys(): { string }
+	return UltimateConfig.SortedKeys()
 end
 
 local function turretKeys(): { string }
@@ -197,6 +202,26 @@ local function commandGiveTurret(player: Player, profile, args: { string })
 	tell(player, ("granted %s (%s) — unplaced, click a slot pad at your base to place it"):format(typeKey, instance.Id))
 end
 
+-- Ultimates only drop from Black Market cases, which do not exist yet — so without this there is
+-- no way at all to test the Ultimate slot or its combat hooks.
+local function commandGiveUltimate(player: Player, profile, args: { string })
+	local requested = args[2]
+	local key
+	if requested then
+		key = resolveKey(requested, ultimateKeys())
+		if not key then
+			tell(player, ("unknown Ultimate '%s' — try one of: %s"):format(requested, table.concat(ultimateKeys(), ", ")))
+			return
+		end
+	else
+		key = ultimateKeys()[1]
+	end
+
+	profile.OwnedUltimates[key] = true
+	Remotes.InventoryUpdate:FireClient(player, { OwnedUltimates = profile.OwnedUltimates })
+	tell(player, ("granted Ultimate %s — equip it from the Inventory's weapon detail panel"):format(key))
+end
+
 local function commandSetWave(player: Player, profile, args: { string })
 	local wave = tonumber(args[2])
 	if not wave or wave < 0 then
@@ -212,9 +237,10 @@ local function commandSetWave(player: Player, profile, args: { string })
 end
 
 local function commandHelp(player: Player)
-	tell(player, "commands: /admin [on|off] · /give <what> [amount] · /giveturret [TypeKey] · /setwave <n>")
+	tell(player, "commands: /admin [on|off] · /give <what> [amount] · /giveturret [TypeKey] · /giveultimate [Key] · /setwave <n>")
 	tell(player, ("givable: Scrap, Cores, CoreT1.., %s, %s"):format(table.concat(oreKeys(), ", "), table.concat(refinedKeys(), ", ")))
 	tell(player, ("turrets: %s"):format(table.concat(turretKeys(), ", ")))
+	tell(player, ("ultimates: %s"):format(table.concat(ultimateKeys(), ", ")))
 end
 
 ----------------------------------------------------------------------
@@ -252,7 +278,8 @@ local function handleChatted(player: Player, message: string)
 		return
 	end
 
-	if command ~= "/give" and command ~= "/giveturret" and command ~= "/setwave" and command ~= "/help" then
+	if command ~= "/give" and command ~= "/giveturret" and command ~= "/giveultimate"
+		and command ~= "/setwave" and command ~= "/help" then
 		return
 	end
 
@@ -272,6 +299,8 @@ local function handleChatted(player: Player, message: string)
 		commandGive(player, profile, args)
 	elseif command == "/giveturret" then
 		commandGiveTurret(player, profile, args)
+	elseif command == "/giveultimate" then
+		commandGiveUltimate(player, profile, args)
 	elseif command == "/setwave" then
 		commandSetWave(player, profile, args)
 	elseif command == "/help" then

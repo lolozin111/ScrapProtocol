@@ -161,6 +161,14 @@ local function defaultProfile()
 			-- TurretConfig.GetTurretTier(Level) derives which Tier that maps to (every 10 levels).
 		NextTurretId = 1,       -- incrementing counter minting each Turrets instance's Id ("t1",
 			-- "t2", ...), same convention as NextWeaponId above — never reused.
+		OwnedUltimates = {},    -- [ultimateKey] = true — Mythical passives, see UltimateConfig.lua. NOT
+			-- craftable: they only come out of Black Market cases (and the admin grant, for testing).
+		EquippedUltimate = {},  -- [weaponKey] = ultimateKey — the weapon's FOURTH, exclusive slot.
+			-- Deliberately a separate field from EquippedMods rather than slot index 4 in it: keeping
+			-- the two pools in different tables is what makes it structurally impossible for a regular
+			-- mod to land in the Ultimate slot (or the reverse) through an off-by-one, and it keeps
+			-- CombatMath's multiplier walk from ever seeing an Ultimate, which is a behaviour rather
+			-- than a stat multiplier and would otherwise need special-casing there.
 		CraftedMods = {},       -- [modKey] = true (permanent unlock, same shape as CraftedWeapons) — see ModConfig
 		EquippedMods = {},      -- [itemKey][slotIndex] = modKey — itemKey is a weaponKey or robotKey,
 		                        -- slotIndex runs 1..ModConfig.SlotsPerItem. Applies per item TYPE, not

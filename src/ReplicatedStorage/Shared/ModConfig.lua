@@ -39,6 +39,10 @@ ModConfig.Rarities = {
 	Rare = { DisplayName = "Rare", Badge = "R", Color = Color3.fromRGB(90, 150, 220) },
 	Epic = { DisplayName = "Epic", Badge = "E", Color = Color3.fromRGB(170, 100, 220) },
 	Legendary = { DisplayName = "Legendary", Badge = "L", Color = Color3.fromRGB(230, 175, 60) },
+	-- Mythical is Ultimate-mod-only (see UltimateConfig.lua). No ordinary mod or Forged weapon
+	-- ever rolls it — ForgeConfig.RarityOrder deliberately stops at Legendary — so its presence
+	-- here is purely so the badge/colour lookup works for the Ultimate slot like everything else.
+	Mythical = { DisplayName = "Mythical", Badge = "M", Color = Color3.fromRGB(235, 90, 200) },
 }
 
 ModConfig.Mods = {

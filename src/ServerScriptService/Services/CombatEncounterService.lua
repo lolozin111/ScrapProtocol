@@ -59,6 +59,8 @@ local RobotBehaviors = require(script.Parent.RobotBehaviors)
 local PlotService = require(script.Parent.PlotService)
 local BaseService = require(script.Parent.BaseService)
 local TurretService = require(script.Parent.TurretService)
+local UltimateConfig = require(ReplicatedStorage.Shared.UltimateConfig)
+local UltimateEffects = require(script.Parent.UltimateEffects)
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 local RequestFireWeapon = Remotes.RequestFireWeapon
@@ -351,6 +353,10 @@ local function resolveAndApplyDamage(enemyRecord, baseDamage: number, origin: Ve
 		RangeProfile = rangeProfile,
 		Penetration = penetration or 0,
 		TargetDefense = enemyRecord.Defense,
+		-- Set by UltimateEffects.PierceAndStrip. Read here rather than by mutating enemyRecord.Defense
+		-- so it expires on its own clock and cannot leak past that enemy's own lifetime.
+		DefenseStripped = (enemyRecord.DefenseStrippedUntil ~= nil)
+			and (os.clock() < enemyRecord.DefenseStrippedUntil) or false,
 	})
 	enemyRecord.Humanoid:TakeDamage(finalDamage)
 	return finalDamage
@@ -1007,7 +1013,7 @@ RequestFireWeapon.OnServerEvent:Connect(function(player: Player, hitInstance: In
 	encounter.PlayerState.LastFireTime = now
 
 	local recipe = CraftingRecipes.Weapons[weaponInstance.WeaponKey]
-	resolveAndApplyDamage(
+	local dealt = resolveAndApplyDamage(
 		enemyRecord,
 		stats.Damage,
 		claimedOrigin,
@@ -1016,6 +1022,79 @@ RequestFireWeapon.OnServerEvent:Connect(function(player: Player, hitInstance: In
 			-- DamagePipeline.lua's applyRangeFalloff
 		recipe and recipe.Penetration
 	)
+
+	----------------------------------------------------------------------
+	-- Ultimate mod hooks.
+	--
+	-- Fired here, in the ONE place a player's shot resolves, so they work identically in base
+	-- defense and in raid rooms without either loop knowing Ultimates exist. Ultimates are
+	-- behaviours rather than stat multipliers (see UltimateConfig.lua), which is why they hook the
+	-- damage event instead of flowing through CombatMath the way ModConfig mods do.
+	----------------------------------------------------------------------
+
+	local ultimateKey = (profile.EquippedUltimate or {})[weaponInstance.WeaponKey]
+	local ultimate = ultimateKey and UltimateConfig.Mods[ultimateKey]
+	if ultimate then
+		-- Everything an effect may touch, so none of them reach into encounter internals. Built per
+		-- shot rather than cached: the encounter and its live enemy set both change constantly, and a
+		-- stale closure here would be a subtle "the passive hit something already dead" bug.
+		local ctx = {
+			Params = ultimate.Params or {},
+			Target = enemyRecord,
+			Damage = dealt,
+			Origin = claimedOrigin,
+
+			-- Live enemies within `radius` of the target, nearest first. excludeTarget skips the
+			-- enemy actually shot; `max` caps how many come back.
+			Nearby = function(radius: number, excludeTarget: boolean?, max: number?)
+				local targetPart = enemyRecord.Model and enemyRecord.Model.PrimaryPart
+				if not targetPart then
+					return {}
+				end
+				local found = {}
+				for _, record in pairs(encounter.EnemyByModel) do
+					if isEnemyAlive(record) and not (excludeTarget and record == enemyRecord) then
+						local distance = (record.Model.PrimaryPart.Position - targetPart.Position).Magnitude
+						if distance <= radius then
+							table.insert(found, { Record = record, Distance = distance })
+						end
+					end
+				end
+				table.sort(found, function(a, b)
+					return a.Distance < b.Distance
+				end)
+				local out = {}
+				for index, entry in ipairs(found) do
+					if max and index > max then
+						break
+					end
+					table.insert(out, entry.Record)
+				end
+				return out
+			end,
+
+			-- Secondary damage still runs the full DamagePipeline — an Ultimate must not be able to
+			-- quietly bypass Defense mitigation or the minimum-damage floor.
+			DealDamage = function(record, amount: number)
+				if record and amount and amount > 0 and isEnemyAlive(record) then
+					resolveAndApplyDamage(record, amount, claimedOrigin, record.Model.PrimaryPart.Position, nil, 0)
+				end
+			end,
+
+			StripDefense = function(record, seconds: number)
+				if record then
+					record.DefenseStrippedUntil = os.clock() + (seconds or 0)
+				end
+			end,
+		}
+
+		UltimateEffects.Fire("OnHit", ultimate.Effect, ctx)
+		-- OnKill after OnHit, and only when this shot is what finished it — so a corpse-detonation
+		-- passive fires once, on the blow that actually landed the kill.
+		if enemyRecord.Humanoid.Health <= 0 then
+			UltimateEffects.Fire("OnKill", ultimate.Effect, ctx)
+		end
+	end
 end)
 
 Players.PlayerRemoving:Connect(function(player)

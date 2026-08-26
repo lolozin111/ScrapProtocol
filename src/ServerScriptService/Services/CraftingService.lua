@@ -27,6 +27,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local CraftingRecipes = require(ReplicatedStorage.Shared.CraftingRecipes)
 local ModConfig = require(ReplicatedStorage.Shared.ModConfig)
+local UltimateConfig = require(ReplicatedStorage.Shared.UltimateConfig)
 local PlotConfig = require(ReplicatedStorage.Shared.PlotConfig)
 local StationConfig = require(ReplicatedStorage.Shared.StationConfig)
 local TurretConfig = require(ReplicatedStorage.Shared.TurretConfig)
@@ -268,6 +269,67 @@ Remotes.EquipMod.OnServerInvoke = function(player: Player, tree: string, itemKey
 	})
 
 	return { Success = true, EquippedMods = profile.EquippedMods[itemKey] }
+end
+
+-- EquipUltimate: sets (or clears, with ultimateKey = nil) the weapon TYPE's fourth, exclusive
+-- slot. See UltimateConfig.lua — an Ultimate is a behaviour rather than a stat multiplier, and it
+-- lives in profile.EquippedUltimate rather than as slot 4 of EquippedMods.
+--
+-- The mutual exclusion between Ultimates and ordinary mods needs no check of its own: the two pools
+-- are different tables, so this validates against UltimateConfig.Mods while EquipMod validates
+-- against ModConfig.Mods, and neither key exists in the other's table. Structural rather than
+-- enforced, which is the point — there is no off-by-one that could put the wrong kind in a slot.
+--
+-- Not plot/station gated, same as EquipMod/DeployRobot: changing loadout works anywhere, only
+-- acquiring new things is gated.
+Remotes.EquipUltimate.OnServerInvoke = function(player: Player, itemKey: string, ultimateKey: string?)
+	local profile = DataService.Get(player)
+	if not profile then
+		return { Success = false, Reason = "Profile not loaded" }
+	end
+
+	if type(itemKey) ~= "string" or not CraftingRecipes.Weapons[itemKey] then
+		return { Success = false, Reason = "Unknown weapon" }
+	end
+
+	-- Ownership of the weapon TYPE, matching how mod slots key off WeaponKey rather than a Forged
+	-- instance Id — equipping an Ultimate on "Pipe Pistol" applies to every Pipe Pistol you own.
+	local ownsWeapon = false
+	for _, weaponInstance in ipairs(profile.Weapons) do
+		if weaponInstance.WeaponKey == itemKey then
+			ownsWeapon = true
+			break
+		end
+	end
+	if not ownsWeapon then
+		return { Success = false, Reason = "You don't own this weapon" }
+	end
+
+	if ultimateKey ~= nil then
+		if not UltimateConfig.Mods[ultimateKey] then
+			return { Success = false, Reason = "Unknown Ultimate mod" }
+		end
+		if not profile.OwnedUltimates[ultimateKey] then
+			return { Success = false, Reason = "You don't own this Ultimate — they come from Black Market cases." }
+		end
+		-- One Ultimate can only be in one weapon at a time. Unlike ordinary mods (which are a
+		-- permanent unlock usable on everything at once), an Ultimate is a single rare object, so
+		-- letting it sit in every weapon simultaneously would gut the whole point of chasing more.
+		for otherKey, equipped in pairs(profile.EquippedUltimate) do
+			if equipped == ultimateKey and otherKey ~= itemKey then
+				return { Success = false, Reason = ("Already equipped on your %s — unequip it there first."):format(
+					(CraftingRecipes.Weapons[otherKey] and CraftingRecipes.Weapons[otherKey].DisplayName) or otherKey) }
+			end
+		end
+	end
+
+	profile.EquippedUltimate[itemKey] = ultimateKey
+
+	Remotes.InventoryUpdate:FireClient(player, {
+		EquippedUltimate = profile.EquippedUltimate,
+	})
+
+	return { Success = true }
 end
 
 -- EquipWeapon moved to ForgeService.lua — it now operates on a Forged instance Id rather than a

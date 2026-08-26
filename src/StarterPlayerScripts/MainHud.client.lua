@@ -29,6 +29,7 @@ local ForgeConfig = require(ReplicatedStorage.Shared.ForgeConfig)
 local RefinedOreConfig = require(ReplicatedStorage.Shared.RefinedOreConfig)
 local BaseConfig = require(ReplicatedStorage.Shared.BaseConfig)
 local ResearchConfig = require(ReplicatedStorage.Shared.ResearchConfig)
+local UltimateConfig = require(ReplicatedStorage.Shared.UltimateConfig)
 local Wallet = require(ReplicatedStorage.Shared.Wallet)
 local TurretConfig = require(ReplicatedStorage.Shared.TurretConfig)
 
@@ -1344,13 +1345,129 @@ inv.detailButton.MouseButton1Click:Connect(function()
 	end
 end)
 
+----------------------------------------------------------------------
+-- Ultimate picker — the fourth, exclusive weapon slot (see UltimateConfig.lua).
+--
+-- Deliberately its own popup rather than a mode on ModPicker: the two pools are mutually
+-- exclusive by design, and sharing one picker would mean a filter flag whose only job is to make
+-- sure the wrong kind never shows up. Two small pickers cannot mix them at all.
+----------------------------------------------------------------------
+
+local ultPicker = {}
+ultPicker.itemKey = nil
+
+ultPicker.frame = Hud.new("Frame", {
+	Name = "UltimatePicker",
+	BackgroundColor3 = Hud.COLOR.Panel,
+	Position = UDim2.new(0.5, -180, 0.5, -190),
+	Size = UDim2.new(0, 360, 0, 380),
+	Visible = false,
+	ZIndex = 7,
+	Parent = Hud.screenGui,
+}, { Hud.corner(10), Hud.stroke() })
+
+Hud.new("TextLabel", {
+	BackgroundTransparency = 1,
+	Position = UDim2.new(0, 12, 0, 10),
+	Size = UDim2.new(1, -60, 0, 24),
+	Font = Enum.Font.SourceSansBold,
+	TextXAlignment = Enum.TextXAlignment.Left,
+	TextColor3 = (ModConfig.Rarities[UltimateConfig.Rarity] or {}).Color or Hud.COLOR.Text,
+	TextSize = 18,
+	Text = "Ultimate Slot",
+	Parent = ultPicker.frame,
+})
+
+ultPicker.close = Hud.new("TextButton", {
+	BackgroundColor3 = Hud.COLOR.PanelLight,
+	Position = UDim2.new(1, -40, 0, 8),
+	Size = UDim2.new(0, 28, 0, 28),
+	Font = Enum.Font.SourceSansBold,
+	TextColor3 = Hud.COLOR.Text,
+	TextSize = 16,
+	Text = "X",
+	Parent = ultPicker.frame,
+}, { Hud.corner(6) })
+
+ultPicker.list = Hud.new("ScrollingFrame", {
+	BackgroundTransparency = 1,
+	Position = UDim2.new(0, 12, 0, 44),
+	Size = UDim2.new(1, -24, 1, -56),
+	CanvasSize = UDim2.new(0, 0, 0, 0),
+	AutomaticCanvasSize = Enum.AutomaticSize.Y,
+	ScrollBarThickness = 6,
+	Parent = ultPicker.frame,
+}, { Hud.new("UIListLayout", { Padding = UDim.new(0, 6) }) })
+
+local function closeUltPicker()
+	ultPicker.frame.Visible = false
+	ultPicker.itemKey = nil
+end
+ultPicker.close.MouseButton1Click:Connect(closeUltPicker)
+
+local function selectUltimate(ultimateKey: string?)
+	local itemKey = ultPicker.itemKey
+	closeUltPicker() -- close first so a slow round trip can't leave a stale popup open
+	local result = Remotes.EquipUltimate:InvokeServer(itemKey, ultimateKey)
+	if not result.Success then
+		Hud.showFailure("Equip Ultimate failed", result.Reason)
+	end
+end
+
+local function renderUltPickerList()
+	for _, child in ipairs(ultPicker.list:GetChildren()) do
+		if child:IsA("Frame") then
+			child:Destroy()
+		end
+	end
+
+	local current = (Hud.profile.EquippedUltimate or {})[ultPicker.itemKey]
+
+	Hud.makeRow("None", "Leave the Ultimate slot empty",
+		(current == nil) and "Selected" or "Select",
+		function() selectUltimate(nil) end
+	).Parent = ultPicker.list
+
+	local owned = Hud.profile.OwnedUltimates or {}
+	local any = false
+	for _, key in ipairs(UltimateConfig.SortedKeys()) do
+		if owned[key] then
+			any = true
+			local data = UltimateConfig.Mods[key]
+			Hud.makeRow(
+				("[%s] %s"):format((ModConfig.Rarities[UltimateConfig.Rarity] or {}).Badge or "M", data.DisplayName),
+				data.Description,
+				(key == current) and "Selected" or "Select",
+				function() selectUltimate(key) end
+			).Parent = ultPicker.list
+		end
+	end
+
+	if not any then
+		Hud.makeRow("No Ultimates yet",
+			"They only come from Black Market cases — not craftable.",
+			"OK", function() end
+		).Parent = ultPicker.list
+	end
+end
+
+local function openUltPicker(itemKey: string)
+	ultPicker.itemKey = itemKey
+	renderUltPickerList()
+	ultPicker.frame.Visible = true
+end
+
 local function rebuildInvDetailSlots(tree: string, itemKey: string)
 	for _, child in ipairs(inv.detailSlotRow:GetChildren()) do
 		if child:IsA("TextButton") then
 			child:Destroy()
 		end
 	end
-	local slotWidth = math.floor((260 - 20 - 6 * (ModConfig.SlotsPerItem - 1)) / ModConfig.SlotsPerItem)
+	-- Weapons get a fourth ULTIMATE slot on the end; robots do not (Ultimates are weapon-only).
+	-- Width is divided by the real button count so the row still fits either way.
+	local showUltimate = (tree == "Weapons")
+	local slotCount = ModConfig.SlotsPerItem + (showUltimate and 1 or 0)
+	local slotWidth = math.floor((260 - 20 - 6 * (slotCount - 1)) / slotCount)
 	for slotIndex = 1, ModConfig.SlotsPerItem do
 		local equippedKey = ModPicker.equippedModKeyForSlot(itemKey, slotIndex)
 		local mod = equippedKey and ModConfig.Mods[equippedKey]
@@ -1368,6 +1485,28 @@ local function rebuildInvDetailSlots(tree: string, itemKey: string)
 			ModPicker.openModPicker(tree, itemKey, slotIndex)
 		end)
 	end
+
+	if showUltimate then
+		local equippedUltimate = (Hud.profile.EquippedUltimate or {})[itemKey]
+		local data = equippedUltimate and UltimateConfig.Mods[equippedUltimate]
+		local rarity = ModConfig.Rarities[UltimateConfig.Rarity] or {}
+		local ultButton = Hud.new("TextButton", {
+			-- Tinted with the Mythical colour whether filled or empty, so the slot reads as a
+			-- different KIND of slot at a glance rather than a fourth ordinary one.
+			BackgroundColor3 = data and (rarity.Color or Hud.COLOR.AccentDark) or Hud.COLOR.Panel,
+			Size = UDim2.new(0, slotWidth, 1, 0),
+			Font = Enum.Font.Code,
+			TextColor3 = data and Color3.new(1, 1, 1) or (rarity.Color or Hud.COLOR.Muted),
+			TextSize = 11,
+			TextWrapped = true,
+			Text = data and data.DisplayName or UltimateConfig.SlotLabel,
+			Parent = inv.detailSlotRow,
+		}, { Hud.corner(4), Hud.stroke() })
+		ultButton.MouseButton1Click:Connect(function()
+			openUltPicker(itemKey)
+		end)
+	end
+
 	inv.detailSlotRow.Visible = true
 end
 
@@ -2977,6 +3116,9 @@ Remotes.InventoryUpdate.OnClientEvent:Connect(function(patch)
 	-- (the slot's contents moved), so this is really about Upgrade re-rendering in place.
 	if turretPanel.frame.Visible then
 		renderTurretPanel()
+	end
+	if ultPicker.frame.Visible then
+		renderUltPickerList()
 	end
 	-- The Research claim depends on Scrap/ore/Cores/HighestWave, all of which arrive through this
 	-- same patch — so the button's "UPGRADE READY" state and the open requirements popup both have
