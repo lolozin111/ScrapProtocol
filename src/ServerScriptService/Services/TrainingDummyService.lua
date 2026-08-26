@@ -100,23 +100,40 @@ local function buildLabel(model: Model, part: BasePart)
 	return total, sub
 end
 
+-- Tagged instance -> the Model we built for it. Keyed by the TAGGED instance, not by the model,
+-- which matters: when a loose Part is tagged we wrap it in a new Model, so keying the guard by the
+-- model meant the "already registered" check could never match and every signal built another
+-- wrapper. That was one half of a re-entrancy crash.
+local registeredFor: { [Instance]: Model } = {}
+
 -- Turns a tagged instance into a live dummy record. Accepts a bare Part as well as a Model, since
 -- "tag any part" is the lowest-friction setup and matches how every other tag in this game works.
 local function registerDummy(instance: Instance)
-	if dummyRecords[instance] then
+	-- Claimed BEFORE any reparenting below. CollectionService fires its added/removed signals when
+	-- a tagged instance enters or leaves the DataModel, not just when the tag changes — so moving a
+	-- tagged Part re-enters this function, and the guard has to already be set by then.
+	if registeredFor[instance] then
 		return
 	end
 
 	local model: Model
 	local part: BasePart
+
 	if instance:IsA("BasePart") then
-		-- Wrap a loose Part in a Model so it has the PrimaryPart every downstream system expects.
 		model = Instance.new("Model")
 		model.Name = "TrainingDummy"
 		instance.Anchored = true
+
+		-- ORDER MATTERS. Parent the wrapper into the world FIRST, then move the part into it, so the
+		-- part goes straight from one in-tree parent to another and never leaves the DataModel.
+		-- Doing it the other way round (part into an unparented model, then model into the world)
+		-- briefly pulls the tagged part out of the tree, which fires InstanceRemoved followed by
+		-- InstanceAdded — re-entering this function and, with the broken guard above, recursing
+		-- until Roblox killed it with "Maximum event re-entrancy depth exceeded".
+		model.Parent = dummyFolder
+		registeredFor[instance] = model
 		instance.Parent = model
 		model.PrimaryPart = instance
-		model.Parent = dummyFolder
 		part = instance
 	elseif instance:IsA("Model") then
 		model = instance
@@ -125,6 +142,7 @@ local function registerDummy(instance: Instance)
 			warn(("[TrainingDummyService] %s has no PrimaryPart — set one, or tag a plain Part instead."):format(instance:GetFullName()))
 			return
 		end
+		registeredFor[instance] = model
 	else
 		return
 	end
@@ -136,8 +154,8 @@ local function registerDummy(instance: Instance)
 	end
 	humanoid.MaxHealth = DUMMY_MAX_HEALTH
 	humanoid.Health = DUMMY_MAX_HEALTH
-	-- Dummies never walk. Setting this to 0 rather than relying on nothing ticking their AI means a
-	-- stray Move() from anywhere cannot budge them.
+	-- Dummies never walk. Set to 0 rather than relying on nothing ticking their AI, so a stray
+	-- Move() from anywhere cannot budge them.
 	humanoid.WalkSpeed = 0
 
 	local totalLabel, subLabel = buildLabel(model, part)
@@ -166,8 +184,16 @@ local function registerDummy(instance: Instance)
 	}
 end
 
+-- Looks the model up through registeredFor rather than assuming the tagged instance IS the model —
+-- the same key mismatch that broke the register guard also meant untagging a wrapped Part removed
+-- nothing at all.
 local function unregisterDummy(instance: Instance)
-	dummyRecords[instance] = nil
+	local model = registeredFor[instance]
+	registeredFor[instance] = nil
+	if model then
+		dummyRecords[model] = nil
+	end
+	dummyRecords[instance] = nil -- harmless if it was a directly-tagged Model
 end
 
 ----------------------------------------------------------------------
@@ -277,17 +303,27 @@ function TrainingDummyService.SpawnNear(player: Player)
 		return false
 	end
 
+	-- Builds a FINISHED Model and tags that, rather than tagging a loose Part and letting
+	-- registerDummy wrap it. The wrap path still exists for hand-tagged Parts, but the command that
+	-- gets used constantly should not take the more delicate route through it.
 	local part = Instance.new("Part")
-	part.Name = "TrainingDummy"
+	part.Name = "Body"
 	part.Size = Vector3.new(4, 6, 2)
 	part.Anchored = true
 	part.CanCollide = true
 	part.Material = Enum.Material.WoodPlanks
 	part.Color = Color3.fromRGB(150, 120, 80)
 	part.CFrame = rootPart.CFrame * CFrame.new(0, 0, -14)
-	part.Parent = dummyFolder
 
-	CollectionService:AddTag(part, DUMMY_TAG)
+	local model = Instance.new("Model")
+	model.Name = "TrainingDummy"
+	part.Parent = model
+	model.PrimaryPart = part
+	model.Parent = dummyFolder
+
+	-- Tagged last, once the model is complete and already in the world — so the added signal fires
+	-- exactly once, against something registerDummy can use as-is.
+	CollectionService:AddTag(model, DUMMY_TAG)
 	return true
 end
 
