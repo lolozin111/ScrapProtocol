@@ -2922,9 +2922,16 @@ local defendButton = new("TextButton", {
 	Text = "Start Defense",
 	Parent = actionRow,
 }, { corner(8) })
+-- Doubles as the stop button rather than adding a second one — the action row is already tight
+-- (and gets hidden wholesale while the Forge is open). Before StopWave existed this just no-op'd
+-- while a run was active, so there was no way to end a run short of losing or resetting your
+-- character; that's also what turned an unkillable enemy into an unrecoverable hang.
 defendButton.MouseButton1Click:Connect(function()
-	if runActive then return end
-	Remotes.StartWave:FireServer()
+	if runActive then
+		Remotes.StopWave:FireServer()
+	else
+		Remotes.StartWave:FireServer()
+	end
 end)
 
 -- Only shown while an expedition is actually active (see the CurrentSlotId watcher below) —
@@ -3076,7 +3083,8 @@ Remotes.WaveUpdate.OnClientEvent:Connect(function(update)
 
 	if update.Status == "WaveStart" then
 		runActive = true
-		defendButton.Text = "In progress…"
+		-- The button is a toggle now, so it has to say what CLICKING it does, not what's happening.
+		defendButton.Text = "Stop Defense"
 		waveLabel.Text = ("Wave %d%s"):format(update.Wave, update.IsElite and "  (BOSS WAVE)" or "")
 		wallCaption.Text = "Wall: — / —"
 		enemyCaption.Text = "Enemies: —"
@@ -3114,6 +3122,12 @@ Remotes.WaveUpdate.OnClientEvent:Connect(function(update)
 		waveLabel.Text = "Revived — wall repaired"
 		wallCaption.Text = ("Wall: %d / %d"):format(wallMaxHP, wallMaxHP)
 		wallFill.Size = UDim2.new(1, 0, 1, 0)
+	elseif update.Status == "Stopping" then
+		-- StopWave clears the server's activeRuns flag, but the wave already in progress still has
+		-- to resolve before the loop notices — so this is an acknowledgement, not the end. RunEnded
+		-- follows and does the real reset.
+		defendButton.Text = "Stopping…"
+		waveLabel.Text = "Stopping after this wave…"
 	elseif update.Status == "RunEnded" then
 		runActive = false
 		defendButton.Text = "Start Defense"

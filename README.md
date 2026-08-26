@@ -43,7 +43,7 @@ no manual copy-pasting scripts into Studio.
   Workbench's **Tools** tab (`UpgradeTool`, costs in `OreConfig.ToolTierCosts`); there was no
   way to raise it before, which is why those ores were unreachable.
 - **Mine shaft (voxel grid)** — `MineShaftService.lua` builds a real 3D grid of mineable blocks
-  (`MineShaftConfig.GridWidth` x `GridLength`, 128x128 by default) starting from a Part tagged
+  (`MineShaftConfig.GridWidth` x `GridLength`, 32x32 by default) starting from a Part tagged
   `MineShaftStart`. **This anchor needs genuinely open air underneath it** — put it up on a
   platform, not resting on your map's real ground — because the whole grid is built as ordinary,
   real, solid Parts directly below it; there's no teleporting and no separate hidden area
@@ -64,7 +64,8 @@ no manual copy-pasting scripts into Studio.
   .OreWeightBands`, same "deeper = rarer" idea the old ring zone used), and a few — more often the
   deeper you go — roll as a **Lava pocket**: mine one through and it bursts for real damage
   (`LavaDamage`) instead of a reward, with no warning in its label ahead of time. All three get
-  more or less common with depth (`MineShaftConfig.KindWeightBands`) but Rock is floored (30-40%)
+  more or less common with depth (`MineShaftConfig.KindWeightBands`) but Rock stays the most common
+  kind at every depth (80% at the surface, easing to ~38% in the deepest band)
   so filler never fully disappears even very deep. Separately, past a depth threshold, ambient
   environmental risk (`MineShaftConfig.HazardBands`) deals periodic damage unless your **Suit
   tier** covers it (Workbench → Suit tab, `UpgradeSuit`, costs in `SuitTierCosts`) — a top-right
@@ -77,7 +78,7 @@ no manual copy-pasting scripts into Studio.
   `ProximityPrompt` ore mining still uses — a prompt attached to a block directly under the
   player's own feet routinely fails its default line-of-sight check and just never triggers, so
   click-based is what actually works for something you stand on top of. Blocks don't carry their
-  own permanent label — with up to ~16,000+ live at once, `MineShaftController.client.lua` shows
+  own permanent label — with ~1,000 live just for the surface layer, `MineShaftController.client.lua` shows
   ONE reusable hover label instead, re-targeted to whichever block you're actually looking at.
   Every cell's state is one shared, server-tracked value, same multiplayer-synced requirement the
   ring zone had — if one player opens up a tunnel, everyone sees it already open. **This
@@ -85,7 +86,7 @@ no manual copy-pasting scripts into Studio.
   those files are still on disk for reference but are no longer required by `Main.server.lua`;
   see `DESIGN_NOTES.md` for why. See `MineShaftConfig.lua` to retune grid size, hits, kind/ore/
   hazard weighting, or suit costs — `GridWidth`/`GridLength` is the first thing to shrink if
-  16,000+ initial blocks turns out to be too much for a given map.
+  1,024 initial blocks turns out to be too much (or too small) for a given map.
 - **Base plots** — every player needs somewhere the Workbench and Start Defense will actually
   work (see below), which means Studio needs at least one Part tagged `Plot` (`PlotConfig.Tag`)
   before ANYTHING craftable works at all. This is a two-piece system: **PlotService.lua** owns
@@ -499,9 +500,9 @@ actually visible before any real art or UI design happens. To test end to end:
 11. Place one more Part **up on a platform with genuinely open air underneath it** (not resting on
    your map's real ground — the whole grid gets built as real solid Parts directly below this, so
    it needs real clear space to build into), tag it `MineShaftStart`. Press Play — check the
-   Output window for `[MineShaftService] populated 16384/16384 Depth-0 blocks` (generation is
+   Output window for `[MineShaftService] populated 1024/1024 Depth-0 blocks` (generation is
    spread across a few frames, so this may take a moment to print). You should see one big
-   128x128-cell rock floor with a low guard rail around its edge, colored blocks scattered across
+   32x32-cell rock floor with a low guard rail around its edge, colored blocks scattered across
    it (mostly grey Rock, some ore-colored blocks, and the occasional glowing orange "??? "block —
    that one's a Lava pocket, no warning which one until you break it). **Hover** over the block
    you're standing on — a thin outline highlights it and a floating label shows its kind/depth/hit
@@ -517,7 +518,7 @@ actually visible before any real art or UI design happens. To test end to end:
    "???" block deals a damage burst instead of granting anything (check your HP). Once you're a
    couple levels down, try mining **sideways** instead of straight down — confirm a new block
    appears in that direction too (this only works below Depth 0, since Depth 0 starts completely
-   filled in — see `DESIGN_NOTES.md`). Dig to depth 6 or deeper without upgrading your Suit and
+   filled in — see `DESIGN_NOTES.md`). Dig to depth 25 or deeper without upgrading your Suit and
    you should also start taking separate periodic damage from the ambient hazard — the top-right
    HUD panel should show your current depth and a red hazard warning (e.g. "Heat — need Thermal
    Liner"); Recall or walk back to your base, open **Workbench → Suit** near your `Crafting`

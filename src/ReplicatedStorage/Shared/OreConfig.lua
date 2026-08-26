@@ -9,6 +9,9 @@
 local OreConfig = {}
 
 -- ToolTiers: swing speed (seconds between hits) and a flat yield multiplier.
+-- SwingTime is enforced SERVER-SIDE as a real cooldown on both mining remotes (MiningService's
+-- MineNode and MineShaftService's MineShaftHit, via RateLimiter) — it is the anti-spam gate, not
+-- just a display number, so lowering it genuinely raises how fast a player can mine.
 -- Every player starts at tier 1 (DataService's defaultProfile). Tiers 2+ are purchased via the
 -- Workbench's "Tools" tab (MiningService.UpgradeTool), costed by ToolTierCosts below — this is
 -- the ONLY way ToolTier ever goes up, so an ore with a MinToolTier > 1 (see below) is

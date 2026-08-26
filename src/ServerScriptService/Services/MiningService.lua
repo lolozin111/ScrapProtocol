@@ -34,6 +34,7 @@ local RaidEnergyService = require(script.Parent.RaidEnergyService)
 local PlotService = require(script.Parent.PlotService)
 local StationService = require(script.Parent.StationService)
 local RateLimiter = require(script.Parent.RateLimiter)
+local OreGate = require(script.Parent.OreGate)
 
 local Remotes = ReplicatedStorage.Remotes
 local MineNode = Remotes.MineNode
@@ -49,28 +50,6 @@ local function getOreTypeFromNode(node: Instance): string?
 		return marker.Value
 	end
 	return nil
-end
-
--- Returns whether the player can mine this ore right now, plus a human-readable reason when
--- they can't — fed back to the client via MineFailed so a blocked attempt is never silent.
-local function checkCanMine(player: Player, oreKey: string): (boolean, string?)
-	local oreData = OreConfig.Ores[oreKey]
-	if not oreData then
-		return false, "Unknown ore type"
-	end
-	local profile = DataService.Get(player)
-	if not profile then
-		return false, "Profile not loaded"
-	end
-	if oreData.MinToolTier and profile.ToolTier < oreData.MinToolTier then
-		local requiredTool = OreConfig.ToolTiers[oreData.MinToolTier]
-		return false, ("Needs %s or better — upgrade in Workbench -> Tools"):format(
-			requiredTool and requiredTool.Name or ("Tool Tier " .. oreData.MinToolTier))
-	end
-	if oreData.MinWaveUnlock and profile.HighestWave < oreData.MinWaveUnlock then
-		return false, ("Locked until you clear Wave %d"):format(oreData.MinWaveUnlock)
-	end
-	return true
 end
 
 ----------------------------------------------------------------------
@@ -172,7 +151,7 @@ MineNode.OnServerEvent:Connect(function(player: Player, node: Instance)
 		return
 	end
 
-	local canMine, reason = checkCanMine(player, oreKey)
+	local canMine, reason = OreGate.CanMine(player, oreKey)
 	if not canMine then
 		Remotes.MineFailed:FireClient(player, reason or "Can't mine this yet")
 		return
@@ -188,7 +167,7 @@ MineNode.OnServerEvent:Connect(function(player: Player, node: Instance)
 	-- you mine faster (1.2s at Rusty Pickaxe down to 0.3s at Plasma Drill), which is half the
 	-- point of buying the upgrade at all. The client's own ProximityPrompt HoldDuration is a UX
 	-- nicety on top of this, exactly like the Depleted attribute is — this check is what's real.
-	-- checkCanMine above already proved the profile exists. The `or ToolTiers[1]` fallback guards
+	-- OreGate.CanMine above already proved the profile exists. The `or ToolTiers[1]` fallback guards
 	-- the index itself, not the profile: a ToolTier past the end of the ladder (a save written
 	-- against a longer one, a bad value) would otherwise error inside the remote handler.
 	local profile = DataService.Get(player)

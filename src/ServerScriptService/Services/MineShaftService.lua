@@ -35,9 +35,9 @@
 	node in the game respawns in place after depleting, but a mine cell needs to reveal NEW cells
 	around it instead, and can resolve as filler or a hazard instead of ore at all — different
 	enough behavior that bolting it onto MiningService as a special case would be messier than this
-	file owning its own small mining flow. The tool-tier/wave gate logic below is intentionally a
-	near-duplicate of MiningService.checkCanMine for the same reason OreConfig stays pure data (see
-	its header comment) — if you change one gate's behavior, check the other.
+	file owning its own small mining flow. The tool-tier/wave gate itself is NOT duplicated though —
+	both this and MiningService call the shared OreGate.CanMine. (It used to be a near-identical
+	private copy in each file, with a comment here telling you to remember to change both.)
 
 	Every cell's state is tracked server-side only (the `cells` table below) and blocks replicate
 	to every client automatically as real Parts — there is no per-player mine state, same
@@ -59,6 +59,7 @@ local RaidEnergyService = require(script.Parent.RaidEnergyService)
 local PlotService = require(script.Parent.PlotService)
 local StationService = require(script.Parent.StationService)
 local RateLimiter = require(script.Parent.RateLimiter)
+local OreGate = require(script.Parent.OreGate)
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 
@@ -372,28 +373,6 @@ task.defer(populateGrid) -- start as soon as the anchor exists
 -- Mining a block
 ----------------------------------------------------------------------
 
--- Near-duplicate of MiningService.checkCanMine — see this file's header comment for why it's not
--- shared instead. Only applies to Ore cells; Rock and Hazard have no tool-tier/wave gate.
-local function checkOreGate(player: Player, oreKey: string): (boolean, string?)
-	local oreData = OreConfig.Ores[oreKey]
-	if not oreData then
-		return false, "Unknown ore type"
-	end
-	local profile = DataService.Get(player)
-	if not profile then
-		return false, "Profile not loaded"
-	end
-	if oreData.MinToolTier and profile.ToolTier < oreData.MinToolTier then
-		local requiredTool = OreConfig.ToolTiers[oreData.MinToolTier]
-		return false, ("Needs %s or better — upgrade in Workbench -> Tools"):format(
-			requiredTool and requiredTool.Name or ("Tool Tier " .. oreData.MinToolTier))
-	end
-	if oreData.MinWaveUnlock and profile.HighestWave < oreData.MinWaveUnlock then
-		return false, ("Locked until you clear Wave %d"):format(oreData.MinWaveUnlock)
-	end
-	return true
-end
-
 Remotes.MineShaftHit.OnServerEvent:Connect(function(player: Player, block: Instance)
 	if isLocked then
 		Remotes.MineFailed:FireClient(player, "The mine is resetting — try again in a few seconds")
@@ -424,7 +403,7 @@ Remotes.MineShaftHit.OnServerEvent:Connect(function(player: Player, block: Insta
 	end
 
 	if kind == "Ore" then
-		local canMine, reason = checkOreGate(player, block:GetAttribute("OreKey"))
+		local canMine, reason = OreGate.CanMine(player, block:GetAttribute("OreKey"))
 		if not canMine then
 			Remotes.MineFailed:FireClient(player, reason or "Can't mine this yet")
 			return

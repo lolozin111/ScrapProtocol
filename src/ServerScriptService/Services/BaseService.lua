@@ -97,10 +97,30 @@ end
 -- Destroys whatever base Model is currently built for this player (if any) and clones/positions
 -- the one matching their current profile.BaseTier in its place.
 function BaseService.RebuildPlayerBase(player: Player, plot: Instance)
+	-- Put SOMETHING solid under the plot immediately, before the profile wait below.
+	--
+	-- PlotService teleports the character to plot.CFrame + SpawnHeightOffset and THEN fires
+	-- PlotAssigned, which lands here inside a task.spawn that can yield for up to 5 seconds in
+	-- waitForProfile. The Plot anchor itself is forced non-collidable (it's a marker, not a floor),
+	-- so for that whole window the player was standing on nothing and simply fell.
+	--
+	-- The fallback floor needs no profile data — only the plot's CFrame — so it can be built right
+	-- now and swapped for the real tier Model once the profile arrives. On a fast load this is
+	-- invisible; on a slow one it's the difference between spawning on a floor and falling into
+	-- the void. Only for a FIRST build: a rebuild (tier upgrade, turret change) already has a base
+	-- standing, and tearing it down for a placeholder mid-session would look like a glitch.
+	local hadBase = playerBaseModel[player] ~= nil
+	if not hadBase then
+		local placeholder = buildFallbackBase(player, plot)
+		placeholder.Name = ("%s_Base_Bootstrap"):format(player.Name)
+		placeholder.Parent = Workspace
+		playerBaseModel[player] = placeholder
+	end
+
 	local profile = waitForProfile(player)
 	if not profile then
 		warn(("[BaseService] Profile never loaded for %s — base not built."):format(player.Name))
-		return
+		return -- the bootstrap floor above stays; better to stand on a placeholder than on nothing
 	end
 
 	local tier = tierData(profile.BaseTier or 1)

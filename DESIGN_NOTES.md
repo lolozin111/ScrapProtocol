@@ -1241,6 +1241,31 @@ thinking of each drops will each gamemode give, but for now just use a placehold
 ratios as the intent — blueprint ≈ 2x one craft, craft cost climbing steeply by turret tier, base
 tiers climbing steeply in Scrap — and the absolute values as provisional pending a real playtest.
 
+## Half-built reward loops (granted but unspendable — open follow-ups)
+
+Surfaced by the codebase audit. These are **not** dead code to delete — each is one working half of
+a loop whose other half was never built. Listed so a future session either finishes them or
+deliberately cuts them, rather than rediscovering them one at a time.
+
+- **`profile.InstantCraftTokens`** — granted by three separate sources (`NodeConfig`'s Shop
+  catalog, `RewardTables`' Boss and Regular utility rolls, and a `ShopConfig` developer product)
+  and **spendable nowhere**. There is no instant-craft mechanic: crafting has no duration to skip,
+  so the token has nothing to do. Either give crafting a real timer (the way `SmeltService` already
+  has one) so skipping it is worth something, or drop the token from those tables.
+- **`profile.RefinedOreCounts`** — smelting works end to end and refined materials accumulate in
+  the Inventory's Materials tab, but nothing accepts them as payment. Wiring them into
+  `CraftingRecipes`/`ModConfig`/`TurretConfig` cost tables was always flagged as a separate
+  follow-up; until then, smelting is a sink with no output.
+- **`profile.ResearchTier`** — hardcoded to 1, and it gates both turret slot count
+  (`TurretConfig.GetSlotCount`) and crossing into a new turret Tier every 10 levels
+  (`TurretService.UpgradeTurret`). So turret levels are effectively **capped at 10** with no in-game
+  path past it. This one is deliberate and already has an owner: Research is the confirmed next
+  roadmap step (see the Session context section below).
+
+Two previously-dead fields have since been fixed and are now live: `OreConfig.ToolTiers[].SwingTime`
+(now the server-side mining cooldown) and `profile.UnlockedTurretBlueprints` (now the blueprint
+unlock gate — see the Turret economy section above).
+
 ## Session context — decisions not yet captured
 
 Loose ends from the Base Defense & Turrets round-2 chat (Hub Shop/blueprints/turret

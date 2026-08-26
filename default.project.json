@@ -20,6 +20,7 @@
         "CraftItem": { "$className": "RemoteFunction" },
         "DeployRobot": { "$className": "RemoteFunction" },
         "StartWave": { "$className": "RemoteEvent" },
+        "StopWave": { "$className": "RemoteEvent" },
         "WaveUpdate": { "$className": "RemoteEvent" },
         "InventoryUpdate": { "$className": "RemoteEvent" },
         "GetProfile": { "$className": "RemoteFunction" },

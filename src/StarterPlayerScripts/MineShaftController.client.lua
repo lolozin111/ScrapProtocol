@@ -14,14 +14,15 @@
 	have that problem — it only needs the block visible on screen, not an unobstructed camera ray
 	to a point that's now under the player's feet.
 
-	Every block that spawns (all ~16,000 of the Depth-0 floor, and every new one revealed after
+	Every block that spawns (all ~1,000 of the Depth-0 floor, and every new one revealed after
 	that) gets this same ClickDetector setup via the tag-added signal below — no per-block wiring
 	needed anywhere else. Mining still takes multiple hits same as before — each click is one hit,
 	same as each ProximityPrompt hold used to be.
 
 	Also owns the ONE reusable hover label (a single BillboardGui, re-Adornee'd to whichever block
 	is currently hovered) instead of MineShaftService giving every block its own permanent
-	BillboardGui — with a grid this size (128x128 = ~16,000 blocks just for the surface layer),
+	BillboardGui — with a grid this size (32x32 = ~1,000 blocks just for the surface layer, and it
+	only grows as you dig),
 	one persistent GUI instance per block would be a real client-side performance cost for
 	something only ever useful for the one block you're actually looking at. Kind/Depth/
 	HitsRemaining/MaxHits/OreKey are ordinary replicated Attributes on the block itself, so this

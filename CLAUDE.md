@@ -73,6 +73,30 @@ service. This means most new-content work (placing another ore node, another sta
 Studio/tagging task, not a code change — code changes are for new *systems* or new *config
 entries* (e.g. a new key in `OreConfig.Ores`).
 
+**`InventoryUpdate` is a partial patch with a hand-maintained convention.** ~15 server call sites
+each send a different subset of keys; the client blind-merges (`for k,v in pairs(patch) do
+profile[k] = v end` in `MainHud.client.lua`). Two rules follow, and neither is enforced by anything
+but discipline:
+
+- **To clear a field, send `Field = value or false`, never a bare `nil`.** A nil-valued entry is
+  dropped from a Lua table literal before it reaches the wire, so `SmeltJob = nil` silently sends
+  nothing and the client keeps the stale value. `false` is falsy everywhere it's compared and
+  actually survives the trip.
+- **After any spend, call `DataService.PushWallet(player)`** rather than hand-listing currency
+  keys. A handler that spends Cores but broadcasts only its own domain fields leaves the client's
+  mirror stale, so the cost looks like it never happened — indistinguishable from a bug, and much
+  harder to diagnose than one. Three handlers had drifted this way before the helper existed.
+
+**Silent failure is the defining hazard here.** Three separate bugs have presented as "I click and
+nothing happens", each with a different root cause: a `warn()` that only reached the Studio Output
+window, a `CanQuery = false` part that mouse rays passed straight through, and a service missing
+from `Main.server.lua`'s require list — which leaves its RemoteFunction with no `OnServerInvoke`,
+so `InvokeServer` yields **forever** with no error at all. When something "does nothing", suspect
+these before suspecting the logic. Guards now in place: `MainHud`'s `showFailure()` toasts every
+rejection on screen, and `Main.server.lua` warns at boot about any service module that is never
+required. (You cannot check the remotes directly — reading `remote.OnServerInvoke` throws, since
+Roblox callbacks are write-only.)
+
 **Missing art never breaks the loop.** Enemy rigs, gun Tools, base/raid-room models, and item
 icons are all optional — every service that clones one of these falls back to a plain
 placeholder (gray box/floor, colored tile with text) and a `warn()` when the expected

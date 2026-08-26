@@ -53,6 +53,16 @@ local function buildPlaceholderTool(weaponKey: string, recipe): Tool
 	return tool
 end
 
+-- Only REAL Studio-authored templates are cached. A synthesized placeholder is rebuilt each time
+-- instead, so the folder gets re-checked on every equip: caching the placeholder meant that once a
+-- weapon had been equipped before its art existed, adding the real Tool mid-session had no effect
+-- and you kept getting the grey box — quietly contradicting this file's own header, which promises
+-- it "picks it up automatically the moment a Studio-authored one exists". Building a two-part Tool
+-- is trivially cheap; being wrong about which gun the player is holding is not.
+--
+-- The warn is deduped separately so re-checking the folder doesn't spam Output on every equip.
+local warnedMissingTemplate: { [string]: boolean } = {}
+
 local function getTemplate(weaponKey: string): Tool
 	local cached = templateCache[weaponKey]
 	if cached then
@@ -61,16 +71,16 @@ local function getTemplate(weaponKey: string): Tool
 
 	local templatesFolder = ReplicatedStorage:FindFirstChild("WeaponTools")
 	local existing = templatesFolder and templatesFolder:FindFirstChild(weaponKey)
-	local template
 	if existing and existing:IsA("Tool") and existing:FindFirstChild("Handle") then
-		template = existing
-	else
-		template = buildPlaceholderTool(weaponKey, CraftingRecipes.Weapons[weaponKey])
-		warn(("[WeaponToolService] No Tool template (with a Handle) found for %s in ReplicatedStorage.WeaponTools — using a placeholder box. Build a real Tool there named exactly %q once you have a gun model."):format(weaponKey, weaponKey))
+		templateCache[weaponKey] = existing
+		return existing
 	end
 
-	templateCache[weaponKey] = template
-	return template
+	if not warnedMissingTemplate[weaponKey] then
+		warnedMissingTemplate[weaponKey] = true
+		warn(("[WeaponToolService] No Tool template (with a Handle) found for %s in ReplicatedStorage.WeaponTools — using a placeholder box. Build a real Tool there named exactly %q once you have a gun model."):format(weaponKey, weaponKey))
+	end
+	return buildPlaceholderTool(weaponKey, CraftingRecipes.Weapons[weaponKey])
 end
 
 local function isWeaponTool(instance: Instance): boolean
@@ -122,9 +132,24 @@ end
 -- behavior here, just rebuild the gun from profile.EquippedWeaponId — the actual source of truth —
 -- every time a character loads in, same "state on the profile, not on the instance" spirit as
 -- everything else in this codebase.
+-- Same defensive polling every other consumer of a freshly-loaded profile uses (BaseService,
+-- TurretService). Without it, the FIRST CharacterAdded after joining routinely fired before
+-- DataService's asynchronous load finished, this returned early, and the player spawned with no
+-- gun until they happened to respawn — with nothing to explain it.
+local function waitForProfile(player: Player)
+	local profile = DataService.Get(player)
+	local attempts = 0
+	while not profile and attempts < 50 and player.Parent do
+		task.wait(0.1)
+		profile = DataService.Get(player)
+		attempts += 1
+	end
+	return profile
+end
+
 Players.PlayerAdded:Connect(function(player: Player)
 	player.CharacterAdded:Connect(function()
-		local profile = DataService.Get(player)
+		local profile = waitForProfile(player)
 		if not profile or not profile.EquippedWeaponId then
 			return
 		end

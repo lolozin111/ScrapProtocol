@@ -44,6 +44,7 @@ local PlayerActivityService = require(script.Parent.PlayerActivityService)
 
 local Remotes = ReplicatedStorage.Remotes
 local StartWave = Remotes.StartWave
+local StopWave = Remotes.StopWave
 local WaveUpdate = Remotes.WaveUpdate
 
 local WaveService = {}
@@ -186,6 +187,23 @@ StartWave.OnServerEvent:Connect(function(player: Player)
 		end
 		PlayerActivityService.Release(player, PlayerActivityService.Activities.Wave)
 	end)
+end)
+
+-- StopWave: end a run on purpose. Before this there was NO way out of runWaves' loop except losing
+-- or resetting your character — it ran until the wall fell or the character vanished. That's also
+-- what made an unkillable enemy (see CombatEncounterService's isEnemyAlive) an unrecoverable hang
+-- rather than an annoyance.
+--
+-- Clearing activeRuns is all that's needed: the loop re-checks it every iteration, so it exits
+-- cleanly after the wave in progress resolves rather than being torn down mid-fight. The player
+-- keeps whatever that wave already banked, and the "Wave" activity is released by the same
+-- task.spawn wrapper that handles every other exit (see StartWave above).
+StopWave.OnServerEvent:Connect(function(player: Player)
+	if not activeRuns[player.UserId] then
+		return -- nothing running; nothing to stop
+	end
+	activeRuns[player.UserId] = nil
+	WaveUpdate:FireClient(player, { Status = "Stopping" })
 end)
 
 game.Players.PlayerRemoving:Connect(function(player)
