@@ -26,6 +26,7 @@ local MineShaftConfig = require(ReplicatedStorage.Shared.MineShaftConfig)
 local ModConfig = require(ReplicatedStorage.Shared.ModConfig)
 local StationConfig = require(ReplicatedStorage.Shared.StationConfig)
 local ForgeConfig = require(ReplicatedStorage.Shared.ForgeConfig)
+local WeaponFamilyConfig = require(ReplicatedStorage.Shared.WeaponFamilyConfig)
 local RefinedOreConfig = require(ReplicatedStorage.Shared.RefinedOreConfig)
 local BaseConfig = require(ReplicatedStorage.Shared.BaseConfig)
 local ResearchConfig = require(ReplicatedStorage.Shared.ResearchConfig)
@@ -660,6 +661,11 @@ local forgeUsePotion = false
 -- server state, just cleared back to nil on a fresh HUD load. { WeaponKey, Rarity, Affixes }.
 local lastForgedResult = nil
 
+-- Which family's guns the Forge is currently listing. nil = the family picker itself, which is
+-- what the tab opens on. A flat list of every weapon was fine at four and unreadable at
+-- eighteen — see WeaponFamilyConfig.
+local forgeFamily = nil
+
 -- Forward-declared, same reason as renderCraftList below: the Forge roll button (defined here,
 -- earlier in the file) needs to refresh the persistent pity bar / potion button (defined later,
 -- in the "Forge status HUD" section, since the potion button needs getItemIcon which isn't
@@ -744,20 +750,90 @@ local function renderForgeWeapons()
 		).Parent = listFrame
 	end
 
-	-- Roll rows — one per weapon type, always available. Unlike the old flat-craft list there's no
-	-- "already own it" gate here: every click mints a brand-new independent instance.
+	----------------------------------------------------------------------
+	-- Family picker. Locked families are still SHOWN, greyed, naming the blueprint that opens them —
+	-- a player who can't see what they're missing has no reason to chase a case. Locked rows just
+	-- don't navigate anywhere.
+	----------------------------------------------------------------------
+
+	if not forgeFamily then
+		for _, familyKey in ipairs(WeaponFamilyConfig.Order) do
+			local family = WeaponFamilyConfig.Families[familyKey]
+			local unlocked = WeaponFamilyConfig.IsUnlocked(Hud.profile, familyKey)
+
+			local count = 0
+			for _, recipe in pairs(CraftingRecipes.Weapons) do
+				if recipe.Family == familyKey then
+					count += 1
+				end
+			end
+
+			Hud.makeRow(
+				family.DisplayName,
+				unlocked
+					and ("%d weapon%s · %s"):format(count, count == 1 and "" or "s", family.Description)
+					or ("LOCKED · find the %s in a Black Market case"):format(
+						WeaponFamilyConfig.BlueprintName(familyKey)),
+				unlocked and "Open" or "Locked",
+				function()
+					if not unlocked then
+						Hud.showFailure(
+							("%s is locked"):format(family.DisplayName),
+							("Its blueprint (%s) drops from Legendary rolls at the Black Market."):format(
+								WeaponFamilyConfig.BlueprintName(familyKey)))
+						return
+					end
+					forgeFamily = familyKey
+					renderCraftList()
+				end
+			).Parent = listFrame
+		end
+		return
+	end
+
+	----------------------------------------------------------------------
+	-- One family's roll rows. Unlike the old flat-craft list there's no "already own it" gate —
+	-- every click mints a brand-new independent instance.
+	----------------------------------------------------------------------
+
+	local familyData = WeaponFamilyConfig.Families[forgeFamily]
+	Hud.makeRow(
+		"< Back to families",
+		familyData and familyData.Description or "",
+		"Back",
+		function()
+			forgeFamily = nil
+			renderCraftList()
+		end
+	).Parent = listFrame
+
 	local keys = {}
-	for key in pairs(CraftingRecipes.Weapons) do
-		table.insert(keys, key)
+	for key, recipe in pairs(CraftingRecipes.Weapons) do
+		if recipe.Family == forgeFamily then
+			table.insert(keys, key)
+		end
 	end
 	table.sort(keys, function(a, b)
 		return CraftingRecipes.Weapons[a].Tier < CraftingRecipes.Weapons[b].Tier
 	end)
 	for _, key in ipairs(keys) do
 		local recipe = CraftingRecipes.Weapons[key]
+
+		-- Two stat lines are worth surfacing because they change how a gun is USED, not just how hard
+		-- it hits: a headshot bonus tells you to aim high, a wield penalty tells you it costs mobility.
+		local notes = ("%s · Base %.1f dmg x %.1f/s"):format(
+			Hud.costString(recipe.Cost), recipe.BaseDamage, recipe.FireRate)
+		if recipe.HeadshotMultiplier and recipe.HeadshotMultiplier > 1 then
+			notes ..= ("  ·  x%.1f headshots"):format(recipe.HeadshotMultiplier)
+		end
+		if recipe.WieldSpeedMultiplier then
+			notes ..= ("  ·  %d%% move speed while held"):format(
+				math.floor(recipe.WieldSpeedMultiplier * 100 + 0.5))
+		end
+
 		Hud.makeRow(
 			("T%d  %s"):format(recipe.Tier, recipe.DisplayName),
-			("%s · Base %.1f dmg x %.1f/s"):format(Hud.costString(recipe.Cost), recipe.BaseDamage, recipe.FireRate),
+			notes,
 			"Forge",
 			function()
 				local usePotion = forgeUsePotion and (Hud.profile.LuckPotions or 0) > 0
@@ -3338,6 +3414,19 @@ Remotes.CaseOpened.OnClientEvent:Connect(function(caseKey: string, reward)
 			return
 		end
 		Hud.showToast(("MYTHICAL — %s unlocked! Equip it in the Inventory's Ultimate slot."):format(name), 7)
+		return
+	end
+	if reward.Kind == "WeaponFamily" then
+		local family = WeaponFamilyConfig.Families[reward.Key]
+		name = family and family.DisplayName or reward.Key
+		if reward.Duplicate then
+			Hud.showToast(("LEGENDARY — %s blueprint (already unlocked) · +%d Contraband instead"):format(
+				name, reward.ConsolationContraband or 0), 6)
+			return
+		end
+		-- Names the station, because the reward is not an item you can go and look at: it is a tab
+		-- that has quietly appeared somewhere else entirely.
+		Hud.showToast(("LEGENDARY — %s unlocked! Forge them at the Forge's Weapons tab."):format(name), 7)
 		return
 	end
 	Hud.showToast(("%s — %d %s"):format(reward.Rarity, reward.Amount or 1, name), 5)

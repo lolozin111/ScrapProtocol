@@ -26,6 +26,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local CraftingRecipes = require(ReplicatedStorage.Shared.CraftingRecipes)
+local PlayerSpeed = require(script.Parent.PlayerSpeed)
 local DataService = require(script.Parent.DataService)
 
 local WeaponToolService = {}
@@ -90,6 +91,9 @@ end
 -- Clears any existing gun Tool out of both Backpack (not currently held) and Character (currently
 -- held) — a player mid-fight holding their old gun when they re-equip a new one from the Inventory
 -- shouldn't end up holding both.
+-- Clearing a weapon has to drop its wield penalty too. Unequipped does NOT fire when a held
+-- Tool is destroyed out from under the character, so without this, swapping away from the
+-- Longshot Rifle would leave the player permanently slow with nothing on screen to explain it.
 local function clearExistingWeaponTools(player: Player)
 	for _, container in ipairs({ player:FindFirstChild("Backpack"), player.Character }) do
 		if container then
@@ -100,6 +104,7 @@ local function clearExistingWeaponTools(player: Player)
 			end
 		end
 	end
+	PlayerSpeed.Set(player, "Wield", nil)
 end
 
 function WeaponToolService.SyncEquippedTool(player: Player, weaponInstance)
@@ -123,6 +128,24 @@ function WeaponToolService.SyncEquippedTool(player: Player, weaponInstance)
 	tool:SetAttribute("WeaponTool", true)
 	tool:SetAttribute("WeaponKey", weaponInstance.WeaponKey)
 	tool:SetAttribute("WeaponInstanceId", weaponInstance.Id)
+
+	-- Wield penalty: heavy weapons slow you while HELD, not merely owned — so the Longshot Rifle's
+	-- drawback is something you can put away rather than a tax on carrying it around. Equipped and
+	-- Unequipped are the Tool's own events, which means this covers dropping it, dying with it, and
+	-- switching to another slot without any of those being handled separately.
+	--
+	-- Keyed "Wield" in PlayerSpeed so it composes with a Speed Boost instead of the two overwriting
+	-- each other, and clearing it restores whatever else is still running.
+	local wieldMultiplier = recipe and recipe.WieldSpeedMultiplier
+	if wieldMultiplier then
+		tool.Equipped:Connect(function()
+			PlayerSpeed.Set(player, "Wield", wieldMultiplier)
+		end)
+		tool.Unequipped:Connect(function()
+			PlayerSpeed.Set(player, "Wield", nil)
+		end)
+	end
+
 	tool.Parent = backpack
 end
 

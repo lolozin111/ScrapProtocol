@@ -63,6 +63,47 @@ ProjectileConfig.Profiles = {
 		Speed = 130, Gravity = 0, Range = 300, Radius = 0.9, Pierce = 1,
 		Color = Color3.fromRGB(150, 220, 255),
 	},
+
+	----------------------------------------------------------------------
+	-- Bows. Gravity is the family's whole identity — an arrow that flew flat would just be a slow
+	-- bullet. Slow enough to watch, so leading a moving target is a skill rather than a coin flip.
+	----------------------------------------------------------------------
+
+	Bow = {
+		Speed = 150, Gravity = 55, Range = 420, Radius = 0.28, Pierce = 1,
+		Color = Color3.fromRGB(200, 180, 120),
+	},
+
+	-- Heavier draw: flatter (more speed against the same gravity) and it keeps going through bodies.
+	Longbow = {
+		Speed = 190, Gravity = 45, Range = 550, Radius = 0.38, Pierce = 4,
+		Color = Color3.fromRGB(225, 200, 130),
+	},
+
+	----------------------------------------------------------------------
+	-- Snipers. Fast and dead flat, so where you point is where it lands with no lead at all — the
+	-- opposite of a bow on purpose, since both families are otherwise "slow, high damage".
+	----------------------------------------------------------------------
+
+	Sniper = {
+		Speed = 900, Gravity = 0, Range = 1200, Radius = 0.3, Pierce = 3,
+		Color = Color3.fromRGB(255, 245, 210),
+	},
+
+	QuickSniper = {
+		Speed = 700, Gravity = 0, Range = 900, Radius = 0.24, Pierce = 2,
+		Color = Color3.fromRGB(255, 235, 190),
+	},
+
+	----------------------------------------------------------------------
+	-- Minigun. Small, fast, short-ranged and slightly scattered by the fire rate alone — twelve of
+	-- these a second reads as a hose, which is the entire point.
+	----------------------------------------------------------------------
+
+	Minigun = {
+		Speed = 260, Gravity = 0, Range = 260, Radius = 0.16, Pierce = 0,
+		Color = Color3.fromRGB(255, 200, 140),
+	},
 }
 
 function ProjectileConfig.Get(name: string?)

@@ -16,6 +16,7 @@ require(Services.DataService)
 -- in) is what makes their teardown position predictable instead of an accident of require order.
 require(Services.RateLimiter)
 require(Services.PlayerActivityService)
+require(Services.PlayerSpeed)  -- owns WalkSpeed; must be loaded before anything that modifies it
 require(Services.PlotService)
 require(Services.BaseService)
 require(Services.StationService)
@@ -79,7 +80,7 @@ do
 
 	local loaded = {}
 	for _, name in ipairs({
-		"DataService", "RateLimiter", "PlayerActivityService", "PlotService", "BaseService",
+		"DataService", "RateLimiter", "PlayerActivityService", "PlayerSpeed", "PlotService", "BaseService",
 		"StationService", "AdminService", "RaidEnergyService", "MiningService", "CraftingService",
 		"ForgeService", "SmeltService", "WaveService", "ShopService", "NodeService",
 		"ExpeditionService", "AutoMinerService", "MineShaftService", "RaidRoomService",

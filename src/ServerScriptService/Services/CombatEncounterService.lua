@@ -61,6 +61,7 @@ local BaseService = require(script.Parent.BaseService)
 local TurretService = require(script.Parent.TurretService)
 local UltimateConfig = require(ReplicatedStorage.Shared.UltimateConfig)
 local UltimateEffects = require(script.Parent.UltimateEffects)
+local PlayerSpeed = require(script.Parent.PlayerSpeed)
 local StatusEffects = require(script.Parent.StatusEffects)
 local ProjectileService = require(script.Parent.ProjectileService)
 local ProjectileConfig = require(ReplicatedStorage.Shared.ProjectileConfig)
@@ -573,7 +574,9 @@ function CombatEncounterService.RunWave(player: Player, waveNumber: number, opts
 		Shield = 0, -- now absorbs incoming hits on the WALL's behalf, not the player's — see
 			-- RobotBehaviors.lua's Utility.Shield header comment
 		LastFireTime = 0,
-		BaseWalkSpeed = humanoid.WalkSpeed,
+		-- Read from PlayerSpeed, not the live Humanoid: reading the Humanoid mid-wield would
+		-- capture the already-slowed speed as if it were the player's normal one.
+		BaseWalkSpeed = PlayerSpeed.GetBase(player),
 		SpeedBoostUntil = 0,
 	}
 
@@ -590,8 +593,11 @@ function CombatEncounterService.RunWave(player: Player, waveNumber: number, opts
 		end
 	end
 
+	-- Routed through PlayerSpeed rather than written straight onto the Humanoid, so a boost and a
+	-- heavy weapon's wield penalty multiply instead of the last writer erasing the other. Clearing
+	-- our own key below restores whatever else is still active, not a remembered absolute speed.
 	local function grantSpeedBoost(multiplier_: number, duration: number)
-		humanoid.WalkSpeed = playerState.BaseWalkSpeed * multiplier_
+		PlayerSpeed.Set(player, "SpeedBoost", multiplier_)
 		playerState.SpeedBoostUntil = os.clock() + duration
 	end
 
@@ -649,7 +655,7 @@ function CombatEncounterService.RunWave(player: Player, waveNumber: number, opts
 
 		local now = os.clock()
 		if playerState.SpeedBoostUntil > 0 and now >= playerState.SpeedBoostUntil then
-			humanoid.WalkSpeed = playerState.BaseWalkSpeed
+			PlayerSpeed.Set(player, "SpeedBoost", nil)
 			playerState.SpeedBoostUntil = 0
 		end
 
@@ -736,8 +742,8 @@ function CombatEncounterService.RunWave(player: Player, waveNumber: number, opts
 		task.wait(TICK_SECONDS)
 	end
 
-	if humanoid and playerState.SpeedBoostUntil > 0 then
-		humanoid.WalkSpeed = playerState.BaseWalkSpeed
+	if playerState.SpeedBoostUntil > 0 then
+		PlayerSpeed.Set(player, "SpeedBoost", nil)
 	end
 
 	activeEncounters[player.UserId] = nil
@@ -858,7 +864,9 @@ function CombatEncounterService.RunRaidCombat(player: Player, arenaCenter: Vecto
 	local playerState = {
 		Shield = 0,
 		LastFireTime = 0,
-		BaseWalkSpeed = humanoid.WalkSpeed,
+		-- Read from PlayerSpeed, not the live Humanoid: reading the Humanoid mid-wield would
+		-- capture the already-slowed speed as if it were the player's normal one.
+		BaseWalkSpeed = PlayerSpeed.GetBase(player),
 		SpeedBoostUntil = 0,
 	}
 
@@ -876,8 +884,11 @@ function CombatEncounterService.RunRaidCombat(player: Player, arenaCenter: Vecto
 		end
 	end
 
+	-- Routed through PlayerSpeed rather than written straight onto the Humanoid, so a boost and a
+	-- heavy weapon's wield penalty multiply instead of the last writer erasing the other. Clearing
+	-- our own key below restores whatever else is still active, not a remembered absolute speed.
 	local function grantSpeedBoost(multiplier_: number, duration: number)
-		humanoid.WalkSpeed = playerState.BaseWalkSpeed * multiplier_
+		PlayerSpeed.Set(player, "SpeedBoost", multiplier_)
 		playerState.SpeedBoostUntil = os.clock() + duration
 	end
 
@@ -930,7 +941,7 @@ function CombatEncounterService.RunRaidCombat(player: Player, arenaCenter: Vecto
 
 		local now = os.clock()
 		if playerState.SpeedBoostUntil > 0 and now >= playerState.SpeedBoostUntil then
-			humanoid.WalkSpeed = playerState.BaseWalkSpeed
+			PlayerSpeed.Set(player, "SpeedBoost", nil)
 			playerState.SpeedBoostUntil = 0
 		end
 
@@ -1012,8 +1023,8 @@ function CombatEncounterService.RunRaidCombat(player: Player, arenaCenter: Vecto
 		task.wait(TICK_SECONDS)
 	end
 
-	if humanoid and playerState.SpeedBoostUntil > 0 then
-		humanoid.WalkSpeed = playerState.BaseWalkSpeed
+	if playerState.SpeedBoostUntil > 0 then
+		PlayerSpeed.Set(player, "SpeedBoost", nil)
 	end
 
 	activeEncounters[player.UserId] = nil
@@ -1066,9 +1077,18 @@ function CombatEncounterService.ResolvePlayerHit(player: Player, hitInstance: In
 		return false
 	end
 
+	-- Headshots. Only weapons that declare a HeadshotMultiplier care where they land — a
+	-- flamethrower hitting a head is just a flamethrower. Roblox rigs name the part "Head", and
+	-- since the projectile raycast returns the exact part it struck, this needs no extra hit test.
+	--
+	-- Until now the gold "Headshot" damage colour was only ever produced by the AimBot Ultimate,
+	-- which made it a mod-specific flourish rather than a mechanic. Bows are built around it.
+	local headshotMultiplier = spec.HeadshotMultiplier or 1
+	local isHeadshot = headshotMultiplier > 1 and hitInstance ~= nil and hitInstance.Name == "Head"
+
 	local dealt = resolveAndApplyDamage(
-		enemyRecord, spec.Damage, origin, hitPosition,
-		spec.RangeProfile, spec.Penetration, player, "Normal")
+		enemyRecord, spec.Damage * (isHeadshot and headshotMultiplier or 1), origin, hitPosition,
+		spec.RangeProfile, spec.Penetration, player, isHeadshot and "Headshot" or "Normal")
 
 	----------------------------------------------------------------------
 	-- Ultimate mod hooks. Fired here — the one place a player's shot LANDS — so they work
@@ -1231,6 +1251,7 @@ RequestFireWeapon.OnServerEvent:Connect(function(player: Player, claimedOrigin: 
 		UltimateKey = (profile.EquippedUltimate or {})[weaponInstance.WeaponKey],
 		RangeProfile = recipe and recipe.RangeProfile,
 		Penetration = recipe and recipe.Penetration,
+		HeadshotMultiplier = recipe and recipe.HeadshotMultiplier,
 		Projectile = ProjectileConfig.Get(recipe and recipe.Projectile),
 	})
 end)

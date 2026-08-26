@@ -25,15 +25,13 @@
 	  Core      a CoreItem (CoreT1, ...)
 	  Ultimate  a Mythical passive (UltimateConfig.Mods)
 	  Tool      NOT BUILT YET — see the TODO on the Epic pools
-	  Weapon    NOT BUILT YET — gun-variant blueprints, see the Legendary pools
+	  WeaponFamily  unlocks a whole gun family in the Forge (WeaponFamilyConfig)
 
 	=== ADDING THE MISSING CONTENT ===
-	Tools and gun variants do not exist as systems yet, so no shipped case currently rolls them —
-	rather than have a case hand out a promise it cannot keep. Once those exist:
-	  1. add entries to the Epic/Legendary pools below
-	  2. add the matching Kind to BlackMarketService.grantCaseReward
-	  3. add the specialised case lines (a gun-line crate, a mod-line crate) to Cases
-	Everything else — odds, rolling, the decode flow, the dealer UI — already handles them.
+	Gun families now drop from Legendary. TOOLS are the remaining gap — the Epic tier still pays out
+	materials until a tool system exists, rather than handing out a promise it cannot keep. To add
+	one: a pool entry here, a matching Kind branch in BlackMarketService.GrantReward, and the system
+	itself. Everything else — odds, rolling, the decode flow, the dealer UI — already handles it.
 ]]
 
 local CaseConfig = {}
@@ -71,12 +69,18 @@ CaseConfig.Pools = {
 	},
 
 	Legendary = {
-		-- TODO: GUN VARIANT blueprints belong here (flamethrower, bow, sniper, grenade launcher)
-		-- once gun families exist. Currently pays out heavily in the rarest materials plus
-		-- Contraband, so the tier is worth hitting even before the guns land.
-		{ Kind = "Refined", Key = "VoidiumCore", Min = 8, Max = 20, Weight = 40 },
-		{ Kind = "Currency", Key = "Contraband", Min = 4, Max = 10, Weight = 35 },
-		{ Kind = "Core", Key = "CoreT3", Min = 1, Max = 2, Weight = 25 },
+		-- Gun-family blueprints. Each unlocks a WHOLE family in the Forge, not one gun — see
+		-- WeaponFamilyConfig. Weighted well above the material fallbacks, because "Legendary" paying
+		-- out ore is exactly the dead rung this tier is supposed to avoid; the materials are here as
+		-- the duplicate-protection floor once a player owns every family.
+		{ Kind = "WeaponFamily", Key = "Bows", Weight = 14 },
+		{ Kind = "WeaponFamily", Key = "Snipers", Weight = 14 },
+		{ Kind = "WeaponFamily", Key = "Flamethrowers", Weight = 14 },
+		{ Kind = "WeaponFamily", Key = "GrenadeLaunchers", Weight = 14 },
+		{ Kind = "WeaponFamily", Key = "Miniguns", Weight = 14 },
+		{ Kind = "Refined", Key = "VoidiumCore", Min = 8, Max = 20, Weight = 12 },
+		{ Kind = "Currency", Key = "Contraband", Min = 4, Max = 10, Weight = 12 },
+		{ Kind = "Core", Key = "CoreT3", Min = 1, Max = 2, Weight = 6 },
 	},
 
 	-- The reason to chase premium cases at all.

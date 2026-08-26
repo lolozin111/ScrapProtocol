@@ -18,6 +18,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local CaseConfig = require(ReplicatedStorage.Shared.CaseConfig)
 local StationConfig = require(ReplicatedStorage.Shared.StationConfig)
 local UltimateConfig = require(ReplicatedStorage.Shared.UltimateConfig)
+local WeaponFamilyConfig = require(ReplicatedStorage.Shared.WeaponFamilyConfig)
 local DataService = require(script.Parent.DataService)
 local StationService = require(script.Parent.StationService)
 
@@ -137,10 +138,29 @@ function BlackMarketService.GrantReward(player: Player, reward): boolean
 			profile.OwnedUltimates[reward.Key] = true
 		end
 		Remotes.InventoryUpdate:FireClient(player, { OwnedUltimates = profile.OwnedUltimates })
+	elseif reward.Kind == "WeaponFamily" then
+		-- Same permanent-unlock shape as an Ultimate, and the same duplicate handling for the same
+		-- reason: a Legendary roll that lands a family you already own is the second most
+		-- disappointing outcome a case has, so it pays Contraband instead of nothing. Set higher than
+		-- the Ultimate consolation because a family unlock is the larger prize to have missed, and
+		-- because there are only six of them — duplicates start happening early.
+		profile.UnlockedWeaponFamilies = profile.UnlockedWeaponFamilies or {}
+		if profile.UnlockedWeaponFamilies[reward.Key] then
+			local consolation = 10
+			DataService.AddCurrency(player, "Contraband", consolation)
+			reward.Duplicate = true
+			reward.ConsolationContraband = consolation
+		else
+			profile.UnlockedWeaponFamilies[reward.Key] = true
+		end
+		reward.DisplayName = WeaponFamilyConfig.BlueprintName(reward.Key)
+		Remotes.InventoryUpdate:FireClient(player, {
+			UnlockedWeaponFamilies = profile.UnlockedWeaponFamilies,
+		})
 	else
-		-- Tool / Weapon are declared in CaseConfig's pools but have no system behind them yet. No
-		-- shipped case rolls them, so this is unreachable today — it exists so that adding one to a
-		-- pool before wiring the grant fails loudly rather than silently paying out nothing.
+		-- Tool is declared in CaseConfig's pools but has no system behind it yet. No shipped case
+		-- rolls one, so this is unreachable today — it exists so that adding one to a pool before
+		-- wiring the grant fails loudly rather than silently paying out nothing.
 		warn(("[BlackMarketService] Reward Kind %q is not grantable yet — see CaseConfig's TODOs."):format(tostring(reward.Kind)))
 		return false
 	end

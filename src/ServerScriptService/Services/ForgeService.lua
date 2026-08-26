@@ -12,6 +12,7 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local CraftingRecipes = require(ReplicatedStorage.Shared.CraftingRecipes)
+local WeaponFamilyConfig = require(ReplicatedStorage.Shared.WeaponFamilyConfig)
 local ForgeConfig = require(ReplicatedStorage.Shared.ForgeConfig)
 local PlotConfig = require(ReplicatedStorage.Shared.PlotConfig)
 local StationConfig = require(ReplicatedStorage.Shared.StationConfig)
@@ -120,6 +121,20 @@ Remotes.ForgeWeapon.OnServerInvoke = function(player: Player, weaponKey: string,
 	local profile = DataService.Get(player)
 	if not profile then
 		return { Success = false, Reason = "Profile not loaded" }
+	end
+
+	-- Family gate. The Forge UI already hides locked families, but that is a convenience: a client
+	-- can invoke this remote with any weapon key it likes, so the real check has to be here. Without
+	-- it every Black Market gun blueprint would be decorative.
+	if not WeaponFamilyConfig.IsUnlocked(profile, recipe.Family) then
+		local family = WeaponFamilyConfig.Families[recipe.Family]
+		return {
+			Success = false,
+			Reason = family
+				and ("You haven't unlocked %s yet — its blueprint (%s) comes from a Black Market case."):format(
+					family.DisplayName, WeaponFamilyConfig.BlueprintName(recipe.Family))
+				or ("%s isn't in a valid weapon family — check CraftingRecipes."):format(weaponKey),
+		}
 	end
 
 	if usePotion and (profile.LuckPotions or 0) <= 0 then

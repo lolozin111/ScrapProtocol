@@ -39,6 +39,7 @@ local RefinedOreConfig = require(ReplicatedStorage.Shared.RefinedOreConfig)
 local TurretConfig = require(ReplicatedStorage.Shared.TurretConfig)
 local UltimateConfig = require(ReplicatedStorage.Shared.UltimateConfig)
 local CaseConfig = require(ReplicatedStorage.Shared.CaseConfig)
+local WeaponFamilyConfig = require(ReplicatedStorage.Shared.WeaponFamilyConfig)
 local DataService = require(script.Parent.DataService)
 local TurretService = require(script.Parent.TurretService)
 local TrainingDummyService = require(script.Parent.TrainingDummyService)
@@ -254,6 +255,38 @@ local function commandGiveCase(player: Player, profile, args: { string })
 	tell(player, ("+%d %s — decode it at the Hacker Machine"):format(amount, key))
 end
 
+-- Gun families are otherwise a Legendary case roll, which is far too rare to test a gun through.
+-- No argument unlocks the lot, which is what you almost always want while checking a new variant.
+local function commandGiveFamily(player: Player, profile, args: { string })
+	local keys = WeaponFamilyConfig.Order
+	profile.UnlockedWeaponFamilies = profile.UnlockedWeaponFamilies or {}
+
+	local requested = args[2]
+	if not requested then
+		for _, key in ipairs(keys) do
+			profile.UnlockedWeaponFamilies[key] = true
+		end
+		Remotes.InventoryUpdate:FireClient(player, {
+			UnlockedWeaponFamilies = profile.UnlockedWeaponFamilies,
+		})
+		tell(player, "unlocked every weapon family — all Forge tabs are open")
+		return
+	end
+
+	local key = resolveKey(requested, keys)
+	if not key then
+		tell(player, ("unknown family '%s' — try one of: %s"):format(requested, table.concat(keys, ", ")))
+		return
+	end
+
+	profile.UnlockedWeaponFamilies[key] = true
+	Remotes.InventoryUpdate:FireClient(player, {
+		UnlockedWeaponFamilies = profile.UnlockedWeaponFamilies,
+	})
+	tell(player, ("unlocked %s — Forge them at the Forge's Weapons tab"):format(
+		WeaponFamilyConfig.Families[key].DisplayName))
+end
+
 local function commandDummy(player: Player)
 	if TrainingDummyService.SpawnNear(player) then
 		tell(player, "spawned a training dummy in front of you")
@@ -277,11 +310,13 @@ local function commandSetWave(player: Player, profile, args: { string })
 end
 
 local function commandHelp(player: Player)
-	tell(player, "commands: /admin [on|off] · /give <what> [amount] · /giveturret [TypeKey] · /giveultimate [Key] · /dummy · /givecase [Key] [n] · /setwave <n>")
+	tell(player, "commands: /admin [on|off] · /give <what> [amount] · /giveturret [TypeKey] · /giveultimate [Key] · /dummy · /givecase [Key] [n] · /givefamily [Key] · /setwave <n>")
 	tell(player, ("givable: Scrap, Cores, CoreT1.., %s, %s"):format(table.concat(oreKeys(), ", "), table.concat(refinedKeys(), ", ")))
 	tell(player, ("turrets: %s"):format(table.concat(turretKeys(), ", ")))
 	tell(player, ("ultimates: %s"):format(table.concat(ultimateKeys(), ", ")))
 	tell(player, ("cases: %s"):format(table.concat(caseKeys(), ", ")))
+	tell(player, ("families: %s (no argument unlocks all)"):format(
+		table.concat(WeaponFamilyConfig.Order, ", ")))
 end
 
 ----------------------------------------------------------------------
@@ -320,7 +355,7 @@ local function handleChatted(player: Player, message: string)
 	end
 
 	if command ~= "/give" and command ~= "/giveturret" and command ~= "/giveultimate"
-		and command ~= "/dummy" and command ~= "/givecase"
+		and command ~= "/dummy" and command ~= "/givecase" and command ~= "/givefamily"
 		and command ~= "/setwave" and command ~= "/help" then
 		return
 	end
@@ -347,6 +382,8 @@ local function handleChatted(player: Player, message: string)
 		commandDummy(player)
 	elseif command == "/givecase" then
 		commandGiveCase(player, profile, args)
+	elseif command == "/givefamily" then
+		commandGiveFamily(player, profile, args)
 	elseif command == "/setwave" then
 		commandSetWave(player, profile, args)
 	elseif command == "/help" then

@@ -43,6 +43,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local RaidEnergyConfig = require(ReplicatedStorage.Shared.RaidEnergyConfig)
+local WeaponFamilyConfig = require(ReplicatedStorage.Shared.WeaponFamilyConfig)
 local Wallet = require(ReplicatedStorage.Shared.Wallet)
 
 local PlayerDataStore = DataStoreService:GetDataStore("SalvageProtocol_PlayerData_v1")
@@ -174,6 +175,11 @@ local function defaultProfile()
 		RobuxCasesToday = {},   -- [caseKey] = count bought today; paired with RobuxCaseDay below to
 			-- enforce CaseConfig's DailyLimit on the Robux case. Reset when the day rolls over.
 		RobuxCaseDay = 0,       -- os.time() day number the counts above belong to.
+		UnlockedWeaponFamilies = WeaponFamilyConfig.DefaultUnlocked(),
+			-- [familyKey] = true. Which groups of guns this player may Forge at all. Salvage is
+			-- granted from the start (a player with no unlocked family could not arm themselves);
+			-- the rest are blueprints from Black Market Legendary rolls. Enforced in
+			-- ForgeService.ForgeWeapon, not just hidden in the UI. See WeaponFamilyConfig.
 		OwnedUltimates = {},    -- [ultimateKey] = true — Mythical passives, see UltimateConfig.lua. NOT
 			-- craftable: they only come out of Black Market cases (and the admin grant, for testing).
 		EquippedUltimate = {},  -- [weaponKey] = ultimateKey — the weapon's FOURTH, exclusive slot.
