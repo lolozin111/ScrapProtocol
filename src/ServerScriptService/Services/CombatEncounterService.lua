@@ -61,6 +61,7 @@ local BaseService = require(script.Parent.BaseService)
 local TurretService = require(script.Parent.TurretService)
 local UltimateConfig = require(ReplicatedStorage.Shared.UltimateConfig)
 local UltimateEffects = require(script.Parent.UltimateEffects)
+local StatusEffects = require(script.Parent.StatusEffects)
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 local RequestFireWeapon = Remotes.RequestFireWeapon
@@ -278,6 +279,8 @@ local function spawnEnemy(typeKey: string, typeData, spawnPosition: Vector3, mul
 		-- the base," not the player — raid rooms (RunRaidCombat) pass typeData.ContactRange
 		-- straight through instead, since there enemies really are chasing the player and should
 		-- use their own natural per-type melee range.
+		-- Kept on the record so slowing statuses have a stable base to scale FROM (see EnemyAI).
+		MoveSpeed = typeData.MoveSpeed,
 		ContactRange = contactRange,
 		AttackCooldown = typeData.AttackCooldown,
 		Defense = typeData.Defense * multiplier,
@@ -352,11 +355,11 @@ local function resolveAndApplyDamage(enemyRecord, baseDamage: number, origin: Ve
 		HitPosition = hitPosition,
 		RangeProfile = rangeProfile,
 		Penetration = penetration or 0,
-		TargetDefense = enemyRecord.Defense,
-		-- Set by UltimateEffects.PierceAndStrip. Read here rather than by mutating enemyRecord.Defense
-		-- so it expires on its own clock and cannot leak past that enemy's own lifetime.
-		DefenseStripped = (enemyRecord.DefenseStrippedUntil ~= nil)
-			and (os.clock() < enemyRecord.DefenseStrippedUntil) or false,
+		-- Armour-shredding statuses multiply this down (StatusEffects.GetDefenseMultiplier).
+		-- Multiplicative rather than a strip flag, so "loses 50% of their defense" and "drops to 0"
+		-- are the same mechanism at different strengths and two shredders compound instead of one
+		-- overwriting the other. Statuses live on the record, so nothing leaks into a later wave.
+		TargetDefense = enemyRecord.Defense * StatusEffects.GetDefenseMultiplier(enemyRecord),
 	})
 	enemyRecord.Humanoid:TakeDamage(finalDamage)
 	return finalDamage
@@ -633,6 +636,17 @@ function CombatEncounterService.RunWave(player: Player, waveNumber: number, opts
 			Now = now,
 			DamageTarget = damageTarget,
 		}
+		-- Statuses tick from the same loop that drives the AI, so a bleed advances at the same
+		-- rate in a raid room as in base defense. Damage routes through the normal pipeline —
+		-- a damage-over-time that skipped mitigation would be strictly better than a bullet
+		-- against armoured targets.
+		for _, record in ipairs(aliveEnemies) do
+			StatusEffects.Tick(record, now, function(target, amount)
+				local at = target.Model.PrimaryPart.Position
+				resolveAndApplyDamage(target, amount, at, at, nil, 0)
+			end)
+		end
+
 		for _, record in ipairs(aliveEnemies) do
 			-- Guarded like the RobotBehaviors dispatch below it. Unguarded, an EnemyConfig entry
 			-- naming an AIPattern that doesn't exist in EnemyAI.Patterns (a typo, or a pattern
@@ -901,6 +915,17 @@ function CombatEncounterService.RunRaidCombat(player: Player, arenaCenter: Vecto
 			Now = now,
 			DamageTarget = damageTarget,
 		}
+		-- Statuses tick from the same loop that drives the AI, so a bleed advances at the same
+		-- rate in a raid room as in base defense. Damage routes through the normal pipeline —
+		-- a damage-over-time that skipped mitigation would be strictly better than a bullet
+		-- against armoured targets.
+		for _, record in ipairs(aliveEnemies) do
+			StatusEffects.Tick(record, now, function(target, amount)
+				local at = target.Model.PrimaryPart.Position
+				resolveAndApplyDamage(target, amount, at, at, nil, 0)
+			end)
+		end
+
 		for _, record in ipairs(aliveEnemies) do
 			-- Guarded like the RobotBehaviors dispatch below it. Unguarded, an EnemyConfig entry
 			-- naming an AIPattern that doesn't exist in EnemyAI.Patterns (a typo, or a pattern
@@ -1038,11 +1063,37 @@ RequestFireWeapon.OnServerEvent:Connect(function(player: Player, hitInstance: In
 		-- Everything an effect may touch, so none of them reach into encounter internals. Built per
 		-- shot rather than cached: the encounter and its live enemy set both change constantly, and a
 		-- stale closure here would be a subtle "the passive hit something already dead" bug.
+		-- Per-encounter shot counter, for "every Nth shot" passives. On the encounter rather than
+		-- the profile so it resets between runs: banking 4 shots toward a proc, leaving, and coming
+		-- back to a free one is not what "every 5th shot" means.
+		encounter.PlayerState.ShotCount = (encounter.PlayerState.ShotCount or 0) + 1
+		local shotNumber = encounter.PlayerState.ShotCount
+
+		-- Per-ENEMY hit counter, for passives that care about hitting the same target repeatedly
+		-- (Shark Bullet). On the record, so it dies with them.
+		enemyRecord.HitsTaken = (enemyRecord.HitsTaken or 0) + 1
+
 		local ctx = {
 			Params = ultimate.Params or {},
 			Target = enemyRecord,
 			Damage = dealt,
 			Origin = claimedOrigin,
+
+			-- Reads the counter incremented above rather than keeping its own, so two passives on
+			-- one weapon agree about which shot number this is.
+			EveryNthShot = function(n: number): boolean
+				return n > 0 and (shotNumber % n == 0)
+			end,
+
+			CountHitOn = function(record): number
+				return record and record.HitsTaken or 0
+			end,
+
+			ApplyStatus = function(record, key: string, overrides)
+				if record and isEnemyAlive(record) then
+					StatusEffects.Apply(record, key, overrides)
+				end
+			end,
 
 			-- Live enemies within `radius` of the target, nearest first. excludeTarget skips the
 			-- enemy actually shot; `max` caps how many come back.
@@ -1073,17 +1124,32 @@ RequestFireWeapon.OnServerEvent:Connect(function(player: Player, hitInstance: In
 				return out
 			end,
 
+			-- Nearest live enemy to some OTHER enemy, skipping anything in `exclude`. This is what
+			-- lets a passive CHAIN body to body (Ricochet) rather than only fanning out from the
+			-- original target — searching around the last thing hit is what makes a bounce read as
+			-- a bounce.
+			NearestTo = function(fromRecord, radius: number, exclude)
+				local fromPart = fromRecord and fromRecord.Model and fromRecord.Model.PrimaryPart
+				if not fromPart then
+					return nil
+				end
+				local best, bestDistance = nil, math.huge
+				for _, record in pairs(encounter.EnemyByModel) do
+					if isEnemyAlive(record) and not (exclude and exclude[record]) then
+						local distance = (record.Model.PrimaryPart.Position - fromPart.Position).Magnitude
+						if distance <= radius and distance < bestDistance then
+							best, bestDistance = record, distance
+						end
+					end
+				end
+				return best
+			end,
+
 			-- Secondary damage still runs the full DamagePipeline — an Ultimate must not be able to
 			-- quietly bypass Defense mitigation or the minimum-damage floor.
 			DealDamage = function(record, amount: number)
 				if record and amount and amount > 0 and isEnemyAlive(record) then
 					resolveAndApplyDamage(record, amount, claimedOrigin, record.Model.PrimaryPart.Position, nil, 0)
-				end
-			end,
-
-			StripDefense = function(record, seconds: number)
-				if record then
-					record.DefenseStrippedUntil = os.clock() + (seconds or 0)
 				end
 			end,
 		}

@@ -17,15 +17,20 @@
 	cases rather than craftable.
 
 	=== ADDING CONTENT ===
-	Everything below is a PLACEHOLDER pending the real table of contents. Adding a real one is:
+	The six below are real, specced content — not placeholders. Adding another is:
 
 	  1. an entry here — DisplayName / Description / Effect / Params
 	  2. IF it needs behaviour no existing effect covers, one function in
 	     UltimateEffects.lua under the hook it fires on
 
 	`Effect` is a NAME looked up in UltimateEffects.OnHit / .OnKill — the same flat-table-of-named-
-	strategies pattern EnemyAI.Patterns and RobotBehaviors already use. `Params` is handed to that
-	function untouched, so tuning a passive never means editing code.
+	strategies pattern EnemyAI.Patterns and RobotBehaviors already use. `Trigger` records which hook
+	it lives on (documentation for whoever is reading the config; the dispatch uses the table it is
+	actually in). `Params` is handed to the effect untouched, so tuning never means editing code.
+
+	"Every Nth shot" passives count through CombatEncounterService's per-encounter shot counter —
+	see EveryNthShot in the Params below. The counter is per encounter, not per life, so leaving a
+	wave and coming back does not bank progress toward a free proc.
 
 	If a future passive needs a hook that does not exist yet (on-reload, on-crit, on-wave-start),
 	that is a new hook point in CombatEncounterService plus a new table here — deliberately the only
@@ -45,41 +50,78 @@ UltimateConfig.SlotLabel = "ULTIMATE"
 UltimateConfig.Rarity = "Mythical"
 
 UltimateConfig.Mods = {
-	----------------------------------------------------------------------
-	-- PLACEHOLDERS. Real numbers, real behaviour, deliberately conservative tuning — these exist
-	-- to prove the hooks fire end to end, not to be balanced content. Replace freely.
-	----------------------------------------------------------------------
-
 	Detonator = {
-		DisplayName = "Detonator Core",
-		Description = "Enemies you kill detonate, dealing area damage to everything near the corpse.",
-		Effect = "CorpseDetonation",
+		DisplayName = "Detonator",
+		Description = "Enemies you kill explode, damaging everything nearby. Made for clearing waves.",
+		Effect = "Detonator",
+		Trigger = "OnKill",
 		Params = {
-			Radius = 18,           -- studs
-			DamageFraction = 0.6,  -- of the killing blow's damage, dealt to each nearby enemy
+			Radius = 18,          -- "15-20 magnitude"
+			DamageFraction = 0.6, -- of the killing blow, to each enemy caught
 		},
 	},
 
 	Ricochet = {
-		DisplayName = "Ricochet Chip",
-		Description = "Your shots bounce to a nearby enemy for reduced damage.",
+		DisplayName = "Ricochet",
+		Description = "Every 3rd shot bounces between nearby enemies, hitting harder with each bounce.",
 		Effect = "Ricochet",
+		Trigger = "OnHit",
 		Params = {
-			Radius = 24,
-			Bounces = 1,
-			DamageFraction = 0.5,
+			EveryNthShot = 3,
+			MaxBounces = 5,
+			Radius = 26,             -- how far it will look for the next body
+			FirstBounceFraction = 0.5, -- of the original hit
+			DamageGrowth = 0.35,     -- each bounce hits 35% harder than the last
 		},
 	},
 
-	Breacher = {
-		DisplayName = "Breacher Round",
-		Description = "Shots punch through several enemies and strip their armour completely for a short time.",
-		Effect = "PierceAndStrip",
+	LegBreaker = {
+		DisplayName = "Leg Breaker",
+		Description = "Every 5th shot stuns an enemy for 5 seconds and drops their defenses to nothing.",
+		Effect = "LegBreaker",
+		Trigger = "OnHit",
 		Params = {
-			Radius = 20,
-			MaxTargets = 5,
-			DamageFraction = 0.75,
-			StripSeconds = 10, -- Defense treated as 0 for this long — see DamagePipeline
+			EveryNthShot = 5,
+			StunSeconds = 5,
+			-- ArmourShred stacked to its cap, which multiplies defence down to ~6% — near enough to
+			-- "drops to 0" while still going through the same status system as every other debuff
+			-- rather than being a special case.
+			ShredStacks = 4,
+		},
+	},
+
+	HundredMil = {
+		DisplayName = ".100mm",
+		Description = "Rounds punch through up to 7 enemies, tearing half the armour off each one.",
+		Effect = "PierceShred",
+		Trigger = "OnHit",
+		Params = {
+			MaxTargets = 7,
+			Radius = 22,
+			DamageFraction = 0.8, -- pierced targets take slightly less than the direct hit
+			ShredStacks = 1,      -- one stack = "loses 50% of their defense"
+		},
+	},
+
+	SharkBullet = {
+		DisplayName = "Shark Bullet",
+		Description = "Hit the same enemy 5 times and they start bleeding. Stacks up to 3 times.",
+		Effect = "SharkBullet",
+		Trigger = "OnHit",
+		Params = {
+			HitsPerStack = 5,
+			MaxStacks = 3,
+		},
+	},
+
+	AimBot = {
+		DisplayName = "AimBot",
+		Description = "Every 3rd bullet finds a head. Headshots deal 50% more damage.",
+		Effect = "AimBot",
+		Trigger = "OnHit",
+		Params = {
+			EveryNthShot = 3,
+			HeadshotMultiplier = 1.5,
 		},
 	},
 }

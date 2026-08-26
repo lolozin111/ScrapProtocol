@@ -30,6 +30,8 @@
 	indirection, once it's decided an attack lands.
 ]]
 
+local StatusEffects = require(script.Parent.StatusEffects)
+
 local EnemyAI = {}
 
 -- How often a Chasing enemy re-issues a MoveTo while it's still out of contact range — not every
@@ -70,6 +72,22 @@ EnemyAI.Patterns.Chaser = function(enemy, context)
 	local rootPart = model and model.PrimaryPart
 	if not rootPart or not humanoid or humanoid.Health <= 0 then
 		return
+	end
+
+	-- A stunned enemy neither moves nor attacks. Checked before anything else so a stun is a real
+	-- interrupt rather than a slow — Move(zero) stops whatever walk was already in progress.
+	if StatusEffects.IsStunned(enemy) then
+		humanoid:Move(Vector3.new(0, 0, 0))
+		return
+	end
+
+	-- Slowing statuses scale the enemy's own MoveSpeed. Recomputed every think rather than set once,
+	-- so it restores itself the moment the status expires with nothing to remember to undo. Scaled
+	-- from the RECORD's MoveSpeed, not humanoid.WalkSpeed — the latter is what these statuses
+	-- mutate, so reading it back would compound the slow on every think until the enemy froze.
+	local desiredSpeed = (enemy.MoveSpeed or humanoid.WalkSpeed) * StatusEffects.GetSpeedMultiplier(enemy)
+	if math.abs(humanoid.WalkSpeed - desiredSpeed) > 0.01 then
+		humanoid.WalkSpeed = desiredSpeed
 	end
 
 	local toEnemy = rootPart.Position - context.TargetPosition

@@ -27,9 +27,9 @@
 		                           -- future Forge affix can supply this — the pipeline doesn't
 		                           -- care where it came from, only that it's a number on the packet.
 		TargetDefense = number,   -- the enemy's EnemyConfig.Defense (or 0 for an undefended target)
-		DefenseStripped = boolean?, -- true while an Ultimate has stripped this target's armour
-		                           -- (UltimateEffects.PierceAndStrip). Overrides TargetDefense to
-		                           -- 0 outright rather than reducing it — see applyDefenseMitigation.
+		                           -- NOTE: armour-shredding STATUSES are already folded into
+		                           -- TargetDefense by the caller (StatusEffects.GetDefenseMultiplier),
+		                           -- so this step sees one number and need not know statuses exist.
 	}
 ]]
 
@@ -71,12 +71,7 @@ end
 -- separate damage bonus.
 local function applyDefenseMitigation(damage: number, packet): number
 	local penetration = packet.Penetration or 0
-	-- DefenseStripped is a hard override, not another penetration source: an Ultimate that says it
-	-- removes armour removes it, rather than subtracting an amount a high-Defense enemy could still
-	-- shrug off. Kept on the PACKET rather than mutating the enemy's own Defense so it expires on
-	-- its own clock and cannot leak into the next wave.
-	local base = packet.DefenseStripped and 0 or (packet.TargetDefense or 0)
-	local effectiveDefense = math.max(base - penetration, 0)
+	local effectiveDefense = math.max((packet.TargetDefense or 0) - penetration, 0)
 	local mitigation = 100 / (100 + effectiveDefense)
 	return damage * mitigation
 end
