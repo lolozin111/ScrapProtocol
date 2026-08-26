@@ -185,73 +185,7 @@ local currentTab = "Weapons"
 -- Forward-declared, and deliberately this high up: several row-builders below need to re-render the
 -- list they are sitting in after an action, but renderCraftList (far below) is what dispatches TO
 -- them in the first place — a genuine circular reference. Declaring the local here (assigned later
--- with `-- Drones tab (Welding Station). Every Core is listed whether or not you can get it yet, with the
--- row's button saying what stands between you and it — craft cost, "Black Market", or the Research
--- tier. A tab that hides everything you have not earned tells a new player nothing about what the
--- system even is.
-local function renderDroneRows()
-	local unlocked = DroneConfig.IsUnlocked(Hud.profile)
-	local owned = Hud.profile.OwnedDroneCores or {}
-	local equipped = Hud.profile.EquippedDroneCore
-
-	if not unlocked then
-		Hud.makeRow(
-			"Drone Bay — locked",
-			("Unlocks at Research Tier %d. Cores can't be built until the drone exists to carry them."):format(
-				DroneConfig.UnlockResearchTier),
-			"Locked",
-			function() end
-		).Parent = listFrame
-	end
-
-	for _, key in ipairs(DroneConfig.Order) do
-		local core = DroneConfig.Cores[key]
-		local isOwned = owned[key] == true
-		local isEquipped = equipped == key
-
-		local detail, action, onClick
-		if isOwned then
-			detail = core.Description
-			action = isEquipped and "Unequip" or "Equip"
-			onClick = function()
-				local result = Remotes.EquipDroneCore:InvokeServer(isEquipped and nil or key)
-				if not result.Success then
-					Hud.showFailure("Couldn't slot that Core", result.Reason)
-				else
-					renderCraftList()
-				end
-			end
-		elseif core.Source == "Craft" then
-			detail = ("%s · %s"):format(Hud.costString(core.Cost), core.Description)
-			action = "Craft"
-			onClick = function()
-				local result = Remotes.CraftItem:InvokeServer("Drones", key)
-				if not result.Success then
-					Hud.showFailure("Craft failed", result.Reason)
-				else
-					renderCraftList()
-				end
-			end
-		else
-			detail = ("Black Market · Epic roll · %s"):format(core.Description)
-			action = "Locked"
-			onClick = function()
-				Hud.showFailure(
-					("%s can't be built"):format(core.DisplayName),
-					"It only drops from Epic rolls in Black Market cases.")
-			end
-		end
-
-		Hud.makeRow(
-			isEquipped and ("%s  [SLOTTED]"):format(core.DisplayName) or core.DisplayName,
-			detail,
-			action,
-			onClick
-		).Parent = listFrame
-	end
-end
-
-renderCraftList = function() ... end`, no `local` keyword) lets every one of them capture
+-- with `renderCraftList = function() ... end`, no `local` keyword) lets every one of them capture
 -- the right upvalue. Declared below any of its users, it would silently compile as a nil GLOBAL and
 -- only fail when a button was actually clicked.
 local renderCraftList
@@ -1341,6 +1275,73 @@ local function renderTurretsRow()
 		).Parent = listFrame
 	end
 end
+
+-- Drones tab (Welding Station). Every Core is listed whether or not you can get it yet, with the
+-- row's button saying what stands between you and it — craft cost, "Black Market", or the Research
+-- tier. A tab that hides everything you have not earned tells a new player nothing about what the
+-- system even is.
+local function renderDroneRows()
+	local unlocked = DroneConfig.IsUnlocked(Hud.profile)
+	local owned = Hud.profile.OwnedDroneCores or {}
+	local equipped = Hud.profile.EquippedDroneCore
+
+	if not unlocked then
+		Hud.makeRow(
+			"Drone Bay — locked",
+			("Unlocks at Research Tier %d. Cores can't be built until the drone exists to carry them."):format(
+				DroneConfig.UnlockResearchTier),
+			"Locked",
+			function() end
+		).Parent = listFrame
+	end
+
+	for _, key in ipairs(DroneConfig.Order) do
+		local core = DroneConfig.Cores[key]
+		local isOwned = owned[key] == true
+		local isEquipped = equipped == key
+
+		local detail, action, onClick
+		if isOwned then
+			detail = core.Description
+			action = isEquipped and "Unequip" or "Equip"
+			onClick = function()
+				local result = Remotes.EquipDroneCore:InvokeServer(isEquipped and nil or key)
+				if not result.Success then
+					Hud.showFailure("Couldn't slot that Core", result.Reason)
+				else
+					renderCraftList()
+				end
+			end
+		elseif core.Source == "Craft" then
+			detail = ("%s · %s"):format(Hud.costString(core.Cost), core.Description)
+			action = "Craft"
+			onClick = function()
+				local result = Remotes.CraftItem:InvokeServer("Drones", key)
+				if not result.Success then
+					Hud.showFailure("Craft failed", result.Reason)
+				else
+					renderCraftList()
+				end
+			end
+		else
+			detail = ("Black Market · Epic roll · %s"):format(core.Description)
+			action = "Locked"
+			onClick = function()
+				Hud.showFailure(
+					("%s can't be built"):format(core.DisplayName),
+					"It only drops from Epic rolls in Black Market cases.")
+			end
+		end
+
+		Hud.makeRow(
+			isEquipped and ("%s  [SLOTTED]"):format(core.DisplayName) or core.DisplayName,
+			detail,
+			action,
+			onClick
+		).Parent = listFrame
+	end
+end
+
 
 renderCraftList = function()
 	for _, child in ipairs(listFrame:GetChildren()) do
