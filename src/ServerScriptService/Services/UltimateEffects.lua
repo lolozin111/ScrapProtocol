@@ -154,9 +154,20 @@ UltimateEffects.OnHit.AimBot = function(ctx)
 	if not ctx.EveryNthShot(ctx.Params.EveryNthShot or 3) then
 		return
 	end
+	-- TEMPORARY, by request: an outright kill rather than a damage multiplier. A 1.5x headshot on a
+	-- 6-damage starter pistol is a couple of extra points, which is indistinguishable from the
+	-- passive not firing at all. A kill is unmistakable.
+	--
+	-- To restore the intended behaviour, set Instakill = false in UltimateConfig — both paths are
+	-- kept so the switch is a config edit rather than a code change.
+	if ctx.Params.Instakill then
+		ctx.DealDamage(ctx.Target, ctx.Target.Humanoid.Health + 1, "Headshot")
+		return
+	end
+
 	local bonus = (ctx.Params.HeadshotMultiplier or 1.5) - 1
 	if bonus > 0 then
-		ctx.DealDamage(ctx.Target, ctx.Damage * bonus)
+		ctx.DealDamage(ctx.Target, ctx.Damage * bonus, "Headshot")
 	end
 end
 

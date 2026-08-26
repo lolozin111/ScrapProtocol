@@ -40,6 +40,7 @@ local TurretConfig = require(ReplicatedStorage.Shared.TurretConfig)
 local UltimateConfig = require(ReplicatedStorage.Shared.UltimateConfig)
 local DataService = require(script.Parent.DataService)
 local TurretService = require(script.Parent.TurretService)
+local TrainingDummyService = require(script.Parent.TrainingDummyService)
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 
@@ -222,6 +223,14 @@ local function commandGiveUltimate(player: Player, profile, args: { string })
 	tell(player, ("granted Ultimate %s — equip it from the Inventory's weapon detail panel"):format(key))
 end
 
+local function commandDummy(player: Player)
+	if TrainingDummyService.SpawnNear(player) then
+		tell(player, "spawned a training dummy in front of you")
+	else
+		tell(player, "could not spawn — no character")
+	end
+end
+
 local function commandSetWave(player: Player, profile, args: { string })
 	local wave = tonumber(args[2])
 	if not wave or wave < 0 then
@@ -237,7 +246,7 @@ local function commandSetWave(player: Player, profile, args: { string })
 end
 
 local function commandHelp(player: Player)
-	tell(player, "commands: /admin [on|off] · /give <what> [amount] · /giveturret [TypeKey] · /giveultimate [Key] · /setwave <n>")
+	tell(player, "commands: /admin [on|off] · /give <what> [amount] · /giveturret [TypeKey] · /giveultimate [Key] · /dummy · /setwave <n>")
 	tell(player, ("givable: Scrap, Cores, CoreT1.., %s, %s"):format(table.concat(oreKeys(), ", "), table.concat(refinedKeys(), ", ")))
 	tell(player, ("turrets: %s"):format(table.concat(turretKeys(), ", ")))
 	tell(player, ("ultimates: %s"):format(table.concat(ultimateKeys(), ", ")))
@@ -279,7 +288,7 @@ local function handleChatted(player: Player, message: string)
 	end
 
 	if command ~= "/give" and command ~= "/giveturret" and command ~= "/giveultimate"
-		and command ~= "/setwave" and command ~= "/help" then
+		and command ~= "/dummy" and command ~= "/setwave" and command ~= "/help" then
 		return
 	end
 
@@ -301,6 +310,8 @@ local function handleChatted(player: Player, message: string)
 		commandGiveTurret(player, profile, args)
 	elseif command == "/giveultimate" then
 		commandGiveUltimate(player, profile, args)
+	elseif command == "/dummy" then
+		commandDummy(player)
 	elseif command == "/setwave" then
 		commandSetWave(player, profile, args)
 	elseif command == "/help" then

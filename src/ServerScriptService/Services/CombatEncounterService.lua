@@ -66,6 +66,7 @@ local StatusEffects = require(script.Parent.StatusEffects)
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 local RequestFireWeapon = Remotes.RequestFireWeapon
 local WaveUpdate = Remotes.WaveUpdate
+local DamageNumber = Remotes.DamageNumber
 
 local EnemyModelsFolder = ServerStorage:WaitForChild("EnemyModels")
 
@@ -115,6 +116,16 @@ local ORIGIN_SANITY_STUDS = 12 -- how far a client-claimed fire Origin may drift
 local CombatEncounterService = {}
 
 local activeEncounters: { [number]: any } = {} -- userId -> encounter state, ONLY while a wave is live
+
+-- Optional provider consulted ONLY when a player has no real encounter — see
+-- TrainingDummyService, which uses it to make dummies shootable while idle. Deliberately a
+-- registration rather than a require: this file must not depend on a testing tool, and the
+-- fallback can never take priority over a live wave because it is only reached when there isn't one.
+local fallbackEncounterProvider: ((Player) -> any?)? = nil
+
+function CombatEncounterService.SetFallbackEncounterProvider(provider)
+	fallbackEncounterProvider = provider
+end
 
 -- One warn per unknown AIPattern name, not one per enemy per tick — see the guarded dispatch in
 -- the encounter loops below. Without the dedupe a single mis-typed EnemyConfig entry would flood
@@ -348,7 +359,11 @@ end
 -- One place that actually runs DamagePipeline and applies the result to an enemy's Humanoid —
 -- used both by RequestFireWeapon (player-sourced) and RobotBehaviors' context.DamageEnemy
 -- (robot-sourced), so the two never resolve damage two different ways.
-local function resolveAndApplyDamage(enemyRecord, baseDamage: number, origin: Vector3, hitPosition: Vector3, rangeProfile, penetration: number?)
+-- `feedbackPlayer` / `feedbackKind` drive the floating damage number (DamageNumbers.client.lua).
+-- Optional and appended rather than woven in, so a caller that does not care is unchanged — but
+-- every caller in this file passes them, because a damage source the player cannot see is a
+-- damage source they cannot tell is broken.
+local function resolveAndApplyDamage(enemyRecord, baseDamage: number, origin: Vector3, hitPosition: Vector3, rangeProfile, penetration: number?, feedbackPlayer: Player?, feedbackKind: string?)
 	local finalDamage = DamagePipeline.Resolve({
 		BaseDamage = baseDamage,
 		Origin = origin,
@@ -362,7 +377,37 @@ local function resolveAndApplyDamage(enemyRecord, baseDamage: number, origin: Ve
 		TargetDefense = enemyRecord.Defense * StatusEffects.GetDefenseMultiplier(enemyRecord),
 	})
 	enemyRecord.Humanoid:TakeDamage(finalDamage)
+
+	-- Training dummies keep a running total on their head. Fed from the SAME number the pipeline
+	-- just produced rather than re-derived, so what the dummy reports and what the enemy actually
+	-- took can never disagree.
+	if enemyRecord.IsDummy then
+		enemyRecord.AccumulatedDamage = (enemyRecord.AccumulatedDamage or 0) + finalDamage
+		enemyRecord.LastDamageAt = os.clock()
+		enemyRecord.LastAttacker = feedbackPlayer or enemyRecord.LastAttacker
+	end
+
+	if feedbackPlayer and enemyRecord.Model and enemyRecord.Model.PrimaryPart then
+		-- Fired at the responsible player only. Everyone's numbers on everyone's screen would be
+		-- noise, and this is a personal readout rather than a shared one.
+		DamageNumber:FireClient(
+			feedbackPlayer,
+			enemyRecord.Model.PrimaryPart.Position + Vector3.new(0, 3, 0),
+			finalDamage,
+			feedbackKind or "Normal")
+	end
+
 	return finalDamage
+end
+
+-- Public wrapper so systems outside this file (TrainingDummyService's status ticks) can deal
+-- damage through the real pipeline instead of touching Humanoids directly — the same reasoning
+-- behind ctx.DealDamage for Ultimate effects.
+function CombatEncounterService.ApplyDamageTo(record, amount: number, at: Vector3, player: Player?, kind: string?)
+	if not record or not amount or amount <= 0 then
+		return 0
+	end
+	return resolveAndApplyDamage(record, amount, at, at, nil, 0, player, kind)
 end
 
 ----------------------------------------------------------------------
@@ -375,7 +420,10 @@ end
 -- Reused per turret per tick — module-scoped so it isn't reallocated every single call.
 local turretInRangeScratch = {}
 
-local function fireTurrets(turretRecords, aliveEnemies, now: number)
+-- turretOwner is threaded through purely so turret damage shows a number to the player whose
+-- base it defends — turrets are the one damage source with no player action behind them, which
+-- made them the hardest to tell apart from nothing happening at all.
+local function fireTurrets(turretRecords, aliveEnemies, now: number, turretOwner: Player?)
 	for _, turret in ipairs(turretRecords) do
 		local cooldown = 1 / math.max(turret.FireRate, 0.01)
 		if now - turret.LastFireTime >= cooldown then
@@ -400,7 +448,7 @@ local function fireTurrets(turretRecords, aliveEnemies, now: number)
 					local targetRecord = turretInRangeScratch[i].Record
 					resolveAndApplyDamage(
 						targetRecord, turret.Damage, turret.WorldPosition,
-						targetRecord.Model.PrimaryPart.Position, nil, 0)
+						targetRecord.Model.PrimaryPart.Position, nil, 0, turretOwner, "Turret")
 				end
 
 				-- Visual only — "make sure turrets shoot a particle when they are shooting smth so
@@ -643,7 +691,7 @@ function CombatEncounterService.RunWave(player: Player, waveNumber: number, opts
 		for _, record in ipairs(aliveEnemies) do
 			StatusEffects.Tick(record, now, function(target, amount)
 				local at = target.Model.PrimaryPart.Position
-				resolveAndApplyDamage(target, amount, at, at, nil, 0)
+				resolveAndApplyDamage(target, amount, at, at, nil, 0, player, "Status")
 			end)
 		end
 
@@ -670,7 +718,7 @@ function CombatEncounterService.RunWave(player: Player, waveNumber: number, opts
 			PlayerState = playerState,
 			GrantSpeedBoost = grantSpeedBoost,
 			DamageEnemy = function(enemyRecord, baseDamage)
-				resolveAndApplyDamage(enemyRecord, baseDamage, rootPart.Position, rootPart.Position, nil, 0)
+				resolveAndApplyDamage(enemyRecord, baseDamage, rootPart.Position, rootPart.Position, nil, 0, player, "Robot")
 			end,
 		}
 		for _, robot in ipairs(robotRecords) do
@@ -681,7 +729,7 @@ function CombatEncounterService.RunWave(player: Player, waveNumber: number, opts
 		end
 
 		-- Live read, not a wave-start snapshot — see the comment where this used to be captured.
-		fireTurrets(TurretService.GetActiveTurretRecords(player), aliveEnemies, now)
+		fireTurrets(TurretService.GetActiveTurretRecords(player), aliveEnemies, now, player)
 
 		task.wait(TICK_SECONDS)
 	end
@@ -922,7 +970,7 @@ function CombatEncounterService.RunRaidCombat(player: Player, arenaCenter: Vecto
 		for _, record in ipairs(aliveEnemies) do
 			StatusEffects.Tick(record, now, function(target, amount)
 				local at = target.Model.PrimaryPart.Position
-				resolveAndApplyDamage(target, amount, at, at, nil, 0)
+				resolveAndApplyDamage(target, amount, at, at, nil, 0, player, "Status")
 			end)
 		end
 
@@ -949,7 +997,7 @@ function CombatEncounterService.RunRaidCombat(player: Player, arenaCenter: Vecto
 			PlayerState = playerState,
 			GrantSpeedBoost = grantSpeedBoost,
 			DamageEnemy = function(enemyRecord, baseDamage)
-				resolveAndApplyDamage(enemyRecord, baseDamage, rootPart.Position, rootPart.Position, nil, 0)
+				resolveAndApplyDamage(enemyRecord, baseDamage, rootPart.Position, rootPart.Position, nil, 0, player, "Robot")
 			end,
 		}
 		for _, robot in ipairs(robotRecords) do
@@ -988,6 +1036,9 @@ end
 -- anything the client sent.
 RequestFireWeapon.OnServerEvent:Connect(function(player: Player, hitInstance: Instance, claimedOrigin: Vector3, claimedHitPosition: Vector3)
 	local encounter = activeEncounters[player.UserId]
+	if not encounter and fallbackEncounterProvider then
+		encounter = fallbackEncounterProvider(player)
+	end
 	if not encounter then
 		return
 	end
@@ -1045,7 +1096,9 @@ RequestFireWeapon.OnServerEvent:Connect(function(player: Player, hitInstance: In
 		claimedHitPosition,
 		recipe and recipe.RangeProfile, -- optional field, most weapons don't define one — see
 			-- DamagePipeline.lua's applyRangeFalloff
-		recipe and recipe.Penetration
+		recipe and recipe.Penetration,
+		player,
+		"Normal"
 	)
 
 	----------------------------------------------------------------------
@@ -1147,9 +1200,12 @@ RequestFireWeapon.OnServerEvent:Connect(function(player: Player, hitInstance: In
 
 			-- Secondary damage still runs the full DamagePipeline — an Ultimate must not be able to
 			-- quietly bypass Defense mitigation or the minimum-damage floor.
-			DealDamage = function(record, amount: number)
+			-- Tagged "Ultimate" so its numbers render in the Mythical colour — that is what makes a
+			-- Ricochet bounce or a Detonator blast visibly distinct from the bullet that caused it,
+			-- rather than both being white numbers you have to infer from.
+			DealDamage = function(record, amount: number, kind: string?)
 				if record and amount and amount > 0 and isEnemyAlive(record) then
-					resolveAndApplyDamage(record, amount, claimedOrigin, record.Model.PrimaryPart.Position, nil, 0)
+					resolveAndApplyDamage(record, amount, claimedOrigin, record.Model.PrimaryPart.Position, nil, 0, player, kind or "Ultimate")
 				end
 			end,
 		}

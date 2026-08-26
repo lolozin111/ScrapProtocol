@@ -48,6 +48,7 @@
         "UpgradeForgeTier": { "$className": "RemoteFunction" },
         "StartSmelt": { "$className": "RemoteFunction" },
         "RequestFireWeapon": { "$className": "RemoteEvent" },
+        "DamageNumber": { "$className": "RemoteEvent" },
         "RequestStartRaid": { "$className": "RemoteEvent" },
         "RaidMapUpdate": { "$className": "RemoteEvent" },
         "ChooseRaidNode": { "$className": "RemoteEvent" },
