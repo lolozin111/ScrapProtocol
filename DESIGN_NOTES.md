@@ -21,6 +21,7 @@ already made (numbers, mechanics, sequencing), not just vague direction.
 | Damage numbers + training dummies | **Built** — the diagnosis layer for everything above |
 | Session-locked saves | **Built** — see "Data safety" |
 | Gun variants (14) + tools (3) | **Built** — 18 weapons across 6 families, 3 pickaxes |
+| Drone companion (4 Drone Cores) | **Built** — unlocks at Research Tier 3, follows you everywhere |
 | PvP base invasion | Not started, sequence last |
 
 Agreed build order (most recent discussion): Raid Energy → Mining zone rework → weapon mod
@@ -861,10 +862,8 @@ round 1 of the base-defense Turrets work, but has SINCE been superseded by round
 independent Turret system (blueprints/slots/leveling, decoupled from `DeployedRobots` entirely) —
 see the "Turrets" bullet under `## Base` above for the current shape. Deployed robots themselves
 remain exactly as this section describes either way — abstract, combat/utility effects fully real,
-no physical presence, raids still treat `DeployedRobots` as purely abstract. (3) A raid
-drone-companion slot (specialized "Drone Cores" —
-Combat/Support/Scavenger/Recon archetypes) was explicitly requested for later and explicitly NOT
-to be built yet — noted here so it isn't lost, not started.
+no physical presence, raids still treat `DeployedRobots` as purely abstract. (3) ~~A raid drone-companion slot~~ — BUILT SINCE, and broader than this note describes: it
+follows the player everywhere rather than only in raids. See "Drone companion" below.
 
 ### Combat Engine — first playtest revisions
 
@@ -1008,9 +1007,10 @@ circles... and lines path connecting each other... for now just text [not a logo
   — circles per node (colored by type, matching `ExpeditionService`'s existing Combat/Shop/Heal
   palette) positioned by stage/lane, connecting lines drawn as rotated thin Frames (no native line
   primitive in Roblox GUI). No icons/logos yet — text labels only, per the explicit "for now."
-- **Deliberately deferred**: no drone-companion slot here either (see the note above this
-  section); no rotating/limited Shop stock (every `NodeConfig.ShopCatalog` item is always
-  available); no fog-of-war on the map. All easy follow-ups once this first pass has been played.
+- **Deliberately deferred**: no rotating/limited Shop stock (every `NodeConfig.ShopCatalog` item
+  is always available); no fog-of-war on the map. (The drone-companion slot, also deferred here at
+  the time, has since been built — see "Drone companion" below. It works in raids like everywhere
+  else and needed nothing raid-specific.) All easy follow-ups once this first pass has been played.
 
 ### Raid Rooms — chaptered maps, Ambush, room-authored spawns (BUILT)
 
@@ -1487,6 +1487,71 @@ bows are then Forged normally. Legendary case tier = gun variants, Epic = tools.
   placeholder box, which is expected, not a bug.
 - **No weapon is balanced against another yet.** The numbers are first-pass and internally
   consistent within each family; they have not been played against each other.
+
+## Drone companion — BUILT
+
+One drone, unlocked once, that follows you EVERYWHERE — raids, base defense, the mine, the
+overworld. What it does is decided by which of four **Drone Cores** is slotted, one at a time. The
+drone is a chassis; the Cores are its personality.
+
+### Decisions
+
+- **Not raid-only**, despite the original deferred note saying "a raid drone-companion slot". Two of
+  the four archetypes (Scavenger, Recon) have almost nothing to do inside a raid, and a companion
+  that vanishes the moment you leave one is barely a companion.
+- **It has a real body.** Deployed robots in this game are deliberately abstract — no model, no
+  position — and that is right for a defense loadout you set and forget. It would be wrong here: the
+  entire appeal of a companion is that it is THERE. Anchored and server-CFramed, because an
+  unanchored part would be client-simulated and could be shoved through a wall.
+- **Unlocked by Research Tier 3**, not bought. Reaching "Fortified Bunker" IS the unlock, so the
+  drone arrives at the same milestone your base starts looking like a base.
+- **The Cores split by source on purpose.** Combat and Support are CRAFTED at the Welding Station —
+  predictable, you pick the one you want. Scavenger and Recon are Black Market **Epic** rolls — you
+  chase them. So unlocking the drone is a beginning rather than a finished system: two Cores arrive
+  immediately so it is useful at once, and two are a reason to keep opening cases long after every
+  pickaxe is owned.
+- **One Core at a time**, same shape as Ultimates and pickaxes. It is what makes "run Scavenger while
+  mining, swap to Combat before a wave" a real decision instead of a menu.
+
+### The four Cores
+
+| Core | Source | What it does |
+|---|---|---|
+| **Combat** | Craft | Shoots the nearest enemy every 1.2s for flat damage. |
+| **Support** | Craft | Heals 4% of your max health every 2s, but only after 4 seconds without being hit. |
+| **Scavenger** | Epic case | 25% chance to double any ore you mine. No combat use whatsoever. |
+| **Recon** | Epic case | Marks nearby enemies — visible through walls, and taking 25% more from everyone. |
+
+Three of those exist because of a rule this project keeps re-learning: **an effect nobody can see
+gets reported as broken.**
+
+- Combat damage is **flat**, not a fraction of your weapon. A companion that scales off your gun is
+  a damage multiplier in disguise — mandatory on a strong weapon, pointless on a weak one.
+- Support is **suppressed while you are being shot at**. Without that it quietly out-heals chip
+  damage and makes waves unlosable. It also fires a green heal NUMBER, because a slowly rising
+  health bar is the least legible thing in the game.
+- Scavenger is a **chance to double**, not a flat yield multiplier. A multiplier would be invisible;
+  an occasional "the drone found something" is a moment you notice.
+- Recon marks are a **debuff on the target**, not a personal bonus — so a marked enemy takes more
+  from your turrets and robots too. A personal damage bonus would just make it a worse Combat Core.
+
+### Structure
+
+`DroneConfig` (Cores, unlock tier, flight), `DroneBehaviors` (the fourth flat-strategy-table in this
+codebase, after EnemyAI.Patterns, RobotBehaviors, UltimateEffects and WeaponBehaviors), and
+`DroneService` (body, flight, ticking). Adding a Core is one function plus a config entry.
+
+`DroneService` does **not** require `CombatEncounterService` — that file requires half the game and
+must not be required back. Same injection pattern as `GroundEffectService`: the combat engine hands
+over its enemy query and damage handler at load.
+
+### Still open
+
+- **No drone art.** `ServerStorage.DroneModels.Drone` is honoured if you build one; until then it is
+  a tinted neon ball that changes colour per Core. The colour is currently the fastest read on which
+  Core is active.
+- **Nothing scales with tier.** A Combat Core does the same 14 damage at Research Tier 3 as at 6.
+  Whether Cores should level, or whether higher tiers should unlock better ones, is unexplored.
 
 ## PvP base invasion
 

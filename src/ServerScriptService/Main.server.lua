@@ -48,6 +48,7 @@ require(Services.TurretService)
 -- fallback encounter provider after everything it depends on is live.
 require(Services.BlackMarketService)
 require(Services.HackerService)
+require(Services.DroneService)
 require(Services.TrainingDummyService)
 -- ResourceZoneService (the old scattered-ring ore layout) is no longer required — it's been
 -- replaced by the dig-down MineShaftService above. The file's still on disk for reference; see
@@ -85,13 +86,13 @@ do
 		"ForgeService", "SmeltService", "WaveService", "ShopService", "NodeService",
 		"ExpeditionService", "AutoMinerService", "MineShaftService", "RaidRoomService",
 		"TurretShopService", "TurretService", "TrainingDummyService",
-		"BlackMarketService", "HackerService",
+		"BlackMarketService", "HackerService", "DroneService",
 	}) do
 		loaded[name] = true
 	end
 	-- Required transitively by the list above rather than directly — still genuinely loaded, so
 	-- not a bug, just not visible in the require list.
-	for _, name in ipairs({ "CombatEncounterService", "CombatMath", "DamagePipeline", "EnemyAI", "RobotBehaviors", "WeaponToolService", "OreGate", "UltimateEffects", "StatusEffects", "ProjectileService", "GroundEffectService", "WeaponBehaviors" }) do
+	for _, name in ipairs({ "CombatEncounterService", "CombatMath", "DamagePipeline", "EnemyAI", "RobotBehaviors", "WeaponToolService", "OreGate", "UltimateEffects", "StatusEffects", "ProjectileService", "GroundEffectService", "WeaponBehaviors", "DroneBehaviors" }) do
 		loaded[name] = true
 	end
 

@@ -41,6 +41,7 @@ local UltimateConfig = require(ReplicatedStorage.Shared.UltimateConfig)
 local CaseConfig = require(ReplicatedStorage.Shared.CaseConfig)
 local WeaponFamilyConfig = require(ReplicatedStorage.Shared.WeaponFamilyConfig)
 local ToolModConfig = require(ReplicatedStorage.Shared.ToolModConfig)
+local DroneConfig = require(ReplicatedStorage.Shared.DroneConfig)
 local DataService = require(script.Parent.DataService)
 local TurretService = require(script.Parent.TurretService)
 local TrainingDummyService = require(script.Parent.TrainingDummyService)
@@ -314,6 +315,37 @@ local function commandGiveTool(player: Player, profile, args: { string })
 	tell(player, ("granted %s"):format(ToolModConfig.Tools[key].DisplayName))
 end
 
+-- Drone Cores are half crafted and half Epic case rolls, and the drone itself needs Research
+-- Tier 3 — three separate gates to walk through before you can look at one.
+local function commandGiveDrone(player: Player, profile, args: { string })
+	local keys = DroneConfig.Order
+	profile.OwnedDroneCores = profile.OwnedDroneCores or {}
+
+	local requested = args[2]
+	if requested then
+		local key = resolveKey(requested, keys)
+		if not key then
+			tell(player, ("unknown Core '%s' — try one of: %s"):format(requested, table.concat(keys, ", ")))
+			return
+		end
+		profile.OwnedDroneCores[key] = true
+	else
+		for _, key in ipairs(keys) do
+			profile.OwnedDroneCores[key] = true
+		end
+	end
+
+	Remotes.InventoryUpdate:FireClient(player, { OwnedDroneCores = profile.OwnedDroneCores })
+
+	-- Says so rather than leaving you wondering why the Welding Station refuses to equip it.
+	if not DroneConfig.IsUnlocked(profile) then
+		tell(player, ("granted — but the drone itself needs Research Tier %d and you are on %d, so nothing will appear yet."):format(
+			DroneConfig.UnlockResearchTier, profile.ResearchTier or 1))
+	else
+		tell(player, "granted — slot one at the Welding Station's Drones tab")
+	end
+end
+
 local function commandDummy(player: Player)
 	if TrainingDummyService.SpawnNear(player) then
 		tell(player, "spawned a training dummy in front of you")
@@ -337,7 +369,7 @@ local function commandSetWave(player: Player, profile, args: { string })
 end
 
 local function commandHelp(player: Player)
-	tell(player, "commands: /admin [on|off] · /give <what> [amount] · /giveturret [TypeKey] · /giveultimate [Key] · /dummy · /givecase [Key] [n] · /givefamily [Key] · /givetool [Key] · /setwave <n>")
+	tell(player, "commands: /admin [on|off] · /give <what> [amount] · /giveturret [TypeKey] · /giveultimate [Key] · /dummy · /givecase [Key] [n] · /givefamily [Key] · /givetool [Key] · /givedrone [Key] · /setwave <n>")
 	tell(player, ("givable: Scrap, Cores, CoreT1.., %s, %s"):format(table.concat(oreKeys(), ", "), table.concat(refinedKeys(), ", ")))
 	tell(player, ("turrets: %s"):format(table.concat(turretKeys(), ", ")))
 	tell(player, ("ultimates: %s"):format(table.concat(ultimateKeys(), ", ")))
@@ -346,6 +378,8 @@ local function commandHelp(player: Player)
 		table.concat(WeaponFamilyConfig.Order, ", ")))
 	tell(player, ("pickaxes: %s (no argument grants all)"):format(
 		table.concat(ToolModConfig.Order, ", ")))
+	tell(player, ("drone cores: %s (no argument grants all)"):format(
+		table.concat(DroneConfig.Order, ", ")))
 end
 
 ----------------------------------------------------------------------
@@ -384,7 +418,7 @@ local function handleChatted(player: Player, message: string)
 	end
 
 	if command ~= "/give" and command ~= "/giveturret" and command ~= "/giveultimate"
-		and command ~= "/dummy" and command ~= "/givecase" and command ~= "/givefamily" and command ~= "/givetool"
+		and command ~= "/dummy" and command ~= "/givecase" and command ~= "/givefamily" and command ~= "/givetool" and command ~= "/givedrone"
 		and command ~= "/setwave" and command ~= "/help" then
 		return
 	end
@@ -415,6 +449,8 @@ local function handleChatted(player: Player, message: string)
 		commandGiveFamily(player, profile, args)
 	elseif command == "/givetool" then
 		commandGiveTool(player, profile, args)
+	elseif command == "/givedrone" then
+		commandGiveDrone(player, profile, args)
 	elseif command == "/setwave" then
 		commandSetWave(player, profile, args)
 	elseif command == "/help" then

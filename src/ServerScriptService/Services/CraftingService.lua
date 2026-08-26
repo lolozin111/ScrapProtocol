@@ -31,6 +31,7 @@ local UltimateConfig = require(ReplicatedStorage.Shared.UltimateConfig)
 local PlotConfig = require(ReplicatedStorage.Shared.PlotConfig)
 local StationConfig = require(ReplicatedStorage.Shared.StationConfig)
 local TurretConfig = require(ReplicatedStorage.Shared.TurretConfig)
+local DroneConfig = require(ReplicatedStorage.Shared.DroneConfig)
 local DataService = require(script.Parent.DataService)
 local PlotService = require(script.Parent.PlotService)
 local StationService = require(script.Parent.StationService)
@@ -54,6 +55,13 @@ local function getRecipe(tree: string, key: string)
 		return CraftingRecipes.Robots[key]
 	elseif tree == "Mods" then
 		return ModConfig.Mods[key]
+	elseif tree == "Drones" then
+		-- Only the craftable Cores are reachable here at all: Scavenger and Recon have no Cost, so a
+		-- client asking to craft one falls through to nil and is rejected as an unknown recipe.
+		local coreData = DroneConfig.Cores[key]
+		return (coreData and coreData.Source == "Craft")
+			and { Cost = coreData.Cost, DisplayName = coreData.DisplayName }
+			or nil
 	elseif tree == "Turrets" then
 		local typeData = TurretConfig.Types[key]
 		-- Normalized into the { Cost = ... } shape the rest of this handler expects, so the spend
@@ -72,7 +80,7 @@ CraftItem.OnServerInvoke = function(player: Player, tree: string, key: string)
 		return { Success = false, Reason = PlotConfig.NotInBaseMessage }
 	end
 	-- Robots/Mods/Turrets are all assembled at the Welding Station — see StationConfig.Types.
-	if (tree == "Robots" or tree == "Mods" or tree == "Turrets")
+	if (tree == "Robots" or tree == "Mods" or tree == "Turrets" or tree == "Drones")
 		and not StationService.IsPlayerNearStation(player, "Welding") then
 		return { Success = false, Reason = StationConfig.Types.Welding.NotThereMessage }
 	end
@@ -91,6 +99,20 @@ CraftItem.OnServerInvoke = function(player: Player, tree: string, key: string)
 		return { Success = false, Reason = "Already own this mod" }
 	end
 
+	if tree == "Drones" then
+		-- The chassis is what Research Tier 3 unlocks, so there is nothing to build Cores FOR until
+		-- then. Checked here rather than only hidden in the UI, same as every other gate.
+		if not DroneConfig.IsUnlocked(profile) then
+			return {
+				Success = false,
+				Reason = ("Drones unlock at Research Tier %d."):format(DroneConfig.UnlockResearchTier),
+			}
+		end
+		if (profile.OwnedDroneCores or {})[key] then
+			return { Success = false, Reason = "Already own this Core" }
+		end
+	end
+
 	-- A turret can only be built if its blueprint has been bought at the Hub Shop. Re-checked
 	-- server-side rather than trusting the client to only show unlocked ones — the client's
 	-- Turrets tab hides locked types, but that's presentation, not enforcement.
@@ -105,6 +127,9 @@ CraftItem.OnServerInvoke = function(player: Player, tree: string, key: string)
 
 	if tree == "Robots" then
 		profile.CraftedRobots[key] = (profile.CraftedRobots[key] or 0) + 1
+	elseif tree == "Drones" then
+		profile.OwnedDroneCores = profile.OwnedDroneCores or {}
+		profile.OwnedDroneCores[key] = true
 	elseif tree == "Turrets" then
 		-- Unique instance, not a count — see TurretService.MintTurret.
 		TurretService.MintTurret(profile, key)
@@ -117,6 +142,7 @@ CraftItem.OnServerInvoke = function(player: Player, tree: string, key: string)
 		CraftedMods = profile.CraftedMods,
 		Turrets = profile.Turrets,
 		NextTurretId = profile.NextTurretId,
+		OwnedDroneCores = profile.OwnedDroneCores,
 	})
 	-- Covers the Scrap AND ore this cost, whichever the recipe used — OreCounts alone used to be
 	-- listed here, which was correct only while nothing craftable cost Scrap. See PushWallet.

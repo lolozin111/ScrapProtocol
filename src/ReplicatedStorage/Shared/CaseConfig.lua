@@ -25,6 +25,7 @@
 	  Core      a CoreItem (CoreT1, ...)
 	  Ultimate  a Mythical passive (UltimateConfig.Mods)
 	  Tool      a special pickaxe (ToolModConfig)
+	  DroneCore a drone companion Core (DroneConfig) — the two that cannot be crafted
 	  WeaponFamily  unlocks a whole gun family in the Forge (WeaponFamilyConfig)
 
 	=== ADDING THE MISSING CONTENT ===
@@ -64,6 +65,11 @@ CaseConfig.Pools = {
 		{ Kind = "Tool", Key = "SplitHead", Weight = 18 },
 		{ Kind = "Tool", Key = "Featherweight", Weight = 18 },
 		{ Kind = "Tool", Key = "Prospector", Weight = 18 },
+		-- The two Drone Cores you cannot craft. Weighted below the pickaxes because they are useless
+		-- until Research Tier 3 unlocks the drone itself — rolling one early is a promise rather than
+		-- a reward, and the reveal says so.
+		{ Kind = "DroneCore", Key = "Scavenger", Weight = 11 },
+		{ Kind = "DroneCore", Key = "Recon", Weight = 11 },
 		{ Kind = "Refined", Key = "HardenedPlate", Min = 15, Max = 40, Weight = 16 },
 		{ Kind = "Refined", Key = "GoldBar", Min = 10, Max = 30, Weight = 16 },
 		{ Kind = "Ore", Key = "VoidiumShard", Min = 5, Max = 18, Weight = 9 },

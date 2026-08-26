@@ -66,6 +66,7 @@ local StatusEffects = require(script.Parent.StatusEffects)
 local ProjectileService = require(script.Parent.ProjectileService)
 local GroundEffectService = require(script.Parent.GroundEffectService)
 local WeaponBehaviors = require(script.Parent.WeaponBehaviors)
+local DroneService = require(script.Parent.DroneService)
 local ProjectileConfig = require(ReplicatedStorage.Shared.ProjectileConfig)
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
@@ -1295,6 +1296,11 @@ end
 
 ProjectileService.SetHitResolver(CombatEncounterService.ResolvePlayerHit)
 GroundEffectService.SetEnemyQuery(CombatEncounterService.LiveEnemiesNear)
+-- Same injection, same reason: DroneService must not require this file back. See its header.
+DroneService.SetEnemyQuery(CombatEncounterService.LiveEnemiesNear)
+DroneService.SetDamageHandler(function(player, record, amount, at, kind)
+	resolveAndApplyDamage(record, amount, at, at, nil, 0, player, kind)
+end)
 GroundEffectService.SetDamageHandler(function(player, record, amount, at, kind)
 	resolveAndApplyDamage(record, amount, at, at, nil, 0, player, kind)
 end)

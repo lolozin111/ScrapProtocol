@@ -41,7 +41,7 @@ StationConfig.Types = {
 	},
 	Welding = {
 		DisplayName = "Welding Station",
-		Tabs = { "Robots", "Mods", "Turrets" }, -- building/equipping robots, mod-slot management, and
+		Tabs = { "Robots", "Mods", "Turrets", "Drones" }, -- building/equipping robots, mod-slot management, and
 			-- assembling turrets from a blueprint bought at the Hub Shop (TurretConfig.CraftCost) —
 			-- turrets are machines you build from Scrap + ore, same as robots, so they belong here
 			-- rather than on the Workbench with the "how my base is laid out" upgrades.

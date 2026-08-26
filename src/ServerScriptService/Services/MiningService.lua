@@ -35,6 +35,8 @@ local PlotService = require(script.Parent.PlotService)
 local StationService = require(script.Parent.StationService)
 local RateLimiter = require(script.Parent.RateLimiter)
 local OreGate = require(script.Parent.OreGate)
+local ToolModConfig = require(ReplicatedStorage.Shared.ToolModConfig)
+local DroneService = require(script.Parent.DroneService)
 
 local Remotes = ReplicatedStorage.Remotes
 local MineNode = Remotes.MineNode
@@ -210,7 +212,10 @@ MineNode.OnServerEvent:Connect(function(player: Player, node: Instance)
 	-- against a longer one, a bad value) would otherwise error inside the remote handler.
 	local profile = DataService.Get(player)
 	local toolData = OreConfig.ToolTiers[profile.ToolTier] or OreConfig.ToolTiers[1]
-	if not RateLimiter.Check(player, "MineNode", toolData.SwingTime) then
+	-- An equipped tool mod scales the tier's pacing. Routed through ToolModConfig rather than read
+	-- inline so this and MineShaftService cannot drift apart — the same drift the two ore gates
+	-- suffered before OreGate existed.
+	if not RateLimiter.Check(player, "MineNode", ToolModConfig.SwingTime(profile, toolData.SwingTime)) then
 		Remotes.MineFailed:FireClient(player, "Swinging too fast — wait for your tool to reset")
 		return
 	end
@@ -226,7 +231,11 @@ MineNode.OnServerEvent:Connect(function(player: Player, node: Instance)
 	end
 
 	-- profile/toolData were already resolved for the swing-pacing check above.
-	local yield = math.floor(oreData.BaseYield * toolData.YieldMultiplier + 0.5)
+	local yield = math.floor(
+		oreData.BaseYield * ToolModConfig.YieldMultiplier(profile, toolData.YieldMultiplier) + 0.5)
+	-- A Scavenger drone occasionally doubles the haul. Added AFTER the tool multiplier so it scales
+	-- with whatever the player was already going to get, and returns 0 for every other Core.
+	yield += DroneService.BonusOreFor(player, oreKey, yield)
 	DataService.AddOre(player, oreKey, yield)
 
 	Remotes.InventoryUpdate:FireClient(player, { OreCounts = profile.OreCounts })

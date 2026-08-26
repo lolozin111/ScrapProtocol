@@ -394,6 +394,18 @@ no manual copy-pasting scripts into Studio.
   `HeadshotMultiplier`. Bows are built around it (2.2-2.5x); snipers deliberately don't have one,
   since their damage is already in the base number. Headshot damage shows gold.
 
+- **Drone companion** — unlocks at **Research Tier 3** and follows you everywhere from then on:
+  raids, base defense, the mine, wandering around. What it does depends on which of four **Drone
+  Cores** is slotted (one at a time, at the **Welding Station's Drones tab**): **Combat** shoots the
+  nearest enemy, **Support** trickles your health back between fights, **Scavenger** has a 25%
+  chance to double any ore you mine, and **Recon** marks nearby enemies so they're visible through
+  walls and take 25% more damage from everyone — you, your turrets, your robots. Combat and Support
+  are crafted; Scavenger and Recon only drop from Epic rolls in Black Market cases. The drone tints
+  to its Core's colour, so which one is active is readable at a glance. Retune any of it in
+  `DroneConfig.lua`; a new Core is one entry there plus one function in `DroneBehaviors.lua`.
+  **Optional art:** build a Model at `ServerStorage/DroneModels/Drone` with a `PrimaryPart` and it'll
+  be used instead of the neon ball.
+
 - **Special pickaxes** — three passive tool mods from Epic case rolls (`ToolModConfig.lua`), one
   equipped at a time: **Split-Head** shears the neighbouring blocks loose along with the one you hit,
   **Featherweight** takes 45% off your swing timer, **Prospector** adds 30% yield. These are NOT the
@@ -468,6 +480,7 @@ no manual copy-pasting scripts into Studio.
   | `/givecase [Key] [n]` | Grants sealed cases, so the decode flow is testable without buying. |
 | `/givefamily [Key]` | Unlocks a weapon family in the Forge. No argument unlocks all six — a Legendary roll is far too rare to test a gun through. |
 | `/givetool [Key]` | Grants a special pickaxe. No argument grants all three. |
+| `/givedrone [Key]` | Grants a Drone Core. No argument grants all four. Tells you if you're not at Research Tier 3 yet, since nothing will appear until you are. |
   | `/dummy` | Drops a training dummy in front of you. |
   | `/setwave <n>` | Sets your HighestWave — gates ore behind `MinWaveUnlock` and unlocks Research tiers. |
   | `/help` | Lists all of the above, plus every valid key, in the Output window. |
@@ -790,6 +803,19 @@ actually visible before any real art or UI design happens. To test end to end:
     mine shaft, and confirm one swing clears the block you hit plus its neighbours (it should NOT
     set off adjacent Lava Pockets — that's deliberate). Only one can be equipped at a time; equipping
     a second should swap, not stack.
+
+21. **The drone.** It needs **Research Tier 3**, so `/setwave 10`, then claim the tier from the
+    Research row (bottom-left). Then **`/givedrone`** and open **Welding Station → Drones**. Before
+    the tier, that tab should show a "Drone Bay — locked" row naming the tier; after it, four Cores
+    with Equip buttons. Slot **Combat** and confirm a neon ball appears over your shoulder, trails
+    you with a bit of lag rather than being welded on, and survives a respawn and a raid teleport.
+    Start a wave and confirm it turns to face what it shoots and lands orange damage numbers. Swap
+    to **Support**, take some damage, and confirm it does NOT heal you while you're being hit, then
+    starts ticking green `+` numbers about 4 seconds after the shooting stops. **Scavenger** — go
+    mine; roughly one hit in four should toast "Scavenger Core salvaged N extra …". **Recon** — start
+    a wave and confirm nearby enemies glow blue through walls and their DEF drops (visible on a
+    `/dummy`'s billboard, though note dummies only work outside a wave). Only one Core can be
+    slotted at a time; equipping a second should swap, not stack.
 
 ## 5. Environment effects (optional polish)
 

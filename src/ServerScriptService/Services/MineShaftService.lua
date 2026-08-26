@@ -52,6 +52,7 @@ local Workspace = game:GetService("Workspace")
 local MineShaftConfig = require(ReplicatedStorage.Shared.MineShaftConfig)
 local OreConfig = require(ReplicatedStorage.Shared.OreConfig)
 local ToolModConfig = require(ReplicatedStorage.Shared.ToolModConfig)
+local DroneService = require(script.Parent.DroneService)
 local RaidEnergyConfig = require(ReplicatedStorage.Shared.RaidEnergyConfig)
 local PlotConfig = require(ReplicatedStorage.Shared.PlotConfig)
 local StationConfig = require(ReplicatedStorage.Shared.StationConfig)
@@ -385,6 +386,7 @@ local function clearBlock(player: Player, character: Model, block: Instance, coo
 		local toolData = OreConfig.ToolTiers[profile.ToolTier]
 		local yield = math.floor(
 			oreData.BaseYield * ToolModConfig.YieldMultiplier(profile, toolData.YieldMultiplier) + 0.5)
+		yield += DroneService.BonusOreFor(player, oreKey, yield) -- Scavenger Core; 0 for every other
 		DataService.AddOre(player, oreKey, yield)
 		Remotes.InventoryUpdate:FireClient(player, { OreCounts = profile.OreCounts })
 

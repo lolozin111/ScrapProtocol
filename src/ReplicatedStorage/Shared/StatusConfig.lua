@@ -109,6 +109,19 @@ StatusConfig.Types = {
 	-- Defensive debuffs
 	----------------------------------------------------------------------
 
+	-- Painted by a Recon drone. A DEBUFF ON THE TARGET rather than a bonus for whoever marked it,
+	-- so a marked enemy takes more from your turrets, your robots and anyone else's guns too — which
+	-- is what makes Recon the Core you run when something else is doing the damage, instead of a
+	-- worse Combat Core. Short, and refreshed every drone tick, so it falls off as soon as the enemy
+	-- leaves the drone's range.
+	Marked = {
+		DisplayName = "Marked",
+		MaxStacks = 1,
+		Duration = 4,
+		RefreshOnStack = true,
+		DefenseMultiplierPerStack = 0.75, -- a quarter off its armour; deliberately modest
+	},
+
 	-- Multiplicative, so two shredders stack sensibly instead of one overwriting the other, and a
 	-- full strip is just a multiplier of 0. Replaces the earlier all-or-nothing DefenseStripped
 	-- flag, which could not express .100mm's "loses 50% of their defense".

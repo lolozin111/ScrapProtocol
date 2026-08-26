@@ -42,6 +42,8 @@
         "EquipMod": { "$className": "RemoteFunction" },
         "EquipUltimate": { "$className": "RemoteFunction" },
         "EquipToolMod": { "$className": "RemoteFunction" },
+        "EquipDroneCore": { "$className": "RemoteFunction" },
+        "DroneEvent": { "$className": "RemoteEvent" },
         "BuyCase": { "$className": "RemoteFunction" },
         "StartDecode": { "$className": "RemoteFunction" },
         "RushDecode": { "$className": "RemoteFunction" },

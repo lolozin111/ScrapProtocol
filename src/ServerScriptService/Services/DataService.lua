@@ -180,6 +180,11 @@ local function defaultProfile()
 			-- granted from the start (a player with no unlocked family could not arm themselves);
 			-- the rest are blueprints from Black Market Legendary rolls. Enforced in
 			-- ForgeService.ForgeWeapon, not just hidden in the UI. See WeaponFamilyConfig.
+		OwnedDroneCores = {},
+			-- [coreKey] = true. Drone Cores — Combat/Support crafted at the Welding Station, and
+			-- Scavenger/Recon from Black Market Epic rolls. The DRONE itself is unlocked by reaching
+			-- Research Tier 3, not by owning anything, so there is no separate has-a-drone flag.
+			-- EquippedDroneCore (string?) is the active one, omitted here for the usual nil-drop reason.
 		OwnedTools = {},
 			-- [toolKey] = true. Special pickaxes from Black Market Epic rolls — see ToolModConfig.
 			-- Deliberately NOT the same thing as ToolTier: that is a ladder you climb, these are

@@ -28,6 +28,7 @@ local StationConfig = require(ReplicatedStorage.Shared.StationConfig)
 local ForgeConfig = require(ReplicatedStorage.Shared.ForgeConfig)
 local WeaponFamilyConfig = require(ReplicatedStorage.Shared.WeaponFamilyConfig)
 local ToolModConfig = require(ReplicatedStorage.Shared.ToolModConfig)
+local DroneConfig = require(ReplicatedStorage.Shared.DroneConfig)
 local RefinedOreConfig = require(ReplicatedStorage.Shared.RefinedOreConfig)
 local BaseConfig = require(ReplicatedStorage.Shared.BaseConfig)
 local ResearchConfig = require(ReplicatedStorage.Shared.ResearchConfig)
@@ -184,7 +185,73 @@ local currentTab = "Weapons"
 -- Forward-declared, and deliberately this high up: several row-builders below need to re-render the
 -- list they are sitting in after an action, but renderCraftList (far below) is what dispatches TO
 -- them in the first place — a genuine circular reference. Declaring the local here (assigned later
--- with `renderCraftList = function() ... end`, no `local` keyword) lets every one of them capture
+-- with `-- Drones tab (Welding Station). Every Core is listed whether or not you can get it yet, with the
+-- row's button saying what stands between you and it — craft cost, "Black Market", or the Research
+-- tier. A tab that hides everything you have not earned tells a new player nothing about what the
+-- system even is.
+local function renderDroneRows()
+	local unlocked = DroneConfig.IsUnlocked(Hud.profile)
+	local owned = Hud.profile.OwnedDroneCores or {}
+	local equipped = Hud.profile.EquippedDroneCore
+
+	if not unlocked then
+		Hud.makeRow(
+			"Drone Bay — locked",
+			("Unlocks at Research Tier %d. Cores can't be built until the drone exists to carry them."):format(
+				DroneConfig.UnlockResearchTier),
+			"Locked",
+			function() end
+		).Parent = listFrame
+	end
+
+	for _, key in ipairs(DroneConfig.Order) do
+		local core = DroneConfig.Cores[key]
+		local isOwned = owned[key] == true
+		local isEquipped = equipped == key
+
+		local detail, action, onClick
+		if isOwned then
+			detail = core.Description
+			action = isEquipped and "Unequip" or "Equip"
+			onClick = function()
+				local result = Remotes.EquipDroneCore:InvokeServer(isEquipped and nil or key)
+				if not result.Success then
+					Hud.showFailure("Couldn't slot that Core", result.Reason)
+				else
+					renderCraftList()
+				end
+			end
+		elseif core.Source == "Craft" then
+			detail = ("%s · %s"):format(Hud.costString(core.Cost), core.Description)
+			action = "Craft"
+			onClick = function()
+				local result = Remotes.CraftItem:InvokeServer("Drones", key)
+				if not result.Success then
+					Hud.showFailure("Craft failed", result.Reason)
+				else
+					renderCraftList()
+				end
+			end
+		else
+			detail = ("Black Market · Epic roll · %s"):format(core.Description)
+			action = "Locked"
+			onClick = function()
+				Hud.showFailure(
+					("%s can't be built"):format(core.DisplayName),
+					"It only drops from Epic rolls in Black Market cases.")
+			end
+		end
+
+		Hud.makeRow(
+			isEquipped and ("%s  [SLOTTED]"):format(core.DisplayName) or core.DisplayName,
+			detail,
+			action,
+			onClick
+		).Parent = listFrame
+	end
+end
+
+renderCraftList = function() ... end`, no `local` keyword) lets every one of them capture
 -- the right upvalue. Declared below any of its users, it would silently compile as a nil GLOBAL and
 -- only fail when a button was actually clicked.
 local renderCraftList
@@ -1300,6 +1367,9 @@ renderCraftList = function()
 		return
 	elseif currentTab == "Turrets" then
 		renderTurretsRow()
+		return
+	elseif currentTab == "Drones" then
+		renderDroneRows()
 		return
 	elseif currentTab == "Cases" then
 		renderCasesRow()
@@ -3468,6 +3538,21 @@ Remotes.CaseOpened.OnClientEvent:Connect(function(caseKey: string, reward)
 		Hud.showToast(("MYTHICAL — %s unlocked! Equip it in the Inventory's Ultimate slot."):format(name), 7)
 		return
 	end
+	if reward.Kind == "DroneCore" then
+		local core = DroneConfig.Cores[reward.Key]
+		name = core and core.DisplayName or reward.Key
+		if reward.Duplicate then
+			Hud.showToast(("EPIC — %s (already owned) · +%d Contraband instead"):format(
+				name, reward.ConsolationContraband or 0), 5)
+		elseif reward.LockedUntilTier then
+			-- Says so outright. A reward you cannot use, with no explanation, reads as a bug.
+			Hud.showToast(("EPIC — %s! You'll be able to slot it once you reach Research Tier %d."):format(
+				name, reward.LockedUntilTier), 7)
+		else
+			Hud.showToast(("EPIC — %s! Slot it at the Welding Station's Drones tab."):format(name), 6)
+		end
+		return
+	end
 	if reward.Kind == "Tool" then
 		local tool = ToolModConfig.Tools[reward.Key]
 		name = tool and tool.DisplayName or reward.Key
@@ -3493,6 +3578,13 @@ Remotes.CaseOpened.OnClientEvent:Connect(function(caseKey: string, reward)
 		return
 	end
 	Hud.showToast(("%s — %d %s"):format(reward.Rarity, reward.Amount or 1, name), 5)
+end)
+
+-- Anything the drone wants to say — currently only the Scavenger Core's bonus haul. Its own remote
+-- rather than a generic toast so the drone can stay chatty without anything else having to know it
+-- exists.
+Remotes.DroneEvent.OnClientEvent:Connect(function(message: string)
+	Hud.showToast(message, 3)
 end)
 
 Remotes.ContrabandAwarded.OnClientEvent:Connect(function(amount: number, reason: string)

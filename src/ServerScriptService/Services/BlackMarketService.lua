@@ -20,6 +20,7 @@ local StationConfig = require(ReplicatedStorage.Shared.StationConfig)
 local UltimateConfig = require(ReplicatedStorage.Shared.UltimateConfig)
 local WeaponFamilyConfig = require(ReplicatedStorage.Shared.WeaponFamilyConfig)
 local ToolModConfig = require(ReplicatedStorage.Shared.ToolModConfig)
+local DroneConfig = require(ReplicatedStorage.Shared.DroneConfig)
 local DataService = require(script.Parent.DataService)
 local StationService = require(script.Parent.StationService)
 
@@ -173,6 +174,22 @@ function BlackMarketService.GrantReward(player: Player, reward): boolean
 		end
 		reward.DisplayName = ToolModConfig.Tools[reward.Key].DisplayName
 		Remotes.InventoryUpdate:FireClient(player, { OwnedTools = profile.OwnedTools })
+	elseif reward.Kind == "DroneCore" then
+		profile.OwnedDroneCores = profile.OwnedDroneCores or {}
+		if profile.OwnedDroneCores[reward.Key] then
+			local consolation = 5
+			DataService.AddCurrency(player, "Contraband", consolation)
+			reward.Duplicate = true
+			reward.ConsolationContraband = consolation
+		else
+			profile.OwnedDroneCores[reward.Key] = true
+		end
+		reward.DisplayName = DroneConfig.Cores[reward.Key].DisplayName
+		-- Flagged so the reveal can say "you cannot use this yet" rather than sending the player to a
+		-- Welding Station tab that will not let them equip it. An unusable reward that does not
+		-- explain itself reads as a bug.
+		reward.LockedUntilTier = (not DroneConfig.IsUnlocked(profile)) and DroneConfig.UnlockResearchTier or nil
+		Remotes.InventoryUpdate:FireClient(player, { OwnedDroneCores = profile.OwnedDroneCores })
 	else
 		-- Every Kind CaseConfig declares is handled above. This exists so that adding a new one to a
 		-- pool before wiring its grant fails loudly rather than silently paying out nothing.
