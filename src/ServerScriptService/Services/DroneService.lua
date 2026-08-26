@@ -130,9 +130,11 @@ end
 -- Context handed to behaviours
 ----------------------------------------------------------------------
 
-local function tickContext(player: Player, drone, coreData)
+local function tickContext(player: Player, drone, coreData, profile)
 	return {
-		Params = coreData.Params or {},
+		-- Scaled by Research Tier here, once, so every behaviour reads plain numbers and none of them
+		-- has to know that scaling exists.
+		Params = DroneConfig.ScaledParams(coreData, profile),
 		Player = player,
 		Position = drone.Position,
 		Character = player.Character,
@@ -286,7 +288,7 @@ RunService.Heartbeat:Connect(function(dt)
 			local interval = drone.Core.TickInterval or 0
 			if interval > 0 and now >= drone.NextTick then
 				drone.NextTick = now + interval
-				local ctx = tickContext(player, drone, drone.Core)
+				local ctx = tickContext(player, drone, drone.Core, DataService.Get(player))
 				DroneBehaviors.Fire("Tick", drone.Core.Behavior, ctx)
 			end
 		end
@@ -312,7 +314,7 @@ function DroneService.BonusOreFor(player: Player, oreKey: string, yield: number)
 
 	local ore = OreConfig.Ores[oreKey]
 	local bonus = DroneBehaviors.Fire("OnMine", coreData.Behavior, {
-		Params = coreData.Params or {},
+		Params = DroneConfig.ScaledParams(coreData, profile),
 		Player = player,
 		Yield = yield,
 		OreKey = oreKey,

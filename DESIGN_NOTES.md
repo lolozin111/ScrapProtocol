@@ -1545,13 +1545,43 @@ codebase, after EnemyAI.Patterns, RobotBehaviors, UltimateEffects and WeaponBeha
 must not be required back. Same injection pattern as `GroundEffectService`: the combat engine hands
 over its enemy query and damage handler at load.
 
+### Scaling with Research Tier
+
+Cores grow as your tier climbs past the one that unlocked the drone, declared per Core in `Scales`
+(a map of param key to fraction-per-tier) and applied in one place, `DroneConfig.ScaledParams`.
+Behaviours read plain numbers and never learn that scaling exists.
+
+| Core | Scales | T3 | T4 | T5 | T6 |
+|---|---|---|---|---|---|
+| Combat | damage | 14 | 18.2 | 22.4 | 26.6 |
+| Support | heal per tick | 4% | 5% | 6% | 7% |
+| Scavenger | proc chance | 25% | 30% | 35% | 40% |
+| Recon | mark duration | 4s | 5s | 6s | 7s |
+
+What does NOT scale is the deliberate part:
+
+- **Combat's range.** A drone out-ranging what you can see starts shooting things you have not
+  noticed, which reads as the wave spawning wrong rather than as a stronger companion.
+- **Support's suppression window.** Shortening it with tier erodes the one property keeping the Core
+  from out-healing a live fight — that has to hold at every tier, unlike the number it heals for.
+- **Scavenger's bonus size**, only its chance — so a late Scavenger fires noticeably more often
+  rather than very occasionally paying out something absurd. Clamped at 95% so it stays a gamble.
+- **Recon's debuff strength.** Scaling that would quietly buff every damage source in the game.
+
+Additive per tier, not compounding: three steps of +25% is +75%, not +95%. A companion compounding
+alongside everything else that already scales with tier (wall HP, turret levels, slot count) climbs
+much faster than it reads on the page.
+
+The Drones tab shows each owned Core's numbers **at your current tier** rather than its flavour
+text, for the reason this project keeps relearning: a Core that quietly got 60% stronger with no
+number attached is the same invisible-buff problem that made the Ultimate mods feel broken before
+damage numbers existed.
+
 ### Still open
 
 - **No drone art.** `ServerStorage.DroneModels.Drone` is honoured if you build one; until then it is
   a tinted neon ball that changes colour per Core. The colour is currently the fastest read on which
   Core is active.
-- **Nothing scales with tier.** A Combat Core does the same 14 damage at Research Tier 3 as at 6.
-  Whether Cores should level, or whether higher tiers should unlock better ones, is unexplored.
 
 ## PvP base invasion
 

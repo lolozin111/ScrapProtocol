@@ -401,7 +401,10 @@ no manual copy-pasting scripts into Studio.
   chance to double any ore you mine, and **Recon** marks nearby enemies so they're visible through
   walls and take 25% more damage from everyone — you, your turrets, your robots. Combat and Support
   are crafted; Scavenger and Recon only drop from Epic rolls in Black Market cases. The drone tints
-  to its Core's colour, so which one is active is readable at a glance. Retune any of it in
+  to its Core's colour, so which one is active is readable at a glance. **Cores get stronger as
+  your Research Tier climbs** — Combat goes 14 damage at T3 to 26.6 at T6, Scavenger 25% to 40%
+  — and the Drones tab shows each owned Core's numbers at your current tier rather than a static
+  description. Retune any of it in
   `DroneConfig.lua`; a new Core is one entry there plus one function in `DroneBehaviors.lua`.
   **Optional art:** build a Model at `ServerStorage/DroneModels/Drone` with a `PrimaryPart` and it'll
   be used instead of the neon ball.

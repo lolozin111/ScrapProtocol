@@ -257,7 +257,17 @@ local function renderToolModRows()
 				isEquipped and "Unequip" or "Equip",
 				function()
 					-- nil unequips. One at a time, so equipping another needs no explicit unequip first.
-					local result = Remotes.EquipToolMod:InvokeServer(isEquipped and nil or key)
+					--
+					-- NOT `isEquipped and nil or key`. In Lua that collapses: `true and nil` is nil,
+					-- and `nil or key` is key — so the "unequip" branch silently re-sends the same key
+					-- and nothing ever comes off. Same trap as the `Field = value or false` idiom this
+					-- codebase already documents; an explicit local is the only safe way to pass a
+					-- deliberate nil.
+					local desired: string? = nil
+					if not isEquipped then
+						desired = key
+					end
+					local result = Remotes.EquipToolMod:InvokeServer(desired)
 					if not result.Success then
 						Hud.showFailure("Couldn't equip that pickaxe", result.Reason)
 					else
@@ -1302,10 +1312,19 @@ local function renderDroneRows()
 
 		local detail, action, onClick
 		if isOwned then
-			detail = core.Description
+			-- Owned Cores show what they do AT YOUR TIER, not the flavour line. Once you own it the
+			-- question stops being "what is this" and becomes "how good is mine right now" — and the
+			-- numbers grow with Research Tier, so a static description would go quietly stale.
+			detail = DroneConfig.EffectSummary(key, Hud.profile)
 			action = isEquipped and "Unequip" or "Equip"
 			onClick = function()
-				local result = Remotes.EquipDroneCore:InvokeServer(isEquipped and nil or key)
+				-- See the EquipToolMod call above for why this cannot be written as
+				-- `isEquipped and nil or key`.
+				local desired: string? = nil
+				if not isEquipped then
+					desired = key
+				end
+				local result = Remotes.EquipDroneCore:InvokeServer(desired)
 				if not result.Success then
 					Hud.showFailure("Couldn't slot that Core", result.Reason)
 				else
