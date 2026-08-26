@@ -378,6 +378,29 @@ no manual copy-pasting scripts into Studio.
   afford anything at) via the `SkipNode` remote; the Shop panel exposes a "Skip" button for it.
   Skipping a fork option destroys it and its sibling and advances the queue exactly like using
   it would, just with no reward. Blocked during an active raid for the same reason as above.
+- **18 weapons in 6 families** — Salvage (the four starters), Flamethrowers, Bows, Snipers,
+  Grenade Launchers, Miniguns. A **blueprint unlocks a whole family**, not one gun, and they drop
+  from Legendary rolls in Black Market cases; the Forge's Weapons tab is a family picker, and locked
+  families still show so you can see what you're missing. Everything about how a gun flies is a
+  named profile in `ProjectileConfig.lua` — a bow is slow with heavy gravity, a sniper is fast and
+  flat, a flamethrower is six slow fat pellets in a wide cone, a grenade bounces and runs on a fuse.
+  Four weapons have behaviour that genuinely needed code (`WeaponBehaviors.lua`): the ExplosiveBow
+  banks arrows in a body and detonates them together, the StringedBow drags two tagged enemies into
+  each other, the Trailblazer leaves a bleeding line from muzzle to impact, and Hellfire's every-5th
+  shot goes straight up and rains missiles. Retune any of it in `CraftingRecipes.Weapons` and
+  `ProjectileConfig` — adding a weapon is usually two table entries and no code at all.
+
+- **Headshots** — a hit on an enemy's Head deals more for weapons that declare a
+  `HeadshotMultiplier`. Bows are built around it (2.2-2.5x); snipers deliberately don't have one,
+  since their damage is already in the base number. Headshot damage shows gold.
+
+- **Special pickaxes** — three passive tool mods from Epic case rolls (`ToolModConfig.lua`), one
+  equipped at a time: **Split-Head** shears the neighbouring blocks loose along with the one you hit,
+  **Featherweight** takes 45% off your swing timer, **Prospector** adds 30% yield. These are NOT the
+  same thing as the Workbench's tool-tier ladder — that's a track you climb, these are sideways
+  choices — so they never raise your tier or unlock ore you haven't earned. Equip one at a
+  **Workbench's Tools tab**.
+
 - **Guns fire real projectiles** — every shot spawns an actual travelling Part, simulated
   server-side (`ProjectileService.lua`), not an instant hitscan. Speed, gravity, range, pierce and
   size are per-weapon, set by naming a profile in `ProjectileConfig.lua` — the Arc Cannon's slow
@@ -443,6 +466,8 @@ no manual copy-pasting scripts into Studio.
   | `/giveturret [Type]` | Mints an unplaced turret and unlocks its blueprint. |
   | `/giveultimate [Key]` | Grants an Ultimate mod — otherwise only obtainable from Black Market cases. |
   | `/givecase [Key] [n]` | Grants sealed cases, so the decode flow is testable without buying. |
+| `/givefamily [Key]` | Unlocks a weapon family in the Forge. No argument unlocks all six — a Legendary roll is far too rare to test a gun through. |
+| `/givetool [Key]` | Grants a special pickaxe. No argument grants all three. |
   | `/dummy` | Drops a training dummy in front of you. |
   | `/setwave <n>` | Sets your HighestWave — gates ore behind `MinWaveUnlock` and unlocks Research tiers. |
   | `/help` | Lists all of the above, plus every valid key, in the Output window. |
@@ -735,6 +760,36 @@ actually visible before any real art or UI design happens. To test end to end:
     converts to Contraband instead of vanishing. Finally, confirm income actually flows: extract
     cleanly from a Raid Room (step 15) and from a boss wave, and watch Contraband go up — abandoning
     or dying should pay nothing.
+
+19. **The gun families.** Type **`/givefamily`** with no argument, then open your **Forge** →
+    **Weapons**. It should now be a list of six families rather than a list of guns; before the
+    command, four of them should read LOCKED and name the blueprint that opens them. Open **Bows**,
+    Forge a Scrap Bow, equip it, and confirm arrows visibly ARC and drop — you have to lead a moving
+    target. Land one on a dummy's head and confirm a gold number roughly 2.5x a body shot. Then work
+    through the ones with mechanics you can actually see, all against a `/dummy`:
+    - **Longshot Rifle** — confirm you visibly slow down while it's HELD, and speed back up the
+      moment you switch away from it. Fire through two dummies standing in a line.
+    - **Flamethrower** — a cone of pellets, not a bullet. Very short range. Green burn numbers keep
+      ticking after you stop. Swap to the **Ice Thrower** and watch the dummy's speed and its
+      STUNNED flag; the **Poison Thrower** should take ~25 seconds of sustained fire to reach 5
+      stacks, and should leave green puddles that damage a dummy you aren't shooting.
+    - **Grenade Launcher** — should bounce off walls AND off the dummy, then explode on its own
+      fuse. Orange damage numbers. Confirm it does NOT chip on contact. The **Sticky Launcher**
+      should visibly drag everything caught toward the blast.
+    - **Explosive Bow** — land three arrows in one dummy quickly and confirm a single much larger
+      orange number a couple of seconds later, not three small ones.
+    - **Stringed Bow** — needs two dummies. Fire four shots, landing the 3rd and 4th on different
+      ones, and confirm both get yanked together.
+    - **Trailblazer** — a red line should stay in the air from muzzle to impact; walk a dummy into
+      it (or shoot through where one stands) and confirm bleed ticks.
+    - **Hellfire** — every 5th shot should go UP instead of forward, and missiles should rain down
+      a moment later.
+20. **Pickaxes.** **`/givetool`**, then **Workbench → Tools** — the three should be listed under the
+    tier row with Equip buttons. Equip **Featherweight** and confirm you can mine noticeably faster;
+    equip **Prospector** and watch the per-hit ore yield go up; equip **Split-Head**, go down the
+    mine shaft, and confirm one swing clears the block you hit plus its neighbours (it should NOT
+    set off adjacent Lava Pockets — that's deliberate). Only one can be equipped at a time; equipping
+    a second should swap, not stack.
 
 ## 5. Environment effects (optional polish)
 

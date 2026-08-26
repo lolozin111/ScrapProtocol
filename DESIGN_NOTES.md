@@ -20,7 +20,7 @@ already made (numbers, mechanics, sequencing), not just vague direction.
 | Projectiles (real travelling shots) | **Built** — see "Combat infrastructure" |
 | Damage numbers + training dummies | **Built** — the diagnosis layer for everything above |
 | Session-locked saves | **Built** — see "Data safety" |
-| Gun variants (14) + tools (3) | **Specced, not built** — see "Content backlog" |
+| Gun variants (14) + tools (3) | **Built** — 18 weapons across 6 families, 3 pickaxes |
 | PvP base invasion | Not started, sequence last |
 
 Agreed build order (most recent discussion): Raid Energy → Mining zone rework → weapon mod
@@ -29,9 +29,9 @@ Re-confirm this order before starting each one — priorities may have shifted. 
 Black Market are both BUILT (the Black Market **superseded** the planned "main shop" rather than
 being built alongside it — same rotating-stock shape, so they were merged).
 
-**Next up: the content backlog** — the 14 gun variants and 3 tools already specced below. The
-systems they need (projectile profiles, status effects, the damage-number diagnosis layer) all
-exist now, which is why they're sequenced here rather than earlier. Then PvP invasion.
+**Next up: PvP base invasion**, the last item on the roadmap. The content backlog below is now
+BUILT — kept as the record of what each weapon was specced to do, since the code says how they work
+and only this says what they were meant to feel like.
 
 ## Mining zone — BUILT
 
@@ -1377,12 +1377,30 @@ that means:
 - Case drop tables, case types, odds, gun families and tool definitions should all be **pure config**
   in the `Shared/` convention, so the content table drops in without service changes.
 
-## Content backlog — gun variants + tools (SPECCED, NOT BUILT)
+## Gun variants + tools — BUILT
 
-**This is the next thing to build.** The spec below is the user's own, given verbatim in the session
-that built the Black Market — recorded here because it existed nowhere on disk and would otherwise
-have been lost. Do not paraphrase or "improve" the numbers when implementing; ask if something is
-ambiguous.
+The spec below is the user's own, verbatim. Kept after the build rather than deleted, because the
+code records how each weapon works and only this records what it was meant to FEEL like — which is
+what you need when retuning one.
+
+**What it cost, in the end:** three shared systems and four one-off behaviours. Roughly half the
+list was config.
+
+| Delivered by | Weapons |
+|---|---|
+| Config alone (`ProjectileConfig` profile + recipe) | Scrap Bow, Longbow, Longshot Rifle, Scout Rifle, Rotary Cannon |
+| One cone emitter (`Pellets`/`SpreadDegrees`) | all 3 flamethrowers |
+| Bounce + fuse + `Explosion` payload | both grenade launchers |
+| `WeaponBehaviors` strategy, one function each | ExplosiveBow, StringedBow, Trailblazer, Hellfire |
+| `ToolModConfig` | all 3 pickaxes |
+
+Two things worth carrying into the next content pass, both of which held up:
+
+- **Prefer config to code.** A behaviour is a function somebody has to maintain; a profile entry is
+  a row in a table. Four of eighteen weapons needed code.
+- **Statuses already existed, so three guns cost almost nothing.** The IceThrower contains no
+  ice-specific code anywhere — Frostbite already slowed, already stacked, already escalated to a
+  Stun at 2. That was the payoff for building `StatusConfig` before the content that wanted it.
 
 Guns are delivered by the Black Market: a **blueprint unlocks the whole family**, and the family
 gets its own Forge tab. So rolling one Bow blueprint opens Bows as a category, and the individual
@@ -1433,28 +1451,42 @@ bows are then Forged normally. Legendary case tier = gun variants, Epic = tools.
 - Pickaxe that **increases mining speed by a lot**.
 - Pickaxe that **increases ore yield**.
 
-### Build order when this gets picked up
+### Decisions made during the build, worth not re-litigating
 
-Sorted by what each actually needs, since roughly half are free:
+- **A family blueprint unlocks the whole family**, and the Forge's Weapons tab became a picker.
+  A flat list was fine at four weapons and unreadable at eighteen. Locked families still show,
+  naming the blueprint that opens them — a player who cannot see what they are missing has no reason
+  to chase a case.
+- **Pellet count buys consistency, never damage.** A cone weapon divides its shot damage across its
+  pellets. Otherwise `Pellets` is a damage multiplier hiding in a hit-probability field.
+- **Headshots became a real mechanic** rather than an AimBot-only flourish. Weapons opt in with
+  `HeadshotMultiplier`; snipers set 1 deliberately, per the spec's "no matter if headshot".
+- **Grenades deal nothing on contact.** Without that they chip on the way past and then explode —
+  two weapons' worth of damage from one shot.
+- **Explosion damage falls off to a floor.** A flat blast makes radius the only stat that matters
+  and positioning irrelevant.
+- **Blast damage got its own colour.** A grenade in a crowd is otherwise a wall of white numbers,
+  and "how many did that catch" is the only interesting thing about a launcher.
+- **`WeaponBehaviors` is separate from `UltimateEffects`.** They look alike and mean different
+  things: an Ultimate is a mod you move between guns, a behaviour is what a gun IS. Merged, you get
+  one config table where half the entries are equippable and half are not. They compose — an
+  ExplosiveBow can carry Ricochet.
+- **Shot counters are per weapon KEY and persist across encounters.** A gun whose gimmick is "every
+  5th shot" must not reset its rhythm because a wave ended.
+- **Tool mods never touch ToolTier.** Raising tier would also unlock ore it was never meant to gate
+  (`MinToolTier`). They scale what a tier produces and nothing else.
+- **One pickaxe equipped at a time.** Otherwise Prospector is strictly mandatory — yield multiplies
+  with everything and there is no reason to take it off.
 
-1. **Config-only — no new code.** Regular Bow, Longbow, Regular Sniper, QuickSniper, Minigun. These
-   are `ProjectileConfig` profiles (speed / gravity / pierce / size) plus `CraftingRecipes` entries.
-   The Regular Sniper's self-slow is the only extra, and it's a stat, not a mechanic.
-2. **One new pattern unlocks three guns.** A **cone/spray** emitter in `ProjectileService` gives all
-   three flamethrowers at once; their differences are purely which status they apply, and Slow,
-   Frostbite and Poison **already exist** in `StatusConfig`. Highest content-per-line in the list —
-   do this first.
-3. **One new pattern unlocks two guns.** **Impact explosion** (radius damage on collide, plus bounce
-   physics) gives both grenade launchers. Sticky's stick-together is the only novel part.
-4. **Genuinely new mechanics, one each.** ExplosiveBow (delayed detonation + arrows tracked per
-   enemy + chain-detonate), StringedBow (tether two hit enemies and pull), Trailblazer (a persistent
-   damaging line volume), Hellfire (upward shot + timed airburst + scattered AoE), PoisonThrower's
-   floor puddles (persistent world volumes). Budget these individually; none of them share code.
+### Still open
 
-Two things to keep in mind, both learned the hard way: **status effects already exist** — do not
-write a seventh private DoT implementation, add a `StatusConfig` entry. And **anything that can't be
-seen working will be reported as broken**, so check each new variant against the damage numbers and
-a training dummy before calling it done.
+- **The Minigun is deliberately plain**, per the spec's own "I don't have that many ideas for the
+  minigun at the moment". It is an honest placeholder stat line — highest sustained DPS in the game,
+  lowest burst. Do not invent a gimmick for it without asking.
+- **`ServerStorage.WeaponTools` has no models for any of the 14.** Every one falls back to the grey
+  placeholder box, which is expected, not a bug.
+- **No weapon is balanced against another yet.** The numbers are first-pass and internally
+  consistent within each family; they have not been played against each other.
 
 ## PvP base invasion
 
