@@ -71,6 +71,7 @@ local EnemyConfig = require(ReplicatedStorage.Shared.EnemyConfig)
 local DataService = require(script.Parent.DataService)
 local RaidEnergyService = require(script.Parent.RaidEnergyService)
 local CombatEncounterService = require(script.Parent.CombatEncounterService)
+local BlackMarketService = require(script.Parent.BlackMarketService)
 local PlayerActivityService = require(script.Parent.PlayerActivityService)
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
@@ -427,6 +428,14 @@ end
 
 local function completeRaid(state)
 	settleRunLoot(state, false) -- clean exit — everything collected is kept, no forfeiture
+
+	-- Contraband is paid on a CLEAN extract only, never on a defeat or an abandon. That is what
+	-- makes extracting a decision rather than a formality — see BlackMarketService.Income.
+	local income = BlackMarketService.Income
+	BlackMarketService.AwardContraband(
+		state.Player,
+		math.random(income.RaidExtractMin, income.RaidExtractMax),
+		"Raid extraction")
 	RaidRoomUpdate:FireClient(state.Player, { Status = "Extracted" })
 	cleanupRaid(state, true)
 end

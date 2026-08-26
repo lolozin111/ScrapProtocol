@@ -88,6 +88,9 @@ local function defaultProfile()
 	return {
 		Scrap = 0,
 		Cores = 0,
+		Contraband = 0,       -- Black Market premium currency. Earned from raid extracts and boss
+			-- waves (see BlackMarketService.Income), or bought with Robux as a grind skip. Buys the
+			-- premium-odds case lines — see CaseConfig. Routed by Wallet like any other currency.
 		OreCounts = {
 			ScrapIron = 0,
 			CopperWire = 0,
@@ -161,6 +164,16 @@ local function defaultProfile()
 			-- TurretConfig.GetTurretTier(Level) derives which Tier that maps to (every 10 levels).
 		NextTurretId = 1,       -- incrementing counter minting each Turrets instance's Id ("t1",
 			-- "t2", ...), same convention as NextWeaponId above — never reused.
+		Cases = {},             -- [caseKey] = count of UNOPENED cases. A count rather than instances:
+			-- a sealed case has no identity beyond its type, and its contents are not rolled until it
+			-- is decoded (see BlackMarketService.RollCase).
+			-- DecodeJob (table?) is deliberately NOT listed here, same reasoning as SmeltJob and
+			-- EquippedWeaponId: pairs() skips nil-valued entries so a `= nil` line would be a no-op,
+			-- and nil reads correctly as "nothing decoding". Shape when active:
+			-- { CaseKey, FinishTime } — see HackerService, always broadcast as `DecodeJob or false`.
+		RobuxCasesToday = {},   -- [caseKey] = count bought today; paired with RobuxCaseDay below to
+			-- enforce CaseConfig's DailyLimit on the Robux case. Reset when the day rolls over.
+		RobuxCaseDay = 0,       -- os.time() day number the counts above belong to.
 		OwnedUltimates = {},    -- [ultimateKey] = true — Mythical passives, see UltimateConfig.lua. NOT
 			-- craftable: they only come out of Black Market cases (and the admin grant, for testing).
 		EquippedUltimate = {},  -- [weaponKey] = ultimateKey — the weapon's FOURTH, exclusive slot.
@@ -621,6 +634,7 @@ function DataService.PushWallet(player: Player)
 		OreCounts = profile.OreCounts,
 		CoreItems = profile.CoreItems,
 		RefinedOreCounts = profile.RefinedOreCounts,
+		Contraband = profile.Contraband,
 	})
 end
 

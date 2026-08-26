@@ -14,7 +14,7 @@ already made (numbers, mechanics, sequencing), not just vague direction.
 | Base (crafting process, mods, tiers, turrets) | **Built** — see below (crafting process' "cute" animation step still not started) |
 | Research level (progression tiers) | **Built** — see below |
 | Main shop (rotating stock, geode/extractor) | **Superseded** by the Black Market — same flow |
-| Black Market & Hacker Machine | Not started — **next up**, design captured below |
+| Black Market & Hacker Machine | **Built** — dealer, cases, decode, Contraband. Gun variants + tools still to come |
 | PvP base invasion | Not started, sequence last |
 
 Agreed build order (most recent discussion): Raid Energy → Mining zone rework → weapon mod
@@ -1175,7 +1175,20 @@ post-boss card pick.
   check Roblox's policy on randomized virtual item mechanics (odds disclosure requirements) — not
   a blocker for prototyping, but relevant before shipping a monetized version.
 
-## Black Market & Hacker Machine — NOT STARTED (next up)
+## Black Market & Hacker Machine — BUILT (content pending)
+
+**Status:** the delivery system is done end to end — dealer with rotating stock, sealed cases,
+timed decoding on the Hacker Machine, both rush paths, and Contraband as a real earned currency.
+Ultimate mods drop from it for real.
+
+**What is NOT built yet:** gun variants and special tools. Their pools exist in `CaseConfig` with
+TODOs, and no shipped case rolls them — a case that promised a gun it could not deliver would be
+worse than one that pays out materials. Adding them is: pool entries, a branch in
+`BlackMarketService.GrantReward`, and the specialised gun-line/mod-line crates.
+
+The original design follows.
+
+## Black Market & Hacker Machine — design
 
 A rotating-stock dealer selling **sealed cases**, decoded on a separate **Hacker Machine**. This is
 the mid-to-endgame content faucet: it is where gun variants, special tools, and the Ultimate mods

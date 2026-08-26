@@ -116,15 +116,12 @@ UltimateConfig.Mods = {
 
 	AimBot = {
 		DisplayName = "AimBot",
-		Description = "Every 3rd bullet finds a head. (Testing: instantly kills.)",
+		Description = "Every 3rd bullet finds a head. Headshots deal 50% more damage.",
 		Effect = "AimBot",
 		Trigger = "OnHit",
 		Params = {
 			EveryNthShot = 3,
 			HeadshotMultiplier = 1.5,
-			-- TEMPORARY, by request: outright kill rather than a damage bonus, so it is obvious the
-			-- passive is firing. Flip to false for the intended 1.5x headshot.
-			Instakill = true,
 		},
 	},
 }

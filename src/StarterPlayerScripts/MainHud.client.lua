@@ -30,6 +30,7 @@ local RefinedOreConfig = require(ReplicatedStorage.Shared.RefinedOreConfig)
 local BaseConfig = require(ReplicatedStorage.Shared.BaseConfig)
 local ResearchConfig = require(ReplicatedStorage.Shared.ResearchConfig)
 local UltimateConfig = require(ReplicatedStorage.Shared.UltimateConfig)
+local CaseConfig = require(ReplicatedStorage.Shared.CaseConfig)
 local Wallet = require(ReplicatedStorage.Shared.Wallet)
 local TurretConfig = require(ReplicatedStorage.Shared.TurretConfig)
 
@@ -919,6 +920,175 @@ end
 -- mining run, same as everything else worth having.
 ----------------------------------------------------------------------
 
+-- Formats seconds as M:SS / H:MM, for decode countdowns and the restock timer.
+local function formatClock(seconds: number): string
+	seconds = math.max(math.floor(seconds), 0)
+	if seconds >= 3600 then
+		return ("%dh %02dm"):format(seconds // 3600, (seconds % 3600) // 60)
+	end
+	return ("%d:%02d"):format(seconds // 60, seconds % 60)
+end
+
+----------------------------------------------------------------------
+-- Cases tab (Black Market dealer) — rotating stock of sealed cases.
+--
+-- Odds are shown per case rather than hidden. A sealed-case system that conceals its own rates is
+-- both worse to play against and, once real money touches it, a policy problem — see the
+-- randomized-rewards note in DESIGN_NOTES' superseded Main shop section.
+----------------------------------------------------------------------
+
+local function renderCasesRow()
+	Hud.makeRow(
+		"Black Market",
+		("Stock rotates in %s · decode what you buy at the Hacker Machine"):format(
+			formatClock(CaseConfig.SecondsUntilRestock(os.time()))),
+		"OK",
+		function() end
+	).Parent = listFrame
+
+	for _, caseKey in ipairs(CaseConfig.GetRotatingStock(os.time())) do
+		local case = CaseConfig.Cases[caseKey]
+		if case then
+			local owned = (Hud.profile.Cases or {})[caseKey] or 0
+
+			-- Rendered highest-rarity-first so the interesting odds lead, rather than in the
+			-- RarityOrder walk where Common always comes first and buries them.
+			local parts = {}
+			for i = #CaseConfig.RarityOrder, 1, -1 do
+				local rarity = CaseConfig.RarityOrder[i]
+				local weight = case.Odds[rarity]
+				if weight then
+					local total = 0
+					for _, w in pairs(case.Odds) do
+						total += w
+					end
+					table.insert(parts, ("%s %.0f%%"):format(rarity, weight / total * 100))
+				end
+			end
+
+			local costText = case.RobuxProductKey and "Robux" or Hud.costString(case.Cost)
+			Hud.makeRow(
+				("%s%s"):format(case.DisplayName, owned > 0 and (" (x%d owned)"):format(owned) or ""),
+				("%s · %s · decode %s"):format(costText, table.concat(parts, ", "), formatClock(case.DecodeSeconds)),
+				case.RobuxProductKey and "Robux" or "Buy",
+				function()
+					if case.RobuxProductKey then
+						-- The Robux path needs a real developer product id in ShopConfig; every id is
+						-- still 0, so this cannot work until those are created in the Creator
+						-- Dashboard. Says so rather than failing silently.
+						Hud.showFailure("Not set up", "Robux cases need their product id filled into ShopConfig.lua first.")
+						return
+					end
+					local result = Remotes.BuyCase:InvokeServer(caseKey)
+					if not result.Success then
+						Hud.showFailure("Buy failed", result.Reason)
+					else
+						Hud.showToast(("Bought a %s. Decode it at the Hacker Machine."):format(case.DisplayName), 4)
+						renderCraftList()
+					end
+				end
+			).Parent = listFrame
+		end
+	end
+end
+
+----------------------------------------------------------------------
+-- Decode tab (Hacker Machine) — one job at a time, with the two rush paths.
+----------------------------------------------------------------------
+
+local function renderDecodeRow()
+	local job = Hud.profile.DecodeJob
+
+	if job and job.FinishTime then
+		local remaining = job.FinishTime - os.time()
+		local case = CaseConfig.Cases[job.CaseKey]
+
+		if remaining > 0 then
+			Hud.makeRow(
+				("Decoding: %s"):format(case and case.DisplayName or job.CaseKey),
+				("Ready in %s"):format(formatClock(remaining)),
+				"Working",
+				function() end
+			).Parent = listFrame
+
+			-- The two rush paths, side by side, so the risk asymmetry is visible at the moment of
+			-- choosing rather than buried in a description somewhere.
+			Hud.makeRow(
+				("Force it — %d Cores"):format(CaseConfig.Rush.CoresCost),
+				("%d%% chance the case corrupts and you lose it"):format(math.floor(CaseConfig.Rush.CorruptChance * 100)),
+				"Rush",
+				function()
+					local result = Remotes.RushDecode:InvokeServer()
+					if not result.Success then
+						Hud.showFailure("Rush failed", result.Reason)
+					elseif result.Corrupted then
+						Hud.showToast(result.Reason or "The case corrupted. Nothing recoverable.", 5)
+					end
+					renderCraftList()
+				end
+			).Parent = listFrame
+
+			Hud.makeRow(
+				"Clean bypass — Robux",
+				"Instant, no risk of corruption",
+				"Robux",
+				function()
+					Hud.showFailure("Not set up", "The instant decode needs its product id filled into ShopConfig.lua first.")
+				end
+			).Parent = listFrame
+		else
+			-- The background loop resolves within a couple of seconds of the timer hitting zero.
+			Hud.makeRow(
+				("Decoding: %s"):format(case and case.DisplayName or job.CaseKey),
+				"Finishing up...",
+				"Wait",
+				function() end
+			).Parent = listFrame
+		end
+		return
+	end
+
+	local cases = Hud.profile.Cases or {}
+	local any = false
+	for _, caseKey in ipairs((function()
+		local keys = {}
+		for key in pairs(CaseConfig.Cases) do
+			table.insert(keys, key)
+		end
+		table.sort(keys)
+		return keys
+	end)()) do
+		local owned = cases[caseKey] or 0
+		if owned > 0 then
+			any = true
+			local case = CaseConfig.Cases[caseKey]
+			Hud.makeRow(
+				("%s (x%d)"):format(case.DisplayName, owned),
+				("%s · takes %s"):format(case.Description, formatClock(case.DecodeSeconds)),
+				"Decode",
+				function()
+					local result = Remotes.StartDecode:InvokeServer(caseKey)
+					if not result.Success then
+						Hud.showFailure("Decode failed", result.Reason)
+					else
+						Hud.showToast(("Decoding a %s..."):format(case.DisplayName), 3)
+					end
+					renderCraftList()
+				end
+			).Parent = listFrame
+		end
+	end
+
+	if not any then
+		Hud.makeRow(
+			"Nothing to decode",
+			"Buy a sealed case at the Black Market first",
+			"OK",
+			function() end
+		).Parent = listFrame
+	end
+end
+
 local function renderTurretsRow()
 	local unlocked = Hud.profile.UnlockedTurretBlueprints or {}
 
@@ -1002,6 +1172,12 @@ renderCraftList = function()
 		return
 	elseif currentTab == "Turrets" then
 		renderTurretsRow()
+		return
+	elseif currentTab == "Cases" then
+		renderCasesRow()
+		return
+	elseif currentTab == "Decode" then
+		renderDecodeRow()
 		return
 	elseif currentTab == "Mods" then
 		renderModsRow()
@@ -2386,6 +2562,11 @@ end
 task.spawn(function()
 	while true do
 		task.wait(1)
+		-- Decode counts down in real time like smelting does; InventoryUpdate only arrives when a
+		-- job starts or finishes, not every second.
+		if craftFrame.Visible and currentTab == "Decode" and Hud.profile.DecodeJob then
+			renderCraftList()
+		end
 		if craftFrame.Visible and currentTab == "Smelting" and Hud.profile.SmeltJob then
 			renderCraftList()
 		end
@@ -3139,6 +3320,31 @@ end)
 -- ignoring you.
 Remotes.MineFailed.OnClientEvent:Connect(function(reason: string)
 	Hud.showToast(reason, 2.5) -- short: these fire often and shouldn't linger over the next swing
+end)
+
+-- What came out of a case. Its own remote rather than a generic toast so the rarity can be
+-- announced properly — the moment a case opens is the whole payoff of the system.
+Remotes.CaseOpened.OnClientEvent:Connect(function(caseKey: string, reward)
+	if not reward then
+		return
+	end
+	local name = Wallet.DisplayName(reward.Key)
+	if reward.Kind == "Ultimate" then
+		local data = UltimateConfig.Mods[reward.Key]
+		name = data and data.DisplayName or reward.Key
+		if reward.Duplicate then
+			Hud.showToast(("MYTHICAL — %s (already owned) · +%d Contraband instead"):format(
+				name, reward.ConsolationContraband or 0), 6)
+			return
+		end
+		Hud.showToast(("MYTHICAL — %s unlocked! Equip it in the Inventory's Ultimate slot."):format(name), 7)
+		return
+	end
+	Hud.showToast(("%s — %d %s"):format(reward.Rarity, reward.Amount or 1, name), 5)
+end)
+
+Remotes.ContrabandAwarded.OnClientEvent:Connect(function(amount: number, reason: string)
+	Hud.showToast(("+%d Contraband%s"):format(amount, reason ~= "" and (" · " .. reason) or ""), 3)
 end)
 
 Remotes.EnergyDrinkFound.OnClientEvent:Connect(function()

@@ -41,6 +41,7 @@ local CombatMath = require(script.Parent.CombatMath)
 local PlotService = require(script.Parent.PlotService)
 local CombatEncounterService = require(script.Parent.CombatEncounterService)
 local PlayerActivityService = require(script.Parent.PlayerActivityService)
+local BlackMarketService = require(script.Parent.BlackMarketService)
 
 local Remotes = ReplicatedStorage.Remotes
 local StartWave = Remotes.StartWave
@@ -132,6 +133,9 @@ local function runWaves(player: Player)
 				local coreKey = RewardTables.CoreKeyForMilestone(milestoneIndex)
 				DataService.AddCoreItem(player, coreKey, 1)
 				coreGrant = { Key = coreKey, Amount = 1 }
+				-- Boss waves also pay Contraband, so base defense feeds the Black Market too and raiding
+				-- is not the only route to a premium case.
+				BlackMarketService.AwardContraband(player, BlackMarketService.Income.BossWave, "Boss wave")
 				bonusLoot = grantRolledLoot(player, RewardTables.Roll("BossUtility"))
 			else
 				bonusLoot = grantRolledLoot(player, RewardTables.Roll("RegularUtility"))

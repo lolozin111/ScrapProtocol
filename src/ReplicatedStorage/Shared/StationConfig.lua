@@ -56,6 +56,20 @@ StationConfig.Types = {
 		DefaultTab = "Weapons",
 		NotThereMessage = "You need to be at your Forge to do that.",
 	},
+	BlackMarket = {
+		DisplayName = "Black Market",
+		Tabs = { "Cases" }, -- rotating stock of sealed cases — see CaseConfig/BlackMarketService
+		DefaultTab = "Cases",
+		NotThereMessage = "You need to be at the Black Market to do that.",
+		-- Shared world location, not part of anyone's base — so like the Hub Shop, its handlers
+		-- deliberately do NOT check PlotService.IsPlayerInOwnPlot. Place it outside BaseTemplates.
+	},
+	Hacker = {
+		DisplayName = "Hacker Machine",
+		Tabs = { "Decode" }, -- opens sealed cases over real time — see HackerService
+		DefaultTab = "Decode",
+		NotThereMessage = "You need to be at the Hacker Machine to do that.",
+	},
 	Shop = {
 		DisplayName = "Hub Shop",
 		Tabs = { "Blueprints" }, -- rotating Turret blueprint stock — see TurretConfig

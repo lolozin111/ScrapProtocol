@@ -38,6 +38,7 @@ local OreConfig = require(ReplicatedStorage.Shared.OreConfig)
 local RefinedOreConfig = require(ReplicatedStorage.Shared.RefinedOreConfig)
 local TurretConfig = require(ReplicatedStorage.Shared.TurretConfig)
 local UltimateConfig = require(ReplicatedStorage.Shared.UltimateConfig)
+local CaseConfig = require(ReplicatedStorage.Shared.CaseConfig)
 local DataService = require(script.Parent.DataService)
 local TurretService = require(script.Parent.TurretService)
 local TrainingDummyService = require(script.Parent.TrainingDummyService)
@@ -138,7 +139,7 @@ local function commandGive(player: Player, profile, args: { string })
 	-- because RewardTables mints keys by milestone (CoreT1, CoreT2, ...) and there's no canonical
 	-- enumeration of them — anything starting "Core" that isn't the Cores currency is treated as
 	-- one, which is good enough for a dev command.
-	local currencyKey = resolveKey(what, { "Scrap", "Cores" })
+	local currencyKey = resolveKey(what, { "Scrap", "Cores", "Contraband" })
 	if currencyKey then
 		DataService.AddCurrency(player, currencyKey, amount)
 		pushProfile(player, profile)
@@ -223,6 +224,36 @@ local function commandGiveUltimate(player: Player, profile, args: { string })
 	tell(player, ("granted Ultimate %s — equip it from the Inventory's weapon detail panel"):format(key))
 end
 
+-- Cases are the Black Market's whole delivery mechanism, so handing one over without grinding the
+-- currency first is what makes the decode flow testable at all.
+local function caseKeys(): { string }
+	local keys = {}
+	for key in pairs(CaseConfig.Cases) do
+		table.insert(keys, key)
+	end
+	table.sort(keys)
+	return keys
+end
+
+local function commandGiveCase(player: Player, profile, args: { string })
+	local requested = args[2]
+	local key
+	if requested then
+		key = resolveKey(requested, caseKeys())
+		if not key then
+			tell(player, ("unknown case '%s' — try one of: %s"):format(requested, table.concat(caseKeys(), ", ")))
+			return
+		end
+	else
+		key = caseKeys()[1]
+	end
+
+	local amount = math.max(1, math.floor(tonumber(args[3]) or 1))
+	profile.Cases[key] = (profile.Cases[key] or 0) + amount
+	Remotes.InventoryUpdate:FireClient(player, { Cases = profile.Cases })
+	tell(player, ("+%d %s — decode it at the Hacker Machine"):format(amount, key))
+end
+
 local function commandDummy(player: Player)
 	if TrainingDummyService.SpawnNear(player) then
 		tell(player, "spawned a training dummy in front of you")
@@ -246,10 +277,11 @@ local function commandSetWave(player: Player, profile, args: { string })
 end
 
 local function commandHelp(player: Player)
-	tell(player, "commands: /admin [on|off] · /give <what> [amount] · /giveturret [TypeKey] · /giveultimate [Key] · /dummy · /setwave <n>")
+	tell(player, "commands: /admin [on|off] · /give <what> [amount] · /giveturret [TypeKey] · /giveultimate [Key] · /dummy · /givecase [Key] [n] · /setwave <n>")
 	tell(player, ("givable: Scrap, Cores, CoreT1.., %s, %s"):format(table.concat(oreKeys(), ", "), table.concat(refinedKeys(), ", ")))
 	tell(player, ("turrets: %s"):format(table.concat(turretKeys(), ", ")))
 	tell(player, ("ultimates: %s"):format(table.concat(ultimateKeys(), ", ")))
+	tell(player, ("cases: %s"):format(table.concat(caseKeys(), ", ")))
 end
 
 ----------------------------------------------------------------------
@@ -288,7 +320,8 @@ local function handleChatted(player: Player, message: string)
 	end
 
 	if command ~= "/give" and command ~= "/giveturret" and command ~= "/giveultimate"
-		and command ~= "/dummy" and command ~= "/setwave" and command ~= "/help" then
+		and command ~= "/dummy" and command ~= "/givecase"
+		and command ~= "/setwave" and command ~= "/help" then
 		return
 	end
 
@@ -312,6 +345,8 @@ local function handleChatted(player: Player, message: string)
 		commandGiveUltimate(player, profile, args)
 	elseif command == "/dummy" then
 		commandDummy(player)
+	elseif command == "/givecase" then
+		commandGiveCase(player, profile, args)
 	elseif command == "/setwave" then
 		commandSetWave(player, profile, args)
 	elseif command == "/help" then

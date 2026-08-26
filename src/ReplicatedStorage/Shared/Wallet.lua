@@ -4,7 +4,7 @@
 	called" — for every kind of thing a price can be quoted in.
 
 	A player's spendable stuff is spread across four buckets on the profile:
-	  profile.Scrap / profile.Cores       flat currencies
+	  profile.Scrap / .Cores / .Contraband flat currencies
 	  profile.OreCounts[key]              raw ore (OreConfig.Ores)
 	  profile.RefinedOreCounts[key]       smelted materials (RefinedOreConfig, keyed by RefinedKey)
 	  profile.CoreItems[key]              boss-wave drops (CoreT1, CoreT2, ...)
@@ -35,7 +35,7 @@ local Wallet = {}
 --
 -- Returns one of "Currency" | "Refined" | "Core" | "Ore".
 function Wallet.BucketFor(key: string): string
-	if key == "Scrap" or key == "Cores" then
+	if key == "Scrap" or key == "Cores" or key == "Contraband" then
 		return "Currency"
 	end
 	if RefinedOreConfig.ByRefinedKey[key] then

@@ -45,6 +45,8 @@ require(Services.TurretShopService)
 require(Services.TurretService)
 -- Testing aid: punching bags that behave as real enemies. Required last so it registers its
 -- fallback encounter provider after everything it depends on is live.
+require(Services.BlackMarketService)
+require(Services.HackerService)
 require(Services.TrainingDummyService)
 -- ResourceZoneService (the old scattered-ring ore layout) is no longer required — it's been
 -- replaced by the dig-down MineShaftService above. The file's still on disk for reference; see
@@ -82,6 +84,7 @@ do
 		"ForgeService", "SmeltService", "WaveService", "ShopService", "NodeService",
 		"ExpeditionService", "AutoMinerService", "MineShaftService", "RaidRoomService",
 		"TurretShopService", "TurretService", "TrainingDummyService",
+		"BlackMarketService", "HackerService",
 	}) do
 		loaded[name] = true
 	end
