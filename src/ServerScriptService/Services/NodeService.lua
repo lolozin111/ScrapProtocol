@@ -308,6 +308,16 @@ local function runRaid(player: Player, node: Instance, tier: number)
 		nodeCooldowns = raidCooldowns[userId] or {}
 		nodeCooldowns[node] = os.time() + tierData.CooldownSeconds
 		raidCooldowns[userId] = nodeCooldowns
+
+		-- Drop the entry if the node is ever destroyed. This table is keyed by Instance, so without
+		-- this it holds a strong reference to every permanent node the player has ever raided,
+		-- keeping destroyed ones alive for the rest of the session.
+		node.Destroying:Once(function()
+			local perPlayer = raidCooldowns[userId]
+			if perPlayer then
+				perPlayer[node] = nil
+			end
+		end)
 	end
 
 	OutpostUpdate:FireClient(player, { Status = "RaidCleared", Loot = loot })

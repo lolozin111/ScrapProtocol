@@ -44,6 +44,9 @@ PlotService.PlotAssigned = plotAssignedSignal.Event -- (player: Player, plot: Ba
 
 local plotOwner: { [Instance]: Player } = {} -- plot Part -> assigned Player
 local playerPlot: { [Player]: Instance } = {} -- Player -> assigned plot Part
+-- One CharacterAdded connection per player, kept so releasePlot can disconnect it. Without this
+-- the connection outlived the player it was made for on every leave.
+local characterConn: { [Player]: RBXScriptConnection } = {}
 
 -- Forces every Plot-tagged Part into "invisible anchor" shape, no matter how it was built in
 -- Studio — this way placing one is as simple as tagging literally any Part.
@@ -100,7 +103,7 @@ local function assignPlot(player: Player)
 	if player.Character then
 		onCharacterAdded(player, player.Character)
 	end
-	player.CharacterAdded:Connect(function(character)
+	characterConn[player] = player.CharacterAdded:Connect(function(character)
 		onCharacterAdded(player, character)
 	end)
 
@@ -114,6 +117,12 @@ local function releasePlot(player: Player)
 	end
 	plotOwner[plot] = nil
 	playerPlot[player] = nil
+
+	local conn = characterConn[player]
+	if conn then
+		conn:Disconnect()
+	end
+	characterConn[player] = nil
 	plot:SetAttribute("OwnerUserId", nil)
 	plot:SetAttribute("OwnerName", nil)
 end

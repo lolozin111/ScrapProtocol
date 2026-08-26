@@ -35,6 +35,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local AdminConfig = require(ReplicatedStorage.Shared.AdminConfig)
 local OreConfig = require(ReplicatedStorage.Shared.OreConfig)
+local RefinedOreConfig = require(ReplicatedStorage.Shared.RefinedOreConfig)
 local TurretConfig = require(ReplicatedStorage.Shared.TurretConfig)
 local DataService = require(script.Parent.DataService)
 local TurretService = require(script.Parent.TurretService)
@@ -76,6 +77,15 @@ local function oreKeys(): { string }
 	return keys
 end
 
+local function refinedKeys(): { string }
+	local keys = {}
+	for _, data in pairs(RefinedOreConfig.Ores) do
+		table.insert(keys, data.RefinedKey)
+	end
+	table.sort(keys)
+	return keys
+end
+
 local function turretKeys(): { string }
 	local keys = {}
 	for key in pairs(TurretConfig.Types) do
@@ -93,6 +103,7 @@ local function pushProfile(player: Player, profile)
 		Scrap = profile.Scrap,
 		Cores = profile.Cores,
 		OreCounts = profile.OreCounts,
+		RefinedOreCounts = profile.RefinedOreCounts,
 		CoreItems = profile.CoreItems,
 		Turrets = profile.Turrets,
 		HighestWave = profile.HighestWave,
@@ -134,6 +145,17 @@ local function commandGive(player: Player, profile, args: { string })
 		DataService.AddOre(player, oreKey, amount)
 		pushProfile(player, profile)
 		tell(player, ("+%d %s"):format(amount, oreKey))
+		return
+	end
+
+	-- Refined materials (SteelIngot, CopperCoil, ...) — checked after raw ore so the two never
+	-- collide, and included because turret crafts and Research tiers now cost them, which makes
+	-- them untestable without either this or a real smelting run per attempt.
+	local refinedKey = resolveKey(what, refinedKeys())
+	if refinedKey then
+		DataService.AddRefinedOre(player, refinedKey, amount)
+		pushProfile(player, profile)
+		tell(player, ("+%d %s"):format(amount, refinedKey))
 		return
 	end
 
@@ -191,7 +213,7 @@ end
 
 local function commandHelp(player: Player)
 	tell(player, "commands: /admin [on|off] · /give <what> [amount] · /giveturret [TypeKey] · /setwave <n>")
-	tell(player, ("givable: Scrap, Cores, CoreT1.., %s"):format(table.concat(oreKeys(), ", ")))
+	tell(player, ("givable: Scrap, Cores, CoreT1.., %s, %s"):format(table.concat(oreKeys(), ", "), table.concat(refinedKeys(), ", ")))
 	tell(player, ("turrets: %s"):format(table.concat(turretKeys(), ", ")))
 end
 

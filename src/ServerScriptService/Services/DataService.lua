@@ -15,6 +15,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local RaidEnergyConfig = require(ReplicatedStorage.Shared.RaidEnergyConfig)
+local Wallet = require(ReplicatedStorage.Shared.Wallet)
 
 local PlayerDataStore = DataStoreService:GetDataStore("SalvageProtocol_PlayerData_v1")
 
@@ -278,8 +279,17 @@ function DataService.TrySpendCoreItem(player: Player, coreKey: string, amount: n
 	return true
 end
 
--- costTable example: { ScrapIron = 25, CopperWire = 10 } — ore keys and/or "Scrap"/"Cores".
--- Returns true and deducts everything atomically, or false and deducts nothing.
+-- costTable example: { Scrap = 120, ScrapIron = 25, SteelIngot = 5 }. Keys may be "Scrap"/"Cores",
+-- a raw ore key, a REFINED material key (RefinedOreConfig, e.g. "SteelIngot"), or a CoreItem key
+-- ("CoreT1") — Wallet.BucketFor works out which profile field each one lives in.
+--
+-- Refined materials were previously unspendable: this function only knew about Scrap/Cores and
+-- OreCounts, so a price quoted in SteelIngot silently read as "you have 0 of this ore" and every
+-- purchase failed. Smelting produced a resource nothing could charge for.
+--
+-- Returns true and deducts everything atomically, or false and deducts nothing. The two passes
+-- matter: check EVERYTHING first, then deduct, so a cost the player can only half-afford leaves
+-- them with all of it rather than partially charged.
 function DataService.TrySpend(player: Player, costTable: { [string]: number }): boolean
 	local profile = cache[player.UserId]
 	if not profile then
@@ -287,17 +297,19 @@ function DataService.TrySpend(player: Player, costTable: { [string]: number }): 
 	end
 
 	for key, amount in pairs(costTable) do
-		local available = (key == "Scrap" or key == "Cores")
-			and (profile[key] or 0)
-			or (profile.OreCounts[key] or 0)
-		if available < amount then
+		if Wallet.GetAmount(profile, key) < amount then
 			return false
 		end
 	end
 
 	for key, amount in pairs(costTable) do
-		if key == "Scrap" or key == "Cores" then
+		local bucket = Wallet.BucketFor(key)
+		if bucket == "Currency" then
 			profile[key] -= amount
+		elseif bucket == "Refined" then
+			profile.RefinedOreCounts[key] -= amount
+		elseif bucket == "Core" then
+			profile.CoreItems[key] -= amount
 		else
 			profile.OreCounts[key] -= amount
 		end

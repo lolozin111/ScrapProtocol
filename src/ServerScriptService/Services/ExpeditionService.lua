@@ -403,6 +403,24 @@ Remotes.RegenerateExpedition.OnServerEvent:Connect(function(player: Player, leve
 		return
 	end
 
+	-- Distance check. The tag check above only proved the client named A lever, not that the player
+	-- is anywhere near it — so an expedition could be started (and everyone else's queue wiped and
+	-- regenerated) from across the map. It costs Energy either way, which bounded the abuse but did
+	-- not make it correct.
+	local character = player.Character
+	local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+	local leverPart = lever:IsA("BasePart") and lever or nil
+	if not rootPart or not leverPart then
+		return
+	end
+	if (rootPart.Position - leverPart.Position).Magnitude > ExpeditionConfig.LeverInteractDistance then
+		Remotes.OutpostUpdate:FireClient(player, {
+			Status = "Busy",
+			Message = "Walk up to the expedition lever to start a run.",
+		})
+		return
+	end
+
 	if not AdminConfig.IsAdmin(player) and not RaidEnergyService.TrySpendEnergy(player) then
 		Remotes.OutpostUpdate:FireClient(player, { Status = "NoEnergy" })
 		return

@@ -132,8 +132,13 @@ MineNode.OnServerEvent:Connect(function(player: Player, node: Instance)
 		return
 	end
 
+	-- HumanoidRootPart, not character.PrimaryPart: Roblox does not guarantee PrimaryPart is set on
+	-- a character model, so reading it was a silent "mining does nothing" for anyone whose rig
+	-- happened not to have it. Every other service in this codebase already looks the root part up
+	-- by name; these two mining services were the odd ones out.
 	local character = player.Character
-	if not character or not character.PrimaryPart then
+	local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+	if not rootPart then
 		return
 	end
 
@@ -142,7 +147,7 @@ MineNode.OnServerEvent:Connect(function(player: Player, node: Instance)
 	if not nodePosition then
 		return
 	end
-	if (character.PrimaryPart.Position - nodePosition).Magnitude > MAX_MINING_DISTANCE then
+	if (rootPart.Position - nodePosition).Magnitude > MAX_MINING_DISTANCE then
 		return
 	end
 

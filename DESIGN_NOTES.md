@@ -1301,10 +1301,19 @@ deliberately cuts them, rather than rediscovering them one at a time.
   and **spendable nowhere**. There is no instant-craft mechanic: crafting has no duration to skip,
   so the token has nothing to do. Either give crafting a real timer (the way `SmeltService` already
   has one) so skipping it is worth something, or drop the token from those tables.
-- **`profile.RefinedOreCounts`** — smelting works end to end and refined materials accumulate in
-  the Inventory's Materials tab, but nothing accepts them as payment. Wiring them into
-  `CraftingRecipes`/`ModConfig`/`TurretConfig` cost tables was always flagged as a separate
-  follow-up; until then, smelting is a sink with no output.
+- ~~**`profile.RefinedOreCounts`**~~ — RESOLVED. Refined materials are now spendable: the upper
+  half of the turret roster (`TurretConfig.CraftCost`), Research Tiers 3+ (`ResearchConfig`), and
+  Tool Tier 4 (`OreConfig.ToolTierCosts`) all price partly in them, so smelting sits on the critical
+  path instead of being a sink with no output.
+
+  The blocker was never the cost tables — it was that `DataService.TrySpend` only understood
+  `Scrap`/`Cores` and `OreCounts`, so a price quoted in `SteelIngot` silently read as "you have 0 of
+  this ore" and every purchase failed. That bucket-routing logic was duplicated in four places (twice
+  inside TrySpend, again in the Research requirements check, again in the HUD's cost formatter) and
+  none of them knew refined materials existed. It now lives once, in **`Shared/Wallet.lua`**
+  (`BucketFor` / `GetAmount` / `DisplayName` / `CostString` / `CanAfford`), shared by client and
+  server so the UI can never disagree with what the server will actually charge. Costs can now be
+  quoted in any bucket — currency, raw ore, refined material, or CoreItem — with no caller changes.
 - ~~**`profile.ResearchTier`**~~ — RESOLVED. It is now the game's progression ladder with a real
   earn path (see "Research level" above), so turret levels are no longer capped at 10.
 

@@ -40,6 +40,8 @@
 	physically overlap. Space plots for the LAST tier, not the first.
 ]]
 
+local Wallet = require(script.Parent.Wallet)
+
 local ResearchConfig = {}
 
 ResearchConfig.TemplateFolderName = "BaseTemplates"
@@ -50,6 +52,12 @@ ResearchConfig.TemplateFolderName = "BaseTemplates"
 -- The wave gates land on multiples of WaveConfig.EliteWaveInterval (5) on purpose: those are the
 -- boss waves, and boss waves are the only source of the CoreItem each tier also needs. So the wave
 -- that unlocks a tier is the same wave that can drop the Core to pay for it.
+--
+-- Tier 3 and up also cost REFINED materials (RefinedOreConfig), which means running the ore through
+-- the Forge's Smelting tab first. That is deliberate: it puts a finished-but-unused system on the
+-- critical path instead of leaving smelting as a sink with no output, and it makes the late tiers
+-- cost time as well as quantity — a Voidium Core is 1:1 with a shard, but you still have to smelt
+-- it. Costs quoted in refined keys work because DataService.TrySpend routes them through Wallet.
 --
 -- FootprintHalfSize is the region PlotService.IsPlayerInOwnPlot treats as "your base", and
 -- BaseConfig.TurretRingRadiusFraction derives the turret ring from it — so widening the footprint
@@ -78,7 +86,7 @@ ResearchConfig.Tiers = {
 		RequiredWave = 10,
 		WallHP = 550,
 		FootprintHalfSize = Vector3.new(62, 38, 62),
-		Cost = { Scrap = 1200, SteelPlating = 150, CopperWire = 80, GoldContacts = 20 },
+		Cost = { Scrap = 1200, SteelPlating = 150, CopperWire = 80, SteelIngot = 20 },
 		CoreRequirement = { Key = "CoreT2", Amount = 1 },
 	},
 	{
@@ -87,7 +95,7 @@ ResearchConfig.Tiers = {
 		RequiredWave = 15,
 		WallHP = 900,
 		FootprintHalfSize = Vector3.new(75, 42, 75),
-		Cost = { Scrap = 3000, GoldContacts = 60, SteelPlating = 250 },
+		Cost = { Scrap = 3000, GoldContacts = 60, HardenedPlate = 30 },
 		CoreRequirement = { Key = "CoreT3", Amount = 1 },
 	},
 	{
@@ -96,7 +104,7 @@ ResearchConfig.Tiers = {
 		RequiredWave = 20,
 		WallHP = 1400,
 		FootprintHalfSize = Vector3.new(88, 46, 88),
-		Cost = { Scrap = 6500, GoldContacts = 150, VoidiumShard = 10 },
+		Cost = { Scrap = 6500, GoldContacts = 150, GoldBar = 25 },
 		CoreRequirement = { Key = "CoreT4", Amount = 1 },
 	},
 	{
@@ -105,7 +113,7 @@ ResearchConfig.Tiers = {
 		RequiredWave = 25,
 		WallHP = 2100,
 		FootprintHalfSize = Vector3.new(100, 50, 100),
-		Cost = { Scrap = 12000, VoidiumShard = 40, GoldContacts = 250 },
+		Cost = { Scrap = 12000, VoidiumShard = 40, VoidiumCore = 15 },
 		CoreRequirement = { Key = "CoreT5", Amount = 1 },
 	},
 	-- Add more tiers here and the ladder extends with no code changes — but build the matching
@@ -153,12 +161,9 @@ function ResearchConfig.GetNextTierRequirements(profile)
 	local costEntries = {}
 	local costMet = true
 	for key, amount in pairs(nextTier.Cost or {}) do
-		local have
-		if key == "Scrap" or key == "Cores" then
-			have = profile[key] or 0
-		else
-			have = (profile.OreCounts or {})[key] or 0
-		end
+		-- Wallet routes the key to whichever profile bucket it lives in (currency / ore / refined /
+		-- core), so a tier cost can be quoted in any of them without this needing to know which.
+		local have = Wallet.GetAmount(profile, key)
 		local met = have >= amount
 		costMet = costMet and met
 		table.insert(costEntries, { Key = key, Needed = amount, Have = have, Met = met })

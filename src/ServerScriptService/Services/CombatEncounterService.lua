@@ -1020,9 +1020,14 @@ end)
 
 Players.PlayerRemoving:Connect(function(player)
 	activeEncounters[player.UserId] = nil
-	local playerFolder = encounterFolder:FindFirstChild(tostring(player.UserId))
-	if playerFolder then
-		playerFolder:Destroy()
+	-- Both folders: RunWave names its folder "<userId>" and RunRaidCombat names its "<userId>_Raid".
+	-- Only the first was cleaned here, so a disconnect mid-raid left its spawned enemies standing in
+	-- the world until the raid loop happened to notice on its next tick.
+	for _, suffix in ipairs({ "", "_Raid" }) do
+		local playerFolder = encounterFolder:FindFirstChild(tostring(player.UserId) .. suffix)
+		if playerFolder then
+			playerFolder:Destroy()
+		end
 	end
 end)
 

@@ -138,9 +138,13 @@ Remotes.ForgeWeapon.OnServerInvoke = function(player: Player, weaponKey: string,
 	local forgeTierData = ForgeConfig.ForgeTiers[profile.ForgeTier or 1]
 	local luckPoints = (forgeTierData and forgeTierData.Bonus or 0) + (usePotion and ForgeConfig.LuckPotion.Bonus or 0)
 
-	profile.ForgePityCounter = (profile.ForgePityCounter or 0) + 1
+	-- Pity is evaluated on the counter BEFORE this roll increments it, so Threshold rolls without a
+	-- Rare+ forces the roll AFTER them — which is what ForgeConfig and the README both describe
+	-- ("Threshold rolls in a row without landing MinRarity forces the NEXT roll"). Incrementing
+	-- first made it fire one roll early: the 15th roll was forced rather than the 16th.
 	local pityFloorIndex = rarityIndex(ForgeConfig.Pity.MinRarity)
-	local pityForced = profile.ForgePityCounter >= ForgeConfig.Pity.Threshold
+	local pityForced = (profile.ForgePityCounter or 0) >= ForgeConfig.Pity.Threshold
+	profile.ForgePityCounter = (profile.ForgePityCounter or 0) + 1
 
 	local rarity = rollRarity(luckPoints, pityForced and pityFloorIndex or nil)
 	if rarityIndex(rarity) >= pityFloorIndex then

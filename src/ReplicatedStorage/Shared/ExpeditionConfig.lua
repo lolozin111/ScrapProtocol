@@ -23,6 +23,10 @@ ExpeditionConfig.ShiftDuration = 0.5   -- seconds the "everyone moves down one s
 -- targetRowCount) before a player counts as "not on the run" — generous on purpose, since the
 -- point is only to stop it being used as a heal button from across the map, not to police exactly
 -- where you're standing on your own lane.
+-- How close you must stand to actually pull the ExpeditionLever. The lever is a ProximityPrompt
+-- client-side, but that is presentation — this is what the server enforces.
+ExpeditionConfig.LeverInteractDistance = 20
+
 ExpeditionConfig.EndRangePadding = 60
 ExpeditionConfig.EndCooldownSeconds = 3 -- paces the wipe; it resets the queue for EVERY player on it
 

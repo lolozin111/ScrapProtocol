@@ -440,8 +440,8 @@ actually visible before any real art or UI design happens. To test end to end:
    Gold Contacts) and confirm the Potion button's badge updates to `1`; click the Potion button
    itself and confirm it highlights (armed); Forge another weapon and confirm the badge drops back
    to `0` and the button un-highlights, since the toggle is one-shot. Forge about 15 more (any
-   type, Potion armed or not) without landing Rare or better and confirm the roll that hits the
-   threshold is guaranteed at least Rare (the Pity bar should snap back to empty on that roll, and
+   type, Potion armed or not) without landing Rare or better — the bar fills to `15 / 15`, and the
+   NEXT roll after that is guaranteed at least Rare (the Pity bar snaps back to empty on that roll, and
    every roll that naturally lands Rare+ before then should already reset it early). While the
    Forge is open, confirm the bottom **Inventory**/**Start Defense** row is gone (it would
    otherwise sit under/behind the docked Pity bar and Potion button on shorter windows). Close the

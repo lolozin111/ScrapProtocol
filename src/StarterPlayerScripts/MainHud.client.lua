@@ -29,6 +29,7 @@ local ForgeConfig = require(ReplicatedStorage.Shared.ForgeConfig)
 local RefinedOreConfig = require(ReplicatedStorage.Shared.RefinedOreConfig)
 local BaseConfig = require(ReplicatedStorage.Shared.BaseConfig)
 local ResearchConfig = require(ReplicatedStorage.Shared.ResearchConfig)
+local Wallet = require(ReplicatedStorage.Shared.Wallet)
 local TurretConfig = require(ReplicatedStorage.Shared.TurretConfig)
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
@@ -268,18 +269,11 @@ local listFrame = new("ScrollingFrame", {
 	Parent = craftFrame,
 }, { new("UIListLayout", { Padding = UDim.new(0, 6) }) })
 
+-- Delegates to Wallet so the HUD names and orders cost keys exactly the way the server resolves
+-- them — including refined materials, which this used to render as their raw key ("SteelIngot")
+-- because it only knew about Scrap/Cores and OreConfig.
 local function costString(cost)
-	local parts = {}
-	for key, amount in pairs(cost) do
-		local displayName
-		if key == "Scrap" or key == "Cores" then
-			displayName = key
-		else
-			displayName = (OreConfig.Ores[key] and OreConfig.Ores[key].DisplayName) or key
-		end
-		table.insert(parts, ("%d %s"):format(amount, displayName))
-	end
-	return table.concat(parts, ", ")
+	return Wallet.CostString(cost)
 end
 
 local function makeRow(displayName, subtitle, buttonText, onClick)
@@ -2977,10 +2971,7 @@ local function renderResearchPanel()
 	end
 
 	for _, entry in ipairs(req.Cost) do
-		local displayName = entry.Key
-		if entry.Key ~= "Scrap" and entry.Key ~= "Cores" then
-			displayName = (OreConfig.Ores[entry.Key] and OreConfig.Ores[entry.Key].DisplayName) or entry.Key
-		end
+		local displayName = Wallet.DisplayName(entry.Key)
 		makeRow(
 			("%s x%d"):format(displayName, entry.Needed),
 			("You have %d"):format(entry.Have),

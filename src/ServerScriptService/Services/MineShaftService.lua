@@ -388,11 +388,14 @@ Remotes.MineShaftHit.OnServerEvent:Connect(function(player: Player, block: Insta
 		return -- stale click — this block already got mined out from under the player
 	end
 
+	-- HumanoidRootPart, not character.PrimaryPart — see MiningService's matching comment;
+	-- PrimaryPart is not guaranteed to be set on a character model.
 	local character = player.Character
-	if not character or not character.PrimaryPart then
+	local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+	if not rootPart then
 		return
 	end
-	if (character.PrimaryPart.Position - block.Position).Magnitude > MAX_MINING_DISTANCE then
+	if (rootPart.Position - block.Position).Magnitude > MAX_MINING_DISTANCE then
 		return
 	end
 

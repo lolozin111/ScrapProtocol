@@ -29,7 +29,7 @@ OreConfig.ToolTiers = {
 OreConfig.ToolTierCosts = {
 	[2] = { ScrapIron = 50, CopperWire = 20 },
 	[3] = { CopperWire = 45, SteelPlating = 35 },
-	[4] = { SteelPlating = 60, GoldContacts = 20 },
+	[4] = { SteelPlating = 60, GoldContacts = 20, SteelIngot = 12 }, -- refined: see RefinedOreConfig
 }
 
 -- Ores: BaseYield is how much you get per hit at ToolTier 1 before the multiplier.

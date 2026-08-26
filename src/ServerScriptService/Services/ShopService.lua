@@ -114,10 +114,19 @@ local function syncGamePasses(player: Player)
 end
 
 Players.PlayerAdded:Connect(function(player)
-	-- Give DataService's PlayerAdded handler a beat to load the profile first.
-	task.defer(function()
-		task.wait(1)
-		syncGamePasses(player)
+	-- Polls for the profile rather than sleeping a flat second and hoping. A slow DataStore read
+	-- meant syncGamePasses ran against a nil profile and silently skipped — the player kept their
+	-- passes but the game did not know about them until their next rejoin. Same waitForProfile
+	-- shape BaseService/TurretService/WeaponToolService already use.
+	task.spawn(function()
+		local attempts = 0
+		while not DataService.Get(player) and attempts < 50 and player.Parent do
+			task.wait(0.1)
+			attempts += 1
+		end
+		if player.Parent then
+			syncGamePasses(player)
+		end
 	end)
 end)
 
