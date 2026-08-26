@@ -32,6 +32,10 @@ local LocalPlayer = Players.LocalPlayer
 local KINDS = {
 	Normal    = { Color = Color3.fromRGB(255, 255, 255), Size = 20 },
 	Headshot  = { Color = Color3.fromRGB(255, 220, 90),  Size = 26, Prefix = "" },
+	-- Blast damage. Its own colour because a grenade in a crowd is otherwise a wall of white
+	-- numbers indistinguishable from gunfire — and how many enemies a throw actually caught is the
+	-- only thing worth knowing about a grenade launcher.
+	Explosion = { Color = Color3.fromRGB(255, 140, 50),  Size = 25, Prefix = "" },
 	Ultimate  = { Color = Color3.fromRGB(235, 90, 200),  Size = 24 }, -- Mythical pink, matching the slot
 	Status    = { Color = Color3.fromRGB(150, 230, 130), Size = 16 }, -- bleed/poison ticks
 	Turret    = { Color = Color3.fromRGB(120, 200, 255), Size = 18 },

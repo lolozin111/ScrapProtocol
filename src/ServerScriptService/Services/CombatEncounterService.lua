@@ -1056,9 +1056,9 @@ end
 local lastFireTime: { [number]: number } = {}
 
 -- Forward-declared: the fire handler below references it, and it is defined between the two.
--- Declaring it here keeps it a local — assigning `function groundEffectOnExpire()` without this
--- would silently create a GLOBAL, which works until something else in the game shadows it.
-local groundEffectOnExpire
+-- Declaring it here keeps it a local — assigning `function buildOnExpire()` without this would
+-- silently create a GLOBAL, which works until something else in the game shadows it.
+local buildOnExpire
 
 -- Whichever fight this player is in, or the training-dummy fallback if they are in none. One
 -- definition, so a projectile, a ground effect and an Ultimate all agree on what counts as "the
@@ -1261,37 +1261,100 @@ GroundEffectService.SetDamageHandler(function(player, record, amount, at, kind)
 	resolveAndApplyDamage(record, amount, at, at, nil, 0, player, kind)
 end)
 
--- Turns a recipe's GroundEffect table into the OnExpire callback a projectile carries. Cached per
--- config table so a weapon firing six pellets twelve times a second is not building seventy-two
--- closures a second for the same unchanging config.
-local groundEffectCallbacks = setmetatable({}, { __mode = "k" })
+----------------------------------------------------------------------
+-- Projectile payloads
+--
+-- Where a projectile STOPS is where its real work happens for anything that is not a plain bullet:
+-- a grenade's blast, a poison puddle. Both are OnExpire hooks, so ProjectileService itself never
+-- learns that explosions or puddles exist.
+----------------------------------------------------------------------
 
-groundEffectOnExpire = function(config)
-	local existing = groundEffectCallbacks[config]
+-- Damage falls off linearly from the centre of a blast to its edge, floored at MinMultiplier — so
+-- clipping the rim of a grenade still does something, and standing on it is meaningfully worse than
+-- being near it. A flat blast makes radius the only stat that matters and positioning irrelevant.
+local function explosionMultiplier(distance: number, radius: number, minimum: number): number
+	if radius <= 0 then
+		return 1
+	end
+	local t = math.clamp(distance / radius, 0, 1)
+	return minimum + (1 - minimum) * (1 - t)
+end
+
+local function detonate(player: Player, at: Vector3, damage: number, config)
+	local radius = config.Radius or 12
+	local minimum = config.MinMultiplier or 0.35
+
+	for _, record in ipairs(CombatEncounterService.LiveEnemiesNear(player, at, radius)) do
+		local part = record.Model and record.Model.PrimaryPart
+		if part then
+			local distance = (part.Position - at).Magnitude
+			local amount = damage * explosionMultiplier(distance, radius, minimum)
+
+			-- Tagged "Explosion" so blast damage renders in its own colour. Without that, a grenade
+			-- landing in a crowd is a wall of white numbers indistinguishable from gunfire, and there
+			-- is no way to tell a blast that caught four enemies from one that caught one.
+			resolveAndApplyDamage(record, amount, at, part.Position, nil, config.Penetration or 0, player, "Explosion")
+
+			if config.Status then
+				StatusEffects.Apply(record, config.Status.Key, config.Status.Overrides)
+			end
+
+			-- The Sticky variant's "they stick to each other": everything caught is dragged toward the
+			-- blast centre, so a good throw bunches a group up for whatever you fire next. Applied as a
+			-- pivot rather than a velocity because these enemies are Humanoid-driven and would simply
+			-- walk the impulse off within a frame or two.
+			if config.PullStuds and config.PullStuds > 0 and distance > 1 then
+				local toCentre = (at - part.Position)
+				local pull = math.min(config.PullStuds, distance - 1)
+				record.Model:PivotTo(record.Model:GetPivot() + toCentre.Unit * pull)
+			end
+		end
+	end
+end
+
+-- Builds the OnExpire callback for one recipe, composing whichever payloads it declares. Cached per
+-- recipe: a weapon firing six pellets twelve times a second must not build seventy-two closures a
+-- second for the same unchanging config. Weak-keyed so a removed recipe does not pin its closure.
+local onExpireCallbacks = setmetatable({}, { __mode = "k" })
+
+buildOnExpire = function(recipe)
+	local existing = onExpireCallbacks[recipe]
 	if existing then
 		return existing
 	end
 
-	local callback = function(player: Player, at: Vector3)
-		-- Chance is what stops a spray weapon from carpeting the floor: six pellets a shot at twelve
-		-- shots a second would otherwise leave several hundred puddles a second down.
-		if config.Chance and math.random() >= config.Chance then
-			return
+	local explosion = recipe.Explosion
+	local ground = recipe.GroundEffect
+
+	local callback = function(player: Player, at: Vector3, spec)
+		if explosion then
+			-- spec.Damage is this pellet's share, which for a single-projectile grenade is the whole
+			-- shot — so a grenade launcher's BaseDamage is read as its blast damage, and any equipped
+			-- mods and affixes are already folded into it.
+			detonate(player, at, spec.Damage or 0, explosion)
 		end
-		GroundEffectService.Spawn({
-			Player = player,
-			Shape = "Sphere",
-			Position = at,
-			Radius = config.Radius,
-			Duration = config.Duration,
-			TickInterval = config.TickInterval,
-			DamagePerTick = config.DamagePerTick,
-			Status = config.Status,
-			Color = config.Color,
-		})
+
+		if ground then
+			-- Chance is what stops a spray weapon from carpeting the floor: five pellets a shot at
+			-- seven shots a second would otherwise leave dozens of puddles down every second.
+			if ground.Chance and math.random() >= ground.Chance then
+				return
+			end
+			GroundEffectService.Spawn({
+				Player = player,
+				Shape = "Sphere",
+				Position = at,
+				Radius = ground.Radius,
+				Duration = ground.Duration,
+				TickInterval = ground.TickInterval,
+				DamagePerTick = ground.DamagePerTick,
+				Status = ground.Status,
+				Color = ground.Color,
+			})
+		end
 	end
 
-	groundEffectCallbacks[config] = callback
+	onExpireCallbacks[recipe] = callback
 	return callback
 end
 
@@ -1358,7 +1421,7 @@ RequestFireWeapon.OnServerEvent:Connect(function(player: Player, claimedOrigin: 
 		Penetration = recipe and recipe.Penetration,
 		HeadshotMultiplier = recipe and recipe.HeadshotMultiplier,
 		OnHitStatus = recipe and recipe.OnHitStatus,
-		OnExpire = recipe and recipe.GroundEffect and groundEffectOnExpire(recipe.GroundEffect),
+		OnExpire = recipe and (recipe.Explosion or recipe.GroundEffect) and buildOnExpire(recipe),
 		Projectile = ProjectileConfig.Get(recipe and recipe.Projectile),
 	})
 end)

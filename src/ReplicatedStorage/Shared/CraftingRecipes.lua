@@ -28,6 +28,9 @@
 	GroundEffect = { Chance, Radius, Duration, ... } leaves something behind where the projectile
 	stops, via GroundEffectService. Chance is what keeps a spray weapon from carpeting the floor.
 
+	Explosion = { Radius, MinMultiplier, Status?, PullStuds? } does area damage where the projectile
+	stops. For a weapon whose ProjectileConfig sets NoContactDamage, BaseDamage IS the blast damage.
+
 	FireRate/BaseDamage replace the old flat DPS field (FireRate * BaseDamage = the same DPS
 	numbers this table used to have directly) — split apart so ModConfig.lua's mods can multiply
 	each independently (e.g. Speed Coil raises FireRate but lowers BaseDamage). See CombatMath.lua's
@@ -188,6 +191,50 @@ CraftingRecipes.Weapons = {
 		FireRate = 1.6, BaseDamage = 30, -- 48 DPS, spread over enough shots to correct your aim
 		HeadshotMultiplier = 1,
 		Penetration = 6,
+	},
+
+	----------------------------------------------------------------------
+	-- Grenade launchers. The projectile does nothing on contact — it bounces off enemies and walls
+	-- alike and detonates on its own fuse (see ProjectileConfig's Grenade profile). BaseDamage here
+	-- is BLAST damage, applied with linear falloff to everything in the radius.
+	----------------------------------------------------------------------
+
+	GrenadeLauncher = {
+		DisplayName = "Grenade Launcher",
+		Description = "Lobbed, bouncy, and utterly indifferent to what you were actually aiming at.",
+		Projectile = "Grenade",
+		Family = "GrenadeLaunchers",
+		Tier = 4,
+		Cost = { SteelPlating = 55, GoldContacts = 20, HardenedPlate = 12 },
+		-- 55 DPS against ONE target and far more into a group — the "crazy AOE damage" the spec asks
+		-- for lives in the radius, not in this number. Slow enough that a miss genuinely costs you.
+		FireRate = 0.7, BaseDamage = 78,
+		Explosion = {
+			Radius = 18,
+			MinMultiplier = 0.35, -- rim hits still land for a third; standing on it is much worse
+			Penetration = 8,      -- blast ignores some armour, so it stays a crowd answer
+		},
+	},
+
+	StickyGrenade = {
+		DisplayName = "Sticky Launcher",
+		Description = "Detonates in a mess of adhesive. Whatever survives is slowed and bunched up.",
+		Projectile = "StickyGrenade",
+		Family = "GrenadeLaunchers",
+		Tier = 5,
+		Cost = { GoldContacts = 35, HardenedPlate = 20, VoidiumShard = 10 },
+		FireRate = 0.7, BaseDamage = 55, -- less damage than the regular launcher, per the spec
+		Explosion = {
+			Radius = 20,
+			MinMultiplier = 0.4,
+			Penetration = 8,
+			-- "Makes the enemy sticky, where they stick to each other and get slowed": Slow is the
+			-- status, and PullStuds drags everything caught toward the blast so the group is
+			-- physically bunched for whatever you fire next. Together those are the whole gimmick,
+			-- and neither is sticky-specific code.
+			Status = { Key = "Slow" },
+			PullStuds = 10,
+		},
 	},
 
 	----------------------------------------------------------------------

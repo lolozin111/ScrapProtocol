@@ -25,8 +25,13 @@
 	Damage is divided across pellets (see Fire), so raising Pellets makes a weapon more reliable at
 	close range and no stronger overall — the cone is a hit-probability shape, not a damage multiplier.
 
-	`OnExpire` lets a projectile leave something behind where it lands. Used by the PoisonThrower's
-	floor puddles; the same hook is what a future sticky grenade would use.
+	`OnExpire` is where a projectile's real payload usually lives — it runs wherever the projectile
+	stops, for any reason. Poison puddles and grenade blasts are both just OnExpire hooks; the
+	projectile itself does not know the difference.
+
+	`Bounce` reflects off whatever it hits instead of stopping, and `FuseSeconds` stops it after a
+	fixed time no matter what. Together they are a grenade: something that skitters off walls and
+	enemies alike and then goes off on its own schedule.
 
 	=== TRUST MODEL (unchanged) ===
 	The client still only reports intent: where it fired from and which way it was pointing. Origin
@@ -152,8 +157,13 @@ local function spawnOne(player: Player, origin: Vector3, direction: Vector3, spe
 		-- a cone weapon does not multiply its damage by its pellet count.
 		Spec = setmetatable({ Damage = damage }, { __index = spec }),
 		Params = params,
+		Config = config,
 		DistanceLeft = config.Range or ProjectileConfig.Default.Range,
 		PiercesLeft = config.Pierce or 0,
+		BouncesLeft = config.Bounce or 0,
+		-- nil rather than 0 when there is no fuse: `if FuseLeft then` has to distinguish "no fuse" from
+		-- "fuse already burnt out", and 0 would read as the latter on the very first frame.
+		FuseLeft = config.FuseSeconds,
 		AlreadyHit = {},
 		Dead = false,
 	})
@@ -181,6 +191,19 @@ RunService.Heartbeat:Connect(function(dt)
 			destroyProjectile(projectile)
 			table.remove(live, index)
 		else
+			-- Fuse burns whether or not the projectile is hitting anything, and is checked BEFORE the
+			-- step: a grenade whose fuse ran out this frame should go off where it is, not several
+			-- studs further on.
+			if projectile.FuseLeft then
+				projectile.FuseLeft -= dt
+				if projectile.FuseLeft <= 0 then
+					expire(projectile, projectile.Position)
+					destroyProjectile(projectile)
+					table.remove(live, index)
+					continue
+				end
+			end
+
 			-- Gravity first, so the step below already reflects this frame's fall — an arcing shot
 			-- computed the other way round drifts consistently high.
 			if projectile.Gravity ~= 0 then
@@ -199,7 +222,10 @@ RunService.Heartbeat:Connect(function(dt)
 				local hitPosition = result.Position
 				local consumed = false
 
-				if resolveHit then
+				-- A grenade deals no damage on contact — all of it is in the blast. Without this it
+				-- would chip an enemy on the way past and then explode, which is two weapons' worth of
+				-- damage from one shot.
+				if resolveHit and not projectile.Config.NoContactDamage then
 					consumed = resolveHit(projectile.Player, result.Instance, projectile.Position, hitPosition, projectile.Spec)
 				end
 
@@ -212,6 +238,18 @@ RunService.Heartbeat:Connect(function(dt)
 					projectile.Params.FilterDescendantsInstances = exclude
 					projectile.Position = hitPosition
 					projectile.Part.CFrame = CFrame.new(hitPosition)
+				elseif projectile.BouncesLeft > 0 then
+					-- Reflect around the surface normal and keep going, shedding some speed each time.
+					-- Nudged off the surface first: restarting the next raycast exactly on the geometry
+					-- it just struck re-hits the same face immediately and burns every bounce in one
+					-- frame, which looks like the grenade evaporating on contact.
+					projectile.BouncesLeft -= 1
+					local normal = result.Normal
+					local damping = projectile.Config.BounceDamping or 0.6
+					projectile.Velocity = (projectile.Velocity - 2 * projectile.Velocity:Dot(normal) * normal) * damping
+					projectile.Position = hitPosition + normal * 0.35
+					projectile.Part.CFrame = CFrame.new(projectile.Position)
+					projectile.DistanceLeft -= distance
 				else
 					expire(projectile, hitPosition)
 					destroyProjectile(projectile)

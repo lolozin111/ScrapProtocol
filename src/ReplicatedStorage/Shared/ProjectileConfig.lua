@@ -19,6 +19,10 @@
 	  Pellets  projectiles per trigger pull. >1 makes the weapon a spray. The shot's damage is
 	           DIVIDED across them, so this buys consistency at close range, never extra damage.
 	  SpreadDegrees  half-angle of the cone the pellets scatter into. Ignored when Pellets is 1.
+	  Bounce   reflections off geometry (and enemies) before it finally stops. Grenades.
+	  BounceDamping  fraction of speed kept per bounce (default 0.6).
+	  FuseSeconds    stops the projectile this long after firing, wherever it happens to be.
+	  NoContactDamage  true for weapons whose damage is entirely in an OnExpire payload.
 
 	=== THIS IS WHERE GUN VARIANTS PLUG IN ===
 	Flamethrowers, bows, snipers, grenade launchers and miniguns differ mostly in these numbers plus
@@ -137,6 +141,28 @@ ProjectileConfig.Profiles = {
 		Speed = 80, Gravity = 14, Range = 50, Radius = 0.8, Pierce = 4,
 		Pellets = 5, SpreadDegrees = 11,
 		Color = Color3.fromRGB(150, 230, 90),
+	},
+
+	----------------------------------------------------------------------
+	-- Grenade launchers. Lobbed hard, bounces off everything including enemies, and goes off on its
+	-- own fuse rather than on contact — so where it ENDS UP matters more than what you aimed at.
+	-- All the damage is in the blast (NoContactDamage), which is what stops a grenade from being a
+	-- slow bullet that also explodes.
+	----------------------------------------------------------------------
+
+	Grenade = {
+		Speed = 110, Gravity = 80, Range = 400, Radius = 0.55, Pierce = 0,
+		Bounce = 4, BounceDamping = 0.55, FuseSeconds = 1.6, NoContactDamage = true,
+		Color = Color3.fromRGB(190, 190, 90),
+	},
+
+	-- Flatter and further, per the spec's "a bit more range", and a longer fuse so it travels far
+	-- enough to use it. Bounces less: sticky ordnance that skittered as freely as a frag would land
+	-- nowhere near what you tagged.
+	StickyGrenade = {
+		Speed = 135, Gravity = 60, Range = 500, Radius = 0.5, Pierce = 0,
+		Bounce = 2, BounceDamping = 0.35, FuseSeconds = 2.2, NoContactDamage = true,
+		Color = Color3.fromRGB(140, 200, 130),
 	},
 }
 
