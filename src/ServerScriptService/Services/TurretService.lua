@@ -246,6 +246,20 @@ local function makeSlotInteractive(model: Model, slotIndex: number, player: Play
 	CollectionService:AddTag(model, SLOT_TAG)
 end
 
+-- The ONE place a Turret instance is created. Mutates the profile and returns the new instance;
+-- broadcasting is the caller's job, since each caller has different extra fields to send.
+--
+-- Exists because this minting was previously copy-pasted in three places (the Hub Shop purchase,
+-- the admin grant, and now crafting) — same Id counter, same instance shape, three chances to
+-- drift. A turret is a turret regardless of how it was obtained.
+function TurretService.MintTurret(profile, typeKey: string)
+	local id = ("t%d"):format(profile.NextTurretId)
+	profile.NextTurretId += 1
+	local instance = { Id = id, TypeKey = typeKey, Level = 1 } -- SlotIndex omitted = unplaced/storage
+	table.insert(profile.Turrets, instance)
+	return instance
+end
+
 local function findTurret(profile, turretId: string)
 	for _, turret in ipairs(profile.Turrets) do
 		if turret.Id == turretId then

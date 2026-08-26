@@ -51,6 +51,8 @@ local profile = {
 	OreCounts = {}, CraftedRobots = {}, DeployedRobots = {},
 	CraftedStructures = {}, OwnedGamePasses = {},
 	CraftedMods = {}, EquippedMods = {},
+	Turrets = {}, UnlockedTurretBlueprints = {}, -- turret instances + which blueprints are known
+		-- (see TurretConfig; blueprints are a permanent recipe unlock bought at the Hub Shop)
 	Weapons = {}, ForgeTier = 1, LuckPotions = 0, ForgePityCounter = 0, -- Forge state — see ForgeConfig.lua
 	RefinedOreCounts = {}, -- Smelting state — see RefinedOreConfig.lua. SmeltJob (table?) is
 		-- deliberately NOT initialized here, same reasoning as EquippedWeaponId never appearing in
@@ -1149,7 +1151,7 @@ local function renderBlueprintsRow()
 
 	makeRow(
 		"Hub Shop",
-		("Stock rotates every %d hours · buying a blueprint unlocks the type and mints one turret into Storage"):format(TurretConfig.ShopRotationPeriodSeconds / 3600),
+		("Stock rotates every %d hours · a blueprint unlocks the RECIPE permanently — build the turret itself at your Welding Station"):format(TurretConfig.ShopRotationPeriodSeconds / 3600),
 		"OK",
 		function() end
 	).Parent = listFrame
@@ -1157,20 +1159,99 @@ local function renderBlueprintsRow()
 	for _, typeKey in ipairs(stock) do
 		local typeData = TurretConfig.Types[typeKey]
 		if typeData then
+			-- Already-owned blueprints stay listed rather than disappearing from the stock: seeing
+			-- "Known" is clearer than a type silently vanishing, and the rotation is short enough
+			-- that a missing row would read as a bug.
+			local known = (profile.UnlockedTurretBlueprints or {})[typeKey] == true
 			makeRow(
 				typeData.DisplayName,
-				("%s · %s"):format(typeData.Description, costString(typeData.BlueprintCost)),
-				"Buy",
+				known
+					and ("%s · blueprint owned — craft it at your Welding Station"):format(typeData.Description)
+					or ("%s · blueprint %s · then craft for %s"):format(
+						typeData.Description, costString(typeData.BlueprintCost), costString(typeData.CraftCost)),
+				known and "Known" or "Buy",
 				function()
+					if known then
+						return
+					end
 					local result = Remotes.BuyTurretBlueprint:InvokeServer(typeKey)
 					if not result.Success then
 						showFailure("Buy blueprint failed", result.Reason)
 					else
+						showToast(("%s blueprint learned — build it at your Welding Station."):format(typeData.DisplayName), 4)
 						renderCraftList()
 					end
 				end
 			).Parent = listFrame
 		end
+	end
+end
+
+----------------------------------------------------------------------
+-- Turrets tab (Welding Station) — assembling a turret from a blueprint you've bought.
+--
+-- Buying a blueprint used to hand you a finished turret outright, which meant one currency bought
+-- base defense outright and skipped the game's actual loop. Now the shop sells the RECIPE and this
+-- is where the turret gets built, out of Scrap + raw ore — so a turret costs you a raid AND a
+-- mining run, same as everything else worth having.
+----------------------------------------------------------------------
+
+local function renderTurretsRow()
+	local unlocked = profile.UnlockedTurretBlueprints or {}
+
+	-- Sorted by craft cost so the list reads as a progression rather than a hash order.
+	local keys = {}
+	for key in pairs(TurretConfig.Types) do
+		table.insert(keys, key)
+	end
+	table.sort(keys, function(a, b)
+		return (TurretConfig.Types[a].BlueprintCost.Scrap or 0) < (TurretConfig.Types[b].BlueprintCost.Scrap or 0)
+	end)
+
+	local knownCount = 0
+	for _, key in ipairs(keys) do
+		if unlocked[key] then
+			knownCount += 1
+		end
+	end
+
+	if knownCount == 0 then
+		makeRow(
+			"No blueprints yet",
+			"Buy one at the Hub Shop, then come back here to build the turret with Scrap and ore",
+			"OK",
+			function() end
+		).Parent = listFrame
+	end
+
+	for _, key in ipairs(keys) do
+		local typeData = TurretConfig.Types[key]
+		local known = unlocked[key] == true
+		local stats = TurretConfig.GetTurretEffectiveStats(key, 1)
+		makeRow(
+			known and typeData.DisplayName or ("%s (locked)"):format(typeData.DisplayName),
+			known
+				and ("%s · %s"):format(
+					stats and ("%.0f dmg · %.0f range · %.1f/s · %d AOE"):format(stats.Damage, stats.Range, stats.FireRate, stats.AOE) or typeData.Description,
+					costString(typeData.CraftCost))
+				or ("%s · blueprint not owned — buy it at the Hub Shop"):format(typeData.Description),
+			known and "Build" or "Locked",
+			function()
+				if not known then
+					showFailure("Locked", ("You need the %s blueprint — buy it at the Hub Shop."):format(typeData.DisplayName))
+					return
+				end
+				-- Reuses the shared CraftItem remote with a "Turrets" tree — same plot/station gate
+				-- and cost validation Robots and Mods already go through. See CraftingService.
+				local result = Remotes.CraftItem:InvokeServer("Turrets", key)
+				if not result.Success then
+					showFailure("Build failed", result.Reason)
+				else
+					showToast(("Built a %s — click a slot pad at your base to place it."):format(typeData.DisplayName), 4)
+					renderCraftList()
+				end
+			end
+		).Parent = listFrame
 	end
 end
 
@@ -1195,6 +1276,9 @@ renderCraftList = function()
 		return
 	elseif currentTab == "Blueprints" then
 		renderBlueprintsRow()
+		return
+	elseif currentTab == "Turrets" then
+		renderTurretsRow()
 		return
 	elseif currentTab == "Mods" then
 		renderModsRow()

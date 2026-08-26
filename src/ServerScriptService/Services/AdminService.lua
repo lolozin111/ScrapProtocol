@@ -37,6 +37,7 @@ local AdminConfig = require(ReplicatedStorage.Shared.AdminConfig)
 local OreConfig = require(ReplicatedStorage.Shared.OreConfig)
 local TurretConfig = require(ReplicatedStorage.Shared.TurretConfig)
 local DataService = require(script.Parent.DataService)
+local TurretService = require(script.Parent.TurretService)
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 
@@ -160,20 +161,18 @@ local function commandGiveTurret(player: Player, profile, args: { string })
 		typeKey = turretKeys()[1]
 	end
 
-	-- Mirrors TurretShopService.BuyTurretBlueprint's own minting exactly (same Id counter, same
-	-- instance shape, same blueprint bookkeeping) minus the cost and the stock check — so a turret
-	-- granted this way is indistinguishable from a bought one everywhere downstream.
+	-- Goes through the same TurretService.MintTurret every other acquisition path uses, so a turret
+	-- granted this way is indistinguishable from a crafted one downstream. Also unlocks the
+	-- blueprint, so you can go on to craft more of the type normally after being handed one.
 	profile.UnlockedTurretBlueprints[typeKey] = true
-	local id = ("t%d"):format(profile.NextTurretId)
-	profile.NextTurretId += 1
-	table.insert(profile.Turrets, { Id = id, TypeKey = typeKey, Level = 1 })
+	local instance = TurretService.MintTurret(profile, typeKey)
 
 	Remotes.InventoryUpdate:FireClient(player, {
 		Turrets = profile.Turrets,
 		UnlockedTurretBlueprints = profile.UnlockedTurretBlueprints,
 		NextTurretId = profile.NextTurretId,
 	})
-	tell(player, ("granted %s (%s) — unplaced, click a slot pad at your base to place it"):format(typeKey, id))
+	tell(player, ("granted %s (%s) — unplaced, click a slot pad at your base to place it"):format(typeKey, instance.Id))
 end
 
 local function commandSetWave(player: Player, profile, args: { string })

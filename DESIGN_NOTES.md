@@ -1197,6 +1197,50 @@ suggested) of whatever the raider actually got from the invasion.
   above. The files are left on disk for reference/rollback but are no longer required by
   `Main.server.lua`; don't re-enable or tune them.
 
+## Turret economy — reworked so a turret is EARNED (BUILT)
+
+Supersedes the "blueprint purchase mints a turret instance immediately" model described in the
+Turrets bullet under `## Base`. Direct instruction after playtest: *"i want the turrets, at least
+when you buy then to only make it available to craft it, not like you get the turret instant... so
+that players are encouraged to mine and get resources, and craft it, thats the point of the game."*
+
+**The intended loop, stated directly by the user:** mine to gather resources → raid for Scrap and
+loot drops → wave defense for milestones (Research level) and other drops → better gear → run the
+same cycle more efficiently. Each activity feeds a different part of the same build, so no single
+one can be ground to skip the others.
+
+**Currency roles, now explicit:**
+- **Scrap is the main currency.** Raids and loot pay it out; almost everything worth building
+  spends it. Previously it was earned but barely spent — base tiers and turrets were ore/Cores only.
+- **Cores stay turret-UPGRADE-only.** Direct instruction: *"im okay with cores being used on
+  turrets since it makes them have an use."* Cores drop from boss waves only, so keeping their sink
+  narrow is what keeps them scarce.
+- **Base/station upgrades cost Scrap + ore** (`BaseConfig.BaseTierCosts` gained a Scrap component
+  at every tier, on top of the existing ore and the CoreItem gate).
+
+**Turret acquisition is now three steps, not one:**
+1. **Hub Shop** — `BlueprintCost`, now **Scrap** (was Cores). Buys the RECIPE, permanently
+   (`profile.UnlockedTurretBlueprints`). Does not hand you a turret. Re-buying a known blueprint is
+   rejected rather than silently charging again.
+2. **Welding Station → Turrets tab** — `TurretConfig.CraftCost` (Scrap + raw ore), paid per turret.
+   This is the real gate; it's what forces a mining run. Routed through the existing `CraftItem`
+   remote with a new `"Turrets"` tree rather than a new remote, so it inherits the same plot gate,
+   station gate and cost validation Robots/Mods already use. Blueprint ownership is re-checked
+   server-side — the client hiding locked types is presentation, not enforcement.
+3. **Slot pad at your base** — place it (unchanged, see the in-world placement bullet above).
+
+This is also what finally gives `profile.UnlockedTurretBlueprints` a purpose — it was flagged in
+the codebase audit as written-on-purchase and never read by anything.
+
+`TurretService.MintTurret` is now the single place a Turret instance is created (crafting, and the
+`/giveturret` admin command). It was previously copy-pasted across the shop purchase and the admin
+grant — same Id counter, same shape, two chances to drift.
+
+**All numbers here are placeholders.** Per-gamemode drop rates aren't settled yet (*"im still
+thinking of each drops will each gamemode give, but for now just use a placeholder"*), so treat the
+ratios as the intent — blueprint ≈ 2x one craft, craft cost climbing steeply by turret tier, base
+tiers climbing steeply in Scrap — and the absolute values as provisional pending a real playtest.
+
 ## Session context — decisions not yet captured
 
 Loose ends from the Base Defense & Turrets round-2 chat (Hub Shop/blueprints/turret

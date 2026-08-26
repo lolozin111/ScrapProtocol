@@ -52,27 +52,30 @@ Remotes.BuyTurretBlueprint.OnServerInvoke = function(player: Player, typeKey: st
 		return { Success = false, Reason = "Profile not loaded" }
 	end
 
-	if not DataService.TrySpend(player, typeData.BlueprintCost) then
-		return { Success = false, Reason = "Not enough Cores" }
+	-- Buying a blueprint you already own would silently charge you again for nothing — the unlock
+	-- is a permanent boolean, so there's nothing a second purchase could add.
+	if profile.UnlockedTurretBlueprints[typeKey] then
+		return { Success = false, Reason = ("You already know how to build the %s."):format(typeData.DisplayName) }
 	end
 
+	if not DataService.TrySpend(player, typeData.BlueprintCost) then
+		return { Success = false, Reason = "Not enough Scrap" }
+	end
+
+	-- Unlocks the RECIPE ONLY — it does NOT mint a turret. Buying used to hand you a finished
+	-- turret outright, which meant Cores alone bought base defense and skipped the game's actual
+	-- loop entirely. Now the blueprint is knowledge and the materials are the real gate: craft it
+	-- at the Welding Station with Scrap + ore (see CraftingService's "Turrets" tree and
+	-- TurretConfig.CraftCost). This is also what finally gives UnlockedTurretBlueprints a job —
+	-- until now it was written on purchase and never read by anything.
 	profile.UnlockedTurretBlueprints[typeKey] = true
 
-	local id = ("t%d"):format(profile.NextTurretId)
-	profile.NextTurretId += 1
-	local instance = { Id = id, TypeKey = typeKey, Level = 1 } -- SlotIndex omitted = unplaced/storage
-	table.insert(profile.Turrets, instance)
-
 	Remotes.InventoryUpdate:FireClient(player, {
-		Turrets = profile.Turrets,
 		UnlockedTurretBlueprints = profile.UnlockedTurretBlueprints,
-		NextTurretId = profile.NextTurretId,
 	})
-	-- The blueprint's Cores cost was deducted above but wasn't in that payload, so the HUD's
-	-- currency readout stayed stale and the purchase looked free. See DataService.PushWallet.
-	DataService.PushWallet(player)
+	DataService.PushWallet(player) -- the Scrap spent above; see DataService.PushWallet
 
-	return { Success = true, Turret = instance }
+	return { Success = true, TypeKey = typeKey }
 end
 
 return TurretShopService

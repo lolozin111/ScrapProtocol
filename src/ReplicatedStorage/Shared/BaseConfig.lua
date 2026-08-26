@@ -49,10 +49,18 @@ BaseConfig.Tiers = {
 	-- needed elsewhere, BaseTierCosts below just needs a matching entry.
 }
 
+-- Scrap + raw ore. Scrap is the game's main currency (raids and loot pay it out), and upgrading
+-- the base itself is the single biggest thing it's spent on — so a base tier is gated on having
+-- done BOTH halves of the loop: raided for Scrap and mined for materials. The CoreItem
+-- requirement below adds the third (cleared a wave milestone), which is what makes a tier a real
+-- checkpoint rather than something you can grind out of one activity.
+--
+-- Placeholder numbers — per-gamemode drop rates aren't settled yet, so treat the shape (Scrap
+-- climbing steeply, ore following the tier ladder) as the intent and the values as provisional.
 BaseConfig.BaseTierCosts = {
-	[2] = { ScrapIron = 100, CopperWire = 50 },
-	[3] = { SteelPlating = 150, CopperWire = 80, GoldContacts = 20 },
-	[4] = { GoldContacts = 60, SteelPlating = 250 },
+	[2] = { Scrap = 400, ScrapIron = 100, CopperWire = 50 },
+	[3] = { Scrap = 1200, SteelPlating = 150, CopperWire = 80, GoldContacts = 20 },
+	[4] = { Scrap = 3000, GoldContacts = 60, SteelPlating = 250 },
 }
 
 -- The CoreItem (profile.CoreItems, see DataService.lua) each BaseTier upgrade additionally

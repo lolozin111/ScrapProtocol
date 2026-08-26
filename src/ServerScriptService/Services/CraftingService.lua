@@ -29,20 +29,35 @@ local CraftingRecipes = require(ReplicatedStorage.Shared.CraftingRecipes)
 local ModConfig = require(ReplicatedStorage.Shared.ModConfig)
 local PlotConfig = require(ReplicatedStorage.Shared.PlotConfig)
 local StationConfig = require(ReplicatedStorage.Shared.StationConfig)
+local TurretConfig = require(ReplicatedStorage.Shared.TurretConfig)
 local DataService = require(script.Parent.DataService)
 local PlotService = require(script.Parent.PlotService)
 local StationService = require(script.Parent.StationService)
+local TurretService = require(script.Parent.TurretService)
 
 local Remotes = ReplicatedStorage.Remotes
 local CraftItem = Remotes.CraftItem
 
 local CraftingService = {}
 
+-- Turrets deliberately reuse this remote rather than getting one of their own: they're assembled
+-- at the Welding Station from Scrap + ore exactly like Robots are, so the plot gate, the station
+-- gate, the cost validation and the client's call shape are all already correct for them. The only
+-- thing that differs is what "owning one" means — a unique instance (see TurretService.MintTurret)
+-- rather than a count or a flag — which is handled at the grant step below, not here.
+--
+-- The turret's CraftCost is on TurretConfig.Types, not CraftingRecipes, because everything else
+-- about a turret (stats, tiers, upgrade curve, shop stock) already lives there.
 local function getRecipe(tree: string, key: string)
 	if tree == "Robots" then
 		return CraftingRecipes.Robots[key]
 	elseif tree == "Mods" then
 		return ModConfig.Mods[key]
+	elseif tree == "Turrets" then
+		local typeData = TurretConfig.Types[key]
+		-- Normalized into the { Cost = ... } shape the rest of this handler expects, so the spend
+		-- path below stays one branch instead of three.
+		return typeData and { Cost = typeData.CraftCost, DisplayName = typeData.DisplayName } or nil
 	end
 	return nil
 end
@@ -55,8 +70,9 @@ CraftItem.OnServerInvoke = function(player: Player, tree: string, key: string)
 	if not PlotService.IsPlayerInOwnPlot(player) then
 		return { Success = false, Reason = PlotConfig.NotInBaseMessage }
 	end
-	-- Robots/Mods are still assembled at the Welding Station — see StationConfig.Types.
-	if (tree == "Robots" or tree == "Mods") and not StationService.IsPlayerNearStation(player, "Welding") then
+	-- Robots/Mods/Turrets are all assembled at the Welding Station — see StationConfig.Types.
+	if (tree == "Robots" or tree == "Mods" or tree == "Turrets")
+		and not StationService.IsPlayerNearStation(player, "Welding") then
 		return { Success = false, Reason = StationConfig.Types.Welding.NotThereMessage }
 	end
 
@@ -74,6 +90,13 @@ CraftItem.OnServerInvoke = function(player: Player, tree: string, key: string)
 		return { Success = false, Reason = "Already own this mod" }
 	end
 
+	-- A turret can only be built if its blueprint has been bought at the Hub Shop. Re-checked
+	-- server-side rather than trusting the client to only show unlocked ones — the client's
+	-- Turrets tab hides locked types, but that's presentation, not enforcement.
+	if tree == "Turrets" and not profile.UnlockedTurretBlueprints[key] then
+		return { Success = false, Reason = ("You need the %s blueprint — buy it at the Hub Shop."):format(recipe.DisplayName or key) }
+	end
+
 	local spent = DataService.TrySpend(player, recipe.Cost)
 	if not spent then
 		return { Success = false, Reason = "Not enough resources" }
@@ -81,15 +104,22 @@ CraftItem.OnServerInvoke = function(player: Player, tree: string, key: string)
 
 	if tree == "Robots" then
 		profile.CraftedRobots[key] = (profile.CraftedRobots[key] or 0) + 1
+	elseif tree == "Turrets" then
+		-- Unique instance, not a count — see TurretService.MintTurret.
+		TurretService.MintTurret(profile, key)
 	else -- Mods
 		profile.CraftedMods[key] = true
 	end
 
 	Remotes.InventoryUpdate:FireClient(player, {
-		OreCounts = profile.OreCounts,
 		CraftedRobots = profile.CraftedRobots,
 		CraftedMods = profile.CraftedMods,
+		Turrets = profile.Turrets,
+		NextTurretId = profile.NextTurretId,
 	})
+	-- Covers the Scrap AND ore this cost, whichever the recipe used — OreCounts alone used to be
+	-- listed here, which was correct only while nothing craftable cost Scrap. See PushWallet.
+	DataService.PushWallet(player)
 
 	return { Success = true }
 end

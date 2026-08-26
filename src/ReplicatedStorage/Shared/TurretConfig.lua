@@ -24,13 +24,31 @@ local TurretConfig = {}
 -- Types — no mods, so all the variety lives right here. Numbers are first-guess base stats (before
 -- any Level/Tier scaling, see GetTurretEffectiveStats below) — worth a playtest before treating as
 -- final, same as every other numbers-first-pass in this project.
+--
+-- ECONOMY (reworked — a turret is EARNED, not bought outright):
+--   BlueprintCost  Scrap, paid once at the Hub Shop. Unlocks the RECIPE permanently
+--                  (profile.UnlockedTurretBlueprints) — it does not hand you a turret.
+--   CraftCost      Scrap + raw ore, paid at the Welding Station for EACH turret you build.
+--                  This is the real gate: you have to go mine for it.
+--   Upgrades       Cores (see UpgradeCurrency below), which is what keeps Cores — a boss-wave-only
+--                  drop — meaningfully scarce rather than just another pile of numbers.
+--
+-- Scrap is the game's main currency by design: raids and loot pay it out, and almost everything
+-- worth building spends it. Ore comes from mining. Cores come from clearing wave milestones. Each
+-- of the three activities feeds a different part of the same build, so no one of them can be
+-- skipped by grinding another harder.
+--
+-- These numbers are deliberate placeholders pending a real playtest — drop rates per gamemode
+-- aren't settled yet, so treat the RATIOS (blueprint ≈ 2x a craft, craft climbs steeply by tier)
+-- as the intent and the absolute values as provisional.
 ----------------------------------------------------------------------
 
 TurretConfig.Types = {
 	PulseTurret = {
 		DisplayName = "Pulse Turret",
 		Description = "Cheap and quick — rapid, light hits, short range. Good against thin swarms.",
-		BlueprintCost = { Cores = 40 },
+		BlueprintCost = { Scrap = 250 },
+		CraftCost = { Scrap = 120, ScrapIron = 40, CopperWire = 15 },
 		Range = 40, FireRate = 3.0, BaseDamage = 4, AOE = 1, -- AOE = how many nearest-in-range
 			-- targets it hits per shot; 1 = single-target.
 		ParticleColor = Color3.fromRGB(120, 200, 255),
@@ -38,35 +56,40 @@ TurretConfig.Types = {
 	FlakTurret = {
 		DisplayName = "Flak Turret",
 		Description = "Wide burst radius, hits several enemies at once — thin the crowd, not the boss.",
-		BlueprintCost = { Cores = 65 },
+		BlueprintCost = { Scrap = 450 },
+		CraftCost = { Scrap = 200, ScrapIron = 60, CopperWire = 30 },
 		Range = 38, FireRate = 1.1, BaseDamage = 7, AOE = 3,
 		ParticleColor = Color3.fromRGB(255, 170, 90),
 	},
 	SniperTurret = {
 		DisplayName = "Sniper Turret",
 		Description = "Long range, heavy single-target damage, slow to fire.",
-		BlueprintCost = { Cores = 90 },
+		BlueprintCost = { Scrap = 700 },
+		CraftCost = { Scrap = 320, SteelPlating = 35, CopperWire = 40 },
 		Range = 75, FireRate = 0.55, BaseDamage = 24, AOE = 1,
 		ParticleColor = Color3.fromRGB(255, 80, 80),
 	},
 	ArcTurret = {
 		DisplayName = "Arc Turret",
 		Description = "Crackling mid-range arc that jumps between nearby enemies.",
-		BlueprintCost = { Cores = 100 },
+		BlueprintCost = { Scrap = 850 },
+		CraftCost = { Scrap = 400, SteelPlating = 45, GoldContacts = 10 },
 		Range = 48, FireRate = 1.6, BaseDamage = 9, AOE = 4,
 		ParticleColor = Color3.fromRGB(150, 220, 255),
 	},
 	MortarTurret = {
 		DisplayName = "Mortar Turret",
 		Description = "Very long range, huge splash, very slow — set up far back and let it work.",
-		BlueprintCost = { Cores = 130 },
+		BlueprintCost = { Scrap = 1100 },
+		CraftCost = { Scrap = 520, SteelPlating = 70, GoldContacts = 20 },
 		Range = 95, FireRate = 0.35, BaseDamage = 30, AOE = 5,
 		ParticleColor = Color3.fromRGB(200, 140, 60),
 	},
 	RailTurret = {
 		DisplayName = "Rail Turret",
 		Description = "Punishing single-target damage at real range — the premium sniper.",
-		BlueprintCost = { Cores = 150 },
+		BlueprintCost = { Scrap = 1400 },
+		CraftCost = { Scrap = 650, GoldContacts = 35, VoidiumShard = 3 },
 		Range = 65, FireRate = 0.8, BaseDamage = 34, AOE = 1,
 		ParticleColor = Color3.fromRGB(180, 255, 200),
 	},
