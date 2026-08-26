@@ -21,6 +21,13 @@
 	WieldSpeedMultiplier slows the player while the gun is HELD (not merely owned) — the cost of
 	carrying something heavy. Applied by WeaponToolService through PlayerSpeed.
 
+	OnHitStatus = { Key, IntervalSeconds?, Chance?, Overrides? } applies a StatusConfig effect on
+	contact. IntervalSeconds is per TARGET — a spray weapon lands dozens of hits a second, so without
+	it every status would sit at max stacks permanently.
+
+	GroundEffect = { Chance, Radius, Duration, ... } leaves something behind where the projectile
+	stops, via GroundEffectService. Chance is what keeps a spray weapon from carpeting the floor.
+
 	FireRate/BaseDamage replace the old flat DPS field (FireRate * BaseDamage = the same DPS
 	numbers this table used to have directly) — split apart so ModConfig.lua's mods can multiply
 	each independently (e.g. Speed Coil raises FireRate but lowers BaseDamage). See CombatMath.lua's
@@ -67,6 +74,68 @@ CraftingRecipes.Weapons = {
 		FireRate = 1, BaseDamage = 38, -- 38 DPS base
 	},
 	-- VoidiumLauncher (Tier 5) — add once Voidium mining ships post-MVP.
+
+	----------------------------------------------------------------------
+	-- Flamethrowers. All three are the same cone emitter (ProjectileConfig's Pellets/SpreadDegrees)
+	-- with a different status bolted on, which is why one fire pattern bought the whole family.
+	--
+	-- Their damage lives in the STATUS, not the pellets. Direct damage is deliberately feeble: a
+	-- flamethrower that also hit hard on contact would be a shotgun with a debuff attached. Range is
+	-- the balancing lever — you have to be close enough to be in real trouble.
+	----------------------------------------------------------------------
+
+	Flamethrower = {
+		DisplayName = "Flamethrower",
+		Description = "A pressurised tank and a bad idea. Everything in the cone keeps burning.",
+		Projectile = "Flame",
+		Family = "Flamethrowers",
+		Tier = 3,
+		Cost = { SteelPlating = 45, CopperWire = 40 },
+		FireRate = 8, BaseDamage = 3, -- 24 DPS on contact; the Burn is where the real damage is
+		-- No IntervalSeconds: Burn is this gun's damage, so it refreshes on every hit and stops the
+		-- moment you stop firing. That is the intended feel — sustained pressure, not a fire-and-forget
+		-- debuff you apply once and walk away from.
+		OnHitStatus = { Key = "Burn" },
+	},
+
+	IceThrower = {
+		DisplayName = "Ice Thrower",
+		Description = "A mist so cold it burns. Slows what it touches, and freezes what it touches twice.",
+		Projectile = "IceFlame",
+		Family = "Flamethrowers",
+		Tier = 4,
+		Cost = { SteelPlating = 50, GoldContacts = 20, CopperCoil = 15 },
+		FireRate = 8, BaseDamage = 2, -- weaker than the regular thrower on purpose; it pays in control
+		-- Frostbite already slows on its own and escalates to a Stun at 2 stacks (StatusConfig), so
+		-- "slows down enemies, applies frostbite every 2 seconds, stunned at two stacks" is entirely
+		-- config — this gun contains no ice-specific code anywhere.
+		OnHitStatus = { Key = "Frostbite", IntervalSeconds = 2 },
+	},
+
+	PoisonThrower = {
+		DisplayName = "Poison Thrower",
+		Description = "A slow, drooping green cloud. Patient work — and it keeps working after you stop.",
+		Projectile = "PoisonFlame",
+		Family = "Flamethrowers",
+		Tier = 4,
+		Cost = { SteelPlating = 45, GoldContacts = 25, VoidiumShard = 8 },
+		FireRate = 7, BaseDamage = 2,
+		-- Five seconds per stack, five stacks: a full ramp takes 25 seconds of sustained fire, and
+		-- Poison's own duration means it drains away if you stop. Fully stacked it out-damages the
+		-- regular Flamethrower (StatusConfig.Poison compounds +35% per stack) — which is the whole
+		-- trade: the highest ceiling in the family and by far the longest climb to it.
+		OnHitStatus = { Key = "Poison", IntervalSeconds = 5 },
+		-- Puddles: damage dealt to enemies you are not even shooting. 4% per pellet keeps the floor
+		-- readable — at 7 shots/s x 5 pellets that is still roughly one new puddle a second.
+		GroundEffect = {
+			Chance = 0.04,
+			Radius = 7,
+			Duration = 8,
+			TickInterval = 1,
+			Status = { Key = "Poison" },
+			Color = Color3.fromRGB(120, 200, 70),
+		},
+	},
 
 	----------------------------------------------------------------------
 	-- Bows — arcing, silent, and the only family that genuinely rewards aiming at heads.

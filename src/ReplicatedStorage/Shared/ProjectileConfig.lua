@@ -16,6 +16,9 @@
 	           along its path, not this sphere.
 	  Pierce   how many enemies it passes THROUGH before stopping. 0 = stops at the first thing hit.
 	  Color    tracer colour.
+	  Pellets  projectiles per trigger pull. >1 makes the weapon a spray. The shot's damage is
+	           DIVIDED across them, so this buys consistency at close range, never extra damage.
+	  SpreadDegrees  half-angle of the cone the pellets scatter into. Ignored when Pellets is 1.
 
 	=== THIS IS WHERE GUN VARIANTS PLUG IN ===
 	Flamethrowers, bows, snipers, grenade launchers and miniguns differ mostly in these numbers plus
@@ -103,6 +106,37 @@ ProjectileConfig.Profiles = {
 	Minigun = {
 		Speed = 260, Gravity = 0, Range = 260, Radius = 0.16, Pierce = 0,
 		Color = Color3.fromRGB(255, 200, 140),
+	},
+
+	----------------------------------------------------------------------
+	-- Flamethrowers. Not a special weapon type — a very short-ranged gun firing a lot of slow fat
+	-- pellets into a wide cone, very fast. Range is the balancing lever for the whole family: at 55
+	-- studs you have to be close enough to be in real danger, which is what pays for the DoT.
+	--
+	-- Pierce is high because a flame jet passing through the first enemy to reach the one behind is
+	-- the entire appeal of a cone weapon in a wave-defense game.
+	----------------------------------------------------------------------
+
+	Flame = {
+		Speed = 95, Gravity = 6, Range = 55, Radius = 0.75, Pierce = 4,
+		Pellets = 6, SpreadDegrees = 9,
+		Color = Color3.fromRGB(255, 140, 40),
+	},
+
+	-- Slower and shorter: ice does less damage per second than fire by design, so its range is a
+	-- little tighter too and the payoff is entirely in the slow and the frostbite stacks.
+	IceFlame = {
+		Speed = 85, Gravity = 4, Range = 48, Radius = 0.8, Pierce = 4,
+		Pellets = 6, SpreadDegrees = 10,
+		Color = Color3.fromRGB(150, 225, 255),
+	},
+
+	-- Widest and slowest of the three. Gravity is deliberately the highest in the family so the
+	-- stream visibly droops toward the floor — which is where its puddles end up.
+	PoisonFlame = {
+		Speed = 80, Gravity = 14, Range = 50, Radius = 0.8, Pierce = 4,
+		Pellets = 5, SpreadDegrees = 11,
+		Color = Color3.fromRGB(150, 230, 90),
 	},
 }
 

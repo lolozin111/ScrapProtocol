@@ -64,6 +64,7 @@ local UltimateEffects = require(script.Parent.UltimateEffects)
 local PlayerSpeed = require(script.Parent.PlayerSpeed)
 local StatusEffects = require(script.Parent.StatusEffects)
 local ProjectileService = require(script.Parent.ProjectileService)
+local GroundEffectService = require(script.Parent.GroundEffectService)
 local ProjectileConfig = require(ReplicatedStorage.Shared.ProjectileConfig)
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
@@ -747,6 +748,7 @@ function CombatEncounterService.RunWave(player: Player, waveNumber: number, opts
 	end
 
 	activeEncounters[player.UserId] = nil
+	GroundEffectService.ClearFor(player)
 	playerFolder:Destroy()
 
 	return status
@@ -1028,6 +1030,7 @@ function CombatEncounterService.RunRaidCombat(player: Player, arenaCenter: Vecto
 	end
 
 	activeEncounters[player.UserId] = nil
+	GroundEffectService.ClearFor(player)
 	playerFolder:Destroy()
 
 	if onEvent then
@@ -1052,6 +1055,69 @@ end
 -- rate limit cannot live on a thing that may not exist.
 local lastFireTime: { [number]: number } = {}
 
+-- Forward-declared: the fire handler below references it, and it is defined between the two.
+-- Declaring it here keeps it a local — assigning `function groundEffectOnExpire()` without this
+-- would silently create a GLOBAL, which works until something else in the game shadows it.
+local groundEffectOnExpire
+
+-- Whichever fight this player is in, or the training-dummy fallback if they are in none. One
+-- definition, so a projectile, a ground effect and an Ultimate all agree on what counts as "the
+-- enemies near me right now".
+local function encounterFor(player: Player)
+	local encounter = activeEncounters[player.UserId]
+	if not encounter and fallbackEncounterProvider then
+		encounter = fallbackEncounterProvider(player)
+	end
+	return encounter
+end
+
+-- Live enemies within `radius` of a world point. Used by GroundEffectService, which needs targets
+-- but must not require this file (it requires half the game) — so it is handed this instead.
+function CombatEncounterService.LiveEnemiesNear(player: Player, position: Vector3, radius: number)
+	local encounter = encounterFor(player)
+	if not encounter then
+		return {}
+	end
+
+	local found = {}
+	for _, record in pairs(encounter.EnemyByModel) do
+		if isEnemyAlive(record) then
+			local part = record.Model.PrimaryPart
+			if part and (part.Position - position).Magnitude <= radius then
+				table.insert(found, record)
+			end
+		end
+	end
+	return found
+end
+
+-- Applies a weapon's on-contact status, if it has one.
+--
+-- IntervalSeconds is per TARGET, not per shot: a flamethrower lands sixty hits a second, so a status
+-- applied on every one of them would hit max stacks instantly and the "takes a full 5 seconds to
+-- apply one stack" the PoisonThrower is specced around would be meaningless. Tracking it on the
+-- enemy record means walking out of the stream and back in does not reset your progress on it.
+local function applyOnHitStatus(record, onHit)
+	if not onHit or not onHit.Key then
+		return
+	end
+
+	if onHit.IntervalSeconds then
+		record.StatusAppliedAt = record.StatusAppliedAt or {}
+		local now = os.clock()
+		if now - (record.StatusAppliedAt[onHit.Key] or -math.huge) < onHit.IntervalSeconds then
+			return
+		end
+		record.StatusAppliedAt[onHit.Key] = now
+	end
+
+	if onHit.Chance and math.random() >= onHit.Chance then
+		return
+	end
+
+	StatusEffects.Apply(record, onHit.Key, onHit.Overrides)
+end
+
 -- Resolves ONE projectile impact against an enemy. Returns true if it hit something that counted,
 -- which is what tells a piercing round whether to keep going.
 --
@@ -1060,10 +1126,7 @@ local lastFireTime: { [number]: number } = {}
 -- fire time, so it resolves against the loadout that fired it even if the player has since swapped
 -- weapons or unequipped the Ultimate.
 function CombatEncounterService.ResolvePlayerHit(player: Player, hitInstance: Instance, origin: Vector3, hitPosition: Vector3, spec): boolean
-	local encounter = activeEncounters[player.UserId]
-	if not encounter and fallbackEncounterProvider then
-		encounter = fallbackEncounterProvider(player)
-	end
+	local encounter = encounterFor(player)
 	if not encounter then
 		return false -- nothing to hit; the bullet still stops on geometry, it just deals no damage
 	end
@@ -1089,6 +1152,10 @@ function CombatEncounterService.ResolvePlayerHit(player: Player, hitInstance: In
 	local dealt = resolveAndApplyDamage(
 		enemyRecord, spec.Damage * (isHeadshot and headshotMultiplier or 1), origin, hitPosition,
 		spec.RangeProfile, spec.Penetration, player, isHeadshot and "Headshot" or "Normal")
+
+	-- Contact status (burn, frostbite, poison...). Applied AFTER damage so a status that kills has
+	-- already had the bullet's own damage counted against the same target.
+	applyOnHitStatus(enemyRecord, spec.OnHitStatus)
 
 	----------------------------------------------------------------------
 	-- Ultimate mod hooks. Fired here — the one place a player's shot LANDS — so they work
@@ -1189,6 +1256,44 @@ function CombatEncounterService.ResolvePlayerHit(player: Player, hitInstance: In
 end
 
 ProjectileService.SetHitResolver(CombatEncounterService.ResolvePlayerHit)
+GroundEffectService.SetEnemyQuery(CombatEncounterService.LiveEnemiesNear)
+GroundEffectService.SetDamageHandler(function(player, record, amount, at, kind)
+	resolveAndApplyDamage(record, amount, at, at, nil, 0, player, kind)
+end)
+
+-- Turns a recipe's GroundEffect table into the OnExpire callback a projectile carries. Cached per
+-- config table so a weapon firing six pellets twelve times a second is not building seventy-two
+-- closures a second for the same unchanging config.
+local groundEffectCallbacks = setmetatable({}, { __mode = "k" })
+
+groundEffectOnExpire = function(config)
+	local existing = groundEffectCallbacks[config]
+	if existing then
+		return existing
+	end
+
+	local callback = function(player: Player, at: Vector3)
+		-- Chance is what stops a spray weapon from carpeting the floor: six pellets a shot at twelve
+		-- shots a second would otherwise leave several hundred puddles a second down.
+		if config.Chance and math.random() >= config.Chance then
+			return
+		end
+		GroundEffectService.Spawn({
+			Player = player,
+			Shape = "Sphere",
+			Position = at,
+			Radius = config.Radius,
+			Duration = config.Duration,
+			TickInterval = config.TickInterval,
+			DamagePerTick = config.DamagePerTick,
+			Status = config.Status,
+			Color = config.Color,
+		})
+	end
+
+	groundEffectCallbacks[config] = callback
+	return callback
+end
 
 -- The client reports only where it fired from and which way it pointed — never what it hit. What
 -- it hit is now decided by the projectile actually travelling and colliding, server-side.
@@ -1252,6 +1357,8 @@ RequestFireWeapon.OnServerEvent:Connect(function(player: Player, claimedOrigin: 
 		RangeProfile = recipe and recipe.RangeProfile,
 		Penetration = recipe and recipe.Penetration,
 		HeadshotMultiplier = recipe and recipe.HeadshotMultiplier,
+		OnHitStatus = recipe and recipe.OnHitStatus,
+		OnExpire = recipe and recipe.GroundEffect and groundEffectOnExpire(recipe.GroundEffect),
 		Projectile = ProjectileConfig.Get(recipe and recipe.Projectile),
 	})
 end)
@@ -1259,6 +1366,7 @@ end)
 Players.PlayerRemoving:Connect(function(player)
 	activeEncounters[player.UserId] = nil
 	lastFireTime[player.UserId] = nil
+	GroundEffectService.ClearFor(player)
 	-- Both folders: RunWave names its folder "<userId>" and RunRaidCombat names its "<userId>_Raid".
 	-- Only the first was cleaned here, so a disconnect mid-raid left its spawned enemies standing in
 	-- the world until the raid loop happened to notice on its next tick.
