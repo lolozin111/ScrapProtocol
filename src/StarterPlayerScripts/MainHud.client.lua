@@ -40,6 +40,7 @@ local LocalPlayer = Players.LocalPlayer
 -- locals here — re-binding would hand every register straight back, which is the entire
 -- reason this module exists (see HudKit.lua's header).
 local Hud = require(script.Parent.HudKit)
+local ModPicker = require(script.Parent.ModPicker)
 
 
 local runActive = false
@@ -306,137 +307,6 @@ local function renderModsRow()
 	end
 end
 
-local function equippedModKeyForSlot(itemKey: string, slotIndex: number)
-	local equipped = Hud.profile.EquippedMods and Hud.profile.EquippedMods[itemKey]
-	return equipped and equipped[slotIndex]
-end
-
--- Sorted so the picker list reads consistently instead of hash-order.
-local function ownedModKeysSorted()
-	local keys = {}
-	for key, owned in pairs(Hud.profile.CraftedMods or {}) do
-		if owned then
-			table.insert(keys, key)
-		end
-	end
-	table.sort(keys, function(a, b)
-		return ModConfig.Mods[a].DisplayName < ModConfig.Mods[b].DisplayName
-	end)
-	return keys
-end
-
-----------------------------------------------------------------------
--- Mod picker popup — clicking a mod slot button on an owned weapon/robot's equipment row opens
--- this listing every mod the player currently owns (plus a "None" option to clear the slot).
--- Clicking an entry equips it and closes the popup.
-----------------------------------------------------------------------
-
-local modPickerFrame = Hud.new("Frame", {
-	Name = "ModPicker",
-	BackgroundColor3 = Hud.COLOR.Panel,
-	Position = UDim2.new(0.5, -170, 0.5, -180),
-	Size = UDim2.new(0, 340, 0, 360),
-	Visible = false,
-	ZIndex = 5,
-	Parent = Hud.screenGui,
-}, { Hud.corner(10), Hud.stroke() })
-
-Hud.new("TextLabel", {
-	BackgroundTransparency = 1,
-	Position = UDim2.new(0, 12, 0, 10),
-	Size = UDim2.new(1, -60, 0, 24),
-	Font = Enum.Font.SourceSansBold,
-	TextXAlignment = Enum.TextXAlignment.Left,
-	TextColor3 = Hud.COLOR.Text,
-	TextSize = 18,
-	Text = "Choose a Mod",
-	Parent = modPickerFrame,
-})
-
-local modPickerClose = Hud.new("TextButton", {
-	BackgroundColor3 = Hud.COLOR.PanelLight,
-	Position = UDim2.new(1, -40, 0, 8),
-	Size = UDim2.new(0, 28, 0, 28),
-	Font = Enum.Font.SourceSansBold,
-	TextColor3 = Hud.COLOR.Text,
-	TextSize = 16,
-	Text = "X",
-	Parent = modPickerFrame,
-}, { Hud.corner(6) })
-
-local modPickerList = Hud.new("ScrollingFrame", {
-	BackgroundTransparency = 1,
-	Position = UDim2.new(0, 12, 0, 44),
-	Size = UDim2.new(1, -24, 1, -56),
-	CanvasSize = UDim2.new(0, 0, 0, 0),
-	AutomaticCanvasSize = Enum.AutomaticSize.Y,
-	ScrollBarThickness = 6,
-	Parent = modPickerFrame,
-}, { Hud.new("UIListLayout", { Padding = UDim.new(0, 6) }) })
-
--- Which slot the popup is currently open for — cleared whenever it closes.
-local modPickerState = { tree = nil, itemKey = nil, slotIndex = nil }
-
-local function closeModPicker()
-	modPickerFrame.Visible = false
-	modPickerState.tree = nil
-	modPickerState.itemKey = nil
-	modPickerState.slotIndex = nil
-end
-modPickerClose.MouseButton1Click:Connect(closeModPicker)
-
--- No manual craft-list re-render here — EquipMod's server handler fires InventoryUpdate with the
--- new EquippedMods table, and that listener already re-renders the craft list while it's open
--- (the same pattern the Craft/Deploy buttons elsewhere in this file rely on).
-local function selectMod(modKey: string?)
-	local tree, itemKey, slotIndex = modPickerState.tree, modPickerState.itemKey, modPickerState.slotIndex
-	closeModPicker() -- close first so a slow round trip doesn't leave a stale popup hanging open
-	local result = Remotes.EquipMod:InvokeServer(tree, itemKey, slotIndex, modKey)
-	if not result.Success then
-		Hud.showFailure("Equip mod failed", result.Reason)
-	end
-end
-
-local function renderModPickerList()
-	for _, child in ipairs(modPickerList:GetChildren()) do
-		if child:IsA("Frame") then
-			child:Destroy()
-		end
-	end
-
-	local currentModKey = equippedModKeyForSlot(modPickerState.itemKey, modPickerState.slotIndex)
-
-	Hud.makeRow(
-		"None",
-		"Clear this slot",
-		(currentModKey == nil) and "Selected" or "Select",
-		function()
-			selectMod(nil)
-		end
-	).Parent = modPickerList
-
-	for _, modKey in ipairs(ownedModKeysSorted()) do
-		local mod = ModConfig.Mods[modKey]
-		local rarityData = ModConfig.Rarities[mod.Rarity]
-		local rarityName = rarityData and rarityData.DisplayName or mod.Rarity
-		Hud.makeRow(
-			("[%s] %s"):format(rarityName, mod.DisplayName),
-			mod.Description,
-			(modKey == currentModKey) and "Selected" or "Select",
-			function()
-				selectMod(modKey)
-			end
-		).Parent = modPickerList
-	end
-end
-
-local function openModPicker(tree: string, itemKey: string, slotIndex: number)
-	modPickerState.tree = tree
-	modPickerState.itemKey = itemKey
-	modPickerState.slotIndex = slotIndex
-	renderModPickerList()
-	modPickerFrame.Visible = true
-end
 
 ----------------------------------------------------------------------
 -- Turret slot panel — opened by clicking a turret slot out in the world (the blue pad for an
@@ -683,7 +553,7 @@ local function makeEquipmentRow(tree: string, itemKey: string, titleText: string
 	}, { Hud.new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 6) }) })
 
 	for slotIndex = 1, ModConfig.SlotsPerItem do
-		local equippedKey = equippedModKeyForSlot(itemKey, slotIndex)
+		local equippedKey = ModPicker.equippedModKeyForSlot(itemKey, slotIndex)
 		local mod = equippedKey and ModConfig.Mods[equippedKey]
 		local slotButton = Hud.new("TextButton", {
 			BackgroundColor3 = mod and Hud.COLOR.AccentDark or Hud.COLOR.Panel,
@@ -696,7 +566,7 @@ local function makeEquipmentRow(tree: string, itemKey: string, titleText: string
 			Parent = slotRow,
 		}, { Hud.corner(4), Hud.stroke() })
 		slotButton.MouseButton1Click:Connect(function()
-			openModPicker(tree, itemKey, slotIndex)
+			ModPicker.openModPicker(tree, itemKey, slotIndex)
 		end)
 	end
 
@@ -1482,7 +1352,7 @@ local function rebuildInvDetailSlots(tree: string, itemKey: string)
 	end
 	local slotWidth = math.floor((260 - 20 - 6 * (ModConfig.SlotsPerItem - 1)) / ModConfig.SlotsPerItem)
 	for slotIndex = 1, ModConfig.SlotsPerItem do
-		local equippedKey = equippedModKeyForSlot(itemKey, slotIndex)
+		local equippedKey = ModPicker.equippedModKeyForSlot(itemKey, slotIndex)
 		local mod = equippedKey and ModConfig.Mods[equippedKey]
 		local slotButton = Hud.new("TextButton", {
 			BackgroundColor3 = mod and Hud.COLOR.AccentDark or Hud.COLOR.Panel,
@@ -1495,7 +1365,7 @@ local function rebuildInvDetailSlots(tree: string, itemKey: string)
 			Parent = inv.detailSlotRow,
 		}, { Hud.corner(4), Hud.stroke() })
 		slotButton.MouseButton1Click:Connect(function()
-			openModPicker(tree, itemKey, slotIndex)
+			ModPicker.openModPicker(tree, itemKey, slotIndex)
 		end)
 	end
 	inv.detailSlotRow.Visible = true
@@ -1711,7 +1581,7 @@ local function renderInvRobots()
 end
 
 local function renderInvMods()
-	local keys = ownedModKeysSorted()
+	local keys = ModPicker.ownedModKeysSorted()
 	if #keys == 0 then
 		inv.emptyLabel.Text = "No mods owned yet — craft one at your Welding Station."
 		inv.emptyLabel.Visible = true
@@ -1816,7 +1686,7 @@ end
 inv.closeButton.MouseButton1Click:Connect(function()
 	inv.frame.Visible = false
 	closeInvDetail()
-	closeModPicker() -- don't leave the mod picker orphaned open behind a closed Inventory
+	ModPicker.closeModPicker() -- don't leave the mod picker orphaned open behind a closed Inventory
 end)
 
 ----------------------------------------------------------------------
@@ -1988,7 +1858,7 @@ local function formatDuration(seconds: number): string
 	return ("%d:%02d"):format(minutes, secs)
 end
 
--- Same Hud.screenGui-sibling popup pattern as modPickerFrame above, just a grid of ore tiles (reusing
+-- Same Hud.screenGui-sibling popup pattern as ModPicker.lua's, just a grid of ore tiles (reusing
 -- makeItemTile/getItemIcon from the Inventory panel section) instead of a list of makeRow entries —
 -- this IS "a GUI directly into your ore inventory," per the ask.
 local orePickerFrame = Hud.new("Frame", {
@@ -2996,7 +2866,7 @@ actionRow = Hud.new("Frame", {
 craftCloseButton.MouseButton1Click:Connect(function()
 	craftFrame.Visible = false
 	setForgeWidgetsVisible(false) -- no-op if a non-Forge station was open, harmless either way
-	closeModPicker() -- don't leave the mod picker orphaned open behind a closed Workbench
+	ModPicker.closeModPicker() -- don't leave the mod picker orphaned open behind a closed Workbench
 end)
 
 -- Inventory, unlike the Workbench, isn't gated to a physical station — it's just a view onto
