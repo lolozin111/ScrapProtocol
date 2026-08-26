@@ -87,6 +87,19 @@ ProjectileConfig.Profiles = {
 		Color = Color3.fromRGB(225, 200, 130),
 	},
 
+	-- Explosive and stringed arrows. No pierce on either: both weapons care about WHICH enemy an
+	-- arrow ended up in — one banks damage per body, the other pairs two of them — and a pass-through
+	-- would make "in that enemy" ambiguous.
+	ExplosiveArrow = {
+		Speed = 155, Gravity = 55, Range = 420, Radius = 0.34, Pierce = 0,
+		Color = Color3.fromRGB(255, 140, 90),
+	},
+
+	StringedArrow = {
+		Speed = 165, Gravity = 50, Range = 440, Radius = 0.3, Pierce = 0,
+		Color = Color3.fromRGB(190, 160, 255),
+	},
+
 	----------------------------------------------------------------------
 	-- Snipers. Fast and dead flat, so where you point is where it lands with no lead at all — the
 	-- opposite of a bow on purpose, since both families are otherwise "slow, high damage".
@@ -100,6 +113,13 @@ ProjectileConfig.Profiles = {
 	QuickSniper = {
 		Speed = 700, Gravity = 0, Range = 900, Radius = 0.24, Pierce = 2,
 		Color = Color3.fromRGB(255, 235, 190),
+	},
+
+	-- Trailblazer: the most pierce in the game, because the trail it leaves is drawn from muzzle to
+	-- FINAL impact — the further the round gets, the longer the hazard it leaves behind.
+	Trailblazer = {
+		Speed = 800, Gravity = 0, Range = 1100, Radius = 0.32, Pierce = 5,
+		Color = Color3.fromRGB(255, 120, 120),
 	},
 
 	----------------------------------------------------------------------

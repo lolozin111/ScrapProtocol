@@ -31,6 +31,11 @@
 	Explosion = { Radius, MinMultiplier, Status?, PullStuds? } does area damage where the projectile
 	stops. For a weapon whose ProjectileConfig sets NoContactDamage, BaseDamage IS the blast damage.
 
+	Behavior names a strategy in WeaponBehaviors.lua, with BehaviorParams passed to it. This is for
+	weapons whose gimmick is genuinely new code rather than a number — delayed detonation, tethers,
+	airbursts. Everything above should be preferred where it can express the idea, since config costs
+	nothing to add and a behaviour is a function somebody has to maintain.
+
 	FireRate/BaseDamage replace the old flat DPS field (FireRate * BaseDamage = the same DPS
 	numbers this table used to have directly) — split apart so ModConfig.lua's mods can multiply
 	each independently (e.g. Speed Coil raises FireRate but lowers BaseDamage). See CombatMath.lua's
@@ -165,6 +170,39 @@ CraftingRecipes.Weapons = {
 		HeadshotMultiplier = 2.2,
 	},
 
+	ExplosiveBow = {
+		DisplayName = "Explosive Bow",
+		Description = "Arrows that wait. Land several in one body before the first goes off.",
+		Projectile = "ExplosiveArrow",
+		Family = "Bows",
+		Tier = 4,
+		Cost = { SteelPlating = 45, GoldContacts = 25, CopperCoil = 20 },
+		FireRate = 1.1, BaseDamage = 16, -- low on impact; the arrows are a bank, not a payment
+		HeadshotMultiplier = 1.8,
+		Behavior = "ExplosiveArrow",
+		BehaviorParams = {
+			FuseSeconds = 2.5,
+			DamageFraction = 0.9,  -- each arrow's detonation, relative to the damage it landed for
+			PerArrowBonus = 0.4,   -- every arrow past the first adds 40% to ALL of them
+		},
+	},
+
+	StringedBow = {
+		DisplayName = "Stringed Bow",
+		Description = "Two arrows, one cord. Land them on different targets and drag them together.",
+		Projectile = "StringedArrow",
+		Family = "Bows",
+		Tier = 5,
+		Cost = { GoldContacts = 40, VoidiumShard = 12, CopperCoil = 25 },
+		FireRate = 1.3, BaseDamage = 18,
+		HeadshotMultiplier = 1.8,
+		Behavior = "StringedArrow",
+		BehaviorParams = {
+			CycleLength = 4, FirstShot = 3, SecondShot = 4,
+			BonusFraction = 1.5, -- dealt to BOTH ends of the string
+		},
+	},
+
 	----------------------------------------------------------------------
 	-- Snipers — flat, fast, piercing. Damage does not care where it lands.
 	----------------------------------------------------------------------
@@ -234,6 +272,46 @@ CraftingRecipes.Weapons = {
 			-- and neither is sticky-specific code.
 			Status = { Key = "Slow" },
 			PullStuds = 10,
+		},
+	},
+
+	Trailblazer = {
+		DisplayName = "Trailblazer",
+		Description = "Draws a burning line from muzzle to impact. Anything crossing it bleeds.",
+		Projectile = "Trailblazer",
+		Family = "Snipers",
+		Tier = 4,
+		Cost = { SteelPlating = 50, GoldContacts = 30, HardenedPlate = 15 },
+		FireRate = 0.5, BaseDamage = 62, -- less than the Longshot, per the spec; the trail makes it up
+		HeadshotMultiplier = 1,
+		Penetration = 10,
+		Behavior = "BleedTrail",
+		BehaviorParams = {
+			MaxLength = 100, -- the spec's own number
+			Radius = 3,
+			Duration = 6,
+			TickInterval = 1,
+		},
+	},
+
+	Hellfire = {
+		DisplayName = "Hellfire",
+		Description = "Four shots, then one straight up — and whatever comes back down is not yours to aim.",
+		Projectile = "Sniper",
+		Family = "Snipers",
+		Tier = 5,
+		Cost = { GoldContacts = 45, VoidiumShard = 15, HardenedPlate = 20 },
+		FireRate = 0.6, BaseDamage = 80,
+		HeadshotMultiplier = 1,
+		Penetration = 10,
+		Behavior = "Hellfire",
+		BehaviorParams = {
+			EveryNthShot = 5,
+			MissileCount = 6,
+			ScatterRadius = 28,
+			BurstHeight = 60,
+			MissileRadius = 10,
+			DamageFraction = 0.55, -- per missile, so a full barrage is worth roughly three ordinary shots
 		},
 	},
 

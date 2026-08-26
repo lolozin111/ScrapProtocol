@@ -65,6 +65,7 @@ local PlayerSpeed = require(script.Parent.PlayerSpeed)
 local StatusEffects = require(script.Parent.StatusEffects)
 local ProjectileService = require(script.Parent.ProjectileService)
 local GroundEffectService = require(script.Parent.GroundEffectService)
+local WeaponBehaviors = require(script.Parent.WeaponBehaviors)
 local ProjectileConfig = require(ReplicatedStorage.Shared.ProjectileConfig)
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
@@ -1055,10 +1056,35 @@ end
 -- rate limit cannot live on a thing that may not exist.
 local lastFireTime: { [number]: number } = {}
 
+-- Per-player, per-weapon shot counts and scratch state for WeaponBehaviors.
+--
+-- Deliberately NOT stored on the encounter, unlike the Ultimate shot counter: a gun whose gimmick is
+-- "every 5th shot" must not silently reset its rhythm because a wave ended, and the StringedBow's
+-- pending anchor has to survive between shots that might straddle a fight. Keyed by weapon KEY, so
+-- swapping guns does not hand the new one the old one's progress.
+local weaponShots: { [number]: { [string]: number } } = {}
+local weaponState: { [number]: { [string]: { [string]: any } } } = {}
+
+local function bumpShotCount(player: Player, weaponKey: string): number
+	local userId = player.UserId
+	weaponShots[userId] = weaponShots[userId] or {}
+	weaponShots[userId][weaponKey] = (weaponShots[userId][weaponKey] or 0) + 1
+	return weaponShots[userId][weaponKey]
+end
+
+local function stateFor(player: Player, weaponKey: string)
+	local userId = player.UserId
+	weaponState[userId] = weaponState[userId] or {}
+	weaponState[userId][weaponKey] = weaponState[userId][weaponKey] or {}
+	return weaponState[userId][weaponKey]
+end
+
 -- Forward-declared: the fire handler below references it, and it is defined between the two.
 -- Declaring it here keeps it a local — assigning `function buildOnExpire()` without this would
 -- silently create a GLOBAL, which works until something else in the game shadows it.
 local buildOnExpire
+local behaviorContext
+local detonate
 
 -- Whichever fight this player is in, or the training-dummy fallback if they are in none. One
 -- definition, so a projectile, a ground effect and an Ultimate all agree on what counts as "the
@@ -1156,6 +1182,18 @@ function CombatEncounterService.ResolvePlayerHit(player: Player, hitInstance: In
 	-- Contact status (burn, frostbite, poison...). Applied AFTER damage so a status that kills has
 	-- already had the bullet's own damage counted against the same target.
 	applyOnHitStatus(enemyRecord, spec.OnHitStatus)
+
+	-- The weapon's own behaviour, if it is an exotic. Separate hook from the Ultimate below, and
+	-- fired first: an ExplosiveBow carrying Ricochet should do both, and the arrow it just planted
+	-- should exist before the ricochet starts bouncing off the same body.
+	if spec.Behavior then
+		local ctx = behaviorContext(player, spec.WeaponKey, spec, spec.ShotNumber or 0)
+		ctx.Target = enemyRecord
+		ctx.Damage = dealt
+		ctx.Origin = spec.Origin or origin
+		ctx.HitPosition = hitPosition
+		WeaponBehaviors.Fire("OnHit", spec.Behavior, ctx)
+	end
 
 	----------------------------------------------------------------------
 	-- Ultimate mod hooks. Fired here — the one place a player's shot LANDS — so they work
@@ -1280,7 +1318,7 @@ local function explosionMultiplier(distance: number, radius: number, minimum: nu
 	return minimum + (1 - minimum) * (1 - t)
 end
 
-local function detonate(player: Player, at: Vector3, damage: number, config)
+detonate = function(player: Player, at: Vector3, damage: number, config)
 	local radius = config.Radius or 12
 	local minimum = config.MinMultiplier or 0.35
 
@@ -1358,6 +1396,79 @@ buildOnExpire = function(recipe)
 	return callback
 end
 
+----------------------------------------------------------------------
+-- WeaponBehaviors context
+--
+-- Built once per hook rather than per behaviour, and deliberately narrow: a behaviour can damage,
+-- status, pull, detonate and fire more projectiles, and can reach nothing else. Everything routes
+-- back through the same pipeline an ordinary bullet uses.
+----------------------------------------------------------------------
+
+behaviorContext = function(player: Player, weaponKey: string, spec, shotNumber: number)
+	local state = stateFor(player, weaponKey)
+
+	return {
+		Params = spec.BehaviorParams or {},
+		Player = player,
+		ShotNumber = shotNumber,
+		Spec = spec,
+
+		GetWeaponState = function(key: string)
+			return state[key]
+		end,
+		SetWeaponState = function(key: string, value)
+			state[key] = value
+		end,
+
+		IsAlive = function(record): boolean
+			return record ~= nil and isEnemyAlive(record)
+		end,
+
+		DealDamage = function(record, amount: number, kind: string?)
+			if record and amount and amount > 0 and isEnemyAlive(record) then
+				local at = record.Model.PrimaryPart.Position
+				resolveAndApplyDamage(record, amount, at, at, nil, 0, player, kind or "Explosion")
+			end
+		end,
+
+		ApplyStatus = function(record, key: string, overrides)
+			if record and isEnemyAlive(record) then
+				StatusEffects.Apply(record, key, overrides)
+			end
+		end,
+
+		-- Pivot rather than velocity, same reasoning as the Sticky blast: these are Humanoid-driven
+		-- and would walk an impulse off within a frame or two.
+		Pull = function(record, toPosition: Vector3, studs: number)
+			local part = record and record.Model and record.Model.PrimaryPart
+			if not part or not isEnemyAlive(record) then
+				return
+			end
+			local offset = toPosition - part.Position
+			local distance = offset.Magnitude
+			if distance < 0.5 then
+				return
+			end
+			record.Model:PivotTo(record.Model:GetPivot() + offset.Unit * math.min(studs, distance))
+		end,
+
+		SpawnGroundEffect = function(options)
+			options.Player = player
+			GroundEffectService.Spawn(options)
+		end,
+
+		-- `owner` lets a nested callback (Hellfire's missiles, fired from inside an OnExpire) name the
+		-- player explicitly rather than relying on an upvalue that outlived its shot.
+		Detonate = function(at: Vector3, damage: number, config, owner: Player?)
+			detonate(owner or player, at, damage, config)
+		end,
+
+		FireProjectile = function(origin: Vector3, direction: Vector3, overrides, owner: Player?)
+			ProjectileService.Fire(owner or player, origin, direction, overrides)
+		end,
+	}
+end
+
 -- The client reports only where it fired from and which way it pointed — never what it hit. What
 -- it hit is now decided by the projectile actually travelling and colliding, server-side.
 --
@@ -1410,10 +1521,11 @@ RequestFireWeapon.OnServerEvent:Connect(function(player: Player, claimedOrigin: 
 	lastFireTime[player.UserId] = now
 
 	local recipe = CraftingRecipes.Weapons[weaponInstance.WeaponKey]
+	local shotNumber = bumpShotCount(player, weaponInstance.WeaponKey)
 
 	-- Everything the shot will need on impact, captured NOW — see ResolvePlayerHit's own comment on
 	-- why a projectile resolves against the loadout that fired it.
-	ProjectileService.Fire(player, claimedOrigin, claimedDirection, {
+	local spec = {
 		Damage = stats.Damage,
 		WeaponKey = weaponInstance.WeaponKey,
 		UltimateKey = (profile.EquippedUltimate or {})[weaponInstance.WeaponKey],
@@ -1423,12 +1535,34 @@ RequestFireWeapon.OnServerEvent:Connect(function(player: Player, claimedOrigin: 
 		OnHitStatus = recipe and recipe.OnHitStatus,
 		OnExpire = recipe and (recipe.Explosion or recipe.GroundEffect) and buildOnExpire(recipe),
 		Projectile = ProjectileConfig.Get(recipe and recipe.Projectile),
-	})
+		Behavior = recipe and recipe.Behavior,
+		BehaviorParams = recipe and recipe.BehaviorParams,
+		ShotNumber = shotNumber,
+		-- The muzzle, carried through to impact. The Trailblazer's trail runs from here to wherever
+		-- the shot stopped, and only knowing BOTH ends makes that possible at all — which is a thing
+		-- travelling projectiles bought that hitscan could never have expressed.
+		Origin = claimedOrigin,
+	}
+
+	-- A behaviour that handles the shot itself (Hellfire's airburst) suppresses the ordinary one, so
+	-- the 5th trigger pull is a cartridge INSTEAD OF a bullet rather than as well as.
+	if spec.Behavior then
+		local ctx = behaviorContext(player, weaponInstance.WeaponKey, spec, shotNumber)
+		ctx.Origin = claimedOrigin
+		ctx.Direction = claimedDirection.Unit
+		if WeaponBehaviors.Fire("OnFire", spec.Behavior, ctx) then
+			return
+		end
+	end
+
+	ProjectileService.Fire(player, claimedOrigin, claimedDirection, spec)
 end)
 
 Players.PlayerRemoving:Connect(function(player)
 	activeEncounters[player.UserId] = nil
 	lastFireTime[player.UserId] = nil
+	weaponShots[player.UserId] = nil
+	weaponState[player.UserId] = nil
 	GroundEffectService.ClearFor(player)
 	-- Both folders: RunWave names its folder "<userId>" and RunRaidCombat names its "<userId>_Raid".
 	-- Only the first was cleaned here, so a disconnect mid-raid left its spawned enemies standing in
