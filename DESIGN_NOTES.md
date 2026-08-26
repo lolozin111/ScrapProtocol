@@ -13,7 +13,7 @@ already made (numbers, mechanics, sequencing), not just vague direction.
 | Mining zone (dig-down/Y-levels) | **Built** — see below |
 | Base (crafting process, mods, tiers, turrets) | **Built** — see below (crafting process' "cute" animation step still not started) |
 | Research level (progression tiers) | **Built** — see below |
-| Main shop (rotating stock, geode/extractor) | Not started — see the Black Market note below |
+| Main shop (rotating stock, geode/extractor) | **Superseded** by the Black Market — same flow |
 | Black Market & Hacker Machine | Not started — **next up**, design captured below |
 | PvP base invasion | Not started, sequence last |
 
@@ -1159,6 +1159,10 @@ post-boss card pick.
   card per rarity, no real buff effects wired up (`state.CollectedCards` just records the pick) —
   proves out the rarity/roll/pick-one flow for real content to replace it later.
 
+> **SUPERSEDED by the Black Market & Hacker Machine section above.** Kept for the reasoning, not as
+> a separate thing to build — the geode/extractor mechanic below is the same shape as the case/decode
+> flow. The Roblox randomized-rewards policy flag at the end of this section now applies to CASES.
+
 - **Rotating stock** — the shop's available items change over time (a schedule/rotation), not a
   static catalog.
 - Sells: pieces of technology, gun/robot mods (ties into the Base mod-slot system above), armor,
@@ -1177,12 +1181,12 @@ A rotating-stock dealer selling **sealed cases**, decoded on a separate **Hacker
 the mid-to-endgame content faucet: it is where gun variants, special tools, and the Ultimate mods
 come from. Deliberately not a general shop — it sells sealed randomness, not catalogue items.
 
-**Relationship to the older "Main shop" idea below:** unreconciled, and worth deciding before
-building. Both are "rotating stock". The Black Market may simply BE the main shop, or the main shop
-may stay a separate straightforward catalogue (armor/mods/cosmetics) while the Black Market handles
-sealed cases only. The geode/extractor mechanic sketched under Main shop is close to identical in
-shape to the case/Hacker-Machine flow — buy sealed thing, wait a timer, open for a reward — so
-building both would mean two systems doing one job.
+**DECIDED: this SUPERSEDES the older "Main shop" idea below.** The geode → extractor → wait →
+reward flow sketched there is the same flow as case → Hacker Machine → wait → reward, so building
+both would be two systems doing one job. The Main shop section is kept below for its reasoning
+(especially the note about Roblox's policy on randomized rewards, which now applies HERE), but it is
+not a separate thing to build. If flat-catalogue items like armor or cosmetics are still wanted
+later, they belong as tabs on an existing station rather than a third shop.
 
 ### Currencies — the deliberate split
 
@@ -1196,8 +1200,15 @@ building both would mean two systems doing one job.
 
 Sealed. Bought from the dealer, decoded at the Hacker Machine — decoding **takes real time**
 (same shape as `SmeltService`'s job: one at a time, timestamp-based, finishes whether or not you
-were online). **Open question:** whether rushing a decode is possible and whether it carries a real
-risk (losing the case?). Flagged as "maybe" — undecided.
+were online).
+
+**Rushing a decode — DECIDED, two paths with different risk:**
+- **Robux** → finishes instantly, **no risk**. The paid path buys time, never outcomes.
+- **Cores** → finishes instantly but **carries a real risk of corrupting the case** (lose it, get
+  nothing). The in-game shortcut is a gamble; the paid one is not.
+
+That asymmetry is the point: someone who pays gets certainty, someone who grinds gets a choice
+between waiting and gambling. It also gives Cores a second sink beyond turret upgrades.
 
 **Rarity → what drops.** The tiers mean different KINDS of thing, not just better numbers:
 
@@ -1244,9 +1255,11 @@ specific variant"* — so the Forge's Weapons tab gains a tab per unlocked famil
 Within a family sit specialised guns with their own twist — *"a bow that shoots shock arrows, or a
 flamethrower that actually throws a freezing flame"*.
 
-**Open question:** does a blueprint unlock the whole FAMILY (every gun in that tab becomes
-craftable) or just ONE specific gun within it? Both readings fit what was said, and it changes the
-data shape.
+**DECIDED: a blueprint unlocks the whole FAMILY.** One Flamethrower blueprint opens the
+Flamethrower tab and makes every flamethrower in it craftable with materials. Same shape as turret
+blueprints already use (`profile.UnlockedTurretBlueprints`): the case grants ACCESS, materials
+remain the gate. Cases stay valuable without becoming the only way to get a gun, and a player who
+wants one specific weapon is never held hostage to a re-roll.
 
 ### Tools
 
