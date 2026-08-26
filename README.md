@@ -156,6 +156,14 @@ no manual copy-pasting scripts into Studio.
   player's cloned base, so nobody can walk into someone else's base and use their gear. A loose
   `Station` block placed directly in the world (not part of any base Model — i.e. what
   placeholder-block testing looks like right now) has no owner and stays open to everyone.
+- **World stations** — two station types live OUT in the world instead of inside a base plot:
+  **`BlackMarket`** (buys sealed cases) and **`Hacker`** (opens them). Tag them exactly like a base
+  station — a Part or Model tagged `Station` with a child `StringValue` named `StationType` — but
+  place them somewhere shared and NOT inside a `BaseTemplates` Model. They deliberately don't check
+  `PlotService.IsPlayerInOwnPlot`, because they aren't anyone's property; the same distance check
+  (`StationConfig.InteractDistance`) still applies, so you do have to walk up to them. Like the Hub
+  Shop, one of each anywhere on the map serves the whole server.
+
 - **Crafting** — call the `CraftItem` RemoteFunction from a UI button with a tree name
   (`"Robots"` or `"Mods"` — **not** `"Weapons"` anymore, see "Forge" below) and a recipe key from
   `CraftingRecipes.lua`/`ModConfig.lua`. Cost is validated and deducted server-side. **Only works
@@ -370,16 +378,77 @@ no manual copy-pasting scripts into Studio.
   afford anything at) via the `SkipNode` remote; the Shop panel exposes a "Skip" button for it.
   Skipping a fork option destroys it and its sibling and advances the queue exactly like using
   it would, just with no reward. Blocked during an active raid for the same reason as above.
+- **Guns fire real projectiles** — every shot spawns an actual travelling Part, simulated
+  server-side (`ProjectileService.lua`), not an instant hitscan. Speed, gravity, range, pierce and
+  size are per-weapon, set by naming a profile in `ProjectileConfig.lua` — the Arc Cannon's slow
+  visible orb versus the Rail Rifle's near-instant piercing round are the same code with different
+  numbers. You can fire any time you're holding a gun Tool, at anything or nothing; whether a shot
+  connects is decided by the projectile actually colliding, server-side.
+
+- **Damage numbers** — floating numbers on every hit (`DamageNumbers.client.lua`), **colour-coded
+  by source**, which is the point: white is your bullet, **pink is an Ultimate mod firing**, green
+  is a bleed/poison tick, blue is a turret, grey is a robot, gold is a headshot. Without this it's
+  genuinely impossible to tell whether a passive is working or just doing very little.
+
+- **Training dummies** — punching bags that behave as real enemies (`TrainingDummyService.lua`):
+  same records, same damage pipeline, same status effects, same Ultimate hooks. They just never
+  move or attack. Each shows a running damage total on its head (clearing after 5s of quiet), live
+  HP, current **DEF%** — so armour-shredding passives are directly observable — and a STUNNED flag.
+  2000 HP with a 3s revive, so both accumulated damage and on-kill passives are testable. Type
+  **`/dummy`** as an admin to drop one in front of you, or tag any Part/Model `TrainingDummy`.
+  They're only shootable while you're NOT in a wave, so a dummy can never steal a shot from a fight.
+
+- **Status effects** — a shared system (`StatusConfig.lua`/`StatusEffects.lua`) for bleed, poison,
+  burn, stun, slow, frostbite and armour shred. Applied by anything, ticked in one place, read by
+  combat and AI: a stunned enemy neither moves nor attacks, a slowed one has its own MoveSpeed
+  scaled, and armour shred multiplies defence down (so "loses 50%" and "drops to nothing" are the
+  same mechanism at different strengths). Damage-over-time runs through the normal damage pipeline,
+  so a bleed can't bypass mitigation. Frostbite escalating into a Stun at 2 stacks is generic
+  config, not special-cased.
+
+- **Ultimate mods** — Mythical passives in a weapon's own **fourth, exclusive slot**
+  (`UltimateConfig.lua`). Only an Ultimate fits it and an Ultimate can't occupy the three ordinary
+  mod slots — enforced structurally, since the two pools are separate config tables and separate
+  profile fields. Unlike ordinary mods these are *behaviours*, not stat multipliers: they hook the
+  damage path (`OnHit` / `OnKill`) rather than flowing through `CombatMath`. Six exist — Detonator,
+  Ricochet, Leg Breaker, .100mm, Shark Bullet, AimBot. One Ultimate can only be equipped on one
+  weapon at a time. They're not craftable; they come from Black Market cases.
+
+- **Black Market & Hacker Machine** — the endgame content faucet. A dealer sells **sealed cases**
+  from stock that rotates every 4 hours; you open them on a separate **Hacker Machine**, which takes
+  real time and finishes whether or not you're online. Scrap and Cores buy the ordinary lines;
+  **Contraband** — earned 3-6 on a clean raid extract and 2 per boss wave — buys the premium
+  Blackline case, the only one that rolls Mythical (i.e. Ultimate mods). A decode can be rushed two
+  ways with deliberately different risk: **Robux** is instant and safe, **25 Cores** is instant but
+  has a 25% chance to corrupt the case and lose it outright. Rolling a duplicate Ultimate converts
+  to Contraband rather than vanishing. The dealer shows its odds per case. See `CaseConfig.lua` to
+  retune anything, and `DESIGN_NOTES.md` for the full design.
+
+- **Player saves are session-locked** — `DataService.lua` claims a lock through `UpdateAsync`
+  (atomic) before loading, refreshes it on every save, and releases it on leave. Two servers can no
+  longer hold the same profile, which used to mean leaving one server and joining another before
+  the first saved would silently rewind your progress. A player whose lock can't be acquired is
+  kicked with an explanation rather than let in with an unsaveable profile.
+
 - **Admin dev shortcuts** — `AdminConfig.lua` auto-detects the place's owner (via
-  `game.CreatorId`, works automatically in Studio when you're testing as yourself; add your
-  UserId to `AdminUserIds` too if the game ends up owned by a Group instead of your personal
-  account) and lets that player instantly win any Combat raid — no gear check, no cooldown, no
-  Energy cost, full loot immediately. Purely a testing aid so you can blow past combat while
-  working on everything downstream of it; not something a normal player ever sees. Since this
-  is otherwise always-on, type **`/admin off`** in the in-game chat to test what a normal player
-  actually experiences (Energy costs, real timed combat) — `/admin on` re-enables it, plain
-  `/admin` toggles. Session-only (`AdminService.lua`), resets to the normal auto-detected value
-  on rejoin. Silently ignored for anyone who isn't already an admin.
+  `game.CreatorId`, which works automatically in Studio when you're testing as yourself; add your
+  UserId to `AdminUserIds` too if the game ends up owned by a Group). Admins win any Combat raid
+  instantly, and get a set of chat commands for testing things without grinding the systems
+  upstream of them:
+
+  | Command | What it does |
+  |---|---|
+  | `/admin [on\|off]` | Toggle your own admin shortcuts. `off` lets you experience the game as a normal player — note this disables the grants below too, deliberately. |
+  | `/give <what> [n]` | Scrap, Cores, Contraband, any ore, any refined material (Steel Ingot etc.), or `CoreT1`. Defaults to 100, case-insensitive. |
+  | `/giveturret [Type]` | Mints an unplaced turret and unlocks its blueprint. |
+  | `/giveultimate [Key]` | Grants an Ultimate mod — otherwise only obtainable from Black Market cases. |
+  | `/givecase [Key] [n]` | Grants sealed cases, so the decode flow is testable without buying. |
+  | `/dummy` | Drops a training dummy in front of you. |
+  | `/setwave <n>` | Sets your HighestWave — gates ore behind `MinWaveUnlock` and unlocks Research tiers. |
+  | `/help` | Lists all of the above, plus every valid key, in the Output window. |
+
+  All of it is silently ignored for non-admins — a normal player typing `/give` gets no hint the
+  command exists.
 
 ## 4. Testing the loop (debug HUD)
 
@@ -488,9 +557,13 @@ actually visible before any real art or UI design happens. To test end to end:
    `EnemyConfig.Types[key].ModelName` (e.g. `Scavenger`) with a `Humanoid` + `PrimaryPart` for
    anything to actually spawn — with none placed, a wave will look like it clears instantly
    (nothing spawned, so nothing to fight) rather than erroring. With your gun held, click-and-hold
-   left mouse to fire at whatever your camera is pointed at; a Neon tracer confirms the client
-   fired, and the enemy's health should visibly drop as hits land — kill them all before they chip
-   Wall HP to 0. This one only needs you inside your plot generally, not near a specific station.
+   left mouse to fire at whatever your camera is pointed at — including at nothing. Shots are real
+   travelling projectiles, so you should SEE a round leave the gun and fly; watch one hit a wall and
+   stop, then land one on an enemy and confirm a white damage number floats off it (gold on a
+   headshot). Kill them all before they chip Wall HP to 0. This one only needs you inside your plot
+   generally, not near a specific station. To bail out mid-run, hit the red **Stop Defense** button
+   where Start Defense was — the run should end cleanly at the current wave rather than needing you
+   to reset your character.
 9. Place three more Parts and tag one each `Node` with `NodeType` = `Heal`, `Shop`, and
    `Combat` (give the Combat one a `Tier` NumberValue set to `1`). Left-click the Combat node
    (within 50 studs) to raid it — this spends 1 Energy (top-left readout, starts full at 5/5) —
@@ -628,6 +701,40 @@ actually visible before any real art or UI design happens. To test end to end:
     `Raider`) — enter that room and confirm exactly that enemy spawns at that Part's position
     instead of a random composition; try a typo'd `EnemyType` too and confirm the Output window
     warns instead of spawning anything there.
+
+16. **Training dummies and damage numbers.** Make sure you're NOT in a wave (dummies are
+    deliberately unshootable during one, so they can never steal a shot from a real fight), then
+    type **`/dummy`** in chat as the place owner — a dummy should appear a few studs in front of
+    you with a billboard showing HP, `DEF 100%`, and a damage total. Shoot it: the total should
+    climb and a white number should float off each hit; stop for 5 seconds and the total should
+    reset to 0 on its own while HP stays where you left it. (You can also tag any Part or Model
+    `TrainingDummy` in Studio instead of using the command.) Now equip an Ultimate — **`/giveultimate
+    Detonator`**, then Inventory → Weapons → your gun → the fourth **Ultimate** slot — and shoot the
+    dummy again: **pink** numbers are the mod firing, distinct from your white bullet damage. That
+    colour split is the whole point of the system, so if a passive is doing nothing you'll see it
+    doing nothing rather than having to guess. Try **`/giveultimate LegBreaker`** too and watch the
+    `DEF %` on the billboard drop as armour shred stacks, then climb back as it expires. Damage over
+    time (green numbers) keeps ticking with the gun holstered.
+17. **Black Market.** Place a Part somewhere in the world (NOT inside your base), tag it `Station`,
+    and give it a child `StringValue` named `StationType` set to `BlackMarket`. Click it — a case
+    list should open showing today's rotating stock with prices and per-case odds. Grab currency
+    with **`/give Scrap 5000`** and **`/give Contraband 50`** and buy one of each line; the premium
+    **Blackline** case should be the only one quoting a Mythical chance, and should refuse to sell
+    for Scrap. Confirm the stock line says how long until it rotates (every 4 hours — change
+    `CaseConfig` if you want to watch it flip sooner).
+18. **Hacker Machine.** Place a second Part the same way with `StationType` = `Hacker` (put it a
+    good distance from the Black Market so you can confirm each rejects you when you're at the
+    other). Click it and start decoding a case you bought — a countdown should appear, and it should
+    keep running while you walk away, fight a wave, or even leave and rejoin the server (it's
+    timestamp-based, not a timer). Try starting a second decode while one runs: it should refuse,
+    not queue. Then test both rush paths, which are deliberately NOT the same deal: **`/give Cores
+    500`**, hit the Cores rush a handful of times across several cases and confirm roughly a quarter
+    of them corrupt and lose the case (Cores are spent either way — that's the gamble), whereas the
+    Robux rush is instant and always safe. On completion the case should open with a reveal naming
+    what dropped, and the item should be in your Inventory. Roll a duplicate Ultimate and confirm it
+    converts to Contraband instead of vanishing. Finally, confirm income actually flows: extract
+    cleanly from a Raid Room (step 15) and from a boss wave, and watch Contraband go up — abandoning
+    or dying should pay nothing.
 
 ## 5. Environment effects (optional polish)
 

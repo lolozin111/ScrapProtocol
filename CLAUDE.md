@@ -54,10 +54,42 @@ else reads/writes player state through it) and adding a new service means adding
 (`DataService.Get`, `AddCurrency`, `AddOre`, `TrySpend`, etc.) against an in-memory
 `cache[userId]`. New player-state fields go in `defaultProfile()`; `backfillMissingFields`
 fills them in for existing saves on load, so old saves never need a migration script for a
-simple new field. `DataService.lua`'s own header notes this hand-rolled version isn't
-session-locked across servers — swap in ProfileService before real concurrent players.
-When a save's *shape* changes (not just a new field), follow the existing
+simple new field. Profiles **are** session-locked: load/save go through `UpdateAsync` against an
+envelope (`{ Data = profile, Lock = { ServerId, Heartbeat } }`), so two servers can't hold the same
+profile and a player whose lock can't be acquired is kicked rather than let in with an unsaveable
+profile. `DataService.Save` returns whether the write landed — check it before telling a player
+their purchase went through. When a save's *shape* changes (not just a new field), follow the existing
 `migrateLegacyWeapons` pattern: a one-time, self-guarding conversion run from `loadProfile`.
+
+**Some `Services/*.lua` files are shared utilities, not services** — no remotes, required by
+consumers, following the `CombatMath`/`DamagePipeline` precedent. Reach for these instead of
+re-solving the same problem locally, because each one exists specifically because it *was* re-solved
+locally several times and the copies drifted:
+
+- `RateLimiter.Check(player, key, cooldownSeconds)` — tests and stamps in one call. Every remote
+  that can be spammed goes through it.
+- `PlayerActivityService.TryAcquire/Release/Get` — one authoritative activity per player (`Wave`,
+  `Raid`, `OutpostRaid`). Replaced five uncoordinated private busy-flags that let a wave and a raid
+  overwrite each other's combat state.
+- `OreGate.CanMine(player, oreKey)` — the tool-tier + wave-unlock check, previously duplicated
+  between `MiningService` and `MineShaftService` with a comment warning about the drift.
+- `Shared/Wallet.lua` — where a cost key lives on a profile, how much you have, what it's called.
+  Shared (not server-only) so the HUD can't disagree with what the server will charge.
+
+**To write profile data on disconnect, connect to `DataService.PlayerSaving`, never to
+`Players.PlayerRemoving`.** `PlayerRemoving` handlers fire in connection order, connections are made
+on first `require`, and `DataService` is required first — so by the time any other service's handler
+runs, the profile has already been saved and evicted from the cache and its `DataService.Get`
+returns nil. A whole raid's collected loot was being discarded this way, silently. `PlayerSaving` is
+a BindableEvent fired synchronously at the top of that handler, before the save and before the cache
+clear, and from `BindToClose` too.
+
+**New behaviour goes in a flat table of named strategies, keyed by a config string.** The recurring
+shape: `EnemyAI.Patterns`, `RobotBehaviors`, `UltimateEffects.OnHit`/`.OnKill`,
+`StatusEffects`/`StatusConfig`, `ProjectileConfig`'s per-weapon profiles. Adding an enemy AI, a
+passive, a status, or a gun that flies differently is one function plus one config entry — not a new
+branch in a dispatch chain. Dispatch sites must guard the lookup (`if fn then`) and `warn()` on a
+miss: an unguarded nil call inside a tick loop throws and strands the run's state.
 
 **Server-authoritative everywhere.** The client only ever reports intent ("I hit this node",
 "I clicked this station") over a Remote; the server (mostly `StationService`/`PlotService` for
@@ -68,8 +100,8 @@ never fail silently — see the `MineFailed`/toast/warn conventions used through
 
 **World setup is tag-driven, not hardcoded.** Systems key off `CollectionService` tags placed
 on Parts/Models in Studio (`Plot`, `Station` + `StationType`, `OreNode` + `OreType`, `Node` +
-`NodeType`, `MineShaftStart`, `ExpeditionStart`/`ExpeditionLever`, `Tree`), read by the matching
-service. This means most new-content work (placing another ore node, another station) is a
+`NodeType`, `MineShaftStart`, `ExpeditionStart`/`ExpeditionLever`, `TurretSlot`, `TrainingDummy`,
+`Tree`), read by the matching service. This means most new-content work (placing another ore node, another station) is a
 Studio/tagging task, not a code change — code changes are for new *systems* or new *config
 entries* (e.g. a new key in `OreConfig.Ores`).
 
@@ -96,6 +128,15 @@ these before suspecting the logic. Guards now in place: `MainHud`'s `showFailure
 rejection on screen, and `Main.server.lua` warns at boot about any service module that is never
 required. (You cannot check the remotes directly — reading `remote.OnServerInvoke` throws, since
 Roblox callbacks are write-only.)
+
+**Luau allows 200 locals per function scope, and `MainHud.client.lua` is close to it.** Exceeding it
+is a *compile* error ("Out of local registers"), so the whole script fails to load and the HUD simply
+never appears — it is not a runtime warning you'll spot in Output. The file currently sits around 163
+by bundling related UI elements into grouped tables (`inv`, `research`, `turretPanel`, `shopUI`,
+`pity`) instead of one local per frame. Adding a panel means adding to a group, or lifting a section
+into its own ModuleScript. When moving code between files, **extract the exact text — never retype
+it**; a hand-retyped UI helper with subtly different sizes/positions looks like a rendering bug, not
+a typo, and costs far more to find than the move saved.
 
 **Missing art never breaks the loop.** Enemy rigs, gun Tools, base/raid-room models, and item
 icons are all optional — every service that clones one of these falls back to a plain

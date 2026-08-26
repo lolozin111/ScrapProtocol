@@ -15,12 +15,23 @@ already made (numbers, mechanics, sequencing), not just vague direction.
 | Research level (progression tiers) | **Built** — see below |
 | Main shop (rotating stock, geode/extractor) | **Superseded** by the Black Market — same flow |
 | Black Market & Hacker Machine | **Built** — dealer, cases, decode, Contraband. Gun variants + tools still to come |
+| Ultimate mods (Mythical passives, 4th slot) | **Built** — all 6 |
+| Status effects (bleed/poison/burn/stun/slow/frostbite/shred) | **Built** — see "Combat infrastructure" |
+| Projectiles (real travelling shots) | **Built** — see "Combat infrastructure" |
+| Damage numbers + training dummies | **Built** — the diagnosis layer for everything above |
+| Session-locked saves | **Built** — see "Data safety" |
+| Gun variants (14) + tools (3) | **Specced, not built** — see "Content backlog" |
 | PvP base invasion | Not started, sequence last |
 
 Agreed build order (most recent discussion): Raid Energy → Mining zone rework → weapon mod
-slots → base building/tiers (+ turrets) → **Research level** → rotating shop → PvP invasion last.
-Re-confirm this order before starting each one — priorities may have shifted. Research is now
-BUILT (see "Research level" below). Next up: main shop, then PvP invasion.
+slots → base building/tiers (+ turrets) → Research level → Black Market → PvP invasion last.
+Re-confirm this order before starting each one — priorities may have shifted. Research and the
+Black Market are both BUILT (the Black Market **superseded** the planned "main shop" rather than
+being built alongside it — same rotating-stock shape, so they were merged).
+
+**Next up: the content backlog** — the 14 gun variants and 3 tools already specced below. The
+systems they need (projectile profiles, status effects, the damage-number diagnosis layer) all
+exist now, which is why they're sequenced here rather than earlier. Then PvP invasion.
 
 ## Mining zone — BUILT
 
@@ -32,7 +43,7 @@ replacing `ResourceZoneService.lua`/`ResourceZoneConfig.lua`'s scattered-ring la
 place somewhere with genuine open air underneath — up on a platform, not resting on the map's
 actual ground. Everything is built as ordinary, real, solid Parts directly below it — no
 teleporting, no relocated "pocket" dimension, nothing fake. Only the top layer (Depth 0, a
-`GridWidth` x `GridLength` grid, 128x128 by default) is generated up front — that's the quarry
+`GridWidth` x `GridLength` grid, 32x32 by default) is generated up front — that's the quarry
 floor you walk onto. Digging works by **cellular reveal**: destroying a block checks its 6
 face-adjacent neighbors (down/up/+X/-X/+Z/-Z) and spawns a fresh block in any that have never been
 touched before (`MineShaftService.revealNeighbors`). Since Depth 0 starts completely filled in,
@@ -1175,6 +1186,72 @@ post-boss card pick.
   check Roblox's policy on randomized virtual item mechanics (odds disclosure requirements) — not
   a blocker for prototyping, but relevant before shipping a monetized version.
 
+## Combat infrastructure — BUILT (built to carry the Black Market content)
+
+Three systems added while building the Ultimate mods. None were in the original plan; each turned
+out to be load-bearing for content that is still to come, which is why they are recorded here
+rather than buried in commit messages.
+
+### Status effects — `StatusConfig.lua` / `StatusEffects.lua`
+
+Bleed, Poison, Burn, Stun, Slow, Frostbite, ArmourShred. Built because the six Ultimate mods needed
+three of them between them, and because **most of the unbuilt gun variants need the same ones** —
+the IceThrower is Slow + Frostbite, the PoisonThrower is stacking Poison, the Trailblazer is Bleed,
+Sticky grenades are Slow. Seven separate implementations of "damage over time" that could not
+interact would have been the alternative.
+
+Decisions worth not re-litigating:
+- **Armour shred is multiplicative**, not a strip flag — so ".100mm removes 50%" and "Leg Breaker
+  drops it to nothing" are one mechanism at two strengths, and two shredders compound.
+- **Status damage runs the normal DamagePipeline.** A bleed that skipped mitigation would be
+  strictly better than a bullet against armoured targets.
+- **Re-applying at max stacks only extends the timer if the status says so** — which is what makes
+  Poison "run off pretty quickly" if you stop applying it rather than being held forever by one hit.
+- **Escalation is generic** (`EscalatesTo`/`EscalatesAtStacks`), so Frostbite becoming a Stun at 2
+  stacks is config, and any future status can build into another the same way.
+
+### Projectiles — `ProjectileService.lua` / `ProjectileConfig.lua`
+
+Guns fired hitscan before this. Two consequences were reported as bugs: firing was gated on already
+aiming at something with a Humanoid (so aiming at the floor produced no shot at all), and there was
+nothing to see, so hits were pure inference.
+
+Now the server spawns a real Part, steps it, and resolves on impact. The structural half is that
+**fire and impact became separate moments** — everything a shot needs is captured at fire time, so
+it resolves against the loadout that fired it even if the player swaps mid-flight.
+
+**This is where the gun variants plug in.** A bow is slow + high gravity; a sniper is fast + flat +
+high pierce; a grenade is slow + heavy gravity. Only patterns needing genuinely new behaviour —
+cones, bouncing, impact explosions, attached/delayed detonation, tethers — are additions to
+`ProjectileService`.
+
+### Damage numbers + training dummies
+
+Colour-coded floating numbers (`DamageNumbers.client.lua`) and dummies that are real enemy records
+with a damage readout on their head (`TrainingDummyService.lua`). Built in response to "the mods
+seemed to half work, I couldn't tell half of the time" — which was mostly true in the sense that a
+Ricochet bounce off a starter pistol is a few points of damage and looks like nothing.
+
+Worth keeping in mind when adding content: **if a new passive or gun cannot be seen working, that
+is a tooling problem, not necessarily a broken feature.**
+
+## Data safety — session locking (BUILT)
+
+`DataService` used to load with `GetAsync` and save with `SetAsync` — two non-atomic operations with
+no notion of ownership, so two servers could hold the same profile. Leaving one server and joining
+another before the first saved silently rewound progress, with nothing logged.
+
+Now everything goes through `UpdateAsync` (atomic per key) with a lock: claimed on load, heartbeat
+refreshed on every save, released on leave and on `BindToClose`, stealable after 180s of silence so
+a crashed server cannot lock someone out permanently. Saves re-check ownership before writing, so a
+server whose lock was stolen discards its stale copy rather than clobbering a live session.
+
+Two deliberate behaviour changes: a player whose lock cannot be acquired is **kicked** rather than
+let in with an unsaveable profile, and `DataService.Save` now returns whether the write landed —
+`ShopService` only reports `PurchaseGranted` when it did, so a player cannot pay and receive nothing.
+
+ProfileService remains the more battle-tested option if this ever needs to do more.
+
 ## Black Market & Hacker Machine — BUILT (content pending)
 
 **Status:** the delivery system is done end to end — dealer with rotating stock, sealed cases,
@@ -1299,6 +1376,85 @@ that means:
   touching combat again.
 - Case drop tables, case types, odds, gun families and tool definitions should all be **pure config**
   in the `Shared/` convention, so the content table drops in without service changes.
+
+## Content backlog — gun variants + tools (SPECCED, NOT BUILT)
+
+**This is the next thing to build.** The spec below is the user's own, given verbatim in the session
+that built the Black Market — recorded here because it existed nowhere on disk and would otherwise
+have been lost. Do not paraphrase or "improve" the numbers when implementing; ask if something is
+ambiguous.
+
+Guns are delivered by the Black Market: a **blueprint unlocks the whole family**, and the family
+gets its own Forge tab. So rolling one Bow blueprint opens Bows as a category, and the individual
+bows are then Forged normally. Legendary case tier = gun variants, Epic = tools.
+
+### Flamethrowers
+
+| Variant | Spec |
+|---|---|
+| Regular Flamethrower | Strong DoT damage, short range. |
+| IceThrower | A mist of ice. DoT is weaker than the regular one, but it slows enemies and applies **Frostbite** every 2 seconds while they're being hit. At **2 stacks of Frostbite the enemy is stunned for 2 seconds**. |
+| PoisonThrower | Same DoT as the regular one, but **stackable to 5x**; at full stacks it out-damages the regular flamethrower. The catch: the status runs off quickly, and it takes a **full 5 seconds to apply one stack**. Also leaves **poison puddles on the floor** that tick damage on anything walking through — damage dealt to enemies the player isn't even shooting. |
+
+### Bows
+
+| Variant | Spec |
+|---|---|
+| Regular Bow | Slow-ish fire rate, okay pierce, good damage on a headshot. |
+| Longbow | Bigger arrow — more damage and excellent pierce, slower fire rate. |
+| ExplosiveBow | Arrows deal base damage on hit, then **explode after a delay**. Explosion damage **scales with how many arrows are in that enemy** when it goes off, and **one arrow detonating detonates every other arrow in that enemy simultaneously**. These explosions do **not** damage nearby enemies — it's single-target burst, not AoE. |
+| StringedBow | The **3rd and 4th shots are stringed arrows**. If they land on **different** enemies, those two are **pulled together into the same place** and deal bonus damage to each other. |
+
+### Snipers
+
+| Variant | Spec |
+|---|---|
+| Regular Sniper | Very slow fire rate, huge damage (**headshot or not — no headshot bonus needed**), good pierce, **slows the player while wielded**. |
+| QuickSniper | Faster fire rate, less damage, good pierce. Fast, but explicitly **not automatic-gun fast**. |
+| Trailblazer | Close to the regular sniper but less damage and more pierce. Each shot **leaves a line from the muzzle to the impact point** (max 100 magnitude) that deals **bleed damage to enemies that touch it**. |
+| Hellfire | **Every 5th shot fires upward**, launching a cartridge that bursts in the air and rains **mini missiles at random floor positions**, each doing AoE damage. |
+
+### Grenade Launchers
+
+| Variant | Spec |
+|---|---|
+| Regular Grenade Launcher | Okay damage, normal fire rate, **no pierce — grenades bounce off enemies**. Very large AoE damage. |
+| Sticky Grenade | Less damage, slightly more range. On explosion enemies become **sticky**: they stick to each other and are slowed. |
+
+### Minigun
+
+| Variant | Spec |
+|---|---|
+| Regular Minigun | *"I don't have that many ideas for the minigun at the moment"* — deliberately left open. Build it as a plain high-fire-rate, low-per-shot gun and revisit. |
+
+### Tools (3 pickaxes, passive modifiers — "nothing too crazy for now")
+
+- Pickaxe that **mines 3 blocks at once**.
+- Pickaxe that **increases mining speed by a lot**.
+- Pickaxe that **increases ore yield**.
+
+### Build order when this gets picked up
+
+Sorted by what each actually needs, since roughly half are free:
+
+1. **Config-only — no new code.** Regular Bow, Longbow, Regular Sniper, QuickSniper, Minigun. These
+   are `ProjectileConfig` profiles (speed / gravity / pierce / size) plus `CraftingRecipes` entries.
+   The Regular Sniper's self-slow is the only extra, and it's a stat, not a mechanic.
+2. **One new pattern unlocks three guns.** A **cone/spray** emitter in `ProjectileService` gives all
+   three flamethrowers at once; their differences are purely which status they apply, and Slow,
+   Frostbite and Poison **already exist** in `StatusConfig`. Highest content-per-line in the list —
+   do this first.
+3. **One new pattern unlocks two guns.** **Impact explosion** (radius damage on collide, plus bounce
+   physics) gives both grenade launchers. Sticky's stick-together is the only novel part.
+4. **Genuinely new mechanics, one each.** ExplosiveBow (delayed detonation + arrows tracked per
+   enemy + chain-detonate), StringedBow (tether two hit enemies and pull), Trailblazer (a persistent
+   damaging line volume), Hellfire (upward shot + timed airburst + scattered AoE), PoisonThrower's
+   floor puddles (persistent world volumes). Budget these individually; none of them share code.
+
+Two things to keep in mind, both learned the hard way: **status effects already exist** — do not
+write a seventh private DoT implementation, add a `StatusConfig` entry. And **anything that can't be
+seen working will be reported as broken**, so check each new variant against the damage numbers and
+a training dummy before calling it done.
 
 ## PvP base invasion
 
@@ -1474,27 +1630,21 @@ restatement of anything already documented.
   `BuyTurretBlueprint` — there's no sell-back path for turrets, blueprints, or anything else.
   Whether that half was a deliberate scope cut or just hasn't been gotten to yet was never actually
   discussed — **unconfirmed**, don't assume it's intentionally out of scope.
-- **An earlier recommendation was superseded, not built — don't resurrect it.** Before the
-  build-it green light, one design option floated for the Hub Shop was blueprints unlocking a
-  separate craft-with-materials step rather than minting the turret directly. The user's own
-  follow-up instructions were explicit enough ("turrets will be bought their blueprint... and then
-  the turrets will be placed in base") that the simpler direct-purchase-mints-an-instance model
-  shipped instead — confirmed decided, not an oversight. Noting it only so a future session doesn't
-  see "no separate craft step" and think it's an unaddressed idea.
-- **Research Tier is confirmed as the explicit next roadmap step, but the top-of-file build order
-  doesn't say so yet.** "Status at a glance" and the "Agreed build order" paragraph at the top of
-  this file still read "Next up: main shop, then PvP invasion," with no mention of Research at all
-  — stale relative to this chat, where the user stated directly that Research is next
-  ("research level, which we will be making that on the next step of roadmap"). Worth updating that
-  table/paragraph (and probably adding a Research row) before starting the next session, rather
-  than trusting the old "main shop next" framing.
-- **Hub Shop vs. the still-unbuilt "Main shop" — never reconciled, unconfirmed how they relate.**
-  The not-yet-built shop described elsewhere in this file (rotating stock, sells armor/mods/
-  cosmetics, geode/extractor sink) and this round's Hub Shop (rotating stock, sells turret
-  blueprints only) both landed on the same "rotating stock" shape independently — this chat never
-  connected the two. **Unconfirmed** whether the Main shop is a separate station, the same Hub
-  station with more tabs, or should eventually reuse `TurretConfig.GetRotatingStock`'s
-  deterministic time-hash approach for its own rotation.
+- ~~**An earlier recommendation was superseded, not built**~~ — REVERSED SINCE. The idea noted
+  here (a blueprint unlocking a craft-with-materials step rather than minting the turret directly)
+  is what the game does now: the user asked for it explicitly — "I want the turrets, at least when
+  you buy them, to only make it available to craft it, not like you get the turret instant". See
+  "Turret economy" above. Left in place only so the reversal is legible rather than looking like
+  drift.
+- ~~**Top-of-file build order is stale**~~ — RESOLVED. "Status at a glance" and the build-order
+  paragraph have been brought current: Research and the Black Market are both marked Built, the new
+  combat systems have rows, and "next up" now points at the gun/tool content backlog.
+- ~~**Hub Shop vs. the still-unbuilt "Main shop"**~~ — RESOLVED. The planned Main shop was
+  **superseded by the Black Market**, which is the same rotating-stock shape doing the same job, so
+  it was never built separately. The two remaining shops are deliberately distinct: the **Hub Shop**
+  sells turret blueprints, the **Black Market** sells sealed cases. Both rotate on the same
+  deterministic time-hash approach (`TurretConfig.GetRotatingStock` / `CaseConfig.GetRotatingStock`),
+  which is what makes stock identical for every player on every server without storing anything.
 - **Possible tie-in to an older planned hook — never connected in this chat, unconfirmed.** The
   Combat Engine section's `VoidwakenHulk` elite-type comment (written in an earlier session)
   already plants the seed for "a future boss-drop reward hook (Research Level's 'Special Core')."
@@ -1508,4 +1658,8 @@ restatement of anything already documented.
   exactly `"Shop"`, or the Blueprints tab is unreachable in-game. (2) `ServerStorage.TurretModels`
   can optionally hold a real Model per `TurretConfig.Types` key (same convention as
   `EnemyModels`/`BaseTemplates` — floor at local Y=0, `PrimaryPart` set); every type currently falls
-  back to a small colored placeholder pedestal since none exist yet.
+  back to a small colored placeholder pedestal since none exist yet. (3) The Black Market and
+  Hacker Machine need the same treatment — a `Station`-tagged Part/Model outside any `BaseTemplates`
+  Model, with `StationType` set to exactly `"BlackMarket"` and `"Hacker"` respectively, or neither is
+  reachable in-game. (4) `ReplicatedStorage.BaseTemplates` still only has `BaseTier1`; Research tiers
+  2-6 all fall back to the placeholder floor until `BaseTier2`..`BaseTier6` Models exist.
