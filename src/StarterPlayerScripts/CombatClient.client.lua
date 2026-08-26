@@ -1,46 +1,36 @@
 --[[
 	CombatClient.client.lua
-	Turns a mouse click into a shot during a base-defense wave. Stays "dumb" on purpose, same
-	philosophy as MiningController.client.lua: this script's only real jobs are (1) figure out
-	where the player is aiming via a camera raycast, (2) draw a quick tracer so a shot FEELS
-	instant, and (3) tell the server what it claims it hit. Every real number — did it actually
-	land, how much damage, was the target even alive — is recomputed from scratch server-side in
-	CombatEncounterService.lua's RequestFireWeapon handler. This file could lie about all three
-	arguments it sends and the worst it could do is waste a cooldown-gated no-op; it can never
-	inject a damage number.
+	Turns a mouse hold into a fire request. Stays "dumb" on purpose, same philosophy as
+	MiningController.client.lua: this script decides only WHERE the player is aiming and WHEN they
+	want to shoot. It never decides what was hit, and it never decides damage.
 
-	SCOPE NOTE: "click to fire a hitscan raycast, with a shot report" was my own default design for
-	"how does the player actually fire," not something explicitly specified — Salvage Protocol has
-	no real projectile physics today, and a hitscan-plus-cosmetic-tracer is the standard lightweight
-	Roblox pattern for this. Swap this file (only this file — the server-side pipeline doesn't care
-	how a hit was determined) for real projectile travel later if that turns out to matter more than
-	it does right now.
+	Guns fire real travelling projectiles now, spawned and simulated server-side — see
+	ProjectileService.lua. So this file no longer raycasts for a target, no longer draws its own
+	tracer (the projectile is a real replicated Part everyone can see), and no longer reports a hit
+	instance. It sends an origin and a direction; everything after that is the server's.
 
-	Client-side fire-rate pacing here is a courtesy, not security — it's read straight off the
-	currently-EQUIPPED gun Tool's own WeaponKey attribute (see WeaponToolService.lua) via
-	CraftingRecipes.Weapons' BASE FireRate (mods/affixes aren't known client-side), just to keep the
-	tracer/click rate feeling right. The server enforces the REAL mod-adjusted cooldown independently
-	and silently drops anything that arrives faster than that, same as every other timing-sensitive
-	remote in this game.
+	TWO GATES WERE REMOVED HERE, both of which read as bugs:
+	  - Firing required an active encounter, so shooting a training dummy — or anything at all
+	    outside a wave — silently did nothing.
+	  - Firing required the crosshair to already be over something with a Humanoid, so aiming at
+	    the floor produced no shot whatsoever.
+	Both are gone. You can always shoot; hitting something is the projectile's problem.
 
-	Firing now requires an actual gun Tool held in the character's hand (WeaponToolService.lua
-	clones one into the Backpack when you Equip a weapon from the Inventory panel; the player picks
-	it up into their hand the normal Roblox hotbar way from there) — not just "you have some weapon
-	equipped in your profile somewhere." No Tool in hand, clicking does nothing client-side.
+	What remains is a client-side fire-rate pace, purely so the visual rhythm feels right. It is
+	read from the equipped Tool's WeaponKey attribute and uses the BASE FireRate (mods and affixes
+	are not known client-side). The server enforces the real, mod-adjusted rate independently and
+	silently drops anything arriving faster.
 ]]
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
-local Debris = game:GetService("Debris")
 
 local CraftingRecipes = require(ReplicatedStorage.Shared.CraftingRecipes)
 
 local Remotes = ReplicatedStorage.Remotes
 local RequestFireWeapon = Remotes.RequestFireWeapon
-local WaveUpdate = Remotes.WaveUpdate
-local RaidRoomUpdate = Remotes.RaidRoomUpdate
 
 local LocalPlayer = Players.LocalPlayer
 local camera = Workspace.CurrentCamera
@@ -92,76 +82,16 @@ local function getEquippedFireRate(): number
 end
 
 ----------------------------------------------------------------------
--- Combat-active gate — only lets clicks do anything while SOME fight is actually running (base
--- defense OR a Raid Room Combat node), so idling around otherwise doesn't spam tracers or
--- RequestFireWeapon calls the server would just no-op anyway. Two separate remotes feed this
--- because they're two separate encounter flows (WaveService's base defense vs RaidRoomService's
--- instanced rooms — see CombatEncounterService.lua's RunWave/RunRaidCombat) that both ultimately
--- resolve into the same activeEncounters/RequestFireWeapon pipeline server-side; this file just
--- needs to know when EITHER one is live. Originally only listened to WaveUpdate, which meant
--- clicking during a Raid Room fight did nothing at all — RaidRoomUpdate never touched this flag.
+-- Firing is gated on HOLDING A GUN, and nothing else.
+--
+-- It used to also require an active encounter (a wave or a raid room), tracked by listening to
+-- WaveUpdate and RaidRoomUpdate. That is why shooting a training dummy did nothing at all: the
+-- server was perfectly willing, but the client never sent the request. It also meant a gun was
+-- inert everywhere in the world except inside a fight, which is not how a gun should feel.
+--
+-- Nothing is lost by dropping it. The server still validates every shot (see RequestFireWeapon),
+-- and a bullet fired at nothing simply flies off and expires.
 ----------------------------------------------------------------------
-
--- Tracked as two INDEPENDENT flags rather than one shared boolean. They were one, which meant
--- either feed could switch the other off: a base-defense run ending ("RunEnded") while a Raid
--- Room fight was live cleared the same flag the raid was relying on, and clicking went dead
--- mid-fight for no visible reason. Server-side these two can no longer overlap at all now (see
--- PlayerActivityService), but keeping them separate here means the client stays correct on its
--- own terms instead of depending on that guarantee holding forever.
-local waveActive = false
-local raidActive = false
-
-local function isCombatActive(): boolean
-	return waveActive or raidActive
-end
-
-WaveUpdate.OnClientEvent:Connect(function(update)
-	if update.Status == "WaveStart" then
-		waveActive = true
-	elseif update.Status == "RunEnded" or update.Status == "Interrupted" then
-		waveActive = false
-	end
-end)
-
-RaidRoomUpdate.OnClientEvent:Connect(function(update)
-	-- Ambush nodes (RaidRoomService.beginAmbush) run the same RunRaidCombat engine per wave, just
-	-- relabeled "AmbushStart"/"AmbushEnd" instead of "CombatStart"/"CombatEnd" — see that function's
-	-- own comment. Toggling per wave (true during each wave, false during the short breather between
-	-- them) is correct here, same as it already is for a single Combat encounter.
-	-- BossStart/BossEnd included alongside Combat/Ambush: a Boss node runs the same RunRaidCombat
-	-- engine and is just as much a live fight, but its events were never listened for here, so
-	-- clicking did nothing during a boss (see RaidRoomService.beginBoss's payload.Status).
-	if update.Status == "CombatStart" or update.Status == "AmbushStart" or update.Status == "BossStart" then
-		raidActive = true
-	elseif update.Status == "CombatEnd" or update.Status == "AmbushEnd" or update.Status == "BossEnd" then
-		raidActive = false
-	elseif update.Status == "Defeated" or update.Status == "Extracted" or update.Status == "Abandoned" then
-		raidActive = false -- raid ended outright; CombatEnd may never arrive for this run
-	end
-end)
-
-----------------------------------------------------------------------
--- Tracer — purely cosmetic, purely local. A thin fading beam from the player toward the hit point,
--- just enough for a shot to read as "something happened" the instant you click, well before any
--- server round-trip could confirm it landed.
-----------------------------------------------------------------------
-
-local function drawTracer(origin: Vector3, hitPosition: Vector3)
-	local distance = (hitPosition - origin).Magnitude
-	if distance <= 0 then
-		return
-	end
-	local part = Instance.new("Part")
-	part.Anchored = true
-	part.CanCollide = false
-	part.CanQuery = false
-	part.Material = Enum.Material.Neon
-	part.Color = Color3.fromRGB(255, 214, 130)
-	part.Size = Vector3.new(0.1, 0.1, distance)
-	part.CFrame = CFrame.lookAt(origin, hitPosition) * CFrame.new(0, 0, -distance / 2)
-	part.Parent = Workspace
-	Debris:AddItem(part, 0.08)
-end
 
 ----------------------------------------------------------------------
 -- Firing
@@ -171,7 +101,7 @@ local lastFireTime = 0
 
 local function fireOnce()
 	if not equippedTool then
-		return -- nothing held in hand — see this file's header on why that's required now
+		return -- nothing held in hand — see this file's header on why that's required
 	end
 
 	local character = LocalPlayer.Character
@@ -191,37 +121,41 @@ local function fireOnce()
 	local mousePosition = UserInputService:GetMouseLocation()
 	local unitRay = camera:ViewportPointToRay(mousePosition.X, mousePosition.Y)
 
+	-- Raycast ONLY to work out what the player is aiming AT, so the shot converges on the
+	-- crosshair instead of running parallel to the camera. Nothing is decided by this: it is not a
+	-- hit test, and a miss is not a reason to withhold the shot.
+	--
+	-- This used to double as a filter that dropped the shot entirely unless the crosshair was
+	-- already on something with a Humanoid — which meant aiming at the floor, a wall, or a training
+	-- dummy produced no tracer, no sound and no bullet. The gun read as broken. Shots now always
+	-- fire; whether they hit anything is the projectile's business, server-side.
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Exclude
-	params.FilterDescendantsInstances = { character }
+	params.FilterDescendantsInstances = { character, workspace:FindFirstChild("Projectiles") }
 
 	local result = Workspace:Raycast(unitRay.Origin, unitRay.Direction * MAX_RANGE, params)
-	if not result then
+	local aimPoint = result and result.Position or (unitRay.Origin + unitRay.Direction * MAX_RANGE)
+
+	-- Fired from the character, not the camera, so the projectile visibly leaves the player rather
+	-- than the viewport — but aimed at where the camera was pointing, so it still lands under the
+	-- crosshair.
+	local origin = rootPart.Position + Vector3.new(0, 1.5, 0)
+	local direction = (aimPoint - origin)
+	if direction.Magnitude < 0.001 then
 		return
 	end
 
-	-- Cheap client-side prefilter so a miss against scenery/terrain doesn't bother the server at
-	-- all — RequestFireWeapon would reject it anyway (only real spawned enemies are in
-	-- encounter.EnemyByModel), this just skips the round-trip for the common "clicked the floor" case.
-	local hitModel = result.Instance:FindFirstAncestorOfClass("Model")
-	if not hitModel or not hitModel:FindFirstChildOfClass("Humanoid") then
-		return
-	end
-
-	local origin = rootPart.Position
-	drawTracer(origin, result.Position)
-	RequestFireWeapon:FireServer(result.Instance, origin, result.Position)
+	RequestFireWeapon:FireServer(origin, direction.Unit)
 end
 
 ----------------------------------------------------------------------
--- Input — hold-to-fire, same feel as clicking through the mining ProximityPrompt but faster since
--- combat needs an actual rate of fire instead of a hold-duration gate.
+-- Input — hold-to-fire, since combat needs a real rate of fire rather than a hold-duration gate.
 ----------------------------------------------------------------------
 
 local holding = false
 
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
-	if gameProcessed or not isCombatActive() then
+	if gameProcessed then
 		return
 	end
 	if input.UserInputType == Enum.UserInputType.MouseButton1 then
@@ -236,7 +170,7 @@ UserInputService.InputEnded:Connect(function(input)
 end)
 
 game:GetService("RunService").Heartbeat:Connect(function()
-	if holding and isCombatActive() then
+	if holding then
 		fireOnce()
 	end
 end)

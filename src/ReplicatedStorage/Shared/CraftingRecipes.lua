@@ -6,6 +6,9 @@
 	"Scrap" and "Cores" for the two currencies). CraftingService reads this table —
 	add a new tier here and it's immediately craftable, no service code changes needed.
 
+	Projectile names a ballistics profile in ProjectileConfig.lua — guns fire real travelling
+	projectiles, not hitscan. A recipe without one falls back to a fast flat default.
+
 	FireRate/BaseDamage replace the old flat DPS field (FireRate * BaseDamage = the same DPS
 	numbers this table used to have directly) — split apart so ModConfig.lua's mods can multiply
 	each independently (e.g. Speed Coil raises FireRate but lowers BaseDamage). See CombatMath.lua's
@@ -18,6 +21,7 @@ CraftingRecipes.Weapons = {
 	PipePistol = {
 		DisplayName = "Pipe Pistol",
 		Description = "A length of scrap pipe rigged with a firing pin. Ugly, but it works.",
+		Projectile = "Pistol", -- see ProjectileConfig.lua
 		Tier = 1,
 		Cost = { ScrapIron = 25 },
 		FireRate = 2, BaseDamage = 6, -- 12 DPS base, same as before the FireRate/BaseDamage split
@@ -25,6 +29,7 @@ CraftingRecipes.Weapons = {
 	ScrapSMG = {
 		DisplayName = "Scrap SMG",
 		Description = "Salvaged parts bolted into a rapid-fire frame. Sprays more than it aims.",
+		Projectile = "SMG", -- see ProjectileConfig.lua
 		Tier = 2,
 		Cost = { ScrapIron = 40, CopperWire = 20 },
 		FireRate = 6, BaseDamage = 3, -- 18 DPS base
@@ -32,6 +37,7 @@ CraftingRecipes.Weapons = {
 	RailRifle = {
 		DisplayName = "Rail Rifle",
 		Description = "A scavenged electromagnetic rail, jury-rigged to punch through plating.",
+		Projectile = "Rail", -- see ProjectileConfig.lua
 		Tier = 3,
 		Cost = { SteelPlating = 35, CopperWire = 25 },
 		FireRate = 2, BaseDamage = 13, -- 26 DPS base
@@ -39,6 +45,7 @@ CraftingRecipes.Weapons = {
 	ArcCannon = {
 		DisplayName = "Arc Cannon",
 		Description = "Overcharged capacitors crammed into a housing that probably shouldn't hold them.",
+		Projectile = "Arc", -- see ProjectileConfig.lua
 		Tier = 4,
 		Cost = { GoldContacts = 20, SteelPlating = 50 },
 		FireRate = 1, BaseDamage = 38, -- 38 DPS base

@@ -62,6 +62,8 @@ local TurretService = require(script.Parent.TurretService)
 local UltimateConfig = require(ReplicatedStorage.Shared.UltimateConfig)
 local UltimateEffects = require(script.Parent.UltimateEffects)
 local StatusEffects = require(script.Parent.StatusEffects)
+local ProjectileService = require(script.Parent.ProjectileService)
+local ProjectileConfig = require(ReplicatedStorage.Shared.ProjectileConfig)
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 local RequestFireWeapon = Remotes.RequestFireWeapon
@@ -1034,13 +1036,25 @@ end
 -- worst claim a hit that the distance/encounter-membership checks below reject; it can never
 -- inject its own damage number, since `baseDamage` always comes from CombatMath here, not from
 -- anything the client sent.
-RequestFireWeapon.OnServerEvent:Connect(function(player: Player, hitInstance: Instance, claimedOrigin: Vector3, claimedHitPosition: Vector3)
+-- Per-player fire cooldown. Moved OFF the encounter's PlayerState when guns became projectiles:
+-- you can now fire with no encounter running at all (at a training dummy, or at nothing), so the
+-- rate limit cannot live on a thing that may not exist.
+local lastFireTime: { [number]: number } = {}
+
+-- Resolves ONE projectile impact against an enemy. Returns true if it hit something that counted,
+-- which is what tells a piercing round whether to keep going.
+--
+-- Split out from the fire handler when shots gained travel time: firing and hitting are now two
+-- separate moments, potentially seconds apart. Everything the shot needs is captured in `spec` at
+-- fire time, so it resolves against the loadout that fired it even if the player has since swapped
+-- weapons or unequipped the Ultimate.
+function CombatEncounterService.ResolvePlayerHit(player: Player, hitInstance: Instance, origin: Vector3, hitPosition: Vector3, spec): boolean
 	local encounter = activeEncounters[player.UserId]
 	if not encounter and fallbackEncounterProvider then
 		encounter = fallbackEncounterProvider(player)
 	end
 	if not encounter then
-		return
+		return false -- nothing to hit; the bullet still stops on geometry, it just deals no damage
 	end
 
 	local model = hitInstance
@@ -1048,8 +1062,126 @@ RequestFireWeapon.OnServerEvent:Connect(function(player: Player, hitInstance: In
 		model = model:FindFirstAncestorOfClass("Model")
 	end
 	local enemyRecord = model and encounter.EnemyByModel[model]
-	if not enemyRecord or enemyRecord.Humanoid.Health <= 0 then
+	if not enemyRecord or not isEnemyAlive(enemyRecord) then
+		return false
+	end
+
+	local dealt = resolveAndApplyDamage(
+		enemyRecord, spec.Damage, origin, hitPosition,
+		spec.RangeProfile, spec.Penetration, player, "Normal")
+
+	----------------------------------------------------------------------
+	-- Ultimate mod hooks. Fired here — the one place a player's shot LANDS — so they work
+	-- identically in base defense, raid rooms and against training dummies without any of those
+	-- knowing Ultimates exist.
+	----------------------------------------------------------------------
+
+	local ultimate = spec.UltimateKey and UltimateConfig.Mods[spec.UltimateKey]
+	if not ultimate then
+		return true
+	end
+
+	encounter.PlayerState.ShotCount = (encounter.PlayerState.ShotCount or 0) + 1
+	local shotNumber = encounter.PlayerState.ShotCount
+	enemyRecord.HitsTaken = (enemyRecord.HitsTaken or 0) + 1
+
+	local ctx = {
+		Params = ultimate.Params or {},
+		Target = enemyRecord,
+		Damage = dealt,
+		Origin = origin,
+
+		EveryNthShot = function(n: number): boolean
+			return n > 0 and (shotNumber % n == 0)
+		end,
+
+		CountHitOn = function(record): number
+			return record and record.HitsTaken or 0
+		end,
+
+		ApplyStatus = function(record, key: string, overrides)
+			if record and isEnemyAlive(record) then
+				StatusEffects.Apply(record, key, overrides)
+			end
+		end,
+
+		-- Live enemies within `radius` of the target, nearest first.
+		Nearby = function(radius: number, excludeTarget: boolean?, max: number?)
+			local targetPart = enemyRecord.Model and enemyRecord.Model.PrimaryPart
+			if not targetPart then
+				return {}
+			end
+			local found = {}
+			for _, record in pairs(encounter.EnemyByModel) do
+				if isEnemyAlive(record) and not (excludeTarget and record == enemyRecord) then
+					local distance = (record.Model.PrimaryPart.Position - targetPart.Position).Magnitude
+					if distance <= radius then
+						table.insert(found, { Record = record, Distance = distance })
+					end
+				end
+			end
+			table.sort(found, function(a, b)
+				return a.Distance < b.Distance
+			end)
+			local out = {}
+			for i, entry in ipairs(found) do
+				if max and i > max then
+					break
+				end
+				table.insert(out, entry.Record)
+			end
+			return out
+		end,
+
+		-- Nearest live enemy to some OTHER enemy, for chaining body to body (Ricochet).
+		NearestTo = function(fromRecord, radius: number, exclude)
+			local fromPart = fromRecord and fromRecord.Model and fromRecord.Model.PrimaryPart
+			if not fromPart then
+				return nil
+			end
+			local best, bestDistance = nil, math.huge
+			for _, record in pairs(encounter.EnemyByModel) do
+				if isEnemyAlive(record) and not (exclude and exclude[record]) then
+					local distance = (record.Model.PrimaryPart.Position - fromPart.Position).Magnitude
+					if distance <= radius and distance < bestDistance then
+						best, bestDistance = record, distance
+					end
+				end
+			end
+			return best
+		end,
+
+		-- Tagged "Ultimate" so its numbers render in the Mythical colour — that is what makes a
+		-- Ricochet bounce visibly distinct from the bullet that caused it.
+		DealDamage = function(record, amount: number, kind: string?)
+			if record and amount and amount > 0 and isEnemyAlive(record) then
+				resolveAndApplyDamage(record, amount, origin, record.Model.PrimaryPart.Position, nil, 0, player, kind or "Ultimate")
+			end
+		end,
+	}
+
+	UltimateEffects.Fire("OnHit", ultimate.Effect, ctx)
+	if enemyRecord.Humanoid.Health <= 0 then
+		UltimateEffects.Fire("OnKill", ultimate.Effect, ctx)
+	end
+
+	return true
+end
+
+ProjectileService.SetHitResolver(CombatEncounterService.ResolvePlayerHit)
+
+-- The client reports only where it fired from and which way it pointed — never what it hit. What
+-- it hit is now decided by the projectile actually travelling and colliding, server-side.
+--
+-- Deliberately does NOT require an active encounter: you can fire at a training dummy, or at
+-- nothing at all. A gun that silently refuses to shoot unless something killable is already under
+-- the crosshair feels broken, which is exactly how the previous hitscan version was reported.
+RequestFireWeapon.OnServerEvent:Connect(function(player: Player, claimedOrigin: Vector3, claimedDirection: Vector3)
+	if typeof(claimedOrigin) ~= "Vector3" or typeof(claimedDirection) ~= "Vector3" then
 		return
+	end
+	if claimedDirection.Magnitude < 0.001 then
+		return -- a zero direction would make Unit below NaN
 	end
 
 	local character = player.Character
@@ -1058,7 +1190,7 @@ RequestFireWeapon.OnServerEvent:Connect(function(player: Player, hitInstance: In
 		return
 	end
 	if (claimedOrigin - rootPart.Position).Magnitude > ORIGIN_SANITY_STUDS then
-		return -- claimed firing position is too far from where the server knows the player actually is
+		return -- claimed firing position is too far from where the server knows the player is
 	end
 
 	local profile = DataService.Get(player)
@@ -1081,146 +1213,31 @@ RequestFireWeapon.OnServerEvent:Connect(function(player: Player, hitInstance: In
 		return
 	end
 
+	-- Rate limit, server-side and authoritative. The client paces itself too, but only for feel.
 	local cooldown = 1 / math.max(stats.FireRate, 0.01)
 	local now = os.clock()
-	if now - encounter.PlayerState.LastFireTime < cooldown then
-		return -- firing faster than this weapon's FireRate allows
+	if now - (lastFireTime[player.UserId] or 0) < cooldown then
+		return
 	end
-	encounter.PlayerState.LastFireTime = now
+	lastFireTime[player.UserId] = now
 
 	local recipe = CraftingRecipes.Weapons[weaponInstance.WeaponKey]
-	local dealt = resolveAndApplyDamage(
-		enemyRecord,
-		stats.Damage,
-		claimedOrigin,
-		claimedHitPosition,
-		recipe and recipe.RangeProfile, -- optional field, most weapons don't define one — see
-			-- DamagePipeline.lua's applyRangeFalloff
-		recipe and recipe.Penetration,
-		player,
-		"Normal"
-	)
 
-	----------------------------------------------------------------------
-	-- Ultimate mod hooks.
-	--
-	-- Fired here, in the ONE place a player's shot resolves, so they work identically in base
-	-- defense and in raid rooms without either loop knowing Ultimates exist. Ultimates are
-	-- behaviours rather than stat multipliers (see UltimateConfig.lua), which is why they hook the
-	-- damage event instead of flowing through CombatMath the way ModConfig mods do.
-	----------------------------------------------------------------------
-
-	local ultimateKey = (profile.EquippedUltimate or {})[weaponInstance.WeaponKey]
-	local ultimate = ultimateKey and UltimateConfig.Mods[ultimateKey]
-	if ultimate then
-		-- Everything an effect may touch, so none of them reach into encounter internals. Built per
-		-- shot rather than cached: the encounter and its live enemy set both change constantly, and a
-		-- stale closure here would be a subtle "the passive hit something already dead" bug.
-		-- Per-encounter shot counter, for "every Nth shot" passives. On the encounter rather than
-		-- the profile so it resets between runs: banking 4 shots toward a proc, leaving, and coming
-		-- back to a free one is not what "every 5th shot" means.
-		encounter.PlayerState.ShotCount = (encounter.PlayerState.ShotCount or 0) + 1
-		local shotNumber = encounter.PlayerState.ShotCount
-
-		-- Per-ENEMY hit counter, for passives that care about hitting the same target repeatedly
-		-- (Shark Bullet). On the record, so it dies with them.
-		enemyRecord.HitsTaken = (enemyRecord.HitsTaken or 0) + 1
-
-		local ctx = {
-			Params = ultimate.Params or {},
-			Target = enemyRecord,
-			Damage = dealt,
-			Origin = claimedOrigin,
-
-			-- Reads the counter incremented above rather than keeping its own, so two passives on
-			-- one weapon agree about which shot number this is.
-			EveryNthShot = function(n: number): boolean
-				return n > 0 and (shotNumber % n == 0)
-			end,
-
-			CountHitOn = function(record): number
-				return record and record.HitsTaken or 0
-			end,
-
-			ApplyStatus = function(record, key: string, overrides)
-				if record and isEnemyAlive(record) then
-					StatusEffects.Apply(record, key, overrides)
-				end
-			end,
-
-			-- Live enemies within `radius` of the target, nearest first. excludeTarget skips the
-			-- enemy actually shot; `max` caps how many come back.
-			Nearby = function(radius: number, excludeTarget: boolean?, max: number?)
-				local targetPart = enemyRecord.Model and enemyRecord.Model.PrimaryPart
-				if not targetPart then
-					return {}
-				end
-				local found = {}
-				for _, record in pairs(encounter.EnemyByModel) do
-					if isEnemyAlive(record) and not (excludeTarget and record == enemyRecord) then
-						local distance = (record.Model.PrimaryPart.Position - targetPart.Position).Magnitude
-						if distance <= radius then
-							table.insert(found, { Record = record, Distance = distance })
-						end
-					end
-				end
-				table.sort(found, function(a, b)
-					return a.Distance < b.Distance
-				end)
-				local out = {}
-				for index, entry in ipairs(found) do
-					if max and index > max then
-						break
-					end
-					table.insert(out, entry.Record)
-				end
-				return out
-			end,
-
-			-- Nearest live enemy to some OTHER enemy, skipping anything in `exclude`. This is what
-			-- lets a passive CHAIN body to body (Ricochet) rather than only fanning out from the
-			-- original target — searching around the last thing hit is what makes a bounce read as
-			-- a bounce.
-			NearestTo = function(fromRecord, radius: number, exclude)
-				local fromPart = fromRecord and fromRecord.Model and fromRecord.Model.PrimaryPart
-				if not fromPart then
-					return nil
-				end
-				local best, bestDistance = nil, math.huge
-				for _, record in pairs(encounter.EnemyByModel) do
-					if isEnemyAlive(record) and not (exclude and exclude[record]) then
-						local distance = (record.Model.PrimaryPart.Position - fromPart.Position).Magnitude
-						if distance <= radius and distance < bestDistance then
-							best, bestDistance = record, distance
-						end
-					end
-				end
-				return best
-			end,
-
-			-- Secondary damage still runs the full DamagePipeline — an Ultimate must not be able to
-			-- quietly bypass Defense mitigation or the minimum-damage floor.
-			-- Tagged "Ultimate" so its numbers render in the Mythical colour — that is what makes a
-			-- Ricochet bounce or a Detonator blast visibly distinct from the bullet that caused it,
-			-- rather than both being white numbers you have to infer from.
-			DealDamage = function(record, amount: number, kind: string?)
-				if record and amount and amount > 0 and isEnemyAlive(record) then
-					resolveAndApplyDamage(record, amount, claimedOrigin, record.Model.PrimaryPart.Position, nil, 0, player, kind or "Ultimate")
-				end
-			end,
-		}
-
-		UltimateEffects.Fire("OnHit", ultimate.Effect, ctx)
-		-- OnKill after OnHit, and only when this shot is what finished it — so a corpse-detonation
-		-- passive fires once, on the blow that actually landed the kill.
-		if enemyRecord.Humanoid.Health <= 0 then
-			UltimateEffects.Fire("OnKill", ultimate.Effect, ctx)
-		end
-	end
+	-- Everything the shot will need on impact, captured NOW — see ResolvePlayerHit's own comment on
+	-- why a projectile resolves against the loadout that fired it.
+	ProjectileService.Fire(player, claimedOrigin, claimedDirection, {
+		Damage = stats.Damage,
+		WeaponKey = weaponInstance.WeaponKey,
+		UltimateKey = (profile.EquippedUltimate or {})[weaponInstance.WeaponKey],
+		RangeProfile = recipe and recipe.RangeProfile,
+		Penetration = recipe and recipe.Penetration,
+		Projectile = ProjectileConfig.Get(recipe and recipe.Projectile),
+	})
 end)
 
 Players.PlayerRemoving:Connect(function(player)
 	activeEncounters[player.UserId] = nil
+	lastFireTime[player.UserId] = nil
 	-- Both folders: RunWave names its folder "<userId>" and RunRaidCombat names its "<userId>_Raid".
 	-- Only the first was cleaned here, so a disconnect mid-raid left its spawned enemies standing in
 	-- the world until the raid loop happened to notice on its next tick.
