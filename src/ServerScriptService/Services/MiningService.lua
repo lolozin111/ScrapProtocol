@@ -53,6 +53,39 @@ local function getOreTypeFromNode(node: Instance): string?
 end
 
 ----------------------------------------------------------------------
+-- Tool mods — the special pickaxes, one equipped at a time.
+--
+-- No station gate, matching how weapon and Ultimate loadout changes work: choosing which gear is
+-- active is not crafting, and making a player walk to a bench to swap pickaxes would be friction
+-- with nothing behind it.
+----------------------------------------------------------------------
+
+Remotes.EquipToolMod.OnServerInvoke = function(player: Player, toolKey: string?)
+	local profile = DataService.Get(player)
+	if not profile then
+		return { Success = false, Reason = "Profile not loaded" }
+	end
+
+	-- nil unequips, which is the only way back to plain tier behaviour once you own one.
+	if toolKey == nil then
+		profile.EquippedTool = nil
+		Remotes.InventoryUpdate:FireClient(player, { EquippedTool = false })
+		return { Success = true }
+	end
+
+	if not ToolModConfig.Tools[toolKey] then
+		return { Success = false, Reason = "Unknown tool" }
+	end
+	if not (profile.OwnedTools or {})[toolKey] then
+		return { Success = false, Reason = "You don't own that pickaxe — they come from Black Market cases." }
+	end
+
+	profile.EquippedTool = toolKey
+	Remotes.InventoryUpdate:FireClient(player, { EquippedTool = toolKey })
+	return { Success = true, EquippedTool = toolKey }
+end
+
+----------------------------------------------------------------------
 -- Tool tier upgrades
 ----------------------------------------------------------------------
 

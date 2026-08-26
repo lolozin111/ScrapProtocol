@@ -24,14 +24,13 @@
 	  Refined   any RefinedOreConfig RefinedKey
 	  Core      a CoreItem (CoreT1, ...)
 	  Ultimate  a Mythical passive (UltimateConfig.Mods)
-	  Tool      NOT BUILT YET — see the TODO on the Epic pools
+	  Tool      a special pickaxe (ToolModConfig)
 	  WeaponFamily  unlocks a whole gun family in the Forge (WeaponFamilyConfig)
 
 	=== ADDING THE MISSING CONTENT ===
-	Gun families now drop from Legendary. TOOLS are the remaining gap — the Epic tier still pays out
-	materials until a tool system exists, rather than handing out a promise it cannot keep. To add
-	one: a pool entry here, a matching Kind branch in BlackMarketService.GrantReward, and the system
-	itself. Everything else — odds, rolling, the decode flow, the dealer UI — already handles it.
+	Every Kind above is live. Adding a new one is a pool entry here plus a matching branch in
+	BlackMarketService.GrantReward — everything else (odds, rolling, the decode flow, the dealer UI,
+	duplicate handling) already handles whatever you put in.
 ]]
 
 local CaseConfig = {}
@@ -59,13 +58,16 @@ CaseConfig.Pools = {
 	},
 
 	Epic = {
-		-- TODO: special TOOLS belong here (drone, multi-block pickaxe) once a tool system exists.
-		-- Until then Epic pays out the best materials rather than nothing, so the tier still feels
-		-- like a step up instead of a dead rung.
-		{ Kind = "Refined", Key = "HardenedPlate", Min = 15, Max = 40, Weight = 30 },
-		{ Kind = "Refined", Key = "GoldBar", Min = 10, Max = 30, Weight = 30 },
-		{ Kind = "Ore", Key = "VoidiumShard", Min = 5, Max = 18, Weight = 25 },
-		{ Kind = "Currency", Key = "Contraband", Min = 1, Max = 3, Weight = 15 },
+		-- Special pickaxes (ToolModConfig). Weighted above the materials for the same reason the
+		-- Legendary tier leads with gun families: a rarity that mostly pays out ore is a dead rung.
+		-- The materials stay as the duplicate floor once a player owns all three.
+		{ Kind = "Tool", Key = "SplitHead", Weight = 18 },
+		{ Kind = "Tool", Key = "Featherweight", Weight = 18 },
+		{ Kind = "Tool", Key = "Prospector", Weight = 18 },
+		{ Kind = "Refined", Key = "HardenedPlate", Min = 15, Max = 40, Weight = 16 },
+		{ Kind = "Refined", Key = "GoldBar", Min = 10, Max = 30, Weight = 16 },
+		{ Kind = "Ore", Key = "VoidiumShard", Min = 5, Max = 18, Weight = 9 },
+		{ Kind = "Currency", Key = "Contraband", Min = 1, Max = 3, Weight = 5 },
 	},
 
 	Legendary = {

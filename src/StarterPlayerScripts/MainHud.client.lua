@@ -27,6 +27,7 @@ local ModConfig = require(ReplicatedStorage.Shared.ModConfig)
 local StationConfig = require(ReplicatedStorage.Shared.StationConfig)
 local ForgeConfig = require(ReplicatedStorage.Shared.ForgeConfig)
 local WeaponFamilyConfig = require(ReplicatedStorage.Shared.WeaponFamilyConfig)
+local ToolModConfig = require(ReplicatedStorage.Shared.ToolModConfig)
 local RefinedOreConfig = require(ReplicatedStorage.Shared.RefinedOreConfig)
 local BaseConfig = require(ReplicatedStorage.Shared.BaseConfig)
 local ResearchConfig = require(ReplicatedStorage.Shared.ResearchConfig)
@@ -180,6 +181,14 @@ local currentTab = "Weapons"
 -- Tool tier isn't a recipe table either — it's one sequential upgrade track — so it gets its
 -- own row-builder too. This is the ONLY way ToolTier (and therefore access to Steel Plating and
 -- above, see OreConfig.Ores[key].MinToolTier) ever goes up.
+-- Forward-declared, and deliberately this high up: several row-builders below need to re-render the
+-- list they are sitting in after an action, but renderCraftList (far below) is what dispatches TO
+-- them in the first place — a genuine circular reference. Declaring the local here (assigned later
+-- with `renderCraftList = function() ... end`, no `local` keyword) lets every one of them capture
+-- the right upvalue. Declared below any of its users, it would silently compile as a nil GLOBAL and
+-- only fail when a button was actually clicked.
+local renderCraftList
+
 local function renderToolRow()
 	local currentTier = Hud.profile.ToolTier or 1
 	local currentToolData = OreConfig.ToolTiers[currentTier]
@@ -208,6 +217,55 @@ local function renderToolRow()
 			end
 		end
 	).Parent = listFrame
+end
+
+-- Special pickaxes, listed under the same tab as the tier ladder because both are "what am I mining
+-- with". They are a different KIND of thing though — sideways choices you hold one of rather than a
+-- track you climb — so only owned ones are listed, and equipping is a toggle rather than a purchase.
+local function renderToolModRows()
+	local owned = Hud.profile.OwnedTools or {}
+	local equipped = Hud.profile.EquippedTool
+
+	local anyOwned = false
+	for _, key in ipairs(ToolModConfig.Order) do
+		if owned[key] then
+			anyOwned = true
+			break
+		end
+	end
+
+	if not anyOwned then
+		-- Named explicitly rather than left blank: an empty space under the tier row reads as a bug,
+		-- and this is the only place in the game that says these exist at all.
+		Hud.makeRow(
+			"Special pickaxes",
+			"None yet — they drop from Epic rolls in Black Market cases.",
+			"Locked",
+			function() end
+		).Parent = listFrame
+		return
+	end
+
+	for _, key in ipairs(ToolModConfig.Order) do
+		if owned[key] then
+			local tool = ToolModConfig.Tools[key]
+			local isEquipped = equipped == key
+			Hud.makeRow(
+				tool.DisplayName,
+				tool.Description,
+				isEquipped and "Unequip" or "Equip",
+				function()
+					-- nil unequips. One at a time, so equipping another needs no explicit unequip first.
+					local result = Remotes.EquipToolMod:InvokeServer(isEquipped and nil or key)
+					if not result.Success then
+						Hud.showFailure("Couldn't equip that pickaxe", result.Reason)
+					else
+						renderCraftList()
+					end
+				end
+			).Parent = listFrame
+		end
+	end
 end
 
 -- Auto-Miner isn't a recipe table like Weapons/Robots — it's a single fixed structure — so it
@@ -686,13 +744,6 @@ local actionRow
 -- getItemIcon/showInvDetail (Inventory panel helpers) and a popup frame of its own, same ordering
 -- constraint as refreshPityBar/refreshPotionButton above.
 local renderSmeltingTab
-
--- Forward-declared: renderForgeWeapons' Potion-toggle button needs to re-render the list it's
--- sitting in, but renderCraftList (below) is what dispatches TO renderForgeWeapons in the first
--- place — a genuine circular reference. Declaring the local up here (assigned further down with
--- `renderCraftList = function() ... end`, no `local` keyword there) lets renderForgeWeapons
--- capture the right upvalue.
-local renderCraftList
 
 local function renderForgeWeapons()
 	local forgeTier = Hud.profile.ForgeTier or 1
@@ -1236,6 +1287,7 @@ renderCraftList = function()
 		return
 	elseif currentTab == "Tools" then
 		renderToolRow()
+		renderToolModRows()
 		return
 	elseif currentTab == "Suit" then
 		renderSuitRow()
@@ -3414,6 +3466,17 @@ Remotes.CaseOpened.OnClientEvent:Connect(function(caseKey: string, reward)
 			return
 		end
 		Hud.showToast(("MYTHICAL — %s unlocked! Equip it in the Inventory's Ultimate slot."):format(name), 7)
+		return
+	end
+	if reward.Kind == "Tool" then
+		local tool = ToolModConfig.Tools[reward.Key]
+		name = tool and tool.DisplayName or reward.Key
+		if reward.Duplicate then
+			Hud.showToast(("EPIC — %s (already owned) · +%d Contraband instead"):format(
+				name, reward.ConsolationContraband or 0), 5)
+			return
+		end
+		Hud.showToast(("EPIC — %s! Equip it at a Workbench's Tools tab."):format(name), 6)
 		return
 	end
 	if reward.Kind == "WeaponFamily" then

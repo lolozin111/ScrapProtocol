@@ -180,6 +180,11 @@ local function defaultProfile()
 			-- granted from the start (a player with no unlocked family could not arm themselves);
 			-- the rest are blueprints from Black Market Legendary rolls. Enforced in
 			-- ForgeService.ForgeWeapon, not just hidden in the UI. See WeaponFamilyConfig.
+		OwnedTools = {},
+			-- [toolKey] = true. Special pickaxes from Black Market Epic rolls — see ToolModConfig.
+			-- Deliberately NOT the same thing as ToolTier: that is a ladder you climb, these are
+			-- sideways choices you hold one of. EquippedTool (string?) is the active one, and is left
+			-- out of this table for the same nil-drop reason as EquippedWeaponId and SmeltJob.
 		OwnedUltimates = {},    -- [ultimateKey] = true — Mythical passives, see UltimateConfig.lua. NOT
 			-- craftable: they only come out of Black Market cases (and the admin grant, for testing).
 		EquippedUltimate = {},  -- [weaponKey] = ultimateKey — the weapon's FOURTH, exclusive slot.

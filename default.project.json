@@ -41,6 +41,7 @@
         "RecallFromMine": { "$className": "RemoteEvent" },
         "EquipMod": { "$className": "RemoteFunction" },
         "EquipUltimate": { "$className": "RemoteFunction" },
+        "EquipToolMod": { "$className": "RemoteFunction" },
         "BuyCase": { "$className": "RemoteFunction" },
         "StartDecode": { "$className": "RemoteFunction" },
         "RushDecode": { "$className": "RemoteFunction" },

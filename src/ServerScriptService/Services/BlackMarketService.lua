@@ -19,6 +19,7 @@ local CaseConfig = require(ReplicatedStorage.Shared.CaseConfig)
 local StationConfig = require(ReplicatedStorage.Shared.StationConfig)
 local UltimateConfig = require(ReplicatedStorage.Shared.UltimateConfig)
 local WeaponFamilyConfig = require(ReplicatedStorage.Shared.WeaponFamilyConfig)
+local ToolModConfig = require(ReplicatedStorage.Shared.ToolModConfig)
 local DataService = require(script.Parent.DataService)
 local StationService = require(script.Parent.StationService)
 
@@ -157,10 +158,24 @@ function BlackMarketService.GrantReward(player: Player, reward): boolean
 		Remotes.InventoryUpdate:FireClient(player, {
 			UnlockedWeaponFamilies = profile.UnlockedWeaponFamilies,
 		})
+	elseif reward.Kind == "Tool" then
+		-- Third permanent unlock, third identical duplicate path. Smaller consolation than a weapon
+		-- family because there are only three pickaxes and Epic is a common rung — duplicates here
+		-- are routine rather than a disappointment worth compensating heavily.
+		profile.OwnedTools = profile.OwnedTools or {}
+		if profile.OwnedTools[reward.Key] then
+			local consolation = 4
+			DataService.AddCurrency(player, "Contraband", consolation)
+			reward.Duplicate = true
+			reward.ConsolationContraband = consolation
+		else
+			profile.OwnedTools[reward.Key] = true
+		end
+		reward.DisplayName = ToolModConfig.Tools[reward.Key].DisplayName
+		Remotes.InventoryUpdate:FireClient(player, { OwnedTools = profile.OwnedTools })
 	else
-		-- Tool is declared in CaseConfig's pools but has no system behind it yet. No shipped case
-		-- rolls one, so this is unreachable today — it exists so that adding one to a pool before
-		-- wiring the grant fails loudly rather than silently paying out nothing.
+		-- Every Kind CaseConfig declares is handled above. This exists so that adding a new one to a
+		-- pool before wiring its grant fails loudly rather than silently paying out nothing.
 		warn(("[BlackMarketService] Reward Kind %q is not grantable yet — see CaseConfig's TODOs."):format(tostring(reward.Kind)))
 		return false
 	end

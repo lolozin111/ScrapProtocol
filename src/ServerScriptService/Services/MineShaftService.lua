@@ -51,6 +51,7 @@ local Workspace = game:GetService("Workspace")
 
 local MineShaftConfig = require(ReplicatedStorage.Shared.MineShaftConfig)
 local OreConfig = require(ReplicatedStorage.Shared.OreConfig)
+local ToolModConfig = require(ReplicatedStorage.Shared.ToolModConfig)
 local RaidEnergyConfig = require(ReplicatedStorage.Shared.RaidEnergyConfig)
 local PlotConfig = require(ReplicatedStorage.Shared.PlotConfig)
 local StationConfig = require(ReplicatedStorage.Shared.StationConfig)
@@ -373,6 +374,53 @@ task.defer(populateGrid) -- start as soon as the anchor exists
 -- Mining a block
 ----------------------------------------------------------------------
 
+-- Grants a block's contents and clears its cell. Extracted so the Split-Head Pick's blast can reuse
+-- the exact same resolution for the neighbours it shears loose — a second copy would drift, and the
+-- two ore gates in this codebase already proved how that ends.
+local function clearBlock(player: Player, character: Model, block: Instance, coords, kind: string)
+	if kind == "Ore" then
+		local oreKey = block:GetAttribute("OreKey")
+		local oreData = OreConfig.Ores[oreKey]
+		local profile = DataService.Get(player)
+		local toolData = OreConfig.ToolTiers[profile.ToolTier]
+		local yield = math.floor(
+			oreData.BaseYield * ToolModConfig.YieldMultiplier(profile, toolData.YieldMultiplier) + 0.5)
+		DataService.AddOre(player, oreKey, yield)
+		Remotes.InventoryUpdate:FireClient(player, { OreCounts = profile.OreCounts })
+
+		-- Same rare Energy Drink roll every other mining hit gets (see MiningService).
+		if math.random() <= RaidEnergyConfig.EnergyDrinkFindChance then
+			RaidEnergyService.GrantEnergyDrink(player)
+		end
+	elseif kind == "Hazard" then
+		local humanoid = character:FindFirstChildOfClass("Humanoid")
+		if humanoid then
+			humanoid:TakeDamage(MineShaftConfig.LavaDamage)
+		end
+		Remotes.MineFailed:FireClient(player, "That was a Lava Pocket!")
+	end
+	-- Rock: nothing to grant — it's filler, it just clears and advances like anything else.
+
+	local ix, iy, iz = coords.ix, coords.iy, coords.iz
+	blockOwner[block] = nil
+	setCell(ix, iy, iz, false) -- permanently empty now — never regenerate this cell
+	block:Destroy()
+
+	-- Spawn fresh blocks in whichever neighbors haven't been explored yet. No explicit teleport
+	-- needed here — this cell is now real, ordinary open air (nothing fake about it), so the
+	-- player just falls/steps into it under normal gravity, same as breaking any other block in
+	-- front of them would work. That's the whole point of building this in real space instead of
+	-- a relocated pocket: there's nothing left to fake.
+	revealNeighbors(ix, iy, iz)
+
+	totalMinedCount += 1
+	if totalMinedCount >= MineShaftConfig.ResetBlockThreshold then
+		-- performReset checks `isLocked` itself and bails if a reset's already underway, so this
+		-- is safe even if several hits cross the threshold in the same tick.
+		task.spawn(performReset)
+	end
+end
+
 Remotes.MineShaftHit.OnServerEvent:Connect(function(player: Player, block: Instance)
 	if isLocked then
 		Remotes.MineFailed:FireClient(player, "The mine is resetting — try again in a few seconds")
@@ -430,7 +478,7 @@ Remotes.MineShaftHit.OnServerEvent:Connect(function(player: Player, block: Insta
 	-- exist on every path, and a ToolTier past the end of the table (a save written against a
 	-- longer ladder, a bad value) would otherwise error inside the remote handler.
 	local swingToolData = OreConfig.ToolTiers[swingTier] or OreConfig.ToolTiers[1]
-	if not RateLimiter.Check(player, "MineShaftHit", swingToolData.SwingTime) then
+	if not RateLimiter.Check(player, "MineShaftHit", ToolModConfig.SwingTime(swingProfile, swingToolData.SwingTime)) then
 		Remotes.MineFailed:FireClient(player, "Swinging too fast — wait for your tool to reset")
 		return
 	end
@@ -446,46 +494,27 @@ Remotes.MineShaftHit.OnServerEvent:Connect(function(player: Player, block: Insta
 		return
 	end
 
-	-- Final hit — resolve based on kind before clearing the cell.
-	if kind == "Ore" then
-		local oreKey = block:GetAttribute("OreKey")
-		local oreData = OreConfig.Ores[oreKey]
-		local profile = DataService.Get(player)
-		local toolData = OreConfig.ToolTiers[profile.ToolTier]
-		local yield = math.floor(oreData.BaseYield * toolData.YieldMultiplier + 0.5)
-		DataService.AddOre(player, oreKey, yield)
-		Remotes.InventoryUpdate:FireClient(player, { OreCounts = profile.OreCounts })
+	clearBlock(player, character, block, coords, kind)
 
-		-- Same rare Energy Drink roll every other mining hit gets (see MiningService).
-		if math.random() <= RaidEnergyConfig.EnergyDrinkFindChance then
-			RaidEnergyService.GrantEnergyDrink(player)
+	-- Split-Head Pick: shears the face-adjacent cells loose along with the one you hit. Applied AFTER
+	-- the target so the player always gets what they actually aimed at even if something below goes
+	-- wrong, and skipping Hazards deliberately — setting off a lava pocket you never touched, from a
+	-- cell you may not even be able to see, would be a punishment with no tell in front of it.
+	local blast = ToolModConfig.BlastRadius(swingProfile)
+	if blast > 0 then
+		for _, offset in ipairs(MineShaftConfig.RevealNeighborOffsets) do
+			local nx, ny, nz = coords.ix + offset[1], coords.iy + offset[2], coords.iz + offset[3]
+			local neighbour = inBounds(nx, ny, nz) and getCell(nx, ny, nz)
+			-- getCell returns false for an already-mined cell and nil for an unexplored one, so this
+			-- only ever picks up a real live block Part.
+			if neighbour and typeof(neighbour) == "Instance" then
+				local neighbourCoords = blockOwner[neighbour]
+				local neighbourKind = neighbour:GetAttribute("Kind")
+				if neighbourCoords and neighbourKind ~= "Hazard" and neighbourKind ~= "Bedrock" then
+					clearBlock(player, character, neighbour, neighbourCoords, neighbourKind)
+				end
+			end
 		end
-	elseif kind == "Hazard" then
-		local humanoid = character:FindFirstChildOfClass("Humanoid")
-		if humanoid then
-			humanoid:TakeDamage(MineShaftConfig.LavaDamage)
-		end
-		Remotes.MineFailed:FireClient(player, "That was a Lava Pocket!")
-	end
-	-- Rock: nothing to grant — it's filler, it just clears and advances like anything else.
-
-	local ix, iy, iz = coords.ix, coords.iy, coords.iz
-	blockOwner[block] = nil
-	setCell(ix, iy, iz, false) -- permanently empty now — never regenerate this cell
-	block:Destroy()
-
-	-- Spawn fresh blocks in whichever neighbors haven't been explored yet. No explicit teleport
-	-- needed here — this cell is now real, ordinary open air (nothing fake about it), so the
-	-- player just falls/steps into it under normal gravity, same as breaking any other block in
-	-- front of them would work. That's the whole point of building this in real space instead of
-	-- a relocated pocket: there's nothing left to fake.
-	revealNeighbors(ix, iy, iz)
-
-	totalMinedCount += 1
-	if totalMinedCount >= MineShaftConfig.ResetBlockThreshold then
-		-- performReset checks `isLocked` itself and bails if a reset's already underway, so this
-		-- is safe even if several hits cross the threshold in the same tick.
-		task.spawn(performReset)
 	end
 end)
 
