@@ -13,7 +13,8 @@ already made (numbers, mechanics, sequencing), not just vague direction.
 | Mining zone (dig-down/Y-levels) | **Built** — see below |
 | Base (crafting process, mods, tiers, turrets) | **Built** — see below (crafting process' "cute" animation step still not started) |
 | Research level (progression tiers) | **Built** — see below |
-| Main shop (rotating stock, geode/extractor) | Not started |
+| Main shop (rotating stock, geode/extractor) | Not started — see the Black Market note below |
+| Black Market & Hacker Machine | Not started — **next up**, design captured below |
 | PvP base invasion | Not started, sequence last |
 
 Agreed build order (most recent discussion): Raid Energy → Mining zone rework → weapon mod
@@ -1169,6 +1170,109 @@ post-boss card pick.
 - **Flag for later**: once real money touches anything with randomized rewards (geodes, etc.),
   check Roblox's policy on randomized virtual item mechanics (odds disclosure requirements) — not
   a blocker for prototyping, but relevant before shipping a monetized version.
+
+## Black Market & Hacker Machine — NOT STARTED (next up)
+
+A rotating-stock dealer selling **sealed cases**, decoded on a separate **Hacker Machine**. This is
+the mid-to-endgame content faucet: it is where gun variants, special tools, and the Ultimate mods
+come from. Deliberately not a general shop — it sells sealed randomness, not catalogue items.
+
+**Relationship to the older "Main shop" idea below:** unreconciled, and worth deciding before
+building. Both are "rotating stock". The Black Market may simply BE the main shop, or the main shop
+may stay a separate straightforward catalogue (armor/mods/cosmetics) while the Black Market handles
+sealed cases only. The geode/extractor mechanic sketched under Main shop is close to identical in
+shape to the case/Hacker-Machine flow — buy sealed thing, wait a timer, open for a reward — so
+building both would mean two systems doing one job.
+
+### Currencies — the deliberate split
+
+- **Scrap / Cores** buy the **common stock and rerolls**. Stated reason: *"so the main currency
+  never goes dead"* — Scrap has to keep mattering after the player has finished building.
+- **Contraband** is a separate token that buys the **premium-odds stock**. Earned from raids and
+  base defense, OR bought outright with Robux as a grind skip. This is the monetisation hook: the
+  paid path buys time, not exclusive content.
+
+### Cases
+
+Sealed. Bought from the dealer, decoded at the Hacker Machine — decoding **takes real time**
+(same shape as `SmeltService`'s job: one at a time, timestamp-based, finishes whether or not you
+were online). **Open question:** whether rushing a decode is possible and whether it carries a real
+risk (losing the case?). Flagged as "maybe" — undecided.
+
+**Rarity → what drops.** The tiers mean different KINDS of thing, not just better numbers:
+
+| Rarity | Contents |
+|---|---|
+| Common | ordinary game loot — Scrap, ores |
+| Rare | Cores |
+| Epic | special tools |
+| Legendary | gun variants |
+| Mythical | Ultimate mods (the OP passives) |
+
+**Case types differ by odds AND by pool.** Better cases have better Legendary/Mythical chances. On
+top of that, cases are **specialised by what their top tiers can contain** — the decision made
+explicitly: rather than one crate whose Legendary/Mythical pool mixes guns and mods, there are
+separate crate lines where one only rolls **gun variants** at the top and another only rolls
+**modifiers**. Reasoning, in the user's words: *"it gives the player more choices, more reason to
+come back, the crates have more value."* Finer targeting on top of that is also wanted — e.g. a
+crate weighted toward flamethrowers specifically when the Legendary roll lands.
+
+A **Robux "super lucky" crate** exists with a **daily limit**.
+
+### Ultimate mods — a fourth, exclusive slot
+
+Weapons currently have `ModConfig.SlotsPerItem` (3) interchangeable mod slots. Ultimate mods do NOT
+go in those. They get **their own dedicated slot**, and the exclusion runs **both ways**: only a
+Mythical Ultimate mod fits the Ultimate slot, and an Ultimate mod cannot occupy a regular slot.
+
+Design intent: these are **passives with no drawback — or a drawback whose upside is genuinely
+worth it**. They are supposed to feel game-changing, not incremental. Examples given:
+
+- an enemy's corpse **explodes on death**, dealing AOE to nearby enemies
+- bullets that **ricochet**
+- a bullet that **pierces 5 enemies and strips their Defense entirely for 10 seconds**
+
+Note these are real combat behaviours, not stat multipliers — they need actual hook points in the
+damage/encounter path, unlike existing mods which are pure `FireRate`/`Damage`/`HP` multipliers.
+
+### Gun variants
+
+Blueprints unlock whole **variant families**, and *"the blueprint will unlock a new gun tab for that
+specific variant"* — so the Forge's Weapons tab gains a tab per unlocked family. Families named:
+**flamethrowers, special bows, snipers, bazookas / ray cannons**.
+
+Within a family sit specialised guns with their own twist — *"a bow that shoots shock arrows, or a
+flamethrower that actually throws a freezing flame"*.
+
+**Open question:** does a blueprint unlock the whole FAMILY (every gun in that tab becomes
+craftable) or just ONE specific gun within it? Both readings fit what was said, and it changes the
+data shape.
+
+### Tools
+
+Epic-tier case content. Examples: a **special drone**, a **pickaxe that mines 3 blocks at once**.
+No existing system covers tools as items — `ToolTier` today is a single sequential upgrade track, so
+this needs a real inventory-style tool concept.
+
+### BUILD CONSTRAINT — content is placeholder, structure is not
+
+Direct instruction: ship **placeholders** for the crazy modifiers, guns and tools *"but make it
+modular, so when I introduce you with the table of contents for those stuff, where everything will
+be detailed, with damage, description, behavior, perks and all that, we can just plug those in and
+be ready to go."*
+
+So the work is to get the DATA SHAPES and the HOOK POINTS right, with a couple of real working
+examples proving the plumbing, and everything else arriving later as pure config entries. Concretely
+that means:
+
+- Ultimate mod effects should be **named strategies in a flat table** — the same pattern
+  `EnemyAI.Patterns` and `RobotBehaviors` already use. A new passive becomes one function plus a
+  config entry pointing at its name, never an engine change.
+- The damage/encounter path needs **hook points** (on-kill, on-hit, on-fire) for those strategies to
+  attach to. This is the part that cannot be deferred, because retrofitting hooks later means
+  touching combat again.
+- Case drop tables, case types, odds, gun families and tool definitions should all be **pure config**
+  in the `Shared/` convention, so the content table drops in without service changes.
 
 ## PvP base invasion
 
