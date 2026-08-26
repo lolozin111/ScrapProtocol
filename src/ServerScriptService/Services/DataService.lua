@@ -3,11 +3,39 @@
 	Owns all player save data. Every other service reads/writes through this module —
 	nothing else is allowed to touch DataStoreService directly.
 
-	This is a minimal-but-safe hand-rolled wrapper (retry-on-fail, autosave, save-on-leave,
-	save-on-server-shutdown). It is NOT session-locked across servers, which is the one thing
-	a real production simulator needs beyond this. Before you scale past a single test server,
-	swap this for ProfileService (loleris) — same public API, much safer under real traffic.
-	Search "ProfileService Roblox" — it's free and it's the de facto standard for this genre.
+	SESSION LOCKING (added — this used to be the file's one known production hazard).
+
+	The old version used GetAsync to load and SetAsync to save. Those are two separate,
+	non-atomic operations with no notion of ownership, which meant two servers could hold the same
+	player's profile at once. The concrete way that loses data: you leave server A and join server B
+	before A has finished saving. B loads the pre-A state, you play, then A's save lands and
+	overwrites it — or B's does, and A's session is gone. Nothing errors; progress just silently
+	rewinds. It is the single worst class of bug a game like this can ship with, because the player
+	experiences it as "the game ate my stuff" and there is no log of it happening.
+
+	The fix is a lock stored alongside the data, taken and released through UpdateAsync — which IS
+	atomic per key, so two servers racing to claim the same profile cannot both win:
+
+	  load   -> UpdateAsync: if another server holds a LIVE lock, abort and retry; otherwise stamp
+	            our own JobId + timestamp and take the data.
+	  hold   -> every save refreshes the lock's heartbeat, proving this server is still alive.
+	  release-> UpdateAsync clears the lock after the final save, so the next server gets it instantly.
+	  steal  -> a lock whose heartbeat is older than LOCK_STALE_SECONDS is assumed dead (the server
+	            holding it crashed) and can be taken. Without this, a crash would lock a player out
+	            of their own save permanently.
+
+	If the lock genuinely cannot be acquired (another server is alive and holding it), the player is
+	KICKED with an explanation rather than being let in with an unsaveable profile. That is a real
+	behaviour change and it is deliberate: letting them play a session that cannot be saved is worse
+	than a clear "try again in a moment".
+
+	STORAGE SHAPE: the DataStore value is now an envelope, { Data = <profile>, Lock = {...} },
+	rather than the bare profile. Saves written before this change are bare profiles; readEnvelope
+	below detects and wraps them, so existing saves load untouched.
+
+	ProfileService (loleris) remains the more battle-tested option and does more than this (release
+	handoff, global updates, mock stores). This implementation deliberately covers only the failure
+	mode above, in ~100 lines that can be read in one sitting, with no external dependency to vendor.
 ]]
 
 local DataStoreService = game:GetService("DataStoreService")
@@ -22,7 +50,32 @@ local PlayerDataStore = DataStoreService:GetDataStore("SalvageProtocol_PlayerDat
 local DataService = {}
 
 local cache: { [number]: any } = {}
-local AUTOSAVE_INTERVAL = 120 -- seconds
+
+-- Also the lock heartbeat interval: every save refreshes the lock's timestamp, so one mechanism
+-- both persists data and proves this server is still alive. Lowered from 120s when locking was
+-- added — the heartbeat has to be comfortably more frequent than LOCK_STALE_SECONDS or a live
+-- server's own lock would go stale underneath it.
+local AUTOSAVE_INTERVAL = 60
+
+-- How old a lock's heartbeat must be before another server may steal it. Must be a healthy
+-- multiple of AUTOSAVE_INTERVAL: too low and a server that merely hiccups loses locks it is still
+-- using (the exact data race this exists to prevent); too high and a genuine crash locks the
+-- player out of their own save for that long. 3x the heartbeat is the usual compromise.
+local LOCK_STALE_SECONDS = 180
+
+-- How long to keep retrying a contested lock before giving up and kicking. Covers the normal case
+-- this is designed for: the player's PREVIOUS server still finishing its save-and-release, which
+-- takes a second or two, not minutes.
+local LOCK_ACQUIRE_ATTEMPTS = 6
+local LOCK_RETRY_SECONDS = 2
+
+local LOCK_FAILED_MESSAGE =
+	"Your save is still being written by another server. Please rejoin in a few seconds — this "
+	.. "protects your progress from being overwritten."
+
+-- Identifies THIS server. game.JobId is empty in Studio, where there is only ever one server, so
+-- a stand-in keeps the lock logic exercised in testing instead of silently short-circuiting.
+local SERVER_ID = (game.JobId ~= "" and game.JobId) or "studio-local"
 
 -- How many granted PurchaseIds to remember per player (see profile.HandledPurchaseIds). Roblox
 -- only re-delivers receipts that haven't been acknowledged yet, so the window that actually
@@ -193,33 +246,130 @@ local function migrateBaseTierToResearch(profile)
 	return profile
 end
 
-local function loadProfile(userId: number)
-	local key = "Player_" .. userId
-	local data
-	local ok, err = pcall(function()
-		data = PlayerDataStore:GetAsync(key)
-	end)
-	if not ok then
-		warn("[DataService] GetAsync failed for", userId, err)
-	end
-	local profile = backfillMissingFields(data or defaultProfile())
-	profile = migrateLegacyWeapons(profile)
-	profile = migrateBaseTierToResearch(profile)
-	return profile
+local function storeKey(userId: number): string
+	return "Player_" .. userId
 end
 
-local function saveProfile(userId: number)
+-- Normalizes whatever came out of the DataStore into { Data = profile, Lock = lock? }.
+--
+-- Saves written before session locking existed are BARE profiles rather than envelopes, so this
+-- detects that (a real profile always has Scrap; an envelope never does at the top level) and wraps
+-- them. That is the whole migration — no separate pass, no version field, and a save only ever gets
+-- rewritten in the new shape once it is next saved.
+local function readEnvelope(raw)
+	if type(raw) ~= "table" then
+		return { Data = nil, Lock = nil }
+	end
+	if raw.Data ~= nil or raw.Lock ~= nil then
+		return { Data = raw.Data, Lock = raw.Lock }
+	end
+	return { Data = raw, Lock = nil } -- legacy bare profile
+end
+
+-- True if `lock` belongs to a server that is (as far as we can tell) still alive and using it.
+-- Our own lock never counts as foreign: re-taking a lock this server already holds is what happens
+-- when a player rejoins the same server, and blocking that would be a self-inflicted lockout.
+local function isForeignLiveLock(lock): boolean
+	if type(lock) ~= "table" or lock.ServerId == nil then
+		return false
+	end
+	if lock.ServerId == SERVER_ID then
+		return false
+	end
+	return (os.time() - (lock.Heartbeat or 0)) < LOCK_STALE_SECONDS
+end
+
+-- Claims the lock and returns the profile, or nil if another live server holds it.
+--
+-- UpdateAsync rather than GetAsync+SetAsync because it is ATOMIC for the key: the check and the
+-- claim happen inside one transform, so two servers calling this simultaneously cannot both come
+-- away believing they won. Returning nil from the transform aborts the write entirely, leaving the
+-- other server's lock untouched.
+local function tryAcquireProfile(userId: number)
+	local acquired = nil
+	local blocked = false
+
+	local ok, err = pcall(function()
+		PlayerDataStore:UpdateAsync(storeKey(userId), function(raw)
+			local envelope = readEnvelope(raw)
+
+			if isForeignLiveLock(envelope.Lock) then
+				blocked = true
+				return nil -- abort: do not touch another live server's lock
+			end
+
+			local profile = backfillMissingFields(envelope.Data or defaultProfile())
+			profile = migrateLegacyWeapons(profile)
+			profile = migrateBaseTierToResearch(profile)
+			acquired = profile
+
+			return { Data = profile, Lock = { ServerId = SERVER_ID, Heartbeat = os.time() } }
+		end)
+	end)
+
+	if not ok then
+		warn("[DataService] UpdateAsync failed acquiring", userId, err)
+		return nil, false
+	end
+	return acquired, blocked
+end
+
+-- Retries a contested lock a few times before giving up. The normal contested case is the player's
+-- previous server still finishing its save-and-release, which resolves in seconds.
+local function loadProfile(userId: number)
+	for attempt = 1, LOCK_ACQUIRE_ATTEMPTS do
+		local profile, blocked = tryAcquireProfile(userId)
+		if profile then
+			return profile
+		end
+		if not blocked then
+			-- A DataStore error rather than contention. Retrying is still right (transient outages
+			-- are common) but there is nothing to wait for a lock holder to finish.
+			warn(("[DataService] load attempt %d/%d failed for %d"):format(attempt, LOCK_ACQUIRE_ATTEMPTS, userId))
+		end
+		if attempt < LOCK_ACQUIRE_ATTEMPTS then
+			task.wait(LOCK_RETRY_SECONDS)
+		end
+	end
+	return nil
+end
+
+-- Writes the profile and refreshes the lock heartbeat in one operation. `release` clears the lock
+-- instead of refreshing it, handing the profile straight to whichever server wants it next.
+--
+-- Still UpdateAsync, not SetAsync: this checks the lock is STILL ours before writing. If another
+-- server legitimately stole it (this one hung long enough to look dead), writing anyway would
+-- clobber a session that is actively being played — the very thing locking exists to prevent. In
+-- that case we drop our write and say so, because our copy is the stale one.
+local function saveProfile(userId: number, release: boolean?): boolean
 	local profile = cache[userId]
 	if not profile then
-		return
+		return false
 	end
-	local key = "Player_" .. userId
+
+	local lost = false
 	local ok, err = pcall(function()
-		PlayerDataStore:SetAsync(key, profile)
+		PlayerDataStore:UpdateAsync(storeKey(userId), function(raw)
+			local envelope = readEnvelope(raw)
+			if isForeignLiveLock(envelope.Lock) then
+				lost = true
+				return nil -- someone else owns this now; our data is stale, discard it
+			end
+			return {
+				Data = profile,
+				Lock = release and nil or { ServerId = SERVER_ID, Heartbeat = os.time() },
+			}
+		end)
 	end)
-	if not ok then
-		warn("[DataService] SetAsync failed for", userId, err)
+
+	if lost then
+		warn(("[DataService] Lock for %d was taken by another server — discarding this server's save to avoid clobbering the live session."):format(userId))
+		return false
+	elseif not ok then
+		warn("[DataService] UpdateAsync failed saving", userId, err)
+		return false
 	end
+	return true
 end
 
 function DataService.Get(player: Player)
@@ -361,15 +511,29 @@ function DataService.SetHighestWave(player: Player, wave: number)
 	end
 end
 
--- Force an immediate save. Use this right after granting a real-money purchase —
--- Roblox requires the grant to be persisted before you report PurchaseGranted,
--- otherwise a server crash between grant and autosave loses the player's purchase.
-function DataService.Save(player: Player)
-	saveProfile(player.UserId)
+-- Force an immediate save. Use this right after granting a real-money purchase — Roblox requires
+-- the grant to be persisted before you report PurchaseGranted, otherwise a crash between grant and
+-- autosave loses the player's purchase.
+--
+-- Returns whether the write actually landed. Callers handling real money MUST check it: since
+-- session locking was added a save can legitimately be refused (this server's lock was stolen, so
+-- its copy is stale), and reporting PurchaseGranted on a write that never happened is exactly how
+-- a player pays and receives nothing.
+function DataService.Save(player: Player): boolean
+	return saveProfile(player.UserId)
 end
 
 Players.PlayerAdded:Connect(function(player)
-	cache[player.UserId] = loadProfile(player.UserId)
+	local profile = loadProfile(player.UserId)
+	if not profile then
+		-- Could not take the lock. Kicking is the honest outcome: the alternative is letting them
+		-- play a session whose saves would be discarded, which looks fine right up until everything
+		-- they did that session vanishes.
+		warn(("[DataService] Could not acquire session lock for %s — kicking."):format(player.Name))
+		player:Kick(LOCK_FAILED_MESSAGE)
+		return
+	end
+	cache[player.UserId] = profile
 end)
 
 -- Fires immediately before a player's profile is saved and dropped from the cache, giving other
@@ -396,7 +560,7 @@ DataService.PlayerSaving = playerSavingSignal.Event -- (player: Player)
 
 Players.PlayerRemoving:Connect(function(player)
 	playerSavingSignal:Fire(player)
-	saveProfile(player.UserId)
+	saveProfile(player.UserId, true) -- release: hand the lock straight to the next server
 	cache[player.UserId] = nil
 end)
 
@@ -406,7 +570,8 @@ game:BindToClose(function()
 	-- concurrently-running handler seeing a half-torn-down state.
 	for _, player in ipairs(Players:GetPlayers()) do
 		playerSavingSignal:Fire(player)
-		saveProfile(player.UserId)
+		saveProfile(player.UserId, true) -- release too: the server is going away, so holding the
+			-- lock would strand every one of these players behind a stale-lock timeout on rejoin.
 	end
 end)
 

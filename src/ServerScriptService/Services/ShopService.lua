@@ -47,8 +47,12 @@ local function grantDeveloperProduct(player: Player, key: string, purchaseId: st
 	end
 	DataService.MarkPurchaseHandled(player, purchaseId)
 
-	DataService.Save(player) -- persist immediately, see DataService.Save's comment
-	return true
+	-- Only report success if the write actually landed. DataService.Save can now legitimately
+	-- refuse (this server's session lock was stolen, so its copy is stale) — acknowledging the
+	-- receipt anyway would mean the player paid and received nothing, with Roblox considering the
+	-- purchase closed. Returning false instead leaves it NotProcessedYet, so it is re-delivered to
+	-- whichever server actually owns the session.
+	return DataService.Save(player)
 end
 
 -- Roblox re-delivers a receipt until it's acknowledged with PurchaseGranted, so the same
