@@ -33,8 +33,8 @@ tree — check it before assuming where something lives or what Remotes exist:
   `default.project.json`, not created in Lua — add new ones there.
 - Empty asset folders the running game expects content in (also declared in
   `default.project.json`, populated by hand in Studio, not synced from `src/`):
-  `ReplicatedStorage.ItemIcons`, `ReplicatedStorage.WeaponTools`, `ServerStorage.EnemyModels`,
-  `ServerStorage.RaidRoomModels`, `ServerStorage.TurretModels`.
+  `ReplicatedStorage.ItemIcons`, `ReplicatedStorage.WeaponTools`, `ReplicatedStorage.BaseTemplates`,
+  `ServerStorage.EnemyModels`, `ServerStorage.RaidRoomModels`, `ServerStorage.TurretModels`.
 
 ## Core architecture
 

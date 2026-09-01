@@ -22,6 +22,7 @@ already made (numbers, mechanics, sequencing), not just vague direction.
 | Session-locked saves | **Built** — see "Data safety" |
 | Gun variants (14) + tools (3) | **Built** — 18 weapons across 6 families, 3 pickaxes |
 | Drone companion (4 Drone Cores) | **Built** — unlocks at Research Tier 3, follows you everywhere |
+| Player Test Mode (admin throwaway profile) | **Built** — see "Data safety" section below |
 | Early-game pacing & onboarding | **Planned, not built** — see below |
 | Raid shop rework (run-only perks) | **Planned, not built** — half the tag plumbing exists |
 | PvP base invasion | Not started, sequence last |
@@ -1255,6 +1256,34 @@ let in with an unsaveable profile, and `DataService.Save` now returns whether th
 `ShopService` only reports `PurchaseGranted` when it did, so a player cannot pay and receive nothing.
 
 ProfileService remains the more battle-tested option if this ever needs to do more.
+
+### Player Test Mode — BUILT
+
+An admin-only HUD button (`GetTestMode`/`ToggleTestMode`, gated by the same `AdminConfig.IsAdmin`
+check as the `/admin` commands) that lets an admin preview the game as a brand-new player — Tier 1,
+nothing owned — without disturbing their own save. Built once the session-locking work above made
+"which profile is this server holding, and is it safe to throw away" something worth being precise
+about.
+
+**The flag lives in its own DataStore key (`"TestMode_" .. userId`), never inside the profile.** This
+is the one decision worth recording, because it looks backwards at first: why not just add a
+`TestMode` field to the profile like everything else? Because the whole point of the feature is that
+a test session's profile is disposable — `PlayerAdded` hands it a `defaultProfile()` straight into
+the cache and never loads or locks the real save, and `saveProfile` refuses to flush it to
+DataStoreService no matter which of the four write paths (`DataService.Save`, autosave,
+`PlayerRemoving`, `BindToClose`) asks. A flag stored inside that throwaway profile would be
+discarded along with it every single session, and there would be no surviving place to ever record
+"turn this back off" — the player would be stuck previewing a fresh profile forever. Putting the flag
+in a key that outlives the throwaway profile is the only way the toggle can be bidirectional.
+
+A few other decisions that follow from that same shape, in case a future session is tempted to
+"simplify" this: it takes effect on the **next join only** (toggling mid-session would mean swapping
+the profile a live session is reading/writing out from under itself — corruption, not preview,
+which is why `ToggleTestMode` never touches `cache[userId]`), a test session never takes the real
+profile's session lock (so another server stays completely free to load/save the player's actual
+data the entire time), and `DataService.IsTestModeEnabled` **fails closed** on a DataStore read error
+— resolves to "load the real profile," never to "hand them a blank one," since the latter is
+indistinguishable from data loss from the player's own seat.
 
 ## Black Market & Hacker Machine — BUILT (content pending)
 

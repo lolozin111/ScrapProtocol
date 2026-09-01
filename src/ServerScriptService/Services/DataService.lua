@@ -52,6 +52,13 @@ local DataService = {}
 
 local cache: { [number]: any } = {}
 
+-- userIds currently running a throwaway Player Test Mode session on THIS server. Populated by
+-- PlayerAdded when DataService.IsTestModeEnabled(userId) is true, and consulted by saveProfile's
+-- guard (the single choke point for every write path) to make sure nothing that session does ever
+-- reaches the real DataStore key. Cleared in PlayerRemoving so a userId can never carry a stale
+-- test flag into a later, non-test session on the same server.
+local testSession: { [number]: boolean } = {}
+
 -- Also the lock heartbeat interval: every save refreshes the lock's timestamp, so one mechanism
 -- both persists data and proves this server is still alive. Lowered from 120s when locking was
 -- added — the heartbeat has to be comfortably more frequent than LOCK_STALE_SECONDS or a live
@@ -287,6 +294,64 @@ local function storeKey(userId: number): string
 	return "Player_" .. userId
 end
 
+local function testModeKey(userId: number): string
+	return "TestMode_" .. userId
+end
+
+-- PLAYER TEST MODE.
+--
+-- An admin-toggleable per-player flag, stored in its OWN DataStore key — never inside the profile
+-- envelope. It has to live outside the profile because the whole point of Test Mode is that the
+-- profile it produces is thrown away at the end of the session: if the flag were a field on that
+-- throwaway profile, it would vanish along with everything else, and there would be no way to ever
+-- turn Test Mode back off. A separate key is the only place a "do this differently next time"
+-- instruction can survive between the throwaway session and the next real one.
+--
+-- The flag takes effect only on the NEXT join (see the PlayerAdded handler below) — a session
+-- that's already running never flips banks mid-flight. When it's on, PlayerAdded skips
+-- loadProfile entirely: no lock is ever taken on the real profile key, so another server remains
+-- completely free to load and save that player's real data, as if this server didn't exist for
+-- them. Everything this server does lands only in cache[userId], and saveProfile's guard (see
+-- below) refuses to ever flush a test session to DataStoreService, so the real save is untouched
+-- by anything that happens while the flag is on.
+function DataService.IsTestModeEnabled(userId: number): boolean
+	local ok, value = pcall(function()
+		return PlayerDataStore:GetAsync(testModeKey(userId))
+	end)
+	if not ok then
+		-- FAIL CLOSED. This is the one spot where getting the fallback backwards would be
+		-- catastrophic: a transient DataStore read failure here must resolve to "load the
+		-- player's real profile," never to "hand them a blank throwaway one." Defaulting to
+		-- true-on-error would look, from the player's seat, EXACTLY like their save being wiped —
+		-- indistinguishable from real data loss, for what was really just a hiccup.
+		return false
+	end
+	return value == true
+end
+
+-- The only thing Test Mode persists: the on/off flag itself, in its own key — never the throwaway
+-- profile a test session produces. UpdateAsync rather than SetAsync purely for the same
+-- retry-safe-write shape every other write in this file uses, not because there's contention to
+-- arbitrate (nothing else ever touches this key). Returns whether the write landed, same contract
+-- as DataService.Save, so the admin tooling that calls this can tell whether the toggle actually
+-- took instead of assuming success.
+function DataService.SetTestModeEnabled(userId: number, on: boolean): boolean
+	local ok = pcall(function()
+		PlayerDataStore:UpdateAsync(testModeKey(userId), function()
+			return on
+		end)
+	end)
+	return ok
+end
+
+-- Lets other services ask "is this player's entire session throwaway?" — e.g. to skip work that
+-- would be pointless on data that's never saved, or to label the HUD. Backed by the in-memory
+-- testSession table rather than another DataStore read: this needs to be free to call often, and
+-- the answer can't change for the lifetime of a session once PlayerAdded has decided it.
+function DataService.IsTestSession(player: Player): boolean
+	return testSession[player.UserId] == true
+end
+
 -- Normalizes whatever came out of the DataStore into { Data = profile, Lock = lock? }.
 --
 -- Saves written before session locking existed are BARE profiles rather than envelopes, so this
@@ -379,6 +444,20 @@ end
 -- clobber a session that is actively being played — the very thing locking exists to prevent. In
 -- that case we drop our write and say so, because our copy is the stale one.
 local function saveProfile(userId: number, release: boolean?): boolean
+	if testSession[userId] then
+		-- THE single choke point for Test Mode's entire safety guarantee. Every write path in this
+		-- file — DataService.Save, the autosave loop, the PlayerRemoving handler, and BindToClose —
+		-- funnels through saveProfile, so guarding here once, instead of at each of those four call
+		-- sites, is what makes it structurally impossible for a future write path to forget the
+		-- check and leak a throwaway session into the real DataStore key.
+		--
+		-- Returns true, not false: DataService.Save's contract is "did the write land," and callers
+		-- handling real money treat false as "the purchase was not safely recorded." A test session
+		-- has genuinely nothing to persist by design — the write "succeeding" as a deliberate no-op
+		-- is the honest answer to what the caller is actually asking, not a lie about a failure.
+		return true
+	end
+
 	local profile = cache[userId]
 	if not profile then
 		return false
@@ -561,6 +640,20 @@ function DataService.Save(player: Player): boolean
 end
 
 Players.PlayerAdded:Connect(function(player)
+	if DataService.IsTestModeEnabled(player.UserId) then
+		-- Throwaway session: skip loadProfile entirely, which means no lock is ever acquired on
+		-- the real profile key. That's deliberate, not just an optimization — acquiring the real
+		-- lock here would block every other server from loading/saving this player's actual data
+		-- for as long as this test session runs. A fresh, unowned profile straight into the cache
+		-- is the whole feature: nothing owned, Tier 1, and saveProfile's guard (see above) ensures
+		-- none of it ever reaches DataStoreService.
+		testSession[player.UserId] = true
+		cache[player.UserId] = defaultProfile()
+		warn(("[DataService] %s is joining in THROWAWAY TEST MODE — a brand-new Tier 1 profile "
+			.. "with nothing owned. NOTHING from this session will be saved to their real profile."):format(player.Name))
+		return
+	end
+
 	local profile = loadProfile(player.UserId)
 	if not profile then
 		-- Could not take the lock. Kicking is the honest outcome: the alternative is letting them
@@ -599,6 +692,8 @@ Players.PlayerRemoving:Connect(function(player)
 	playerSavingSignal:Fire(player)
 	saveProfile(player.UserId, true) -- release: hand the lock straight to the next server
 	cache[player.UserId] = nil
+	testSession[player.UserId] = nil -- so this userId can't carry a stale test flag into a later,
+		-- non-test session on the same server
 end)
 
 game:BindToClose(function()

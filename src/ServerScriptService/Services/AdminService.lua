@@ -45,6 +45,7 @@ local DroneConfig = require(ReplicatedStorage.Shared.DroneConfig)
 local DataService = require(script.Parent.DataService)
 local TurretService = require(script.Parent.TurretService)
 local TrainingDummyService = require(script.Parent.TrainingDummyService)
+local RateLimiter = require(script.Parent.RateLimiter)
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 
@@ -467,6 +468,47 @@ local function commandHelp(player: Player)
 		table.concat(ToolModConfig.Order, ", ")))
 	tell(player, ("drone cores: %s (no argument grants all)"):format(
 		table.concat(DroneConfig.Order, ", ")))
+end
+
+----------------------------------------------------------------------
+-- Player Test Mode — an admin rejoins with a brand-new throwaway profile so they can see the
+-- game from the beginning, then flips it back off to return to their real save. Deliberately
+-- takes effect on rejoin only, never mid-session: swapping the profile a live session is reading
+-- and writing out from under it is how you corrupt a save, not preview one.
+----------------------------------------------------------------------
+
+Remotes.GetTestMode.OnServerInvoke = function(player: Player)
+	if not AdminConfig.IsAdmin(player) then
+		-- Honest empty answer, not an error — the client only calls this to decide whether to
+		-- build the button at all, so a non-admin should see nothing rather than a failure.
+		return { IsAdmin = false, On = false, InTestSession = false }
+	end
+
+	return {
+		IsAdmin = true,
+		On = DataService.IsTestModeEnabled(player.UserId),
+		InTestSession = DataService.IsTestSession(player),
+	}
+end
+
+Remotes.ToggleTestMode.OnServerInvoke = function(player: Player)
+	if not AdminConfig.IsAdmin(player) then
+		return { Success = false, Reason = "Not authorized." }
+	end
+
+	if not RateLimiter.Check(player, "ToggleTestMode", 1) then
+		return { Success = false, Reason = "Slow down." }
+	end
+
+	local current = DataService.IsTestModeEnabled(player.UserId)
+	local landed = DataService.SetTestModeEnabled(player.UserId, not current)
+	if not landed then
+		-- Never report success on a write that didn't happen — the caller would otherwise believe
+		-- their next rejoin loads a fresh profile when it's actually still pointed at the old flag.
+		return { Success = false, Reason = "Save failed — try again." }
+	end
+
+	return { Success = true, On = not current, InTestSession = DataService.IsTestSession(player) }
 end
 
 ----------------------------------------------------------------------

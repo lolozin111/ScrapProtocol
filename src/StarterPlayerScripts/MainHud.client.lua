@@ -3495,6 +3495,70 @@ task.spawn(function()
 end)
 
 ----------------------------------------------------------------------
+-- Player Test Mode — admin-only. Toggles a persisted flag that only takes effect on the NEXT
+-- join (a fresh throwaway profile vs. the real one); the current session never changes. One
+-- grouped table rather than a local per element, same reason as turretPanel above — this file
+-- sits right at Luau's 200-local ceiling for a function scope.
+----------------------------------------------------------------------
+
+local testMode = {}
+
+-- Built (or not) once at startup from the server's honest answer, rather than assumed from
+-- AdminConfig client-side (there isn't one) — a non-admin gets no button and no hint one exists,
+-- same convention as the /admin chat commands.
+task.spawn(function()
+	local ok, result = pcall(function()
+		return Remotes.GetTestMode:InvokeServer()
+	end)
+	if not ok or not result or not result.IsAdmin then
+		return
+	end
+
+	testMode.on = result.On
+
+	local function labelFor()
+		local text = testMode.on and "TEST MODE: ON" or "TEST MODE: OFF"
+		if result.InTestSession then
+			-- A throwaway session must never be mistaken for the real save — Tier 1 and an empty
+			-- inventory should read as "expected", not "did I just lose my progress".
+			text ..= " (ACTIVE)"
+		end
+		return text
+	end
+
+	testMode.button = Hud.new("TextButton", {
+		BackgroundColor3 = testMode.on and Hud.COLOR.Bad or Hud.COLOR.PanelLight,
+		Size = UDim2.new(0, 150, 1, 0),
+		Font = Enum.Font.SourceSansBold,
+		TextColor3 = Color3.new(1, 1, 1),
+		TextSize = 15,
+		Text = labelFor(),
+		Parent = actionRow,
+	}, { Hud.corner(8) })
+
+	testMode.button.MouseButton1Click:Connect(function()
+		local toggleResult = Remotes.ToggleTestMode:InvokeServer()
+		if not toggleResult.Success then
+			Hud.showFailure("Test Mode", toggleResult.Reason)
+			return
+		end
+
+		testMode.on = toggleResult.On
+		result.InTestSession = toggleResult.InTestSession
+		testMode.button.BackgroundColor3 = testMode.on and Hud.COLOR.Bad or Hud.COLOR.PanelLight
+		testMode.button.Text = labelFor()
+
+		-- The single thing most likely to confuse: the label already shows the NEW flag, but this
+		-- session is still running on whatever profile it started with. Say so every time.
+		if testMode.on then
+			Hud.showToast("Test Mode ON — rejoin to load a fresh save.", 5)
+		else
+			Hud.showToast("Test Mode OFF — rejoin to return to your real save.", 5)
+		end
+	end)
+end)
+
+----------------------------------------------------------------------
 -- Remote listeners
 ----------------------------------------------------------------------
 

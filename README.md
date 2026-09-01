@@ -96,13 +96,19 @@ no manual copy-pasting scripts into Studio.
   collidable, and non-queryable the instant it sees the tag, no matter how you built it, because
   it's only ever used as an anchor CFrame, never actually stood on. On join, `PlotService`
   randomly assigns one unclaimed tagged Part to the player and fires a `PlotAssigned` signal;
-  `BaseService` picks that up and clones a Model from a `BaseTemplates` folder in
-  `ReplicatedStorage` onto that same CFrame — matching whichever `ResearchConfig.Tiers` entry the
-  player's saved `profile.ResearchTier` points at (see **Research** below). **If you haven't built a
-  `BaseTier1` Model yet**, `BaseService` clones a single plain gray placeholder floor instead (and
-  warns in Output) so nobody falls into the void while you're still building real base art — swap it
-  out by adding `ReplicatedStorage/BaseTemplates/BaseTier1` (a Model whose intended floor sits at
-  local Y=0, e.g. its `PrimaryPart` is the floor piece) whenever you're ready.
+  `BaseService` picks that up and clones a Model from `ReplicatedStorage.BaseTemplates` onto that
+  same CFrame — matching whichever `ResearchConfig.Tiers` entry the player's saved
+  `profile.ResearchTier` points at (see **Research** below). The `BaseTemplates` folder itself is
+  already declared as an empty Folder in `default.project.json` (same as `ItemIcons`/
+  `WeaponTools`), so Rojo creates it on sync — you don't need to make the folder by hand anymore,
+  only what goes inside it. **If you haven't built a `BaseTier1` Model inside that folder yet**,
+  `BaseService` clones a single plain gray placeholder floor instead (and warns in Output) so
+  nobody falls into the void while you're still building real base art — swap it out by adding a
+  `BaseTier1` Model inside `ReplicatedStorage.BaseTemplates` whenever you're ready. **Its intended
+  floor must sit at local Y=0** — e.g. set the Model's `PrimaryPart` to the floor piece — because
+  `BaseService` positions the whole Model with `baseModel:PivotTo(plot.CFrame)`, and a Model with
+  no `PrimaryPart` pivots on its bounding-box centre instead, which spawns it half-buried in the
+  ground.
 
   **Build each tier's stations INTO its base Model.** A `BaseTier{n}` Model is expected to contain
   that tier's own Workbench/Welding Station/Forge as ordinary `Station`-tagged descendants (see
@@ -492,6 +498,24 @@ no manual copy-pasting scripts into Studio.
   All of it is silently ignored for non-admins — a normal player typing `/give` gets no hint the
   command exists.
 
+- **Player Test Mode** — a HUD button, gated by the same admin check as everything above
+  (`AdminConfig.IsAdmin`, so **`AdminConfig.AdminUserIds` is empty by default** and `IsAdmin` only
+  auto-grants to the place's creator when it's User-owned — on a Group-owned place, add UserIds to
+  that list or the button never appears at all). It toggles a persisted flag that decides what your
+  **NEXT** join loads — nothing about the session you're currently in changes the moment you click
+  it. With the flag ON, your next join skips your real save entirely and hands you a brand-new
+  Tier 1 profile with nothing owned; with it OFF, your next join loads your real save normally.
+  The flag lives in its own DataStore key (`"TestMode_" .. userId`), never inside the profile
+  itself — it has to, since the whole point of a test session is that the profile it produces is
+  thrown away, so a flag stored inside that profile could never be switched back off again. A test
+  session never acquires your real profile's session lock (so another server stays completely free
+  to load/save your actual data the whole time you're in one), and `DataService`'s `saveProfile` —
+  the single choke point behind `DataService.Save`, autosave, `PlayerRemoving`, and `BindToClose`
+  alike — refuses to ever flush a test session to `DataStoreService`, so nothing from it reaches
+  your real save no matter which of those four paths tries to write. A DataStore error while
+  checking the flag fails closed (loads your real profile, never a blank one), since defaulting the
+  other way would be indistinguishable from real data loss from the player's seat.
+
 ## 4. Testing the loop (debug HUD)
 
 `MainHud.client.lua` builds a plain, undecorated HUD in code — a trimmed currency readout
@@ -508,9 +532,10 @@ actually visible before any real art or UI design happens. To test end to end:
    `[PlotService]` warning if no plot was available, and a `[BaseService]` warning telling you no
    `BaseTier1` Model was found yet — that's expected until you build one, you should still land
    on a plain gray placeholder floor at the plot's location the moment you spawn, not fall
-   through into nothing. (Optional: build a Model under `ReplicatedStorage/BaseTemplates` named
-   `BaseTier1`, floor at local Y=0, to replace the placeholder with something real — see the
-   **Base plots** bullet above.)
+   through into nothing. (Optional: build a Model named `BaseTier1` inside
+   `ReplicatedStorage.BaseTemplates` — the folder itself already exists, Rojo creates it — floor
+   at local Y=0, to replace the placeholder with something real — see the **Base plots** bullet
+   above.)
 2. Inside your base's footprint (within `PlotConfig.FootprintHalfSize` of the `Plot` Part), place
    three more Parts. Tag each `Station` and give it a child `StringValue` named `StationType` set
    to `Crafting`, `Welding`, and `Forge` respectively. These are your **Workbench**, **Welding
@@ -820,6 +845,23 @@ actually visible before any real art or UI design happens. To test end to end:
     a wave and confirm nearby enemies glow blue through walls and their DEF drops (visible on a
     `/dummy`'s billboard, though note dummies only work outside a wave). Only one Core can be
     slotted at a time; equipping a second should swap, not stack.
+
+22. **Player Test Mode.** Testing as an admin (owner in Studio, or a UserId added to
+    `AdminConfig.AdminUserIds`), find the **TEST MODE: OFF** button in the bottom action row (a
+    non-admin account should see no button there at all — worth confirming once with a second,
+    non-owner account if you have one). Click it: a toast should read "Test Mode ON — rejoin to
+    load a fresh save.", and the button's label should flip to **TEST MODE: ON** immediately — but
+    nothing else about your CURRENT session should change at all, since the flag only takes effect
+    on your next join (your Scrap, inventory, and base should be untouched). Stop Play Solo and
+    Play again to rejoin: you should land with a brand-new Tier 1 base and nothing owned no matter
+    what your real save had, and the button should now read **TEST MODE: ON (ACTIVE)** — the
+    "(ACTIVE)" marker exists specifically so a wiped-looking inventory reads as expected, not as
+    lost progress. Click the button again: the toast should now read "Test Mode OFF — rejoin to
+    return to your real save.", and the label should read **TEST MODE: OFF (ACTIVE)** — still
+    "(ACTIVE)", since you're still inside the same throwaway session; only a rejoin changes which
+    profile actually loads. Rejoin one final time and confirm your real save comes back completely
+    intact — Scrap, inventory, and base tier all exactly where you left them before you first
+    toggled this on, and the button back to a plain **TEST MODE: OFF** with no marker.
 
 ## 5. Environment effects (optional polish)
 

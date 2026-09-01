@@ -14,6 +14,9 @@
       "WeaponTools": {
         "$className": "Folder"
       },
+      "BaseTemplates": {
+        "$className": "Folder"
+      },
       "Remotes": {
         "$className": "Folder",
         "MineNode": { "$className": "RemoteEvent" },
@@ -68,7 +71,9 @@
         "BuyTurretBlueprint": { "$className": "RemoteFunction" },
         "PlaceTurretInSlot": { "$className": "RemoteFunction" },
         "UnplaceTurret": { "$className": "RemoteFunction" },
-        "UpgradeTurret": { "$className": "RemoteFunction" }
+        "UpgradeTurret": { "$className": "RemoteFunction" },
+        "GetTestMode": { "$className": "RemoteFunction" },
+        "ToggleTestMode": { "$className": "RemoteFunction" }
       }
     },
 
