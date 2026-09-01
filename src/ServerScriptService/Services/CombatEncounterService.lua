@@ -310,9 +310,9 @@ end
 -- Measures the REAL "close enough to attack the wall" boundary off the player's actual built base
 -- Model (BaseService.GetPlayerBaseModel — real BaseTier art, or the small fallback floor most
 -- testing uses today) instead of a fixed guess. A hardcoded BaseConfig.WallAttackRange tuned
--- against PlotConfig.FootprintHalfSize (the max CLAIMED plot area, 40 studs) turned out to be
+-- against the since-removed PlotConfig.FootprintHalfSize (then 40 studs) turned out to be
 -- roughly DOUBLE the actual placeholder floor's real half-extent (BaseService's
--- FALLBACK_FLOOR_SIZE is only 40x40, i.e. 20 studs center-to-edge) — so the whole visible platform
+-- FALLBACK_FLOOR_SIZE was 40x40 back then, i.e. 20 studs center-to-edge; it is 48 now) — so the whole visible platform
 -- sat well inside the "attack range" circle, and enemies stopping there looked exactly like no
 -- boundary existed at all, right in the middle next to the player. Using the model's own measured
 -- footprint means this is automatically correct for the placeholder today AND for whatever size a

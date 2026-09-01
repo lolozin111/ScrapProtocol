@@ -16,12 +16,11 @@ local PlotConfig = {}
 
 PlotConfig.Tag = "Plot" -- CollectionService tag for each plot's anchor Part
 
--- Half-extents (studs, local X/Y/Z relative to the plot anchor's own CFrame) of the region that
--- counts as "at your own base" for PlotService.IsPlayerInOwnPlot. Deliberately NOT derived from
--- the anchor Part's own Size — the anchor is just a small marker, this is how big the actual
--- claimed base area is. Sized generously for whatever the biggest Base Model tier ends up being;
--- bump it up if a larger base template needs more room than this.
-PlotConfig.FootprintHalfSize = Vector3.new(40, 30, 40)
+-- NOTE: the "at your own base" region is NOT configured here. It is per-tier and lives in
+-- ResearchConfig.Tiers[n].FootprintHalfSize, read by PlotService.IsPlayerInOwnPlot through
+-- ResearchConfig.GetFootprintHalfSize. A flat PlotConfig.FootprintHalfSize used to sit here and was
+-- removed once the footprint became tier-driven — nothing read it any more, but several comments
+-- still pointed at it as the live value, which is worse than having no entry at all.
 
 -- How high above the plot anchor's own position a respawning character is placed. Trusts that
 -- whatever's built on top of the anchor (a real Base Model, or BaseService's plain placeholder

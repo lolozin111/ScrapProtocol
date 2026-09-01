@@ -12,7 +12,7 @@
 
 	Also owns IsPlayerInOwnPlot, which every Workbench/Start Defense remote handler (CraftingService,
 	MiningService, AutoMinerService, MineShaftService, WaveService) calls to reject those actions
-	when the player isn't standing at their own base. See PlotConfig.FootprintHalfSize for the
+	when the player isn't standing at their own base. See ResearchConfig.GetFootprintHalfSize for the
 	region that check uses.
 
 	Respawning: rather than fighting Roblox's own SpawnLocation/team logic (multiple enabled
@@ -132,7 +132,7 @@ function PlotService.GetPlayerPlot(player: Player): Instance?
 end
 
 -- Box-contains check against the plot anchor's own CFrame (so a rotated anchor still works) and
--- PlotConfig.FootprintHalfSize — deliberately NOT the anchor Part's own Size, since the anchor is
+-- ResearchConfig.GetFootprintHalfSize for the player tier — deliberately NOT the anchor Part's own Size, since the anchor is
 -- just a small marker and the real base footprint is configured separately. Generous enough that
 -- standing anywhere on/above your own base counts, without also counting a player who's merely
 -- walking past a neighboring one.

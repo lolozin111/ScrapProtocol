@@ -221,7 +221,7 @@ end
 -- Exposes the actual currently-built base Model (real BaseTier art, or the fallback floor if none
 -- exists yet) so other systems can measure its REAL size instead of guessing. Added for
 -- CombatEncounterService.lua's wall-defense boundary — see that file's getWallAttackRange — after
--- a hardcoded BaseConfig.WallAttackRange guess (tuned against PlotConfig.FootprintHalfSize, the
+-- a hardcoded BaseConfig.WallAttackRange guess (tuned against the since-removed PlotConfig.FootprintHalfSize, the
 -- max CLAIMED plot area) turned out much bigger than FALLBACK_FLOOR_SIZE (the actual placeholder
 -- floor most testing uses today), so enemies were "stopping at the wall" well past the visible
 -- platform's real edge — nowhere close to a wall, right in the middle. Returns nil if the base
