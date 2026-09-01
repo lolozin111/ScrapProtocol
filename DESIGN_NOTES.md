@@ -679,7 +679,7 @@ Several distinct pieces bundled under "the base":
 
   **Slots — fixed count per base, per direct formula:** `GetSlotCount(researchTier)` — Research
   Tier 1 = 2 slots baseline, then each subsequent ODD tier adds 1, each EVEN tier adds 2. Slots are
-  fixed evenly-spaced ring positions (`TurretService.ringPosition`, reusing the same math round 1
+  fixed evenly-spaced ring positions (`TurretService.perimeterPosition`, reusing the same math round 1
   used), not freeform placement anymore — `PlaceTurretInSlot(turretId, slotIndex)` moves an owned
   instance into a specific numbered slot (rejects an already-occupied slot), `UnplaceTurret(turretId)`
   sends it back to Storage, `UpgradeTurret(turretId)` spends Cores and bumps Level (both plot-gated
@@ -1784,9 +1784,11 @@ no new code. Upgrading swaps shell and stations together, so a Tier 3 base can n
 Tier 1 stations. (The alternative — a parallel `Stations T1/T2/...` folder tree — was considered and
 dropped: it only earns its complexity if stations need to vary independently of the shell.)
 
-**The base grows with tier.** `FootprintHalfSize` is per-tier, and `BaseConfig.TurretRingRadiusFraction`
-derives the turret ring from it — so a tier that unlocks more slots also widens the ring to fit
-them, with nothing extra to tune. `PlotService.IsPlayerInOwnPlot` reads the same per-tier footprint.
+**The base grows with tier.** `FootprintHalfSize` is per-tier, and the turret slots derive from it —
+they walk the square platform's perimeter (`TurretService.perimeterPosition`), inset by half a pad
+plus `BaseConfig.TurretEdgeClearance`, so a tier that unlocks more slots also widens the square to
+fit them, with nothing extra to tune. `PlotService.IsPlayerInOwnPlot` reads the same per-tier
+footprint.
 
 **Retuned since first ship: the ladder used to run 80 studs across at T1 up to 200 at T6 (Y climbing
 30→50 alongside it).** That spread made plot spacing a real Studio burden — a builder had to leave

@@ -79,6 +79,13 @@ local warnedMissingModel: { [string]: boolean } = {}
 -- leave stale — and this codebase already has enough written-but-never-read fields.
 local SLOT_TAG = "TurretSlot"
 
+-- Empty-slot marker pad size (studs). Named/hoisted here — rather than left inline where the pad
+-- Part is built — because perimeterPosition below needs half of this same width to compute how
+-- far a pad's CENTRE has to sit from the platform edge for its OUTER edge to respect
+-- BaseConfig.TurretEdgeClearance. Keeping one source for it means resizing the pad automatically
+-- keeps the clearance correct instead of silently drifting out of sync with the maths.
+local SLOT_PAD_SIZE = Vector3.new(4, 0.2, 4)
+
 -- Same defensive polling pattern BaseService.lua's own waitForProfile uses — PlotAssigned can fire
 -- before DataService's asynchronous profile load finishes, and a returning player may already have
 -- placed turrets waiting to be rebuilt.
@@ -93,17 +100,54 @@ local function waitForProfile(player: Player)
 	return profile
 end
 
--- Evenly-spaced ring position (plot-local X/Z offset) for the `index`-th (1-based) slot among
+-- Evenly-spaced PERIMETER position (plot-local X/Z offset) for the `index`-th (1-based) slot among
 -- `total` slots — fixed positions, not random, so slot 3 is always the same spot every rebuild.
-local function ringPosition(index: number, total: number, researchTier: number?): (number, number)
-	-- Derived from the tier's own footprint, so the ring widens as the base does. That's what keeps
-	-- a growing slot count from cramming more and more pads into a fixed-size circle: a tier that
-	-- adds slots also adds room for them, with nothing extra to tune.
-	local footprint = ResearchConfig.GetFootprintHalfSize(researchTier)
-	local radius = math.min(footprint.X, footprint.Z) * BaseConfig.TurretRingRadiusFraction
-	local angleStep = total > 0 and (math.pi * 2 / total) or 0
-	local angle = (index - 1) * angleStep
-	return math.cos(angle) * radius, math.sin(angle) * radius
+--
+-- Walks the edge of the square platform instead of a circle inscribed in it. A circle only meets a
+-- square at four points, so any pad landing on a diagonal was a mere 0.707r out along each axis and
+-- read as sitting mid-floor no matter how big the radius fraction got — raising it just pushed the
+-- four axis-aligned pads off the edge of the platform while the diagonal ones stayed inset. Walking
+-- the perimeter instead puts EVERY pad the same distance from an edge, at every tier and slot count.
+-- See BaseConfig.TurretEdgeClearance's own comment for the full history.
+local function perimeterPosition(index: number, total: number, researchTier: number?): (number, number)
+	if total <= 0 then
+		return 0, 0
+	end
+
+	-- Derived from the tier's own footprint, so the square widens as the base does — same reasoning
+	-- the old ring radius had, just measured to the edge instead of to an inscribed circle.
+	local half = ResearchConfig.GetFootprintHalfSize(researchTier)
+	local padHalf = SLOT_PAD_SIZE.X / 2
+	-- Distance from the platform CENTRE to a pad's CENTRE: half the platform, minus half the pad
+	-- (so the pad's own OUTER edge — not its centre — is what respects the clearance), minus the
+	-- clearance gap itself.
+	local inset = math.min(half.X, half.Z) - padHalf - BaseConfig.TurretEdgeClearance
+	if inset <= 0 then
+		-- A footprint too small to fit even one pad with clearance. Bail rather than hand back a
+		-- position outside the platform or divide by a non-positive perimeter below.
+		return 0, 0
+	end
+
+	local perimeter = 8 * inset -- 4 sides of length 2*inset each
+	-- Walk by arc length, but offset the start by `inset` (half of one side, since a side is 2*inset) so slot 1 lands
+	-- at the MIDDLE of an edge rather than on a corner. This matters: with the offset, 2 slots land
+	-- on opposite edge midpoints and 4 slots land on all four edge midpoints — what a player expects
+	-- to see. Without it, 2 slots land on opposite corners and 4 land on all four corners instead.
+	local d = (((index - 1) / total) * perimeter + inset) % perimeter
+
+	if d < 2 * inset then
+		-- Right edge, walking from the bottom-right corner (-inset local Z) up to top-right.
+		return inset, -inset + d
+	elseif d < 4 * inset then
+		-- Top edge, walking from top-right corner to top-left.
+		return inset - (d - 2 * inset), inset
+	elseif d < 6 * inset then
+		-- Left edge, walking from top-left corner down to bottom-left.
+		return -inset, inset - (d - 4 * inset)
+	else
+		-- Bottom edge, walking from bottom-left corner back to bottom-right.
+		return -inset + (d - 6 * inset), -inset
+	end
 end
 
 local function buildFallbackModel(typeKey: string, typeData): Model
@@ -178,7 +222,7 @@ end
 local function buildSlotMarker(slotIndex: number): Model
 	local part = Instance.new("Part")
 	part.Name = "TurretSlotMarker"
-	part.Size = Vector3.new(4, 0.2, 4)
+	part.Size = SLOT_PAD_SIZE
 	part.Anchored = true
 	part.CanCollide = false
 	-- MUST stay queryable. This was CanQuery = false back when the pad was purely decorative, and
@@ -309,7 +353,7 @@ function TurretService.RebuildPlayerTurrets(player: Player)
 	local records = {}
 
 	for slotIndex = 1, slotCount do
-		local offsetX, offsetZ = ringPosition(slotIndex, slotCount, profile.ResearchTier)
+		local offsetX, offsetZ = perimeterPosition(slotIndex, slotCount, profile.ResearchTier)
 		local turret = turretBySlot[slotIndex]
 
 		if turret and TurretConfig.Types[turret.TypeKey] then

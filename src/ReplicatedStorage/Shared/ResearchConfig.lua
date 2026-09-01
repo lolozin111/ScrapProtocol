@@ -60,11 +60,13 @@ ResearchConfig.TemplateFolderName = "BaseTemplates"
 -- cost time as well as quantity — a Voidium Core is 1:1 with a shard, but you still have to smelt
 -- it. Costs quoted in refined keys work because DataService.TrySpend routes them through Wallet.
 --
--- FootprintHalfSize is the region PlotService.IsPlayerInOwnPlot treats as "your base", and
--- BaseConfig.TurretRingRadiusFraction derives the turret ring from it — so widening the footprint
--- automatically spreads the growing slot count out instead of cramming more pads into a fixed ring.
--- With this ladder that ring radius runs 20.4 studs at Tier 1 up to 26.8 at Tier 6, and the slot
--- counts (2/4/5/7/8/10, from TurretConfig.GetSlotCount) still fit comfortably — about 17 studs
+-- FootprintHalfSize is the region PlotService.IsPlayerInOwnPlot treats as "your base", and the
+-- turret slots are derived from it too — so widening the footprint automatically spreads the
+-- growing slot count out instead of cramming more pads into a fixed area.
+-- Slots walk the SQUARE's perimeter (TurretService.perimeterPosition) rather than an inscribed
+-- circle, inset far enough to leave BaseConfig.TurretEdgeClearance between each pad's outer edge
+-- and the platform's — so a pad sits the same distance from the edge at every tier and every slot
+-- count. The counts (2/4/5/7/8/10, from TurretConfig.GetSlotCount) fit comfortably: about 23 studs
 -- between pads at the tightest point, Tier 6.
 --
 -- X/Z (platform half-width) climbs 24 -> 31.5 across tiers, i.e. a 48-stud-wide platform at Tier 1

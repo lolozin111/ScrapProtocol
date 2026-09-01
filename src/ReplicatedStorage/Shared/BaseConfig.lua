@@ -25,23 +25,20 @@ BaseConfig.TurretFallbackSize = Vector3.new(3, 3, 3)
 
 -- Turret SLOT ring — fixed, evenly-spaced positions (TurretConfig.GetSlotCount(profile
 -- .ResearchTier) of them) a player can place a turret instance into; no freeform "stand anywhere
--- and click place". Expressed as a FRACTION of the current tier's own footprint
--- (ResearchConfig.GetFootprintHalfSize) rather than an absolute radius, which is what lets the ring
--- widen automatically as the base grows: a tier that unlocks more slots also enlarges the footprint,
--- so the extra pads get real room instead of being crammed into a fixed-size circle.
+-- and click place".
 --
--- 0.85, not 0.55: at 0.55 the pads sat barely past halfway out, reading as clutter in the middle of
--- the platform rather than defenses along its edge. The pad is 4x4 studs (TurretService.lua:181),
--- so its half-extent is 2 — 0.85 leaves roughly 1.6 studs of clearance between the pad's outer edge
--- and the platform's at Tier 1, widening to about 2.7 at Tier 6. Do not push this to 1.0: the pad
--- is positioned by its CENTRE, so at 1.0 half of every pad hangs off the platform.
+-- Slots are distributed along the PERIMETER OF THE SQUARE platform, not around an inscribed
+-- circle. A circle was the original approach and it structurally cannot put every pad near the
+-- edge: it meets the square at only four points, so any pad landing on a diagonal is a mere 0.707r
+-- out along each axis and reads as sitting mid-floor. Raising the radius fraction only pushed the
+-- four axis pads off the platform while the diagonal ones still looked inset. Walking the square's
+-- edge instead puts EVERY pad the same distance from an edge, at every tier and slot count.
 --
--- Worth knowing before someone "fixes" it: this ring is a CIRCLE inscribed in a SQUARE platform, so
--- a pad landing on an axis sits right against the edge while a pad at a diagonal is inherently
--- further in (a diagonal point at radius r is only 0.707r out along each axis). That unevenness is
--- geometry, not a tuning miss, and no single fraction removes it — following the square's perimeter
--- instead would mean replacing TurretService.ringPosition's polar maths outright.
-BaseConfig.TurretRingRadiusFraction = 0.85
+-- This value is the clearance between a pad's OUTER edge and the platform's, in studs. The pad is
+-- positioned by its CENTRE, so TurretService.perimeterPosition subtracts half the pad's own width on
+-- top of this. Keep it small but non-zero: at 0 the pad sits exactly flush, which starts to read as
+-- overhanging the moment a turret model with any lip is placed on it.
+BaseConfig.TurretEdgeClearance = 0.5
 
 -- FALLBACK ONLY. CombatEncounterService.getWallAttackRange measures the "close enough to attack
 -- the wall" distance off the player's REAL built base Model (BaseService.GetPlayerBaseModel) at

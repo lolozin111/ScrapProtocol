@@ -151,11 +151,12 @@ no manual copy-pasting scripts into Studio.
   **Workbench** for Scrap + ore + one boss-wave Core — so wave defense sets the pace while mining
   and raiding pay for it. Retune the whole ladder (names, wave gates, costs, Wall HP, footprint) in
   `ResearchConfig.lua`; adding a tier is one table entry plus the matching `BaseTier{n}` Model.
-  Turret slots need none of that Studio work: `TurretService.ringPosition` places them on a ring
-  at `footprint * BaseConfig.TurretRingRadiusFraction` (0.85), so the ring scales with the same
-  `FootprintHalfSize` automatically — 20.4 studs radius at Tier 1 up to 26.8 at Tier 6, which puts
-  the pads along the platform edge rather than mid-floor, against slot counts of 2/4/5/7/8/10
-  (`TurretConfig.GetSlotCount`).
+  Turret slots need none of that Studio work: `TurretService.perimeterPosition` distributes them by
+  arc length along the PERIMETER of the square platform, inset by half a pad plus
+  `BaseConfig.TurretEdgeClearance` (0.5) — so every pad sits 0.5 studs from the platform edge at
+  every tier, against slot counts of 2/4/5/7/8/10 (`TurretConfig.GetSlotCount`). An inscribed circle
+  was used before and structurally could not do this: it meets a square at only four points, so any
+  pad on a diagonal always read as sitting mid-floor.
 
 - **Base stations** — a second, more specific gate layer inside your base plot: several Workbench
   actions now also require standing near a particular physical prop, not just anywhere in the
