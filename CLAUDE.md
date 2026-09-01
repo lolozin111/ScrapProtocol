@@ -144,6 +144,79 @@ placeholder (gray box/floor, colored tile with text) and a `warn()` when the exp
 `ServerStorage`/`ReplicatedStorage` model/image is absent, rather than erroring. Preserve this
 pattern in any new content-driven feature.
 
+## Agent routing
+
+This repo has nine subagents defined under `.claude/agents/sp-*.md`, with their models already
+pinned in frontmatter: `sp-scout`, `sp-remote-scout`, and `sp-contract-scout` are `model: haiku`;
+`sp-combat-dev`, `sp-server-dev`, `sp-data-dev`, `sp-config-dev`, and `sp-docs-dev` are
+`model: sonnet`. The intended split is Haiku reads, Sonnet writes, and the main session (Opus)
+holds the plan — the fleet exists specifically to keep exploration off the most expensive tier.
+Nothing in the tooling enforces this; it only holds if the main session actually delegates instead
+of quietly reading and editing everything itself, which is the default behavior a fresh session
+reverts to. Route explicitly, every session:
+
+**Reads go to a Haiku scout, not to you.** There are three, split by what they're looking at:
+
+- `sp-scout` — general lookup: where a symbol is defined, every call site of a function or a
+  Remote, whether a config field or API actually exists, confirming a change landed.
+- `sp-remote-scout` — the client-to-server surface specifically: whether a RemoteEvent/
+  RemoteFunction handler validates its arguments, gates on plot/station, rate-limits through
+  `RateLimiter`, and re-derives rewards server-side instead of trusting the client.
+- `sp-contract-scout` — Studio tag/attribute contracts (`CollectionService` tags, expected
+  attributes), placeholder-fallback behavior, and drift between a config value, the code that
+  reads it, and what the docs claim.
+
+Dispatch independent lookups in parallel, in one message — that's the whole point of having three
+of them instead of one. Ask a scout for a finding (`file:line`, a symbol, a yes/no, a short table),
+never for pasted file contents; if you wanted the raw text you could have read it yourself for the
+same cost.
+
+**Writes go to a Sonnet implementer**, and only once you can name the exact `file:line` targets and
+the intended behavior. "Go look into X and fix it" belongs to a scout call first — dispatching an
+implementer to investigate defeats the division of labor as surely as reading the file yourself
+would, it just hides the cost inside someone else's turn. If you can't point at a line, you aren't
+ready to dispatch. Ownership is intentionally narrow and non-overlapping:
+
+- `sp-combat-dev` — `CombatEncounterService`, `EnemyAI`, `RobotBehaviors`, `DamagePipeline`,
+  `TurretService`, `CombatMath`, `WaveService`.
+- `sp-server-dev` — every other service under `ServerScriptService/Services/`, plus
+  `StarterPlayerScripts/`.
+- `sp-data-dev` — `DataService.lua` and anything touching the saved profile shape or the
+  `PlayerRemoving`/`BindToClose` disconnect path. Narrow scope on purpose: this is the one file
+  that can silently corrupt or drop a save, so it gets its own dedicated implementer rather than
+  being folded into `sp-server-dev`.
+- `sp-config-dev` — `ReplicatedStorage/Shared/*Config.lua` only; it cannot touch service logic,
+  which keeps "retune a number" changes from ever accidentally becoming "retune a number and also
+  refactor the service that reads it."
+- `sp-docs-dev` — `README.md`, `DESIGN_NOTES.md`, `CLAUDE.md`.
+
+**One implementer per file, always.** Two Sonnet agents editing the same file in the same round
+clobber each other's edits with no merge step to catch it. When a change spans files owned by
+different implementers, sequence them — dispatch the first, take its result, then dispatch the
+second with that result as input — rather than firing both at once.
+
+**Pin the model on built-in agents too.** `Explore`, `Plan`, and `general-purpose` declare no
+`model` of their own, so they silently inherit whatever spawned them — Opus, in the main session.
+An unpinned `Explore` call for a routine search runs a haiku-shaped task at opus prices and quietly
+defeats the entire arrangement without ever looking wrong. Pass `model: "haiku"` explicitly when
+spawning one of these to read, and `model: "sonnet"` when spawning one to write.
+
+**Opus holds the plan, not the source.** Direct `Read`/`Grep` calls from the main session are for
+short confirmations and final assembly — checking one thing before writing the plan, verifying an
+implementer's diff — not for bulk exploration. If you're reading more than a couple of files
+yourself, that work belonged to a scout.
+
+**Do not spawn `sp-lead`.** It is itself `model: opus`, so calling it from an Opus main session
+stacks a second Opus that starts cold and has to re-derive context the main session already holds
+— strictly worse than the main session just doing the work. It stays on disk under the
+retired-files convention (see below) and is only invoked when the user names it explicitly. One
+Opus per task.
+
+**The escape hatch: a trivial single-file edit goes direct.** Dispatching an agent — spinning up
+context, waiting on a round trip — costs more than a one-line fix takes to make by hand. Routing
+exists to avoid burning Opus on exploration and multi-file work, not to turn every edit into a
+ceremony.
+
 ## Where design intent lives
 
 - `README.md` documents what's actually built, organized by system, plus the numbered

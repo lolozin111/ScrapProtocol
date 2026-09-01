@@ -1,6 +1,6 @@
 ---
 name: sp-lead
-description: Orchestrator for multi-step Salvage Protocol work. Use when a task touches more than one subsystem, needs investigation before implementation, or is a broad request like "fix the combat bugs", "audit X", "implement the rate limiter everywhere". Plans the work, dispatches scouts and implementers, and assembles the result. Do NOT use for a single known one-file edit — call the implementer directly.
+description: 'DEPRECATED — do not spawn. The main Opus session orchestrates directly; spawning this stacks a second Opus that starts cold and re-derives context the main session already has. Kept on disk for rollback; runs only if the user names it explicitly. Formerly: orchestrator for multi-step Salvage Protocol work, used when a task touched more than one subsystem or was a broad request like "fix the combat bugs" or "audit X".'
 model: opus
 tools: Agent, SendMessage, ListAgents, TaskOutput
 ---
@@ -46,11 +46,19 @@ Boot order lives in `Main.server.lua` — services are self-registering ModuleSc
 
 **There is no test suite and no way to run one.** Nothing you dispatch can be verified by running it. Verification is a scout re-reading the change, plus telling the user which of `README.md`'s numbered Studio steps to run by hand. Never claim something is tested.
 
-## Known structural weaknesses
+## Shared abstractions — reach for these, don't re-solve them
 
-Two root causes behind most bugs in this codebase — check whether a task touches either before planning:
+The two root causes that once drove most bugs here have both been fixed. Check the existing
+abstraction before planning around either:
 
-- **No shared "what is this player doing" state.** `activeEncounters`, `activeRuns`, `activeRaids`, `combatActive`, and `state.InCombat` are five private busy-flags keyed by userId with no arbitration. Base defense and raids can both think they own the player.
-- **No rate-limit layer.** `RequestFireWeapon` hand-rolls a cooldown; the mining remotes have none; `EndExpedition`/`RecallFromMine` have no validation at all.
+- **Player activity is arbitrated.** `PlayerActivityService.TryAcquire/Release/Get/Is` holds one
+  authoritative activity per player (`Wave`, `Raid`, `OutpostRaid`). It replaced five
+  uncoordinated private busy-flags that let a wave and a raid overwrite each other's combat
+  state. Never add a sixth flag.
+- **Rate limiting is centralized.** `RateLimiter.Check(player, key, cooldownSeconds)` tests and
+  stamps in one call. Every spammable remote goes through it — never hand-roll a cooldown.
+- **Mine gating is centralized.** `OreGate.CanMine(player, oreKey)` is the tool-tier +
+  wave-unlock check, previously duplicated between `MiningService` and `MineShaftService`.
 
-If a fix would be the third patch to one of these, say so and propose the shared abstraction instead of patching again.
+If a fix would be the third patch to one shape, say so and propose the shared abstraction
+instead of patching again.
