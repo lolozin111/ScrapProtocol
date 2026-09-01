@@ -29,7 +29,19 @@ BaseConfig.TurretFallbackSize = Vector3.new(3, 3, 3)
 -- (ResearchConfig.GetFootprintHalfSize) rather than an absolute radius, which is what lets the ring
 -- widen automatically as the base grows: a tier that unlocks more slots also enlarges the footprint,
 -- so the extra pads get real room instead of being crammed into a fixed-size circle.
-BaseConfig.TurretRingRadiusFraction = 0.55
+--
+-- 0.85, not 0.55: at 0.55 the pads sat barely past halfway out, reading as clutter in the middle of
+-- the platform rather than defenses along its edge. The pad is 4x4 studs (TurretService.lua:181),
+-- so its half-extent is 2 — 0.85 leaves roughly 1.6 studs of clearance between the pad's outer edge
+-- and the platform's at Tier 1, widening to about 2.7 at Tier 6. Do not push this to 1.0: the pad
+-- is positioned by its CENTRE, so at 1.0 half of every pad hangs off the platform.
+--
+-- Worth knowing before someone "fixes" it: this ring is a CIRCLE inscribed in a SQUARE platform, so
+-- a pad landing on an axis sits right against the edge while a pad at a diagonal is inherently
+-- further in (a diagonal point at radius r is only 0.707r out along each axis). That unevenness is
+-- geometry, not a tuning miss, and no single fraction removes it — following the square's perimeter
+-- instead would mean replacing TurretService.ringPosition's polar maths outright.
+BaseConfig.TurretRingRadiusFraction = 0.85
 
 -- FALLBACK ONLY. CombatEncounterService.getWallAttackRange measures the "close enough to attack
 -- the wall" distance off the player's REAL built base Model (BaseService.GetPlayerBaseModel) at

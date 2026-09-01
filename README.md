@@ -152,9 +152,10 @@ no manual copy-pasting scripts into Studio.
   and raiding pay for it. Retune the whole ladder (names, wave gates, costs, Wall HP, footprint) in
   `ResearchConfig.lua`; adding a tier is one table entry plus the matching `BaseTier{n}` Model.
   Turret slots need none of that Studio work: `TurretService.ringPosition` places them on a ring
-  at `footprint * BaseConfig.TurretRingRadiusFraction` (0.55), so the ring scales with the same
-  `FootprintHalfSize` automatically — 13.2 studs radius at Tier 1 up to 17.3 at Tier 6, against
-  slot counts of 2/4/5/7/8/10 (`TurretConfig.GetSlotCount`).
+  at `footprint * BaseConfig.TurretRingRadiusFraction` (0.85), so the ring scales with the same
+  `FootprintHalfSize` automatically — 20.4 studs radius at Tier 1 up to 26.8 at Tier 6, which puts
+  the pads along the platform edge rather than mid-floor, against slot counts of 2/4/5/7/8/10
+  (`TurretConfig.GetSlotCount`).
 
 - **Base stations** — a second, more specific gate layer inside your base plot: several Workbench
   actions now also require standing near a particular physical prop, not just anywhere in the
