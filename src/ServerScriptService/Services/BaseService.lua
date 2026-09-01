@@ -42,7 +42,12 @@ local TurretService = require(script.Parent.TurretService)
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 
-local FALLBACK_FLOOR_SIZE = Vector3.new(40, 2, 40)
+-- Matches Tier 1's real platform (48 studs across, thin floor) on purpose. This is not just
+-- cosmetic: CombatEncounterService.getWallAttackRange measures the ACTUAL built model's bounding
+-- box, so a placeholder that lies about the base's size makes enemies stop at a boundary that
+-- doesn't match anything visible — the exact bug documented further down this file, back when this
+-- was 40x2x40 while the footprint claimed 80 studs across.
+local FALLBACK_FLOOR_SIZE = Vector3.new(48, 0.6, 48)
 local FALLBACK_FLOOR_COLOR = Color3.fromRGB(90, 80, 70)
 
 local BaseService = {}

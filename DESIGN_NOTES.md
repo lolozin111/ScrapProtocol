@@ -1784,13 +1784,33 @@ no new code. Upgrading swaps shell and stations together, so a Tier 3 base can n
 Tier 1 stations. (The alternative — a parallel `Stations T1/T2/...` folder tree — was considered and
 dropped: it only earns its complexity if stations need to vary independently of the shell.)
 
-**The base grows with tier.** `FootprintHalfSize` is per-tier (80 studs across at T1 up to 200 at
-T6), and `BaseConfig.TurretRingRadiusFraction` derives the turret ring from it — so a tier that
-unlocks more slots also widens the ring to fit them, with nothing extra to tune.
-`PlotService.IsPlayerInOwnPlot` reads the same per-tier footprint.
+**The base grows with tier.** `FootprintHalfSize` is per-tier, and `BaseConfig.TurretRingRadiusFraction`
+derives the turret ring from it — so a tier that unlocks more slots also widens the ring to fit
+them, with nothing extra to tune. `PlotService.IsPlayerInOwnPlot` reads the same per-tier footprint.
 
-⚠️ **PLOT SPACING is now a Studio concern.** Hand-placed `Plot` anchors must be spaced for the
-LARGEST tier (200 studs across at T6), not the smallest, or two maxed bases will physically overlap.
+**Retuned since first ship: the ladder used to run 80 studs across at T1 up to 200 at T6 (Y climbing
+30→50 alongside it).** That spread made plot spacing a real Studio burden — a builder had to leave
+200-stud gaps between every `Plot` anchor just in case someone maxed out. The current ladder is flat
+3-studs-of-width growth per tier with Y held constant at 30 for every tier: 48 studs across at T1 up
+to 63 at T6 (24→31.5 half-extent). `BaseService.FALLBACK_FLOOR_SIZE` (the placeholder floor used
+before a real `BaseTier1` Model exists) was retuned alongside it, from `Vector3.new(40, 2, 40)` to
+`Vector3.new(48, 0.6, 48)`, so the placeholder now matches Tier 1's real platform exactly instead of
+being a slightly-off guess. Y is deliberately NOT shrunk with the rest — it's the vertical half-extent
+of the "am I at my own base" test in `PlotService.IsPlayerInOwnPlot`, not a visual dimension, and
+shrinking it toward floor-thickness size would put a standing player's torso outside their own base.
+
+**Non-obvious consequence, worth repeating where a builder will actually see it (README's Base
+plots bullet):** shrinking `FootprintHalfSize` in config alone does NOT shrink the wave-defense
+boundary. `CombatEncounterService.getWallAttackRange` measures "close enough to attack the wall"
+and the spawn ring off the REAL base Model's measured bounding box (`BaseService.GetPlayerBaseModel`),
+not off `ResearchConfig`'s number directly — so a Studio `BaseTier{n}` Model that isn't resized to
+match the new ladder leaves enemies stopping (and spawning) at the OLD, bigger boundary, which no
+longer lines up with the smaller platform underneath them. The config retune and the Studio art both
+have to move together.
+
+**Plot spacing is still a Studio concern, just a much smaller one now.** Hand-placed `Plot` anchors
+should still be spaced for the largest tier (63 studs across at T6), not the smallest, but that's a
+small ask compared to the old 200-stud top tier — which was the point of this retune.
 
 **Displayed two ways:** a bottom-left status panel (health bar, a reserved-and-disabled stamina
 slot, and a Research row that opens the requirements popup) and a floating sign over the base
@@ -1844,6 +1864,33 @@ grant — same Id counter, same shape, two chances to drift.
 thinking of each drops will each gamemode give, but for now just use a placeholder"*), so treat the
 ratios as the intent — blueprint ≈ 2x one craft, craft cost climbing steeply by turret tier, base
 tiers climbing steeply in Scrap — and the absolute values as provisional pending a real playtest.
+
+## Environment effects — distance fog removed
+
+`EnvironmentFX.client.lua` used to carry two cosmetic touches: tree sway (unchanged, still there)
+and a distance-based fog/haze effect, driven every Heartbeat off distance from the
+`ExpeditionStart` anchor, that thickened `Lighting.Fog*` (or an `Atmosphere`'s `Haze`/`Density` if
+one was present — Atmosphere overrides plain Fog rendering when it exists) the further out you
+walked. It's gone now: direct feedback was that it made the world harder to see, which defeats the
+purpose of a cosmetic effect meant to make traveling feel different, not to hide the thing you're
+walking toward.
+
+**Why a one-time startup clear replaced it, instead of just deleting the per-frame writes:** the
+Fog/Atmosphere properties this loop drove aren't owned by the script — `Lighting.FogEnd` is a
+place-wide property that keeps whatever value was last written to it, and an `Atmosphere` instance
+is something a builder adds by hand in Studio (not something this script creates), so it keeps
+whatever `Haze`/`Density` it was saved with regardless of whether any script is touching it. Simply
+removing the writes would have left every place file that already has a saved `Atmosphere` or a
+non-default `FogEnd` looking exactly as hazy as before, with nothing in Output or in this script
+explaining why — the "distance fog is gone" changelog line would have been a lie for anyone testing
+in an existing place file. So the script now runs once at startup and forces `Lighting.FogStart = 0`,
+`Lighting.FogEnd = 100000`, and any hand-placed `Atmosphere`'s `Density`/`Haze` to `0` — correct
+regardless of what a given place has saved, not just the one currently open in Studio.
+
+If a future session wants distance fog back, treat it as a re-add, not a revert: the removed loop's
+tuning knobs (`FAR_HAZE`, `NEAR_FOG_END`/`FAR_FOG_END`, `FAR_DISTANCE`, and two colors) are gone
+from the file, not commented out, on the theory that a half-remembered fog system sitting dead in
+the script is more likely to confuse a future edit than a clean removal plus this note.
 
 ## Half-built reward loops (granted but unspendable — open follow-ups)
 

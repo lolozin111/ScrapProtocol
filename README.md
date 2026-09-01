@@ -103,12 +103,22 @@ no manual copy-pasting scripts into Studio.
   `WeaponTools`), so Rojo creates it on sync — you don't need to make the folder by hand anymore,
   only what goes inside it. **If you haven't built a `BaseTier1` Model inside that folder yet**,
   `BaseService` clones a single plain gray placeholder floor instead (and warns in Output) so
-  nobody falls into the void while you're still building real base art — swap it out by adding a
+  nobody falls into the void while you're still building real base art — that placeholder is sized
+  `Vector3.new(48, 0.6, 48)` (`BaseService.FALLBACK_FLOOR_SIZE`), matching Tier 1's real platform
+  exactly, so testing against it today already reflects real spacing. Swap it out by adding a
   `BaseTier1` Model inside `ReplicatedStorage.BaseTemplates` whenever you're ready. **Its intended
   floor must sit at local Y=0** — e.g. set the Model's `PrimaryPart` to the floor piece — because
   `BaseService` positions the whole Model with `baseModel:PivotTo(plot.CFrame)`, and a Model with
   no `PrimaryPart` pivots on its bounding-box centre instead, which spawns it half-buried in the
-  ground.
+  ground. **Build each tier's platform to the size `ResearchConfig.Tiers` actually claims**:
+  48×0.6×48 studs at Tier 1, growing by exactly 3 studs of width per tier (51, 54, 57, 60, up to
+  63×0.6×63 at Tier 6) — see `ResearchConfig.lua`'s `FootprintHalfSize` for the full ladder.
+  Getting this wrong fails silently: enemy wall-attack range and the wave spawn ring are measured
+  off the REAL base Model's bounding box at wave start (`CombatEncounterService.getWallAttackRange`),
+  never off the config number directly, so a Model built the wrong size won't error — it'll just
+  make enemies stop (or spawn) at a boundary that visibly doesn't line up with the platform players
+  see. Shrinking `FootprintHalfSize` in config alone does nothing to this range; the Studio Model
+  has to actually shrink too.
 
   **Build each tier's stations INTO its base Model.** A `BaseTier{n}` Model is expected to contain
   that tier's own Workbench/Welding Station/Forge as ordinary `Station`-tagged descendants (see
@@ -118,9 +128,12 @@ no manual copy-pasting scripts into Studio.
   `Station` blocks placed directly in the world still work (unowned, open to everyone), which is what
   makes placeholder testing possible before any base art exists.
 
-  ⚠️ **Space your `Plot` anchors for the LARGEST tier.** The base footprint grows with Research Tier
-  — 80 studs across at Tier 1 up to 200 at Tier 6 — so plots placed close together will overlap once
-  players start upgrading. Space them for the top tier, not the first.
+  **Space your `Plot` anchors for the largest tier — but this is a small ask now.** The base
+  footprint still grows with Research Tier (`ResearchConfig.Tiers[n].FootprintHalfSize`), but the
+  current ladder only climbs from 48 studs across at Tier 1 to 63 at Tier 6 (+3 studs of width per
+  tier, Y held flat at 30) — nothing like the 80-to-200 spread this ladder used to run. Space plots
+  for Tier 6 (63 studs) rather than Tier 1 and two maxed bases can never overlap, but with a spread
+  this small, plots placed only modestly apart are already safe.
 
   The character is repositioned onto its plot's anchor every time it spawns, not just the first
   time — Recall, End Expedition, and the mine's full-reset eviction all already call
@@ -138,6 +151,10 @@ no manual copy-pasting scripts into Studio.
   **Workbench** for Scrap + ore + one boss-wave Core — so wave defense sets the pace while mining
   and raiding pay for it. Retune the whole ladder (names, wave gates, costs, Wall HP, footprint) in
   `ResearchConfig.lua`; adding a tier is one table entry plus the matching `BaseTier{n}` Model.
+  Turret slots need none of that Studio work: `TurretService.ringPosition` places them on a ring
+  at `footprint * BaseConfig.TurretRingRadiusFraction` (0.55), so the ring scales with the same
+  `FootprintHalfSize` automatically — 13.2 studs radius at Tier 1 up to 17.3 at Tier 6, against
+  slot counts of 2/4/5/7/8/10 (`TurretConfig.GetSlotCount`).
 
 - **Base stations** — a second, more specific gate layer inside your base plot: several Workbench
   actions now also require standing near a particular physical prop, not just anywhere in the
@@ -658,7 +675,7 @@ actually visible before any real art or UI design happens. To test end to end:
    you're testing as owner, so it actually takes time) and click **Return to Base** WHILE it's
    running: the raid panel should close immediately with no failure message, instead of
    continuing to tick/damage you in the background. The same `ExpeditionStart` Part also anchors
-   the resource zone (next step) and the distance fog.
+   the resource zone (next step).
 11. Place one more Part **up on a platform with genuinely open air underneath it** (not resting on
    your map's real ground — the whole grid gets built as real solid Parts directly below this, so
    it needs real clear space to build into), tag it `MineShaftStart`. Press Play — check the
@@ -865,20 +882,22 @@ actually visible before any real art or UI design happens. To test end to end:
 
 ## 5. Environment effects (optional polish)
 
-`EnvironmentFX.client.lua` adds two cheap cosmetic touches so the world feels different as you
-travel away from base — neither is required for the loop to work, but both are on by default
-once you tag the right instances:
+`EnvironmentFX.client.lua` adds one cheap cosmetic touch so the world feels a little more alive —
+not required for the loop to work, but on by default once you tag the right instances — plus a
+one-time visibility fix and a separate engine setting:
 
 - **Trees swaying** — tag any Part or Model `Tree` and it'll gently sway in place. No other
   setup needed.
-- **Fog/haze thickening with distance** — automatic once you have an `ExpeditionStart` Part
-  placed (see step 7 above); the world reads as hazier/more remote the further you walk from
-  it. If your place's Lighting has an `Atmosphere` object (check Explorer), the script drives
-  its `Haze`/`Density`/`Color` — Atmosphere overrides plain `Lighting.Fog*` rendering when
-  present, so that's the property that actually matters. Tune `FAR_HAZE`, `NEAR_FOG_END`/
-  `FAR_FOG_END`, `FAR_DISTANCE`, and the two colors at the top of the script; there's also a
-  throttled `print` in there reporting live distance/haze numbers to the Output window if you
-  need to double check it's working.
+- **No distance fog/haze anymore.** This script used to thicken fog/haze with distance from the
+  `ExpeditionStart` anchor every frame; it was pulled because it made the world harder to see,
+  which defeated the point of a cosmetic effect. What's left is a one-time clear at startup —
+  `Lighting.FogStart = 0`, `Lighting.FogEnd = 100000`, and if your place has a hand-placed
+  `Atmosphere` object under Lighting, its `Density`/`Haze` get zeroed too. That clear is there
+  on purpose, not leftover: an `Atmosphere` instance is something you add by hand in Studio, not
+  something this script creates, so whatever `Haze`/`Density` it was saved with would keep
+  rendering exactly as saved even after the per-frame writes that used to override it were
+  deleted. If you want fog back, it isn't config — the effect itself was deleted; see
+  `DESIGN_NOTES.md` for the history and the tuning numbers it used to run on.
 - **"Stuff out of bounds disappears" as you go further** — this one needs no script at all:
   select `Workspace` in Studio's Explorer, and in the Properties panel set
   `StreamingEnabled` to `true`. Roblox will then automatically stream parts in/out based on

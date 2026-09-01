@@ -35,9 +35,10 @@
 	Build each Model with its floor at local Y=0 (PrimaryPart on the floor piece), same convention
 	as before — BaseService positions it with model:PivotTo(plot.CFrame).
 
-	!! PLOT SPACING !!  FootprintHalfSize grows with tier, and the top tier below claims a 200x200
+	!! PLOT SPACING !!  FootprintHalfSize grows with tier, and the top tier below claims a 63x63
 	stud area. Hand-placed Plot anchors need to be at least that far apart or two maxed bases will
-	physically overlap. Space plots for the LAST tier, not the first.
+	physically overlap. Space plots for the LAST tier, not the first. This is far less spacing than
+	the old 200x200 top tier required — that's the point of this ladder's retune.
 ]]
 
 local Wallet = require(script.Parent.Wallet)
@@ -62,21 +63,31 @@ ResearchConfig.TemplateFolderName = "BaseTemplates"
 -- FootprintHalfSize is the region PlotService.IsPlayerInOwnPlot treats as "your base", and
 -- BaseConfig.TurretRingRadiusFraction derives the turret ring from it — so widening the footprint
 -- automatically spreads the growing slot count out instead of cramming more pads into a fixed ring.
--- Y is generous relative to X/Z so standing on an upper floor still counts as being at your base.
+-- With this ladder that ring radius runs 13.2 studs at Tier 1 up to 17.3 at Tier 6, and the slot
+-- counts (2/4/5/7/8/10, from TurretConfig.GetSlotCount) still fit comfortably — about 11 studs
+-- between pads at the tightest point, Tier 6.
+--
+-- X/Z (platform half-width) climbs 24 -> 31.5 across tiers, i.e. a 48-stud-wide platform at Tier 1
+-- growing by exactly 3 studs of width per tier. Y is held FLAT at 30 for every tier on purpose —
+-- do not raise it with tier, and do NOT confuse it with a platform's floor thickness (a much
+-- smaller number, e.g. 0.6): this Y is the vertical half-extent of the "am I at my base" region
+-- test in PlotService.IsPlayerInOwnPlot (PlotService.lua:165). Shrinking it toward floor-thickness
+-- size would put a standing player's torso outside their own base and silently break every
+-- station, crafting action, and wave start there.
 ResearchConfig.Tiers = {
 	{
 		Name = "Scrap Workbench",
 		ModelName = "BaseTier1",
 		RequiredWave = 0,
 		WallHP = 150,
-		FootprintHalfSize = Vector3.new(40, 30, 40),
+		FootprintHalfSize = Vector3.new(24, 30, 24),
 	},
 	{
 		Name = "Reinforced Workshop",
 		ModelName = "BaseTier2",
 		RequiredWave = 5,
 		WallHP = 300,
-		FootprintHalfSize = Vector3.new(50, 34, 50),
+		FootprintHalfSize = Vector3.new(25.5, 30, 25.5),
 		Cost = { Scrap = 400, ScrapIron = 100, CopperWire = 50 },
 		CoreRequirement = { Key = "CoreT1", Amount = 1 },
 	},
@@ -85,7 +96,7 @@ ResearchConfig.Tiers = {
 		ModelName = "BaseTier3",
 		RequiredWave = 10,
 		WallHP = 550,
-		FootprintHalfSize = Vector3.new(62, 38, 62),
+		FootprintHalfSize = Vector3.new(27, 30, 27),
 		Cost = { Scrap = 1200, SteelPlating = 150, CopperWire = 80, SteelIngot = 20 },
 		CoreRequirement = { Key = "CoreT2", Amount = 1 },
 	},
@@ -94,7 +105,7 @@ ResearchConfig.Tiers = {
 		ModelName = "BaseTier4",
 		RequiredWave = 15,
 		WallHP = 900,
-		FootprintHalfSize = Vector3.new(75, 42, 75),
+		FootprintHalfSize = Vector3.new(28.5, 30, 28.5),
 		Cost = { Scrap = 3000, GoldContacts = 60, HardenedPlate = 30 },
 		CoreRequirement = { Key = "CoreT3", Amount = 1 },
 	},
@@ -103,7 +114,7 @@ ResearchConfig.Tiers = {
 		ModelName = "BaseTier5",
 		RequiredWave = 20,
 		WallHP = 1400,
-		FootprintHalfSize = Vector3.new(88, 46, 88),
+		FootprintHalfSize = Vector3.new(30, 30, 30),
 		Cost = { Scrap = 6500, GoldContacts = 150, GoldBar = 25 },
 		CoreRequirement = { Key = "CoreT4", Amount = 1 },
 	},
@@ -112,7 +123,7 @@ ResearchConfig.Tiers = {
 		ModelName = "BaseTier6",
 		RequiredWave = 25,
 		WallHP = 2100,
-		FootprintHalfSize = Vector3.new(100, 50, 100),
+		FootprintHalfSize = Vector3.new(31.5, 30, 31.5),
 		Cost = { Scrap = 12000, VoidiumShard = 40, VoidiumCore = 15 },
 		CoreRequirement = { Key = "CoreT5", Amount = 1 },
 	},
