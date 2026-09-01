@@ -21,6 +21,7 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
 
 local RaidEnergyConfig = require(ReplicatedStorage.Shared.RaidEnergyConfig)
 local Wallet = require(ReplicatedStorage.Shared.Wallet)
@@ -50,6 +51,61 @@ HudKit.COLOR = {
 }
 
 local COLOR = HudKit.COLOR
+
+----------------------------------------------------------------------
+-- Design tokens
+----------------------------------------------------------------------
+-- Additive, sibling to COLOR: named roles instead of every panel picking its own font/size/gap by
+-- eyeballing whatever the panel next to it used, which is how the file ended up with a dozen
+-- near-identical-but-not-quite text sizes.
+
+-- Montserrat for anything that should read as a heading/display number (chosen because it's a real
+-- Roblox enum font AND is what the design mockups use); SourceSans/-Bold for body copy; Code for
+-- numeric readouts (ore counts, timers) where a monospaced look reads as "instrument panel".
+HudKit.FONT = {
+	Display = Enum.Font.Montserrat,
+	Body = Enum.Font.SourceSans,
+	BodyBold = Enum.Font.SourceSansBold,
+	Mono = Enum.Font.Code,
+}
+
+-- Small type scale, pulled from sizes already scattered across the file (13/14/16 body text, 18-ish
+-- headings) rather than invented fresh — so adopting these in a panel is a no-visual-diff change.
+HudKit.TEXTSIZE = {
+	Label = 11,
+	Body = 15,
+	Title = 18,
+	Readout = 17,
+}
+
+-- Spacing scale. Panels currently hardcode padding/gaps as raw numbers; this exists so new panels
+-- (and, eventually, migrated old ones) can express intent ("M gap between rows") instead of "12".
+HudKit.SPACE = {
+	XS = 4,
+	S = 8,
+	M = 12,
+	L = 16,
+	XL = 24,
+}
+
+-- Matches corner()'s existing default (6) and the panel radius already used around the HUD, named
+-- so a caller doesn't have to remember which raw number means which thing.
+HudKit.RADIUS = {
+	Button = 6,
+	Panel = 10,
+}
+
+-- Lerp a color toward white/black by `amount` (0-1). Hover/press states are DERIVED from these
+-- rather than a second hardcoded palette, so editing a COLOR.* value (say, retuning Accent) keeps
+-- every button variant's hover/press shade in sync automatically instead of needing a matching edit
+-- somewhere else that's easy to forget.
+function HudKit.lighten(color: Color3, amount: number): Color3
+	return color:Lerp(Color3.new(1, 1, 1), amount)
+end
+
+function HudKit.darken(color: Color3, amount: number): Color3
+	return color:Lerp(Color3.new(0, 0, 0), amount)
+end
 
 ----------------------------------------------------------------------
 -- Instance helpers
@@ -167,22 +223,70 @@ end
 -- Shared builders
 ----------------------------------------------------------------------
 
--- Optional icons: add an ImageLabel/ImageButton/Decal to ReplicatedStorage.ItemIcons named exactly
--- like the item key. FindFirstChild, never WaitForChild — a missing icon must fall back to the
--- text tile immediately rather than yielding the whole render.
+-- Optional icons: add an ImageLabel/ImageButton/Decal to ReplicatedStorage.ItemIcons (or UiIcons,
+-- below) named exactly like the item/UI key. FindFirstChild, never WaitForChild — a missing icon
+-- must fall back to the text tile immediately rather than yielding the whole render.
 local ItemIcons = ReplicatedStorage:FindFirstChild("ItemIcons")
+local UiIcons = ReplicatedStorage:FindFirstChild("UiIcons")
 
-function HudKit.getItemIcon(key: string): string?
-	local inst = ItemIcons and ItemIcons:FindFirstChild(key)
+-- The one place that actually walks a folder looking for a key. getItemIcon/getUiIcon/applyIcon
+-- all call this instead of each re-implementing the FindFirstChild-never-WaitForChild rule and the
+-- Decal/ImageLabel/ImageButton branching — those two had already drifted slightly before this was
+-- pulled out (one checked `~= ""`, the other didn't), which is exactly the kind of silent
+-- inconsistency this project's style guide calls out.
+--
+-- Returns the template instance itself (not just the image string) so applyIcon can also read
+-- ImageRectOffset/ImageRectSize off of it.
+local function resolveIcon(folder: Instance?, key: string): (Instance?, string?)
+	local inst = folder and folder:FindFirstChild(key)
 	if not inst then
-		return nil
+		return nil, nil
 	end
 	if (inst:IsA("ImageLabel") or inst:IsA("ImageButton")) and inst.Image ~= "" then
-		return inst.Image
+		return inst, inst.Image
 	elseif inst:IsA("Decal") and inst.Texture ~= "" then
-		return inst.Texture
+		return inst, inst.Texture
 	end
-	return nil
+	return nil, nil
+end
+
+function HudKit.getItemIcon(key: string): string?
+	local _, image = resolveIcon(ItemIcons, key)
+	return image
+end
+
+-- Same lookup, against ReplicatedStorage.UiIcons instead of ItemIcons — for chrome/buttons/panel
+-- glyphs rather than inventory items, so the two sets can be populated and organized independently
+-- in Studio without one folder's naming colliding with the other's.
+function HudKit.getUiIcon(key: string): string?
+	local _, image = resolveIcon(UiIcons, key)
+	return image
+end
+
+-- Sets Image on `imageLabel` AND copies ImageRectOffset/ImageRectSize from the template instance
+-- when it carries them. Defaults to the UiIcons folder; pass folderName = "ItemIcons" to point at
+-- the other one instead.
+--
+-- WHY THE RECT COPY MATTERS: because the icon folders hold real ImageLabel instances rather than
+-- bare image IDs, a template can already carry rect properties today — which means a future move
+-- from a dozen separate image assets to one sprite atlas needs ZERO code changes anywhere that
+-- calls applyIcon. You set the rect on the template in Studio and every caller already honors it.
+--
+-- Returns false and leaves `imageLabel` untouched when the icon is missing — per this project's
+-- rule that missing art must never break the loop, a caller must be able to treat that as "render
+-- the fallback" rather than a special case to check for separately.
+function HudKit.applyIcon(imageLabel: ImageLabel, key: string, folderName: string?): boolean
+	local folder = if folderName then ReplicatedStorage:FindFirstChild(folderName) else UiIcons
+	local inst, image = resolveIcon(folder, key)
+	if not inst or not image then
+		return false
+	end
+	imageLabel.Image = image
+	if inst:IsA("ImageLabel") or inst:IsA("ImageButton") then
+		imageLabel.ImageRectOffset = inst.ImageRectOffset
+		imageLabel.ImageRectSize = inst.ImageRectSize
+	end
+	return true
 end
 
 -- Names and orders a cost table exactly the way the server resolves it — including refined
@@ -236,6 +340,140 @@ function HudKit.makeRow(displayName: string, subtitle: string, buttonText: strin
 	button.MouseButton1Click:Connect(onClick)
 
 	return row
+end
+
+----------------------------------------------------------------------
+-- Buttons: variants + hover/press feedback
+----------------------------------------------------------------------
+-- There was not one TweenService call anywhere in the HUD before this, and no hover/press state on
+-- any button — which is most of why buttons here don't read as clickable beyond the cursor icon
+-- changing on top of them. HudKit.button() is additive: existing call sites building their own
+-- TextButton by hand (makeRow's included) are untouched and keep working exactly as before.
+
+local BUTTON_TWEEN_INFO = TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+local BUTTON_HOVER_LIGHTEN = 0.12
+local BUTTON_PRESS_DARKEN = 0.18
+
+-- Base fill/text per variant. Hover/press shades are DERIVED from `fill` via lighten()/darken() at
+-- button-build time rather than listed here, so this table is the only place a variant's color is
+-- ever spelled out.
+local BUTTON_VARIANTS = {
+	-- The one loud action on screen: Accent fill, dark text so it reads as a solid, confident button
+	-- rather than colored outline text.
+	primary = { fill = COLOR.Accent, text = COLOR.Panel, stroke = false },
+	-- Everything else: matches the existing PanelLight/Line look used by rows and most panel chrome.
+	secondary = { fill = COLOR.PanelLight, text = COLOR.Text, stroke = true },
+	-- Destructive actions (unequip, scrap, abandon...): Bad fill, light text for contrast.
+	danger = { fill = COLOR.Bad, text = COLOR.Text, stroke = false },
+}
+
+export type HudButtonOptions = {
+	variant: string?, -- "primary" | "secondary" | "danger", defaults to "secondary"
+	text: string?,
+	icon: string?, -- optional key into UiIcons (or `iconFolder`); falls back to text-only if missing
+	iconFolder: string?,
+	size: UDim2?,
+	position: UDim2?,
+	anchorPoint: Vector2?,
+	layoutOrder: number?,
+	parent: Instance?,
+	onClick: (() -> ())?,
+}
+
+-- Wraps a TextButton so every MouseEnter/Leave/Down/Up tween goes through one Cancel-then-Play,
+-- rather than stacking competing tweens when a player mashes a button or mouses in and out fast.
+--
+-- GUARD: panels in this HUD are created and destroyed repeatedly (MainHud rebuilds whole panels on
+-- refresh), so a MouseLeave/Up can fire after `btn` is already destroyed and parented to nil.
+-- Playing a Tween on a destroyed instance throws, so every call here bails out on `not btn.Parent`
+-- instead of assuming the button is still mounted.
+local function makeTweener(btn: TextButton)
+	local activeTween: Tween? = nil
+	return function(goal: { [string]: any })
+		if not btn.Parent then
+			return
+		end
+		if activeTween then
+			activeTween:Cancel()
+		end
+		activeTween = TweenService:Create(btn, BUTTON_TWEEN_INFO, goal)
+		activeTween:Play()
+	end
+end
+
+-- Builds a variant-styled TextButton with real hover/press feedback. Additive alongside makeRow's
+-- inline button and any hand-rolled TextButton elsewhere — nothing existing is changed to use this.
+function HudKit.button(opts: HudButtonOptions): TextButton
+	local variantName = opts.variant or "secondary"
+	local variant = BUTTON_VARIANTS[variantName] or BUTTON_VARIANTS.secondary
+
+	local restColor = variant.fill
+	local hoverColor = HudKit.lighten(restColor, BUTTON_HOVER_LIGHTEN)
+	local pressColor = HudKit.darken(restColor, BUTTON_PRESS_DARKEN)
+
+	local restPos = opts.position or UDim2.new()
+	local pressPos = UDim2.new(restPos.X.Scale, restPos.X.Offset, restPos.Y.Scale, restPos.Y.Offset + 2)
+
+	local restSize = opts.size or UDim2.new(0, 120, 0, 36)
+	-- Primary is the one loud action on screen, so it's the only variant that also grows on hover;
+	-- secondary/danger only reshade, which keeps a whole row of secondary buttons from jittering.
+	local hoverSize = if variantName == "primary"
+		then UDim2.new(restSize.X.Scale, restSize.X.Offset + 4, restSize.Y.Scale, restSize.Y.Offset + 2)
+		else restSize
+
+	local btn = HudKit.new("TextButton", {
+		BackgroundColor3 = restColor,
+		Position = restPos,
+		AnchorPoint = opts.anchorPoint or Vector2.new(0, 0),
+		Size = restSize,
+		LayoutOrder = opts.layoutOrder or 0,
+		AutoButtonColor = false, -- we drive every visual state ourselves via TweenService below
+		Font = HudKit.FONT.BodyBold,
+		TextColor3 = variant.text,
+		TextSize = HudKit.TEXTSIZE.Body,
+		Text = opts.text or "",
+		Parent = opts.parent,
+	}, { HudKit.corner(HudKit.RADIUS.Button) })
+
+	if variant.stroke then
+		HudKit.stroke().Parent = btn
+	end
+
+	-- Icon is optional and additive: a missing key must fall back to the text label alone, never an
+	-- empty square, per this project's "missing art never breaks the loop" rule.
+	if opts.icon then
+		local iconLabel = HudKit.new("ImageLabel", {
+			BackgroundTransparency = 1,
+			AnchorPoint = Vector2.new(0, 0.5),
+			Position = UDim2.new(0, 8, 0.5, 0),
+			Size = UDim2.new(0, 20, 0, 20),
+			Parent = btn,
+		})
+		if not HudKit.applyIcon(iconLabel, opts.icon, opts.iconFolder) then
+			iconLabel:Destroy()
+		end
+	end
+
+	local tween = makeTweener(btn)
+
+	btn.MouseEnter:Connect(function()
+		tween({ BackgroundColor3 = hoverColor, Size = hoverSize })
+	end)
+	btn.MouseLeave:Connect(function()
+		tween({ BackgroundColor3 = restColor, Size = restSize, Position = restPos })
+	end)
+	btn.MouseButton1Down:Connect(function()
+		tween({ BackgroundColor3 = pressColor, Position = pressPos })
+	end)
+	btn.MouseButton1Up:Connect(function()
+		tween({ BackgroundColor3 = hoverColor, Position = restPos, Size = hoverSize })
+	end)
+
+	if opts.onClick then
+		btn.MouseButton1Click:Connect(opts.onClick)
+	end
+
+	return btn
 end
 
 return HudKit

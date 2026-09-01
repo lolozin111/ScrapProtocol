@@ -17,6 +17,9 @@
       "BaseTemplates": {
         "$className": "Folder"
       },
+      "UiIcons": {
+        "$className": "Folder"
+      },
       "Remotes": {
         "$className": "Folder",
         "MineNode": { "$className": "RemoteEvent" },
