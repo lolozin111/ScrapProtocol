@@ -360,49 +360,88 @@ function HudKit.costString(cost): string
 	return Wallet.CostString(cost)
 end
 
+-- Row geometry, named rather than inlined below: the button's own height has to clear
+-- BUTTON_MIN_SLICE_SIZE (see that constant's comment further down) or HudKit.button() silently
+-- drops it onto the plain rounded-corner fallback instead of the angular 9-slice frame — which
+-- was the whole point of routing this row's button through HudKit.button() at all. 40 is that
+-- floor exactly. ROW_HEIGHT grew from the old flat 52 to fit TEXTSIZE.Title (20, up from a
+-- hardcoded 16) over TEXTSIZE.Label (13) stacked with SPACE.XS between them, plus enough vertical
+-- padding on both edges for a 40px button to sit centered without touching the row's top/bottom.
+local ROW_BUTTON_WIDTH = 110
+local ROW_BUTTON_HEIGHT = 40
+local ROW_HEIGHT = 64
+local ROW_TITLE_HEIGHT = 24
+local ROW_SUBTITLE_HEIGHT = 18
+-- Width reserved on the right for the button plus a gap, subtracted from both text labels so
+-- neither one can run under it.
+local ROW_TEXT_RIGHT_RESERVE = ROW_BUTTON_WIDTH + HudKit.SPACE.L
+
 -- The standard list row: title, subtitle, and one action button. Used by every panel, which is why
 -- it lives here rather than in whichever one happened to define it first.
-function HudKit.makeRow(displayName: string, subtitle: string, buttonText: string, onClick)
+--
+-- SIGNATURE AND RETURN SHAPE ARE UNCHANGED: still (displayName, subtitle, buttonText, onClick) ->
+-- Frame. At least five files call this and every one of them either does
+-- `HudKit.makeRow(...).Parent = someList` or calls it as a bare statement — none of them keeps a
+-- reference to reach inside it, and several (ModPicker, ShopPanel, TurretPanel, ResearchPanel,
+-- MainHud) rebuild their lists by destroying every `child:IsA("Frame")`, so the return must stay a
+-- real Frame, not some other GuiObject subclass.
+--
+-- displayName/subtitle are CALLER-SUPPLIED item/recipe/ore names and must reach the labels
+-- byte-for-byte — no case transform. buttonText is the row's own chrome (Equip/Craft/Locked/...),
+-- so it's the one piece uppercased here, matching the UPPERCASE + FONT.Display treatment already
+-- used for section labels elsewhere in the HUD.
+-- `variant` is an OPTIONAL 5th argument, defaulting to "primary". Added because a row's button is
+-- usually the affirmative action (Equip/Craft/Claim) but not always: "Unequip" is destructive and
+-- "Maxed"/"Locked"/"Known" are dead ends, and painting all three in the same accent fill tells the
+-- player they are the same kind of action. Optional and last, so every existing 4-argument call
+-- site keeps working untouched. Deliberately NOT inferred from buttonText — matching on label
+-- strings would silently mis-colour the first time someone reworded one.
+function HudKit.makeRow(displayName: string, subtitle: string, buttonText: string, onClick, variant: string?)
 	local row = HudKit.new("Frame", {
 		BackgroundColor3 = COLOR.PanelLight,
-		Size = UDim2.new(1, 0, 0, 52),
-	}, { HudKit.corner(6) })
+		Size = UDim2.new(1, 0, 0, ROW_HEIGHT),
+	}, { HudKit.corner(HudKit.RADIUS.Button) })
 
 	HudKit.new("TextLabel", {
 		BackgroundTransparency = 1,
-		Position = UDim2.new(0, 10, 0, 4),
-		Size = UDim2.new(1, -110, 0, 20),
-		Font = Enum.Font.SourceSansBold,
+		Position = UDim2.new(0, HudKit.SPACE.M, 0, HudKit.SPACE.S),
+		Size = UDim2.new(1, -(ROW_TEXT_RIGHT_RESERVE + HudKit.SPACE.M), 0, ROW_TITLE_HEIGHT),
+		Font = HudKit.FONT.Display,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextColor3 = COLOR.Text,
-		TextSize = 16,
+		TextSize = HudKit.TEXTSIZE.Title,
 		Text = displayName,
 		Parent = row,
 	})
 
 	HudKit.new("TextLabel", {
 		BackgroundTransparency = 1,
-		Position = UDim2.new(0, 10, 0, 24),
-		Size = UDim2.new(1, -110, 0, 20),
-		Font = Enum.Font.Code,
+		Position = UDim2.new(0, HudKit.SPACE.M, 0, HudKit.SPACE.S + ROW_TITLE_HEIGHT + HudKit.SPACE.XS),
+		Size = UDim2.new(1, -(ROW_TEXT_RIGHT_RESERVE + HudKit.SPACE.M), 0, ROW_SUBTITLE_HEIGHT),
+		Font = HudKit.FONT.Body,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextColor3 = COLOR.Muted,
-		TextSize = 13,
+		TextSize = HudKit.TEXTSIZE.Label,
 		Text = subtitle,
 		Parent = row,
 	})
 
-	local button = HudKit.new("TextButton", {
-		BackgroundColor3 = COLOR.Accent,
-		Position = UDim2.new(1, -96, 0.5, -16),
-		Size = UDim2.new(0, 86, 0, 32),
-		Font = Enum.Font.SourceSansBold,
-		TextColor3 = Color3.new(1, 1, 1),
-		TextSize = 14,
-		Text = buttonText,
-		Parent = row,
-	}, { HudKit.corner(6) })
-	button.MouseButton1Click:Connect(onClick)
+	-- Routed through HudKit.button() instead of a hand-rolled TextButton: this is the one bit of
+	-- HudKit that had no hover/press feedback and no outline at all, since it predates button()
+	-- entirely. `primary` because a row's action is almost always the affirmative one on that row
+	-- (Equip/Craft/Upgrade/Claim/Decode/...); a handful of call sites use it for a disabled-looking
+	-- state instead (Maxed/Locked/Known) or a destructive one (Unequip), but the signature has no
+	-- room for a caller-chosen variant, and those rows still read fine solid-accent-colored — this
+	-- is a one-look-fits-all row action, not a status indicator.
+	HudKit.button({
+		variant = variant or "primary",
+		text = buttonText:upper(),
+		size = UDim2.new(0, ROW_BUTTON_WIDTH, 0, ROW_BUTTON_HEIGHT),
+		position = UDim2.new(1, -HudKit.SPACE.M, 0.5, 0),
+		anchorPoint = Vector2.new(1, 0.5),
+		parent = row,
+		onClick = onClick,
+	})
 
 	return row
 end

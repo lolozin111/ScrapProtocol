@@ -324,53 +324,78 @@ end
 
 -- craftFrame is the plate's SHELL (the outer, positioned/sized/Visible-toggled frame) so every
 -- existing `craftFrame.Visible = ...` read/write elsewhere in this file keeps working unchanged;
--- craftSurface is the inset content surface everything below parents into instead. Size is a
--- literal here already (never was AutomaticSize), so plate's fixed-Scale inner surface is a
--- straightforward swap with no height math needed.
+-- craftSurface is the inset content surface everything below parents into instead.
+--
+-- VERTICAL STACK, re-derived now that this panel adopts Hud.panelHeader (previously skipped
+-- specifically because the header's fixed height would have pushed the tab row down, and layout
+-- changes were out of scope at the time -- they aren't any more):
+--   Header:         Hud.panelHeader is a fixed 48px tall (PANEL_HEADER_HEIGHT in HudKit.lua).
+--   Gap:            Hud.SPACE.S (8px) below it -- the same "8px gap below the thing above it"
+--                   convention InventoryPanel.lua's tab row already uses under its own header.
+--   Tab row Y:      48 + 8 = 56.
+--   Tab row height: 40, grown from the previous 32. These tabs now carry dropShadow (see
+--                   makeTabButton below), and BUTTON_MIN_SLICE_SIZE (40) is a PHYSICAL floor that
+--                   a Scale-height button's axisClears check cannot actually enforce -- it assumes
+--                   any Scale-sized axis clears regardless of the parent's real pixel height (see
+--                   axisClears's own comment in HudKit.lua) -- so the row itself has to genuinely
+--                   be >= 40px or the tabs render with broken/overlapping corners with nothing in
+--                   Output to explain why. InventoryPanel.lua grew its own tab row for this exact
+--                   reason.
+--   Gap:            another Hud.SPACE.S below the tab row.
+--   List Y:         56 + 40 + 8 = 104 -- identical numbers to InventoryPanel's own
+--                   INV_TAB_ROW_Y/INV_TAB_HEIGHT/INV_LIST_Y stack; not a coincidence, just the
+--                   same shape of panel solved the same way.
+--   List height:    surface height minus 104, minus the same fixed 12px bottom margin this
+--                   surface's other edges already use (so Size's Y offset is -(104+12) = -116).
+--   Panel height:   400 -> 424 (+24), so the visible list keeps its original 308px
+--                   (400 - 80 - 12, before this change) instead of quietly losing it to the
+--                   taller stack above: the header+gap now taking 56px where the old title/close
+--                   row took 40 accounts for 16 of that, the tab row's 32 -> 40 growth accounts
+--                   for the other 8. Position's Y offset is -212, exactly half of the new 424
+--                   height, so the panel stays centered.
 local craftSurface, craftFrame = Hud.plate({
 	Name = "CraftMenu",
-	Position = UDim2.new(0.5, -320, 0.5, -200),
-	Size = UDim2.new(0, 640, 0, 400), -- widened/heightened to fit up to 3 tabs at once and the
-	                                  -- taller equipment rows mod slots need
+	Position = UDim2.new(0.5, -320, 0.5, -212),
+	Size = UDim2.new(0, 640, 0, 424), -- see the vertical-stack comment above for how 424 was derived
 	Visible = false,
 	Parent = Hud.screenGui,
 })
 
+-- craftClose is forward-declared (no value yet) so the header's onClose closure just below can
+-- capture it as an upvalue now and see the real function once it's assigned much further down,
+-- alongside setForgeWidgetsVisible's own definition -- same "capture now, assign later" pattern
+-- InventoryPanel.lua uses for closeInvDetail. It can't be defined inline here: the real close
+-- behavior needs setForgeWidgetsVisible, which isn't declared until further down this same chunk,
+-- and a closure built here would resolve that name against a `local` that doesn't exist yet
+-- (reading as a nil global) rather than the one declared later in this file.
+local craftClose
+
 -- There's no standalone "Workbench" button anymore — this menu only ever opens FROM a physical
 -- station now (see openStationMenu / setupStation further down), so the title doubles as a
--- reminder of which one is currently open. Instances only; the click handler for
--- craftCloseButton is wired up later, alongside closeModPicker's definition.
-local craftTitleLabel = Hud.new("TextLabel", {
-	BackgroundTransparency = 1,
-	Position = UDim2.new(0, 12, 0, 10),
-	Size = UDim2.new(1, -60, 0, 22),
-	Font = Enum.Font.SourceSansBold,
-	TextXAlignment = Enum.TextXAlignment.Left,
-	TextColor3 = Hud.COLOR.Text,
-	TextSize = 18,
-	Text = "Workbench",
-	Parent = craftSurface,
-})
+-- reminder of which one is currently open. Uppercased for the static-chrome Display treatment
+-- Hud.panelHeader applies to every panel title this pass; openStationMenu (further down)
+-- reassigns this same label's Text per station, uppercased there too — StationConfig's
+-- DisplayName strings ("Workbench", "Forge", ...) are short authored config chrome, not
+-- player/server-generated content, so they get the same treatment as everything else here.
+local craftTitleLabel = Hud.panelHeader(craftSurface, "WORKBENCH", function()
+	craftClose()
+end):FindFirstChildOfClass("TextLabel")
 
-local craftCloseButton = Hud.button({
-	variant = "secondary",
-	text = "X",
-	size = UDim2.new(0, 28, 0, 28),
-	position = UDim2.new(1, -40, 0, 8),
-	parent = craftSurface,
-})
-
+-- Tab row height is 40, not a free choice — see the vertical-stack comment above craftFrame for
+-- why (BUTTON_MIN_SLICE_SIZE's physical floor). Position Y (56) is header (48) + Hud.SPACE.S (8).
 local tabRow = Hud.new("Frame", {
 	BackgroundTransparency = 1,
-	Position = UDim2.new(0, 12, 0, 40),
-	Size = UDim2.new(1, -24, 0, 32),
+	Position = UDim2.new(0, 12, 0, 56),
+	Size = UDim2.new(1, -24, 0, 40),
 	Parent = craftSurface,
-}, { Hud.new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 8) }) })
+}, { Hud.new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, Hud.SPACE.S) }) })
 
+-- Y = tab row's bottom (56 + 40 = 96) + the same Hud.SPACE.S gap = 104. Size's -116 offset is
+-- that same 104 plus the fixed 12px bottom margin this surface's other edges already use.
 local listFrame = Hud.new("ScrollingFrame", {
 	BackgroundTransparency = 1,
-	Position = UDim2.new(0, 12, 0, 80),
-	Size = UDim2.new(1, -24, 1, -92),
+	Position = UDim2.new(0, 12, 0, 104),
+	Size = UDim2.new(1, -24, 1, -116),
 	CanvasSize = UDim2.new(0, 0, 0, 0),
 	AutomaticCanvasSize = Enum.AutomaticSize.Y,
 	ScrollBarThickness = 6,
@@ -1498,13 +1523,25 @@ end
 local function makeTabButton(name: string)
 	local button = Hud.button({
 		variant = currentTab == name and "primary" or "secondary",
-		text = name,
+		text = name:upper(), -- static chrome uppercase treatment, same as every other panel's tabs
 		size = UDim2.new(0, 90, 1, 0), -- shrunk from 100 to fit 6 tabs (added Mods) in the same row width
+		-- Hard offset shadow instead of the default bevel gradient, for consistency with
+		-- InventoryPanel's tabs (see that file's makeTabButton) — solid squares with a drop shadow
+		-- under them, not a gradient-filled pill.
+		dropShadow = true,
 		parent = tabRow,
 		onClick = function()
 			selectTab(name)
 		end,
 	})
+	-- HudKit.button() defaults every button to FONT.BodyBold/TEXTSIZE.Body — overridden here to the
+	-- small-uppercase-label treatment every other panel's tabs use. TextSize 11, not
+	-- Hud.TEXTSIZE.Label (13): same width budget as InventoryPanel's tabs (90px here vs. its 91px),
+	-- and this row's longest label ("Auto-Miner", 10 uppercase characters) sits at the same kerning
+	-- risk "MATERIALS" (9 characters) hit at 13 there — see InventoryPanel.lua's makeTabButton for
+	-- the full per-character estimate this mirrors.
+	button.Font = Hud.FONT.Display
+	button.TextSize = 11
 	tabButtons[name] = button
 	return button
 end
@@ -1664,26 +1701,30 @@ local TILE_SIZE = inventoryPanel.TILE_SIZE
 -- too") moved both to dock directly under `craftFrame` instead, as one row spanning its width, and
 -- made them Forge-only — they show up exactly when the Forge's Weapons tab is what's open, hidden
 -- for the Workbench/Welding Station and hidden again the moment the menu closes. See
--- `setForgeWidgetsVisible` below (called from `openStationMenu` and `craftCloseButton`).
+-- `setForgeWidgetsVisible` below (called from `openStationMenu` and `craftClose`).
 ----------------------------------------------------------------------
 
 local POTION_BUTTON_SIZE = 64
 
--- Docked under craftFrame's bottom edge (Position 0.5,-200 + Size 0,400 -> bottom sits at
+-- Docked under craftFrame's bottom edge (Position 0.5,-212 + Size 0,424 -> bottom sits at
 -- One table instead of 4 separate top-level locals: Luau caps a function scope at 200
 -- locals and this file's main chunk hit that ceiling. Grouping UI element references costs
 -- nothing at runtime and buys back a register per element.
 local pity = {}
--- 0.5,+200), 10px gap. potionButton is a fixed 64-wide square on the left; pity.barFrame fills the
+-- 0.5,+212), 10px gap. potionButton is a fixed 64-wide square on the left; pity.barFrame fills the
 -- remaining width to craftFrame's own right edge (0.5,+320) — together they span exactly as wide
 -- as the Forge menu above them, not just huddled off to one side of it.
+--
+-- Y offsets (232 here, 222 on potionButton below) are both +12 from their original 220/210: half
+-- of craftFrame's own +24 height growth (400 -> 424, see that panel's vertical-stack comment),
+-- since these dock relative to its bottom edge and that edge moved down by exactly half the growth.
 --
 -- pity.barFrame stays bound to the plate's SHELL (not renamed — setForgeWidgetsVisible below reads
 -- pity.barFrame.Visible, and the "Do not break" list forbids renaming pity's existing fields);
 -- pity.surface is the new field for the inset content surface everything below parents into.
 pity.surface, pity.barFrame = Hud.plate({
 	Name = "ForgePity",
-	Position = UDim2.new(0.5, -320 + POTION_BUTTON_SIZE + 10, 0.5, 220),
+	Position = UDim2.new(0.5, -320 + POTION_BUTTON_SIZE + 10, 0.5, 232),
 	Size = UDim2.new(0, 640 - POTION_BUTTON_SIZE - 10, 0, 44),
 	Visible = false,
 	Parent = Hud.screenGui,
@@ -1733,7 +1774,7 @@ local potionButton = Hud.new("ImageButton", {
 	AutoButtonColor = false,
 	Image = "",
 	ScaleType = Enum.ScaleType.Fit,
-	Position = UDim2.new(0.5, -320, 0.5, 210),
+	Position = UDim2.new(0.5, -320, 0.5, 222),
 	Size = UDim2.new(0, POTION_BUTTON_SIZE, 0, POTION_BUTTON_SIZE),
 	Visible = false,
 	Parent = Hud.screenGui,
@@ -1786,7 +1827,7 @@ potionButton.MouseButton1Click:Connect(function()
 end)
 
 -- Shows/hides both widgets together — called from openStationMenu (true only when the station
--- just opened is specifically the Forge, false for Workbench/Welding) and from craftCloseButton's
+-- just opened is specifically the Forge, false for Workbench/Welding) and from craftClose's
 -- handler (always false, whichever menu was open). Kept as one function so the two widgets can
 -- never end up toggled independently by a future edit that only remembers to update one of them.
 local function setForgeWidgetsVisible(visible: boolean)
@@ -2636,13 +2677,15 @@ actionRow = Hud.new("Frame", {
 
 -- No standalone "Workbench" toggle button anymore — per-station gating (openStationMenu, near
 -- the base-station setup further down) is the only way this menu opens now, so there's nothing
--- generic left to toggle from here. craftCloseButton (declared alongside craftFrame above) is the
--- only way to close it.
-craftCloseButton.MouseButton1Click:Connect(function()
+-- generic left to toggle from here. craftClose (forward-declared alongside craftFrame above, and
+-- already wired into the panel's Hud.panelHeader close button there) is the only way to close it —
+-- assigning it here, rather than at the header, is what lets its body reference
+-- setForgeWidgetsVisible, which doesn't exist as a local until just above this line.
+craftClose = function()
 	craftFrame.Visible = false
 	setForgeWidgetsVisible(false) -- no-op if a non-Forge station was open, harmless either way
 	ModPicker.closeModPicker() -- don't leave the mod picker orphaned open behind a closed Workbench
-end)
+end
 
 -- Builds one icon-button + caption column (button on top, small uppercase caption below, both
 -- centred) and parents it into actionRow. Returns the button, the caption label, AND the column
@@ -2691,11 +2734,12 @@ local mainActions = {}
 mainActions.inventoryButton, mainActions.inventoryCaption = makeActionColumn({
 	variant = "secondary",
 	icon = "inventory",
-	size = UDim2.new(0, 72, 0, 72), -- 56x56 -> 72x72, Studio screenshot: everything read too small
+	size = UDim2.new(0, 64, 0, 64), -- 56x56 -> 72x72 (Studio screenshot: everything read too small)
+		-- -> 64x64: 72 overshot, per later feedback ("read a little too large now").
 	onClick = openInventory,
 }, "Inventory", Hud.COLOR.Muted)
 
--- The hero action: bigger than its neighbours (now 144x96 vs 72x72) and the only caption painted in
+-- The hero action: bigger than its neighbours (now 126x84 vs 64x64) and the only caption painted in
 -- Accent rather than Muted, so it reads as the one loud thing on screen, per the approved design.
 -- Doubles as the stop button rather than adding a second one — the action row is already tight
 -- (and gets hidden wholesale while the Forge is open). Before StopWave existed this just no-op'd
@@ -2704,8 +2748,9 @@ mainActions.inventoryButton, mainActions.inventoryCaption = makeActionColumn({
 mainActions.defendButton, mainActions.defendCaption = makeActionColumn({
 	variant = "primary",
 	icon = "defense",
-	size = UDim2.new(0, 144, 0, 96), -- 108x72 -> 144x96, kept at the same 3:2 ratio so it's still
-		-- unmistakably the largest, most hero-shaped thing in the row after the scale-up
+	size = UDim2.new(0, 126, 0, 84), -- 108x72 -> 144x96 (kept at the same 3:2 ratio so it's still
+		-- unmistakably the largest, most hero-shaped thing in the row after the scale-up) -> 126x84:
+		-- 144x96 overshot, per later feedback ("read a little too large now") — 3:2 preserved again.
 }, "Start Defense", Hud.COLOR.Accent)
 mainActions.defendButton.MouseButton1Click:Connect(function()
 	if runActive then
@@ -2730,7 +2775,8 @@ end)
 mainActions.recallButton, mainActions.recallCaption, mainActions.recallColumn = makeActionColumn({
 	variant = "danger",
 	icon = "recall",
-	size = UDim2.new(0, 72, 0, 72), -- 56x56 -> 72x72, matching Inventory's bump
+	size = UDim2.new(0, 64, 0, 64), -- 56x56 -> 72x72 -> 64x64, matching Inventory's sizing exactly
+		-- at every step (see that column's own comment for the reason behind each change).
 	onClick = function()
 		Remotes.RecallFromMine:FireServer()
 	end,
@@ -2739,10 +2785,10 @@ mainActions.recallButton, mainActions.recallCaption, mainActions.recallColumn = 
 -- Recall's column is deliberately NEVER hidden — only its contents are (Recall's own button and
 -- caption here, and Return to Base right below). actionRow's UIListLayout skips fully-invisible
 -- children entirely when it lays out the row, so toggling recallColumn.Visible (the old behaviour)
--- removed its 72px slot from the row the instant you surfaced, which re-centred everything and
+-- removed its slot from the row the instant you surfaced, which re-centred everything and
 -- knocked Start Defense off dead-centre. The column's own width is a fixed offset (see
 -- makeActionColumn: Size.X is buttonOpts.size.X.Offset, never AutomaticSize), so leaving it
--- Visible = true always reserves exactly 72px in the row regardless of what's showing inside it —
+-- Visible = true always reserves exactly 64px in the row regardless of what's showing inside it —
 -- Inventory and this column stay equal-width bookends and a centred layout keeps Start Defense
 -- pinned to screen centre in every state. Hiding the buttons/captions inside it instead still
 -- fully blocks input (an invisible TextButton doesn't receive clicks) and still hides them
@@ -2756,7 +2802,7 @@ mainActions.recallCaption.Visible = false
 -- action — stays a plain text button rather than inventing a mapping, per the icon design's own
 -- rule that a wrong icon is worse than a text button. Parented into recallColumn (built just
 -- above), NOT actionRow — that's the whole trick that makes it share Recall's reserved slot
--- instead of adding a fourth, variable-width item to the row. It's wider (130px) than the 72px
+-- instead of adding a fourth, variable-width item to the row. It's wider (130px) than the 64px
 -- slot it's sharing, but that only makes it overflow the column's edges, symmetrically, since
 -- recallColumn's own UIListLayout centers its children — the ROW's layout only ever measures the
 -- column Frame's fixed Size, never what overflows out of its children, so Start Defense's
@@ -2764,7 +2810,11 @@ mainActions.recallCaption.Visible = false
 local returnHomeButton = Hud.button({
 	variant = "danger",
 	text = "Return to Base",
-	size = UDim2.new(0, 130, 0, 72),
+	-- Height matches Recall's own button (72 -> 64, see that column's comment) so the two read as
+	-- the same weight of control when swapped in the same slot; width (130) is untouched — it was
+	-- always wider than the 72px/64px slot it overflows symmetrically out of (see the comment
+	-- above), and the shrink doesn't change that relationship.
+	size = UDim2.new(0, 130, 0, 64),
 	parent = mainActions.recallColumn,
 })
 returnHomeButton.Visible = false
@@ -3373,7 +3423,7 @@ local STATION_TAG = StationConfig.Tag
 -- specifically the Forge, since StationConfig doesn't otherwise hand back a type key here.
 local function openStationMenu(stationData)
 	rebuildTabs(stationData.Tabs)
-	craftTitleLabel.Text = stationData.DisplayName
+	craftTitleLabel.Text = stationData.DisplayName:upper() -- static chrome; see craftTitleLabel's own comment
 	craftFrame.Visible = true
 	selectTab(stationData.DefaultTab)
 	setForgeWidgetsVisible(stationData == StationConfig.Types.Forge)
