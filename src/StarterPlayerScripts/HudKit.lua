@@ -792,24 +792,23 @@ function HudKit.button(opts: HudButtonOptions): TextButton
 		end
 	end
 
-	-- THE OUTLINE. A copy of the button's own shape, BUTTON_OUTLINE_EXPAND px larger on every side,
-	-- sitting behind the fill in a lighter shade of the same colour, so only its rim shows. On the
-	-- sliced path it is the same panelframe image, which means the rim follows the 45-degree cut
-	-- corners exactly rather than boxing a rectangle around them — the thing a UIStroke could never
-	-- do here. Carries the same gradient as the fill so the rim shades top-to-bottom with it instead
-	-- of reading as a flat sticker behind a shaded button.
+	-- THE OUTLINE — built exactly the way plate() builds its bevel, because that one demonstrably
+	-- works (it is why the status panel reads with a rim and the buttons did not).
 	--
-	-- LAYERS ARE ALL NON-NEGATIVE ON PURPOSE: shadow 0, outline 1, fill 2, icon 3, caption 4. This
-	-- used to run -2/-1/0/1/2 and neither the shadow nor the outline was ever visible in game.
-	-- Negative ZIndex is not dependably honoured, and since every one of these is a sibling child of
-	-- `btn` the ordering only ever needed to be RELATIVE — nothing here requires going below zero, so
-	-- there is no reason to bet on it. Do not renumber these back through zero.
+	-- The rim is NOT a stroke and NOT an oversized layer reaching outside the button. It is a
+	-- full-size shape whose FILL sits INSET inside it, so the outline shows around the fill's edge.
+	-- Everything stays inside the button's own bounds.
+	--
+	-- Crucially the fill is a CHILD of the outline, not a sibling: under ZIndexBehavior.Sibling a
+	-- child is unconditionally drawn in front of its parent, so nesting GUARANTEES the order with no
+	-- ZIndex involved at all. Three previous attempts leaned on ZIndex (including negative values)
+	-- to put a layer behind another and none of them ever appeared on screen. Nesting cannot fail
+	-- the same way. Do not "flatten" these back into siblings.
+	local outlineHost: GuiObject
 	do
-		-- TEMPORARY DIAGNOSTIC: pure white, to rule out the colour derivation as the reason the rim
-		-- is not visible. Revert to HudKit.lighten(restColor, BUTTON_OUTLINE_LIGHTEN) once confirmed.
+		-- TEMPORARY DIAGNOSTIC: pure white, to rule out the colour derivation. Revert to
+		-- HudKit.lighten(restColor, BUTTON_OUTLINE_LIGHTEN) once the rim is confirmed visible.
 		local outlineColor = Color3.new(1, 1, 1)
-		local outlineSize = UDim2.new(1, BUTTON_OUTLINE_EXPAND * 2, 1, BUTTON_OUTLINE_EXPAND * 2)
-		local outlinePos = UDim2.fromOffset(-BUTTON_OUTLINE_EXPAND, -BUTTON_OUTLINE_EXPAND)
 		if isSliceable then
 			local outline = HudKit.new("ImageLabel", {
 				BackgroundTransparency = 1,
@@ -817,26 +816,22 @@ function HudKit.button(opts: HudButtonOptions): TextButton
 				ImageColor3 = outlineColor,
 				ScaleType = Enum.ScaleType.Slice,
 				SliceCenter = PANEL_FRAME_SLICE_CENTER,
-				Size = outlineSize,
-				Position = outlinePos,
-				ZIndex = 1,
+				Size = UDim2.new(1, 0, 1, 0),
 				Parent = btn,
 			}, { buttonFillGradient() })
 			outlineTarget, outlineProperty = outline, "ImageColor3"
+			outlineHost = outline
 		else
-			-- Square and rounded-fallback buttons get the same treatment in plain Frame form. The
-			-- rounded case bumps its radius by the expansion so the rim stays an even width around the
-			-- curve instead of pinching at the corners.
+			-- Square and rounded-fallback buttons, same idea in plain Frame form.
 			local outline = HudKit.new("Frame", {
 				BackgroundColor3 = outlineColor,
-				Size = outlineSize,
-				Position = outlinePos,
-				ZIndex = 1,
+				Size = UDim2.new(1, 0, 1, 0),
 				Parent = btn,
 			}, if opts.square
 				then { buttonFillGradient() }
 				else { HudKit.corner(HudKit.RADIUS.Button + BUTTON_OUTLINE_EXPAND), buttonFillGradient() })
 			outlineTarget, outlineProperty = outline, "BackgroundColor3"
+			outlineHost = outline
 		end
 	end
 
@@ -848,9 +843,11 @@ function HudKit.button(opts: HudButtonOptions): TextButton
 				ImageColor3 = restColor,
 				ScaleType = Enum.ScaleType.Slice,
 				SliceCenter = PANEL_FRAME_SLICE_CENTER,
-				Size = UDim2.new(1, 0, 1, 0),
-				ZIndex = 2,
-				Parent = btn,
+				-- Inset inside outlineHost, which is what leaves its rim showing. Parented to the
+				-- outline, not to `btn` — see the outline block above for why nesting rather than ZIndex.
+				Size = UDim2.new(1, -BUTTON_OUTLINE_EXPAND * 2, 1, -BUTTON_OUTLINE_EXPAND * 2),
+				Position = UDim2.fromOffset(BUTTON_OUTLINE_EXPAND, BUTTON_OUTLINE_EXPAND),
+				Parent = outlineHost,
 			}, if opts.dropShadow then {} else { buttonFillGradient() })
 		else
 			-- Plain-fallback shape, just moved onto a child (instead of `btn` itself) so the drop
@@ -859,9 +856,10 @@ function HudKit.button(opts: HudButtonOptions): TextButton
 			-- branch at all before dropShadow existed.
 			backgroundLabel = HudKit.new("Frame", {
 				BackgroundColor3 = restColor,
-				Size = UDim2.new(1, 0, 1, 0),
-				ZIndex = 2,
-				Parent = btn,
+				-- Inset inside outlineHost; see the outline block above.
+				Size = UDim2.new(1, -BUTTON_OUTLINE_EXPAND * 2, 1, -BUTTON_OUTLINE_EXPAND * 2),
+				Position = UDim2.fromOffset(BUTTON_OUTLINE_EXPAND, BUTTON_OUTLINE_EXPAND),
+				Parent = outlineHost,
 			}, if opts.square then {} else { HudKit.corner(HudKit.RADIUS.Button) })
 		end
 
