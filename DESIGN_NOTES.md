@@ -2181,9 +2181,15 @@ existing panel once it is re-proportioned), then Workbench B (zero server work),
 output-tray decision above). Popups B underpins all four, so its plate/scrim/cap treatment wants
 building as a shared HudKit helper before the first menu that raises one.
 
-**Progress (2026-09-02).** Done and verified in Studio by the user: `HudKit.modal` (the Popups B
-plate), per-station panel sizing, and Smelting B. Done but NOT yet verified: Workbench B. Not
-started: Welding A, Forge A.
+**Progress (2026-09-02).** Done AND verified in Studio by the user: `HudKit.modal` (the Popups B
+plate), per-station panel sizing, Smelting B, and Workbench B. Not started: Welding A, Forge A.
+
+The ten mockups live at https://claude.ai/code/artifact/11c89954-fefe-4302-bae9-fe6186f12ed1 —
+open that before building either remaining menu, since the whole point of the design round was that
+the look got settled on a page first. The working files behind it are `.design/menus/*.dc.html`
+plus `canvas.json`, which are UNTRACKED (the whole `.design/` folder is, by convention); they seed
+into an editable Claude Design canvas via that skill's helper once Node exists on this machine —
+there is none right now, which is the only reason the round shipped as a flat page.
 
 Two shared pieces came out of that work and are the right things for the remaining menus to reach
 for rather than re-solving:
