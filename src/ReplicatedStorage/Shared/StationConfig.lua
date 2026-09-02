@@ -29,6 +29,19 @@ StationConfig.Tag = "Station"
 
 StationConfig.InteractDistance = 12 -- studs; same ballpark as MiningService.MAX_MINING_DISTANCE
 
+-- PANEL SIZE IS PER STATION, not per tab. The HUD reuses ONE craft plate for every station (see
+-- MainHud.client.lua's craftFrame), so this is what it gets resized to when a station's menu opens.
+--
+-- Why per station rather than per tab: the HUD phase 3 redesign gives the Forge's Weapons tab a
+-- three-column machine layout that needs 760x520, while its Smelting tab was designed at the
+-- original 640x424. Those are two TABS OF ONE STATION, so sizing per tab would visibly resize the
+-- panel while you switch tabs inside the Forge — worse than either size. The station takes the
+-- largest size any of its tabs needs, and the smaller tabs get laid out with the extra room.
+--
+-- A station that doesn't set PanelSize gets DefaultPanelSize, so adding a station is still a
+-- one-entry change.
+StationConfig.DefaultPanelSize = Vector2.new(640, 424)
+
 StationConfig.Types = {
 	Crafting = {
 		DisplayName = "Workbench",
@@ -47,6 +60,8 @@ StationConfig.Types = {
 			-- rather than on the Workbench with the "how my base is laid out" upgrades.
 		DefaultTab = "Robots",
 		NotThereMessage = "You need to be at your Welding Station to do that.",
+		PanelSize = Vector2.new(760, 520), -- the Robots tab's rig diagram puts the robot centre-stage
+			-- with its three mod slots as hardpoints either side of it; that does not fit 640 wide.
 	},
 	Forge = {
 		DisplayName = "Forge",
@@ -55,6 +70,9 @@ StationConfig.Types = {
 			-- RefinedOreConfig.lua
 		DefaultTab = "Weapons",
 		NotThereMessage = "You need to be at your Forge to do that.",
+		PanelSize = Vector2.new(760, 520), -- the Weapons tab is a three-column machine (input bay,
+			-- chamber, output tray). Smelting was designed at 640x424 and simply gets more room —
+			-- see DefaultPanelSize above for why both tabs take the station's larger size.
 	},
 	BlackMarket = {
 		DisplayName = "Black Market",

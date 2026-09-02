@@ -353,10 +353,20 @@ end
 --                   row took 40 accounts for 16 of that, the tab row's 32 -> 40 growth accounts
 --                   for the other 8. Position's Y offset is -212, exactly half of the new 424
 --                   height, so the panel stays centered.
+-- AnchorPoint-centred rather than the old `Position = (0.5, -320, 0.5, -212)` half-size offsets.
+-- That form hardcoded half of 640x424 into the POSITION, so the panel only stayed centred at
+-- exactly that size — and openStationMenu now resizes it per station (StationConfig.PanelSize), at
+-- which point those offsets would have parked every non-640x424 station's menu off-centre by half
+-- the difference. Anchoring at the middle makes centring survive any size, and deletes two magic
+-- numbers that had to be kept in sync with the Size line by hand.
 local craftSurface, craftFrame = Hud.plate({
 	Name = "CraftMenu",
-	Position = UDim2.new(0.5, -320, 0.5, -212),
-	Size = UDim2.new(0, 640, 0, 424), -- see the vertical-stack comment above for how 424 was derived
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	Position = UDim2.fromScale(0.5, 0.5),
+	Size = UDim2.fromOffset(
+		StationConfig.DefaultPanelSize.X,
+		StationConfig.DefaultPanelSize.Y -- see the vertical-stack comment above for how 424 was derived
+	),
 	Visible = false,
 	Parent = Hud.screenGui,
 })
@@ -1706,26 +1716,48 @@ local TILE_SIZE = inventoryPanel.TILE_SIZE
 
 local POTION_BUTTON_SIZE = 64
 
+-- These two widgets dock under the CRAFT PLATE'S bottom edge, but they are screenGui siblings
+-- rather than children of it, so they can only find that edge by doing the plate's centring maths
+-- themselves. That was fine while the plate was permanently 640x424 — the numbers were literally
+-- written as 320/212, half of each — but the plate is now sized per station
+-- (StationConfig.PanelSize), and the Forge is the very station that grows. Left as constants, these
+-- would have kept docking to where a 640x424 panel's edge USED to be: the potion button floating
+-- inside the taller Forge plate instead of beneath it, and the pity bar 120px short of its right
+-- edge. Nothing would error; it would just quietly look broken, and only on the Forge.
+--
+-- One grouped table rather than four top-level locals, same register-budget reasoning as `pity`
+-- below and the other grouped UI tables in this file.
+local forgeDock = {
+	size = StationConfig.Types.Forge.PanelSize or StationConfig.DefaultPanelSize,
+	gap = 10,
+}
+
 -- Docked under craftFrame's bottom edge (Position 0.5,-212 + Size 0,424 -> bottom sits at
 -- One table instead of 4 separate top-level locals: Luau caps a function scope at 200
 -- locals and this file's main chunk hit that ceiling. Grouping UI element references costs
 -- nothing at runtime and buys back a register per element.
 local pity = {}
--- 0.5,+212), 10px gap. potionButton is a fixed 64-wide square on the left; pity.barFrame fills the
--- remaining width to craftFrame's own right edge (0.5,+320) — together they span exactly as wide
--- as the Forge menu above them, not just huddled off to one side of it.
+-- the Forge plate's bottom edge), one forgeDock.gap below it. potionButton is a fixed 64-wide
+-- square on the left; pity.barFrame fills the remaining width out to that plate's right edge —
+-- together they span exactly as wide as the Forge menu above them, not just huddled off to one
+-- side of it.
 --
--- Y offsets (232 here, 222 on potionButton below) are both +12 from their original 220/210: half
--- of craftFrame's own +24 height growth (400 -> 424, see that panel's vertical-stack comment),
--- since these dock relative to its bottom edge and that edge moved down by exactly half the growth.
+-- Every offset here is DERIVED from forgeDock.size rather than written out, so the pair follows the
+-- Forge's configured panel size instead of needing a matching hand-edit each time it changes. See
+-- forgeDock's own comment above for what went wrong when these were constants.
 --
 -- pity.barFrame stays bound to the plate's SHELL (not renamed — setForgeWidgetsVisible below reads
 -- pity.barFrame.Visible, and the "Do not break" list forbids renaming pity's existing fields);
 -- pity.surface is the new field for the inset content surface everything below parents into.
 pity.surface, pity.barFrame = Hud.plate({
 	Name = "ForgePity",
-	Position = UDim2.new(0.5, -320 + POTION_BUTTON_SIZE + 10, 0.5, 232),
-	Size = UDim2.new(0, 640 - POTION_BUTTON_SIZE - 10, 0, 44),
+	Position = UDim2.new(
+		0.5,
+		-forgeDock.size.X / 2 + POTION_BUTTON_SIZE + forgeDock.gap,
+		0.5,
+		forgeDock.size.Y / 2 + forgeDock.gap * 2
+	),
+	Size = UDim2.new(0, forgeDock.size.X - POTION_BUTTON_SIZE - forgeDock.gap, 0, 44),
 	Visible = false,
 	Parent = Hud.screenGui,
 })
@@ -1774,7 +1806,7 @@ local potionButton = Hud.new("ImageButton", {
 	AutoButtonColor = false,
 	Image = "",
 	ScaleType = Enum.ScaleType.Fit,
-	Position = UDim2.new(0.5, -320, 0.5, 222),
+	Position = UDim2.new(0.5, -forgeDock.size.X / 2, 0.5, forgeDock.size.Y / 2 + forgeDock.gap),
 	Size = UDim2.new(0, POTION_BUTTON_SIZE, 0, POTION_BUTTON_SIZE),
 	Visible = false,
 	Parent = Hud.screenGui,
@@ -3448,6 +3480,14 @@ local STATION_TAG = StationConfig.Tag
 -- Forge-only pity bar / Luck Potion button use that identity to tell whether THIS station is
 -- specifically the Forge, since StationConfig doesn't otherwise hand back a type key here.
 local function openStationMenu(stationData)
+	-- Resize BEFORE rebuilding the tabs and selecting one: selectTab renders that tab's contents,
+	-- and several of them size themselves against the plate they're sitting in. Resizing afterwards
+	-- would lay them out against the previous station's width and leave them stretched or clipped
+	-- until the next re-render — the kind of thing that looks like a rendering bug rather than an
+	-- ordering one. See StationConfig.DefaultPanelSize for why this is per station, not per tab.
+	local panelSize = stationData.PanelSize or StationConfig.DefaultPanelSize
+	craftFrame.Size = UDim2.fromOffset(panelSize.X, panelSize.Y)
+
 	rebuildTabs(stationData.Tabs)
 	craftTitleLabel.Text = stationData.DisplayName:upper() -- static chrome; see craftTitleLabel's own comment
 	craftFrame.Visible = true
