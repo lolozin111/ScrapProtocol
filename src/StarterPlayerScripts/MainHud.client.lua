@@ -91,13 +91,31 @@ local runActive = false
 -- its own centre on both sides as groups/text change width, so it stays centred without any
 -- offset math to compensate — same idea as the old top-left/grows-rightward pairing, just
 -- centred instead of corner-anchored.
+--
+-- "Flush against the very top edge" turned out to mean the top of Hud.screenGui's content area,
+-- not the physical top of the screen — Hud.screenGui leaves IgnoreGuiInset at its default false,
+-- so Roblox shifts that whole GUI's y=0 down by its own top bar's height (~36px) automatically.
+-- Fixing that on Hud.screenGui itself would drag every panel on it down/up together, including
+-- everything anchored to the BOTTOM of the screen, and HudKit.lua isn't this change's file to
+-- touch — so the wallet strip gets its OWN ScreenGui instead, with IgnoreGuiInset = true, isolating
+-- the fix to just this one element. Roblox's top bar only occupies the top-left corner (and the
+-- corners generally); top-centre, where this strip is anchored, is clear of it.
+local walletGui = Hud.new("ScreenGui", {
+	Name = "WalletGui",
+	IgnoreGuiInset = true,
+	ResetOnSpawn = false,
+	ZIndexBehavior = Enum.ZIndexBehavior.Sibling, -- matches Hud.screenGui's, same reasoning as that
+		-- one: sibling GUIs would otherwise fight over descendant z-order in an undefined way.
+	Parent = LocalPlayer:WaitForChild("PlayerGui"),
+})
+
 local currencyFrame = Hud.plate({
 	Name = "Currency",
 	AnchorPoint = Vector2.new(0.5, 0),
 	Position = UDim2.new(0.5, 0, 0, 0),
 	Size = UDim2.new(0, 0, 0, 0), -- both placeholders; automaticSize below drives the real size
 	automaticSize = Enum.AutomaticSize.XY,
-	Parent = Hud.screenGui,
+	Parent = walletGui,
 })
 Hud.accentCap(currencyFrame) -- full-width, parented straight onto the surface (not into
 	-- currencyList below) so it sits flush at the top edge, unaffected by currencyList's own
@@ -757,6 +775,14 @@ local refreshPotionButton
 -- row otherwise (see the screenshot that prompted this). actionRow itself isn't created until much
 -- later in the file (down by the other bottom-of-screen panels), hence the forward declaration.
 local actionRow
+
+-- Forward-declared for the same reason as actionRow just above: setForgeWidgetsVisible also needs
+-- to hide the Test Mode button while the Forge widgets are up (it used to get hidden for free as
+-- a side effect of living inside actionRow — see that button's own section for why it doesn't
+-- anymore), but the table only gets built way down in the "Player Test Mode" section, and even
+-- then only for an admin. `testMode.button` is guarded against nil at the call site for exactly
+-- that reason.
+local testMode
 
 -- Forward-declared: renderCraftList's "Smelting" branch (below) needs to call this, but the real
 -- definition lives in the "Ore Smelting" section much further down — it needs makeItemTile/
@@ -1770,6 +1796,13 @@ local function setForgeWidgetsVisible(visible: boolean)
 	-- (Inventory/Start Defense/etc.) — hide that row while the Forge ones are up, restore it the
 	-- moment they're hidden again, so the two never visually collide.
 	actionRow.Visible = not visible
+	-- Test Mode used to disappear for free as a side effect of the line above, back when it was
+	-- parented inside actionRow. It now lives anchored to its own corner (see that section for
+	-- why), so nothing hides it unless told to here — without this it sits on screen over the open
+	-- Workbench. Guarded because a non-admin never gets `testMode.button` built at all.
+	if testMode.button then
+		testMode.button.Visible = not visible
+	end
 end
 
 ----------------------------------------------------------------------
@@ -2682,26 +2715,14 @@ mainActions.defendButton.MouseButton1Click:Connect(function()
 	end
 end)
 
--- Only shown while an expedition is actually active (see the CurrentSlotId watcher below) —
--- ends the run for everyone on the shared queue, heals you to full, and keeps whatever you've
--- already looted (rewards are granted the instant each node resolves, not saved up for an
--- "end of run" payout, so there's nothing separate to preserve here). No icon in the set for this
--- action — stays a plain text button rather than inventing a mapping, per the icon design's own
--- rule that a wrong icon is worse than a text button. Fixed 72px height (not the old Scale 1,0,
--- and up from 56 to match the icon buttons' new size so the row bottom-aligns cleanly) so it
--- doesn't try to size itself off actionRow's own AutomaticSize.Y — that would be circular the
--- same way Hud.plate's header comment warns about for a shell/surface pair.
-local returnHomeButton = Hud.button({
-	variant = "danger",
-	text = "Return to Base",
-	size = UDim2.new(0, 130, 0, 72),
-	parent = actionRow,
-})
-returnHomeButton.Visible = false
-returnHomeButton.MouseButton1Click:Connect(function()
-	Remotes.EndExpedition:FireServer()
-end)
-
+-- Recall and Return to Base share ONE column slot, on the right, mirroring Inventory's on the
+-- left — they're both "get me out of here" actions and, per the precedence rule below, never
+-- actually shown at the same time. Recall is built first because it's the one that OWNS the
+-- column (via makeActionColumn); Return to Base is then parented straight into that same column
+-- a few lines down instead of getting a slot of its own, so the row always has exactly three
+-- top-level children — Inventory / Start Defense / this one — no matter which of the two exit
+-- actions happens to be relevant right now.
+--
 -- Only shown while DepthUpdate (fired from MineShaftService's hazard loop) reports the player is
 -- at least one level down in the quarry — there's no climb-out mechanic, so once you're a few
 -- levels down this is the only way back short of finding a wall to walk into. Respawns at a
@@ -2714,11 +2735,63 @@ mainActions.recallButton, mainActions.recallCaption, mainActions.recallColumn = 
 		Remotes.RecallFromMine:FireServer()
 	end,
 }, "Recall", Hud.COLOR.Muted)
-mainActions.recallColumn.Visible = false
+
+-- Recall's column is deliberately NEVER hidden — only its contents are (Recall's own button and
+-- caption here, and Return to Base right below). actionRow's UIListLayout skips fully-invisible
+-- children entirely when it lays out the row, so toggling recallColumn.Visible (the old behaviour)
+-- removed its 72px slot from the row the instant you surfaced, which re-centred everything and
+-- knocked Start Defense off dead-centre. The column's own width is a fixed offset (see
+-- makeActionColumn: Size.X is buttonOpts.size.X.Offset, never AutomaticSize), so leaving it
+-- Visible = true always reserves exactly 72px in the row regardless of what's showing inside it —
+-- Inventory and this column stay equal-width bookends and a centred layout keeps Start Defense
+-- pinned to screen centre in every state. Hiding the buttons/captions inside it instead still
+-- fully blocks input (an invisible TextButton doesn't receive clicks) and still hides them
+-- visually, so nothing about the player-facing behaviour changes.
+mainActions.recallButton.Visible = false
+mainActions.recallCaption.Visible = false
+
+-- Ends the run for everyone on the shared queue, heals you to full, and keeps whatever you've
+-- already looted (rewards are granted the instant each node resolves, not saved up for an
+-- "end of run" payout, so there's nothing separate to preserve here). No icon in the set for this
+-- action — stays a plain text button rather than inventing a mapping, per the icon design's own
+-- rule that a wrong icon is worse than a text button. Parented into recallColumn (built just
+-- above), NOT actionRow — that's the whole trick that makes it share Recall's reserved slot
+-- instead of adding a fourth, variable-width item to the row. It's wider (130px) than the 72px
+-- slot it's sharing, but that only makes it overflow the column's edges, symmetrically, since
+-- recallColumn's own UIListLayout centers its children — the ROW's layout only ever measures the
+-- column Frame's fixed Size, never what overflows out of its children, so Start Defense's
+-- centring is unaffected either way.
+local returnHomeButton = Hud.button({
+	variant = "danger",
+	text = "Return to Base",
+	size = UDim2.new(0, 130, 0, 72),
+	parent = mainActions.recallColumn,
+})
+returnHomeButton.Visible = false
+returnHomeButton.MouseButton1Click:Connect(function()
+	Remotes.EndExpedition:FireServer()
+end)
+
+-- Recall and Return to Base CAN both be "relevant" at the same time. CurrentSlotId is a
+-- server-wide flag — ExpeditionService's own header notes this drives ONE shared queue for the
+-- whole server, not a per-player/party instance — while DepthUpdate is purely about where THIS
+-- player is standing. So a player can be down in the mine shaft while somebody else is running
+-- the expedition queue elsewhere in the base, making both true for them personally at once.
+--
+-- Recall wins when that happens: there's no climb-out mechanic (see above), so while you're
+-- underground it is your ONLY way back, and hiding it in favour of Return to Base would strand
+-- you. This never actually loses the Return to Base action, though — it ends the run for EVERY
+-- player on the shared queue, so anyone not currently underground can still fire it, and this
+-- player gets their own button back the instant they Recall out.
+local expeditionActive = false
+local function syncExitButtons()
+	returnHomeButton.Visible = expeditionActive and not mainActions.recallButton.Visible
+end
 
 -- ExpeditionService replicates "which row is frontmost" via CurrentSlotId on the Expedition
--- folder (-1 = no expedition active — see that file's comment). Reused here just to know
--- whether to show the Return to Base button at all.
+-- folder (-1 = no expedition active — see that file's comment). Reused here just to know whether
+-- Return to Base is even a candidate to show — syncExitButtons above has the final say once
+-- Recall's own state is factored in.
 task.spawn(function()
 	local expeditionFolder = Workspace:WaitForChild("Expedition", 10)
 	if not expeditionFolder then
@@ -2726,7 +2799,8 @@ task.spawn(function()
 	end
 
 	local function syncVisibility()
-		returnHomeButton.Visible = (expeditionFolder:GetAttribute("CurrentSlotId") or -1) ~= -1
+		expeditionActive = (expeditionFolder:GetAttribute("CurrentSlotId") or -1) ~= -1
+		syncExitButtons()
 	end
 
 	syncVisibility()
@@ -2738,9 +2812,19 @@ end)
 -- join (a fresh throwaway profile vs. the real one); the current session never changes. One
 -- grouped table rather than a local per element, same reason as turretPanel above — this file
 -- sits right at Luau's 200-local ceiling for a function scope.
+--
+-- Top-right, anchored directly to Hud.screenGui rather than living in actionRow: it's an admin
+-- debug control, not a gameplay action, and it used to hang off the row as a fourth, variable-
+-- width button — which is exactly what broke the row's centring in the first place (see actionRow's
+-- own comments). RaidClient.client.lua's "Start Raid" button anchors to this same corner (its own
+-- ScreenGui, AnchorPoint (1,0), Position (1,-16,0,16), 40px tall), so Y = 64 (16 + 40 + 8px gap)
+-- sits just below it without needing to reach into that file/GUI to measure it exactly.
 ----------------------------------------------------------------------
 
-local testMode = {}
+-- Assigns into the `local testMode` forward-declared up in the Forge tab section — see that
+-- comment for why setForgeWidgetsVisible needs to reach this table before it technically exists
+-- yet, same pattern as actionRow just above it there.
+testMode = {}
 
 -- Built (or not) once at startup from the server's honest answer, rather than assumed from
 -- AdminConfig client-side (there isn't one) — a non-admin gets no button and no hint one exists,
@@ -2774,14 +2858,16 @@ task.spawn(function()
 	-- where hovering after a toggle could flash back to the button's ORIGINAL construction-time
 	-- color: setButtonVariant rewrites the state the hover tween itself reads from, so there's
 	-- nothing left to flash back to.
-	-- Fixed 72px height, same reasoning as returnHomeButton above (and matching the icon buttons'
-	-- new size so the row bottom-aligns cleanly): this button sizes itself off actionRow directly,
-	-- and actionRow's height is now AutomaticSize, so a Scale-relative height here would be circular.
+	-- Size/position only (reposition, not a redesign — see the section header comment above for
+	-- where 64 comes from): no longer parented to actionRow, so its old "matches the icon buttons'
+	-- height so the row bottom-aligns" reasoning no longer applies, but the size itself is untouched.
 	testMode.button = Hud.button({
 		variant = testMode.on and "danger" or "secondary",
 		text = labelFor(),
 		size = UDim2.new(0, 150, 0, 72),
-		parent = actionRow,
+		anchorPoint = Vector2.new(1, 0),
+		position = UDim2.new(1, -16, 0, 64),
+		parent = Hud.screenGui,
 	})
 
 	testMode.button.MouseButton1Click:Connect(function()
@@ -2933,7 +3019,14 @@ end)
 Remotes.DepthUpdate.OnClientEvent:Connect(function(depth: number?)
 	if not depth then
 		depthPanel.Visible = false
-		mainActions.recallColumn.Visible = false
+		-- Button/caption only, never the column — see the comment where recallColumn is built:
+		-- hiding the column itself would drop its reserved 72px from actionRow's centred layout and
+		-- knock Start Defense off-centre the moment you surface.
+		mainActions.recallButton.Visible = false
+		mainActions.recallCaption.Visible = false
+		-- Surfacing may hand the shared slot back to Return to Base, if the expedition queue is
+		-- still active elsewhere — see syncExitButtons' precedence comment above.
+		syncExitButtons()
 		return
 	end
 
@@ -2941,7 +3034,11 @@ Remotes.DepthUpdate.OnClientEvent:Connect(function(depth: number?)
 	-- Visible any time you're anywhere in the mine, including right at the Depth-0 surface floor
 	-- — not just once you've actually descended. It's the one guaranteed way back to base, so it
 	-- should be there the moment you're in the mine at all, not gated behind digging first.
-	mainActions.recallColumn.Visible = true
+	mainActions.recallButton.Visible = true
+	mainActions.recallCaption.Visible = true
+	-- Recall now takes the shared slot away from Return to Base, if it happened to be showing —
+	-- see syncExitButtons' precedence comment above for why Recall always wins.
+	syncExitButtons()
 	depthLabel.Text = ("Mine Shaft — Depth %d"):format(depth)
 
 	local suitTier = Hud.profile.SuitTier or 1

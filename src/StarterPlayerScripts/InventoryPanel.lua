@@ -110,16 +110,18 @@ function InventoryPanel.new(context)
 	-- of text in the middle of the viewport read as an empty black rectangle dominating the screen.
 	-- Narrower (420, down from 640) and anchored/positioned flush against the right edge,
 	-- vertically centered, so sparse content reads as a compact sidebar instead of barren.
-	-- 480 tall (reverted from 520, which existed only to absorb a taller icon-over-caption tab row —
-	-- see INV_TAB_HEIGHT's comment for why that row is back to a plain 32px pill). No content below
-	-- the tab row depends on this exact number: the list/empty-label both size themselves relative to
-	-- INV_LIST_Y and the shell's own bottom edge, so this just controls how much visible list height
-	-- the shell gives them.
+	-- 488 tall (up from 480 — grown by exactly the 8px INV_TAB_HEIGHT gained, see that constant's
+	-- comment for why the tab row needed to grow at all). No content below the tab row depends on
+	-- this exact number: the list/empty-label both size themselves relative to INV_LIST_Y and the
+	-- shell's own bottom edge, so this just controls how much visible list height the shell gives
+	-- them — growing the shell by the same 8px the tabs took keeps that visible list height exactly
+	-- where it was (366px, still a comfortable 4 full 84px rows + 6px spare) instead of quietly
+	-- losing it to the taller tab row.
 	inv.surface, inv.frame = Hud.plate({
 		Name = "Inventory",
 		AnchorPoint = Vector2.new(1, 0.5),
 		Position = UDim2.new(1, 0, 0.5, 0),
-		Size = UDim2.new(0, 420, 0, 480),
+		Size = UDim2.new(0, 420, 0, 488),
 		Visible = false,
 		Parent = Hud.screenGui,
 	})
@@ -136,8 +138,7 @@ function InventoryPanel.new(context)
 
 	-- REVERTED THIS PASS: tabs went icon-over-caption for one session, then back to plain text per the
 	-- approved design reference (plain uppercase labels in pill buttons, no icons at all). Text-only
-	-- tabs don't need the extra height that stacking an icon above a caption required, so this goes
-	-- back to 32 — a standard button-height pill, not the 56px two-row cell the icon layout needed.
+	-- tabs don't need the extra height that stacking an icon above a caption required.
 	-- Position is unaffected by this (see the math below): it was never about the tab height, only
 	-- about clearing the header.
 	--
@@ -146,7 +147,15 @@ function InventoryPanel.new(context)
 	-- it" convention the listFrame below already uses. (A previous version of this row sat at Y=40,
 	-- 8px INSIDE the header, and quietly drew over the header's own bottom edge — kept here as
 	-- history since the same header-overlap mistake is easy to reintroduce if this ever moves again.)
-	local INV_TAB_HEIGHT = 32
+	--
+	-- HEIGHT IS 40, NOT A FREE CHOICE: HudKit.button() only cuts the angular 9-slice frame (the
+	-- "solid square with a drop shadow" look these tabs are asking for) when BOTH dimensions are
+	-- >= BUTTON_MIN_SLICE_SIZE (40, see HudKit.lua). dropShadow=true does NOT bypass that — it only
+	-- swaps the gradient for a shadow on whichever background shape the size check already picked, so
+	-- a tab under 40px tall renders as a ROUNDED pill with a shadow, not a square one. 40 is the
+	-- minimum that clears the threshold; going lower silently regresses back to rounded corners with
+	-- no error anywhere. See INV_LIST_Y just below for how the 8px grown height propagates.
+	local INV_TAB_HEIGHT = 40
 	local INV_TAB_ROW_Y = 56
 
 	-- HorizontalAlignment = Center (not the UIListLayout default of Left): the four tab widths plus
@@ -164,7 +173,7 @@ function InventoryPanel.new(context)
 		Padding = UDim.new(0, Hud.SPACE.S),
 	}) })
 
-	-- Y = tab row's bottom (56 + 32 = 88) + the same 8px gap = 96.
+	-- Y = tab row's bottom (56 + 40 = 96) + the same 8px gap = 104.
 	local INV_LIST_Y = INV_TAB_ROW_Y + INV_TAB_HEIGHT + Hud.SPACE.S
 
 	inv.listFrame = Hud.new("ScrollingFrame", {
@@ -536,6 +545,18 @@ function InventoryPanel.new(context)
 		end
 	end
 
+	-- Is this tile the one currently open in the detail panel? Compared against inv.detailState
+	-- (the same category/key pair showInvDetail stamps on selection) rather than duplicating that
+	-- bookkeeping — every renderInv* function below ORs this into whatever `highlighted` already
+	-- meant for that tab (equipped/deployed/owned), so clicking a tile still shows an accent OUTLINE
+	-- (see makeItemTile's isSliceable branch) even when nothing about equip/deploy status changed.
+	-- Previously nothing fed a "this is the open one" signal into makeItemTile at all — Materials/Mods
+	-- always passed a hardcoded `false`, and Weapons/Robots passed equip/deploy status instead, so no
+	-- tile ever visibly reflected "you clicked this one," which is exactly what was reported missing.
+	local function isInvSelected(category: string, key: string): boolean
+		return inv.detailState.category == category and inv.detailState.key == key
+	end
+
 	----------------------------------------------------------------------
 	-- Grid tiles — one per tab, built fresh every render
 	----------------------------------------------------------------------
@@ -551,6 +572,11 @@ function InventoryPanel.new(context)
 	-- it, the icon has to be a separate child layered on top (ZIndex 1) instead of replacing the
 	-- frame (ZIndex 0). This is the one structural change here; everything else is the same
 	-- click-handling ImageButton it always was.
+	--
+	-- `highlighted` is whatever the caller wants this ONE accent cue to mean — every renderInv*
+	-- function below ORs its own status flag (equipped/deployed) together with "is this the tile
+	-- currently open in the detail panel" (isInvSelected) rather than adding a second visual for the
+	-- latter, so a tile can't end up needing two different accent treatments at once.
 	local function makeItemTile(key: string, displayName: string, badgeText: string?, highlighted: boolean, onSelect)
 		local icon = Hud.getItemIcon(key)
 		local panelFrameImage = UiIconConfig.Get("panelframe")
@@ -637,6 +663,14 @@ function InventoryPanel.new(context)
 
 	local currentInvTab = "Weapons"
 
+	-- Forward-declared, same reasoning as closeInvDetail above: renderInvWeapons/Robots/Mods/
+	-- Materials below all need to call this from their tiles' onSelect closures (to redraw the grid
+	-- with the new selection outline immediately on click), but the real definition needs those
+	-- render*Function names to already exist first. Without this forward declaration, those closures
+	-- would close over a nonexistent local and silently resolve to a nil global at call time instead
+	-- — no compile error, just "nothing happens" the first time a tile is clicked.
+	local renderInvList
+
 	local function renderInvWeapons()
 		local instances = Hud.profile.Weapons or {}
 		if #instances == 0 then
@@ -660,10 +694,17 @@ function InventoryPanel.new(context)
 			local recipe = CraftingRecipes.Weapons[instance.WeaponKey]
 			local rarityData = ModConfig.Rarities[instance.Rarity]
 			local equipped = Hud.profile.EquippedWeaponId == instance.Id
+			-- ORed with isInvSelected, not replaced by it: equipped keeps its own accent cue, and
+			-- clicking a non-equipped weapon still gets the selection outline on top of that.
+			local highlighted = equipped or isInvSelected("Weapons", instance.Id)
 			-- Icon lookup key is instance.WeaponKey (the TYPE, icons aren't per-roll), but selecting
 			-- the tile opens the detail panel on this specific instance.Id.
-			makeItemTile(instance.WeaponKey, recipe.DisplayName, rarityData and rarityData.Badge or "?", equipped, function()
+			makeItemTile(instance.WeaponKey, recipe.DisplayName, rarityData and rarityData.Badge or "?", highlighted, function()
 				showInvDetail("Weapons", instance.Id)
+				-- Re-render so this tile's outline appears (and any previously-selected tile's
+				-- disappears) right away — nothing else re-renders the grid on a plain click, only on
+				-- the next InventoryUpdate patch, which may be a while for a weapon nobody re-equips.
+				renderInvList()
 			end).Parent = inv.listFrame
 		end
 	end
@@ -686,8 +727,10 @@ function InventoryPanel.new(context)
 		for _, key in ipairs(keys) do
 			local recipe = CraftingRecipes.Robots[key]
 			local deployed = deployedCountForRobot(key)
-			makeItemTile(key, recipe.DisplayName, ("x%d"):format(Hud.profile.CraftedRobots[key]), deployed > 0, function()
+			local highlighted = (deployed > 0) or isInvSelected("Robots", key)
+			makeItemTile(key, recipe.DisplayName, ("x%d"):format(Hud.profile.CraftedRobots[key]), highlighted, function()
 				showInvDetail("Robots", key)
+				renderInvList() -- see the matching comment in renderInvWeapons above
 			end).Parent = inv.listFrame
 		end
 	end
@@ -701,8 +744,9 @@ function InventoryPanel.new(context)
 		end
 		for _, key in ipairs(keys) do
 			local mod = ModConfig.Mods[key]
-			makeItemTile(key, mod.DisplayName, nil, false, function()
+			makeItemTile(key, mod.DisplayName, nil, isInvSelected("Mods", key), function()
 				showInvDetail("Mods", key)
+				renderInvList() -- see the matching comment in renderInvWeapons above
 			end).Parent = inv.listFrame
 		end
 	end
@@ -714,29 +758,35 @@ function InventoryPanel.new(context)
 	-- 0; refined materials only show once you've actually smelted at least one (there'd otherwise be
 	-- 5 more permanently-zero tiles here before the player has ever touched the Forge's second tab).
 	local function renderInvMaterials()
-		makeItemTile("Scrap", "Scrap", nil, false, function()
+		makeItemTile("Scrap", "Scrap", nil, isInvSelected("Materials", "Scrap"), function()
 			showInvDetail("Materials", "Scrap")
+			renderInvList() -- see the matching comment in renderInvWeapons above
 		end).Parent = inv.listFrame
-		makeItemTile("Cores", "Cores", nil, false, function()
+		makeItemTile("Cores", "Cores", nil, isInvSelected("Materials", "Cores"), function()
 			showInvDetail("Materials", "Cores")
+			renderInvList()
 		end).Parent = inv.listFrame
 		for _, oreKey in ipairs(ORE_DISPLAY_ORDER) do
 			local displayName = OreConfig.Ores[oreKey].DisplayName
-			makeItemTile(oreKey, displayName, nil, false, function()
+			makeItemTile(oreKey, displayName, nil, isInvSelected("Materials", oreKey), function()
 				showInvDetail("Materials", oreKey)
+				renderInvList()
 			end).Parent = inv.listFrame
 		end
 		for _, refineData in pairs(RefinedOreConfig.Ores) do
 			local owned = (Hud.profile.RefinedOreCounts or {})[refineData.RefinedKey] or 0
 			if owned > 0 then
-				makeItemTile(refineData.RefinedKey, refineData.DisplayName, ("x%d"):format(owned), false, function()
+				makeItemTile(refineData.RefinedKey, refineData.DisplayName, ("x%d"):format(owned), isInvSelected("Materials", refineData.RefinedKey), function()
 					showInvDetail("Materials", refineData.RefinedKey)
+					renderInvList()
 				end).Parent = inv.listFrame
 			end
 		end
 	end
 
-	local function renderInvList()
+	-- Assigns into the forward-declared upvalue above (no `local`) — same convention as
+	-- closeInvDetail's assignment further up.
+	renderInvList = function()
 		for _, child in ipairs(inv.listFrame:GetChildren()) do
 			if child:IsA("ImageButton") then
 				child:Destroy()
@@ -772,8 +822,12 @@ function InventoryPanel.new(context)
 	--
 	-- REVERTED THIS PASS: a brief icon-over-caption detour (each tab a stacked icon + label, needing
 	-- the taller 56px row) is gone per the approved design reference — plain uppercase text in a pill
-	-- button, no icons at all. That also removes the reason INV_TAB_HEIGHT was ever grown, and with it
-	-- the whole hand-built icon+caption content frame this section used to describe.
+	-- button, no icons at all. That removed the icon-caption reason INV_TAB_HEIGHT was ever grown,
+	-- and with it the whole hand-built icon+caption content frame this section used to describe —
+	-- but INV_TAB_HEIGHT is grown again as of this pass, for an unrelated reason (clearing
+	-- BUTTON_MIN_SLICE_SIZE for the squared drop-shadow look; see that constant's own comment). None
+	-- of this section's width math (390px, INV_TAB_WIDTH) is affected either time — both height
+	-- changes are vertical-only.
 	local INV_TAB_GAP = Hud.SPACE.S -- unchanged from the row's existing UIListLayout Padding, below
 	local INV_TAB_WIDTH = math.floor((390 - INV_TAB_GAP * (#INV_TAB_NAMES - 1)) / #INV_TAB_NAMES)
 	-- INV_TAB_WIDTH = 91: 4 * 91 + 3 * 8 = 388px against 390px available — fits, 2px to spare. That
@@ -798,16 +852,42 @@ function InventoryPanel.new(context)
 			size = UDim2.new(0, INV_TAB_WIDTH, 1, 0),
 			layoutOrder = index,
 			parent = inv.tabRow,
+			-- Hard offset shadow instead of the default bevel gradient — the reference's tabs read as
+			-- solid squares with a drop shadow under them, not a gradient-filled pill. (HudKit.button
+			-- is gaining this option alongside this change; once it lands, this is the only call site
+			-- in this file that needs it — every other Hud.button() call here keeps the gradient.)
+			dropShadow = true,
 			onClick = function()
 				selectInvTab(name)
 			end,
 		})
 		-- HudKit.button() defaults every button to FONT.BodyBold/TEXTSIZE.Body — overridden here to
 		-- the small-uppercase-label treatment the reference wants for tab captions specifically
-		-- (Display font, Label size), same "override after building" pattern the detail-panel slot
-		-- buttons a few sections up already use for their own non-default text styling.
+		-- (Display font, Label size).
+		--
+		-- TextSize dropped to 11, NOT TEXTSIZE.Label (13): at 91px-wide tabs (see INV_TAB_WIDTH above)
+		-- "WEAPONS" happened to look fine at 13 (7 uppercase GothamBold characters, roughly
+		-- 7 * 0.6 * 13 =~ 55px — comfortable), but "MATERIALS" (9 characters, the same estimate puts
+		-- it around 9 * 0.6 * 13 =~ 70px) was landing close enough to the 91px cap that kerning on
+		-- wide glyphs (M, A, T) pushed actual rendering past it — this project has no TextService
+		-- access outside Studio to get an exact number, so this is a per-character estimate, not a
+		-- measured one; if it's still tight in Studio, drop this further before widening the tab or
+		-- shrinking INV_TAB_GAP, since every other row's math (390px, both here and in the grid below)
+		-- is keyed off the current 4-tabs-at-91px layout and would need re-deriving. At 11, the same
+		-- estimate puts MATERIALS around 9 * 0.6 * 11 =~ 59px — comfortable headroom in 91px, same
+		-- "override after building" pattern the detail-panel slot buttons a few sections up already
+		-- use for their own non-default text styling.
+		--
+		-- INV_TAB_HEIGHT growing 32 -> 40 (see that constant's comment) does NOT change this: this
+		-- estimate is entirely a function of tab WIDTH (91px, unchanged) and character count, not
+		-- height. Text is vertically centered in the button by HudKit.button's own layout, so a
+		-- taller box just adds equal padding above/below the same glyphs — it doesn't tighten or
+		-- loosen the 91px horizontal fit at all. If 11px now reads too small against the taller,
+		-- squared-off tab in Studio, that's a fresh visual call to make there, not a reason to bump
+		-- this blindly — doing so would need re-verifying the same MATERIALS-fits-in-91px estimate
+		-- above, this time at a bigger size where the margin is smaller.
 		tabButton.Font = Hud.FONT.Display
-		tabButton.TextSize = Hud.TEXTSIZE.Label
+		tabButton.TextSize = 11
 		inv.tabButtons[name] = tabButton
 	end
 

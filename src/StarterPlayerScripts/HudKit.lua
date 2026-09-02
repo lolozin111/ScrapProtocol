@@ -40,7 +40,11 @@ HudKit.LocalPlayer = LocalPlayer
 
 -- Same rust/gunmetal family as the design doc, translated to Color3.
 HudKit.COLOR = {
-	Panel = Color3.fromRGB(30, 26, 23),
+	-- Was (30, 26, 23); a Studio screenshot next to the design reference read flat/light where the
+	-- reference reads bold/cool — panels needed to sit deeper against the world. Same hue ratio,
+	-- each channel pulled down by 8, so it stays recognisably the same rust/gunmetal Panel, just
+	-- denser, rather than a re-theme.
+	Panel = Color3.fromRGB(22, 18, 15),
 	PanelLight = Color3.fromRGB(40, 35, 31),
 	Line = Color3.fromRGB(60, 53, 47),
 	Text = Color3.fromRGB(237, 231, 220),
@@ -302,6 +306,27 @@ function HudKit.getUiIcon(key: string): string?
 	return image
 end
 
+-- Same resolution applyIcon uses (config first when there's no folderName override, else the
+-- folder walk), but returns the raw (image, template) pair instead of writing into a label —
+-- pulled out so a caller can find out WHETHER an icon will resolve before it has an ImageLabel to
+-- hand to applyIcon yet. HudKit.button() needs exactly that: it has to decide whether the caption
+-- is a real `text` or an `iconFallbackText` before it builds anything, and applyIcon can only ever
+-- report success by actually mutating a label it doesn't have at that point in the build.
+local function resolveIconImage(key: string, folderName: string?): (string?, Instance?)
+	if not folderName then
+		local configured = UiIconConfig.Get(key)
+		if configured then
+			return configured, nil -- no template instance for a config-sourced icon; see applyIcon
+		end
+	end
+	local folder = if folderName then ReplicatedStorage:FindFirstChild(folderName) else UiIcons
+	local inst, image = resolveIcon(folder, key)
+	if not inst or not image then
+		return nil, nil
+	end
+	return image, inst
+end
+
 -- Sets Image on `imageLabel` AND copies ImageRectOffset/ImageRectSize from the template instance
 -- when it carries them. Defaults to the UiIcons folder; pass folderName = "ItemIcons" to point at
 -- the other one instead.
@@ -315,24 +340,14 @@ end
 -- rule that missing art must never break the loop, a caller must be able to treat that as "render
 -- the fallback" rather than a special case to check for separately.
 function HudKit.applyIcon(imageLabel: ImageLabel, key: string, folderName: string?): boolean
-	-- Config first, same order as getUiIcon. A configured icon carries no template instance, so
-	-- there are no rect properties to copy — that only applies to the folder path, where the
-	-- template is a real ImageLabel that can be pointed at a slice of a sprite atlas.
-	if not folderName then
-		local configured = UiIconConfig.Get(key)
-		if configured then
-			imageLabel.Image = configured
-			return true
-		end
-	end
-
-	local folder = if folderName then ReplicatedStorage:FindFirstChild(folderName) else UiIcons
-	local inst, image = resolveIcon(folder, key)
-	if not inst or not image then
+	local image, inst = resolveIconImage(key, folderName)
+	if not image then
 		return false
 	end
 	imageLabel.Image = image
-	if inst:IsA("ImageLabel") or inst:IsA("ImageButton") then
+	-- inst is nil for a config-sourced icon (no template to copy rect properties from — see
+	-- resolveIconImage above), so this must check inst before IsA, not just its class.
+	if inst and (inst:IsA("ImageLabel") or inst:IsA("ImageButton")) then
 		imageLabel.ImageRectOffset = inst.ImageRectOffset
 		imageLabel.ImageRectSize = inst.ImageRectSize
 	end
@@ -438,17 +453,38 @@ local BUTTON_ICON_SCALE_DEFAULT = 0.55
 -- it, and the icon-only (centred) layout does not use it at all.
 local BUTTON_ICON_LEFT_INSET = 8
 
+-- Every variant gets a UIStroke now — buttons were reading flat against the world without one.
+-- `stroke` names WHICH derivation a variant wants rather than just on/off, because the two loud
+-- filled variants (primary/danger) and the one flat-dark variant (secondary) need opposite
+-- directions to actually read: "line" keeps secondary's original fixed COLOR.Line edge (a dark,
+-- low-contrast fill needs a LIGHTER line to read, and COLOR.Line already reads as exactly that
+-- against PanelLight); "darken" derives the rim from restColor at build time (see BUTTON_STROKE_DARKEN
+-- below) because primary/danger's fills are bright/saturated enough that a darker edge reads as a
+-- cut, and deriving it from whatever fill is ACTUALLY in play (variant default or an opts.fill
+-- override) means a custom-tinted button — a rarity color, an equipped mod's own color — still gets
+-- a correctly-toned edge instead of the wrong variant's baked-in one.
+local BUTTON_STROKE_DARKEN = 0.22
+
+-- Hard offset shadow (HudButtonOptions.dropShadow), an ALTERNATIVE to the gradient above, not a
+-- second layer on top of it — the reference draws tab buttons with a flat fill and a dropped-out
+-- duplicate shape beneath, never both a gradient AND a shadow on the same button.
+local BUTTON_DROPSHADOW_OFFSET = 2 -- matches the reference's literal `box-shadow: 0 2px 0 <darker>`:
+	-- no blur, no horizontal offset, just the same shape nudged straight down — the closest Roblox
+	-- (no box-shadow primitive at all) gets to that CSS effect.
+local BUTTON_DROPSHADOW_DARKEN = 0.35 -- deliberately steeper than the gradient's 0.72-bottom ramp:
+	-- this has to read as one hard step down, not a soft fade, or it just looks like a second gradient.
+
 -- Base fill/text per variant. Hover/press shades are DERIVED from `fill` via lighten()/darken() at
 -- button-build time rather than listed here, so this table is the only place a variant's color is
 -- ever spelled out.
 local BUTTON_VARIANTS = {
 	-- The one loud action on screen: Accent fill, dark text so it reads as a solid, confident button
 	-- rather than colored outline text.
-	primary = { fill = COLOR.Accent, text = COLOR.Panel, stroke = false },
+	primary = { fill = COLOR.Accent, text = COLOR.Panel, stroke = "darken" },
 	-- Everything else: matches the existing PanelLight/Line look used by rows and most panel chrome.
-	secondary = { fill = COLOR.PanelLight, text = COLOR.Text, stroke = true },
+	secondary = { fill = COLOR.PanelLight, text = COLOR.Text, stroke = "line" },
 	-- Destructive actions (unequip, scrap, abandon...): Bad fill, light text for contrast.
-	danger = { fill = COLOR.Bad, text = COLOR.Text, stroke = false },
+	danger = { fill = COLOR.Bad, text = COLOR.Text, stroke = "darken" },
 }
 
 export type HudButtonOptions = {
@@ -460,10 +496,20 @@ export type HudButtonOptions = {
 		-- HudKit.button() entirely, missing the hover/press feedback everything else here gets.
 	text: string?,
 	icon: string?, -- optional key into UiIcons (or `iconFolder`); falls back to text-only if missing
+	-- Shown ONLY when `icon` fails to resolve — never alongside a resolved icon. This is the fix for
+	-- a real bug: `icon = "close", text = "X"` used to render the close glyph AND a literal "X"
+	-- caption side by side once "close" actually resolved, which read as two close buttons stacked
+	-- on one control. A caller that wants an icon-only button with a text fallback for missing art
+	-- must use iconFallbackText, not text — `text` alongside `icon` is for a button that genuinely
+	-- wants a label beside its icon (unaffected by this option; still rendered every time).
+	iconFallbackText: string?,
 	iconFolder: string?,
 	iconScale: number?, -- fraction of the button's height the icon occupies; defaults to
 		-- BUTTON_ICON_SCALE_DEFAULT below. Override for a button that wants a stockier or daintier
 		-- icon than the default without forcing every other button's icon to follow.
+	dropShadow: boolean?, -- hard offset shadow instead of the top-to-bottom gradient (see
+		-- BUTTON_DROPSHADOW_OFFSET/_DARKEN above) — an alternative treatment, not an addition; true
+		-- also suppresses the gradient on this button so the two never stack and look muddy together.
 	size: UDim2?,
 	position: UDim2?,
 	anchorPoint: Vector2?,
@@ -577,13 +623,35 @@ function HudKit.button(opts: HudButtonOptions): TextButton
 		and restSize.X.Offset >= BUTTON_MIN_SLICE_SIZE
 		and restSize.Y.Offset >= BUTTON_MIN_SLICE_SIZE
 
+	-- A drop shadow needs a real background CHILD to hide behind — see the shadow block below for
+	-- why it can never just be a lower-ZIndex sibling of `btn` itself. So `dropShadow` pushes even an
+	-- otherwise-plain (non-sliceable) button onto the "fill lives on a child, not on `btn` directly"
+	-- path that used to be exclusive to isSliceable; below the slice-size floor that child is a plain
+	-- UICorner'd Frame instead of the angular ImageLabel, but either way `btn` itself goes fully
+	-- transparent and the real fill moves onto `backgroundLabel`.
+	local needsBackgroundChild = isSliceable or opts.dropShadow == true
+
+	-- Resolved BEFORE `btn` exists (see resolveIconImage's header comment for why applyIcon itself
+	-- can't answer this yet): whether the caption actually shown is a real `text`, an
+	-- `iconFallbackText` standing in for a missing icon, or nothing at all (icon resolved, no real
+	-- text supplied). `hasRealText` also drives the icon's own left-vs-centred layout further down —
+	-- iconFallbackText never counts as "real text" there, because by the time it's the thing being
+	-- shown the icon has already failed to resolve and isn't on screen to share the button with.
+	local hasRealText = opts.text ~= nil and opts.text ~= ""
+	local iconImage: string? = if opts.icon then (resolveIconImage(opts.icon, opts.iconFolder)) else nil
+	local iconResolved = iconImage ~= nil
+	local resolvedText = if hasRealText then opts.text
+		elseif opts.icon and not iconResolved and opts.iconFallbackText then opts.iconFallbackText
+		else opts.text or ""
+
 	local btn = HudKit.new("TextButton", {
-		-- Only actually visible on the fallback (non-sliceable) path below; the sliceable path hides
-		-- this via BackgroundTransparency and paints the fill on the background ImageLabel's
-		-- ImageColor3 instead. Set unconditionally anyway, same "only one path shows it" convention
-		-- plate() already uses for its own BackgroundColor3/ImageColor3 split.
+		-- Only actually visible when there's no background child (see needsBackgroundChild above);
+		-- every other path hides this via BackgroundTransparency and paints the fill on the
+		-- background child's own color property instead. Set unconditionally anyway, same "only one
+		-- path shows it" convention plate() already uses for its own BackgroundColor3/ImageColor3
+		-- split.
 		BackgroundColor3 = restColor,
-		BackgroundTransparency = if isSliceable then 1 else 0,
+		BackgroundTransparency = if needsBackgroundChild then 1 else 0,
 		Position = restPos,
 		AnchorPoint = opts.anchorPoint or Vector2.new(0, 0),
 		Size = restSize,
@@ -592,26 +660,34 @@ function HudKit.button(opts: HudButtonOptions): TextButton
 		Font = HudKit.FONT.BodyBold,
 		TextColor3 = variant.text,
 		TextSize = HudKit.TEXTSIZE.Body,
-		Text = opts.text or "",
+		Text = resolvedText,
 		Parent = opts.parent,
-	}, if isSliceable then {} else { HudKit.corner(HudKit.RADIUS.Button), buttonFillGradient() })
-	-- No UICorner on the sliceable path: the shape comes from the image's own cut corners, and
-	-- rounding on top of a sliced image would just clip the cut back into a plain rounded rect --
-	-- same reasoning as plate()'s shell/surface branch. The gradient here fills `btn` itself (its
-	-- BackgroundColor3 is the visible fill on this path); the sliceable path parents the same helper
-	-- onto backgroundLabel instead, since ImageColor3 is what's visible there. See buttonFillGradient
-	-- above for why it's a fresh instance per call rather than one shared UIGradient.
+	}, if needsBackgroundChild then {} else { HudKit.corner(HudKit.RADIUS.Button), buttonFillGradient() })
+	-- No UICorner AND no gradient here when there's a background child: the shape/shading move onto
+	-- that child instead (angular cut corners for the sliceable image, plain corner() for the
+	-- plain-Frame fallback below) — same reasoning as plate()'s shell/surface branch. A dropShadow
+	-- button additionally skips the gradient ON THAT CHILD TOO (see the background-child block
+	-- below): the gradient and the hard shadow are ALTERNATIVE treatments in the design reference,
+	-- never both at once, since stacking them is what makes a button look muddy. See
+	-- buttonFillGradient above for why it's built fresh per call rather than one shared UIGradient.
 
-	if variant.stroke then
+	if variant.stroke == "line" then
 		HudKit.stroke().Parent = btn
+	elseif variant.stroke == "darken" then
+		HudKit.new("UIStroke", {
+			Color = HudKit.darken(restColor, BUTTON_STROKE_DARKEN),
+			Thickness = 1,
+		}).Parent = btn
 	end
 
-	-- The angular background: a child ImageLabel filling the button, sized/positioned to track it
-	-- automatically (1,0,1,0 relative to `btn`, so no separate Size/Position tween is ever needed
-	-- for it — only its ImageColor3 changes on hover/press, via tweenFill below).
+	-- The angular (or, dropShadow-on-a-too-small-to-slice button, plain-rounded) background: a child
+	-- filling the button, sized/positioned to track it automatically (1,0,1,0 relative to `btn`, so
+	-- no separate Size/Position tween is ever needed for it — only its fill color changes on
+	-- hover/press, via tweenFill below).
 	--
 	-- ZIndex = 0 keeps it below the icon and caption (siblings, ZIndex 1 and 2 respectively — see
-	-- below): two children of the same GuiObject DO respect ZIndex ordering against each other.
+	-- below) and ABOVE the drop shadow (ZIndex -1, built just below when requested): all three are
+	-- ordinary sibling children of `btn` and DO get ordered by ZIndex against each other.
 	--
 	-- THIS WAS PREVIOUSLY DOCUMENTED BACKWARDS, AND THAT IS WHAT SHIPPED THE BUG: the comment here
 	-- used to claim "a TextButton's native Text always paints on top of every child regardless of
@@ -626,19 +702,70 @@ function HudKit.button(opts: HudButtonOptions): TextButton
 	-- The fix is captionLabel below: a child TextLabel that mirrors `btn`'s Text, which — being a
 	-- sibling of the background, not the parent's own rendering — CAN be given a higher ZIndex and
 	-- actually win.
-	local backgroundLabel: ImageLabel? = nil
+	local backgroundLabel: GuiObject? = nil
 	local captionLabel: TextLabel? = nil
-	if isSliceable then
-		backgroundLabel = HudKit.new("ImageLabel", {
-			BackgroundTransparency = 1,
-			Image = panelFrameImage,
-			ImageColor3 = restColor,
-			ScaleType = Enum.ScaleType.Slice,
-			SliceCenter = PANEL_FRAME_SLICE_CENTER,
-			Size = UDim2.new(1, 0, 1, 0),
-			ZIndex = 0,
-			Parent = btn,
-		}, { buttonFillGradient() })
+	local shadowTarget: GuiObject? = nil
+	local shadowProperty: string? = nil
+
+	if opts.dropShadow then
+		-- Built BEFORE backgroundLabel so it's visually behind it (ZIndex -1 vs 0) once both exist.
+		-- This MUST be a sibling of backgroundLabel (both children of `btn`), not a sibling of `btn`
+		-- itself: `btn` is fully transparent whenever a background child exists (needsBackgroundChild
+		-- above), so there is no visible layer on `btn` left to hide behind — the actual visible face
+		-- is backgroundLabel, and ZIndex only orders SIBLINGS against each other, never a parent
+		-- against its own children (see the long ZIndex note above). Same size as the background,
+		-- offset down BUTTON_DROPSHADOW_OFFSET px, filled with a darkened copy of restColor — the
+		-- hard `0 2px 0 <darker>` shape from the design reference, not a blur.
+		local shadowColor = HudKit.darken(restColor, BUTTON_DROPSHADOW_DARKEN)
+		if isSliceable then
+			local shadow = HudKit.new("ImageLabel", {
+				BackgroundTransparency = 1,
+				Image = panelFrameImage,
+				ImageColor3 = shadowColor,
+				ScaleType = Enum.ScaleType.Slice,
+				SliceCenter = PANEL_FRAME_SLICE_CENTER,
+				Size = UDim2.new(1, 0, 1, 0),
+				Position = UDim2.new(0, 0, 0, BUTTON_DROPSHADOW_OFFSET),
+				ZIndex = -1,
+				Parent = btn,
+			})
+			shadowTarget, shadowProperty = shadow, "ImageColor3"
+		else
+			local shadow = HudKit.new("Frame", {
+				BackgroundColor3 = shadowColor,
+				Size = UDim2.new(1, 0, 1, 0),
+				Position = UDim2.new(0, 0, 0, BUTTON_DROPSHADOW_OFFSET),
+				ZIndex = -1,
+				Parent = btn,
+			}, { HudKit.corner(HudKit.RADIUS.Button) })
+			shadowTarget, shadowProperty = shadow, "BackgroundColor3"
+		end
+	end
+
+	if needsBackgroundChild then
+		if isSliceable then
+			backgroundLabel = HudKit.new("ImageLabel", {
+				BackgroundTransparency = 1,
+				Image = panelFrameImage,
+				ImageColor3 = restColor,
+				ScaleType = Enum.ScaleType.Slice,
+				SliceCenter = PANEL_FRAME_SLICE_CENTER,
+				Size = UDim2.new(1, 0, 1, 0),
+				ZIndex = 0,
+				Parent = btn,
+			}, if opts.dropShadow then {} else { buttonFillGradient() })
+		else
+			-- Plain-fallback shape, just moved onto a child (instead of `btn` itself) so the drop
+			-- shadow above has a background face to sit behind; a too-small-to-slice button (the
+			-- close button before it grew to 40px was the concrete case) never used to reach this
+			-- branch at all before dropShadow existed.
+			backgroundLabel = HudKit.new("Frame", {
+				BackgroundColor3 = restColor,
+				Size = UDim2.new(1, 0, 1, 0),
+				ZIndex = 0,
+				Parent = btn,
+			}, { HudKit.corner(HudKit.RADIUS.Button) })
+		end
 
 		-- `btn`'s native Text is now invisible (TextTransparency = 1) rather than removed: callers
 		-- across this HUD assign `button.Text = ...` / `button.TextColor3 = ...` directly as an
@@ -670,12 +797,14 @@ function HudKit.button(opts: HudButtonOptions): TextButton
 	end
 
 	-- Whichever instance/property actually carries the visible fill: the background ImageLabel's
-	-- ImageColor3 when sliced, or the button's own BackgroundColor3 on the fallback path (unchanged
-	-- from before this background existed). Every hover/press/setButtonFill call goes through this
-	-- pair instead of hardcoding BackgroundColor3, which is the fix for the "sliced buttons never
-	-- recolor" regression a naive port of the old tweens would have shipped silently.
+	-- ImageColor3 when sliced, or BackgroundColor3 everywhere else — the plain-fallback background
+	-- child (dropShadow on a too-small-to-slice button) and `btn` itself (no background child at all)
+	-- both happen to use that same property name, so isSliceable alone decides it. Every
+	-- hover/press/setButtonFill call goes through this pair instead of hardcoding BackgroundColor3,
+	-- which is the fix for the "sliced buttons never recolor" regression a naive port of the old
+	-- tweens would have shipped silently.
 	local fillTarget: Instance = backgroundLabel or btn
-	local fillProperty = if backgroundLabel then "ImageColor3" else "BackgroundColor3"
+	local fillProperty = if isSliceable then "ImageColor3" else "BackgroundColor3"
 
 	-- Icon is optional and additive: a missing key must fall back to the text label alone, never an
 	-- empty square, per this project's "missing art never breaks the loop" rule. `iconLabel` and the
@@ -686,15 +815,19 @@ function HudKit.button(opts: HudButtonOptions): TextButton
 	local iconRestImage: string? = nil
 	local iconHoverImage: string? = nil
 	if opts.icon then
-		local hasText = opts.text ~= nil and opts.text ~= ""
+		-- hasRealText, not "is there any caption at all": iconFallbackText only ever shows once this
+		-- icon has already failed to resolve (see resolvedText above), at which point this whole
+		-- ImageLabel gets destroyed a few lines down and its layout never mattered anyway. Using it
+		-- here would wrongly leave a RESOLVED icon pinned left-of-centre, reserving dead space for a
+		-- fallback caption that isn't being shown.
 		local iconScale = opts.iconScale or BUTTON_ICON_SCALE_DEFAULT
 		local label = HudKit.new("ImageLabel", {
 			BackgroundTransparency = 1,
 			-- Icon+text: pinned to the left edge, text alone (below) padded clear of it so the two
-			-- don't overlap in the middle. Icon-only: centred, since there's no text to share the
-			-- button with.
-			AnchorPoint = if hasText then Vector2.new(0, 0.5) else Vector2.new(0.5, 0.5),
-			Position = if hasText then UDim2.new(0, BUTTON_ICON_LEFT_INSET, 0.5, 0) else UDim2.new(0.5, 0, 0.5, 0),
+			-- don't overlap in the middle. Icon-only (including the icon-resolved/fallback-text-moot
+			-- case): centred, since there's no real text to share the button with.
+			AnchorPoint = if hasRealText then Vector2.new(0, 0.5) else Vector2.new(0.5, 0.5),
+			Position = if hasRealText then UDim2.new(0, BUTTON_ICON_LEFT_INSET, 0.5, 0) else UDim2.new(0.5, 0, 0.5, 0),
 			-- Scale of the button's height, NOT a fixed pixel size — see BUTTON_ICON_SCALE_DEFAULT
 			-- above for why a fixed number made the hero button and a tiny secondary button get an
 			-- identical icon. SizeConstraint.RelativeYY ties BOTH the X and Y scale components to the
@@ -717,7 +850,7 @@ function HudKit.button(opts: HudButtonOptions): TextButton
 			-- naming convention) — a missing entry just leaves this nil, and swapIcon() below treats
 			-- nil as "leave it alone" rather than disabling anything.
 			iconHoverImage = UiIconConfig.Get(opts.icon .. "_hover")
-			if hasText then
+			if hasRealText then
 				-- The caption needs pushing clear of the icon; PaddingLeft reserves the icon's ACTUAL
 				-- footprint (inset + icon pixels + one XS gap), not the old fixed 20px, so a bigger
 				-- icon doesn't crowd the text and a smaller one doesn't strand it with dead space.
@@ -746,13 +879,17 @@ function HudKit.button(opts: HudButtonOptions): TextButton
 	-- later and have every handler below see the new values on the very next hover/press -- this
 	-- table IS the fix for the button-recolors-then-reverts-on-MouseLeave bug. fillTarget/fillProperty
 	-- ride along too so setButtonFill/setButtonVariant (below) can recolor a built button correctly
-	-- without re-deriving which path (sliced vs. fallback) it took at build time.
+	-- without re-deriving which path (sliced vs. fallback) it took at build time. shadowTarget/
+	-- shadowProperty are nil unless dropShadow was requested; setButtonFill checks for that before
+	-- touching them, since a recolored button would otherwise carry a shadow tinted from its OLD fill.
 	local state = {
 		restColor = restColor,
 		hoverColor = hoverColor,
 		pressColor = pressColor,
 		fillTarget = fillTarget,
 		fillProperty = fillProperty,
+		shadowTarget = shadowTarget,
+		shadowProperty = shadowProperty,
 	}
 	buttonState[btn] = state
 
@@ -831,6 +968,10 @@ end
 -- Frame's own BackgroundColor3 is transparent on that path and would silently do nothing). state.
 -- fillTarget/fillProperty were captured once at HudKit.button() build time so this function doesn't
 -- need to re-derive which path a given button took.
+-- ALSO RE-DERIVES THE DROP SHADOW: state.shadowTarget is only set when the button was built with
+-- dropShadow = true (see HudKit.button above); a recolored button that skips this would keep
+-- shining its OLD fill's shadow underneath its NEW fill forever, since nothing else ever touches it
+-- after build time.
 function HudKit.setButtonFill(button: TextButton, color: Color3)
 	local state = buttonState[button]
 	if not state then
@@ -845,6 +986,9 @@ function HudKit.setButtonFill(button: TextButton, color: Color3)
 	end
 	if button.Parent then -- same destroyed-instance guard as makeTweener; a destroyed button can't be recolored
 		(state.fillTarget :: any)[state.fillProperty] = state.restColor
+		if state.shadowTarget then
+			(state.shadowTarget :: any)[state.shadowProperty] = HudKit.darken(color, BUTTON_DROPSHADOW_DARKEN)
+		end
 	end
 end
 
@@ -871,9 +1015,14 @@ end
 -- five copies of Frame+UIGradient+Frame drifting apart the way makeRow's inline button already has
 -- from HudKit.button.
 
-local PLATE_GRADIENT_LIGHTEN = 0.62 -- top edge: COLOR.Line lightened. Pushed well up from 0.35
--- after a Studio screenshot: at 2-3px against a bright outdoor scene, a mid-grey bevel is
--- technically correct and visually invisible. The bevel only earns its cost if it reads in game.
+-- top edge: COLOR.Line lightened. Pushed up from 0.35 to 0.62 after an earlier Studio screenshot
+-- showed a mid-grey bevel reading as technically-correct-but-invisible at 2-3px against a bright
+-- outdoor scene. 0.62 overcorrected: lerped that far toward white, COLOR.Line's (60, 53, 47) lands
+-- around (181, 178, 176) -- functionally white, not "lightened grey" -- which at PLATE_SURFACE_INSET's
+-- full 3px reads as a glowing rim and washes out the whole panel edge along with COLOR.Panel's own
+-- new depth (see COLOR.Panel above). 0.4 keeps the bevel legibly lighter than COLOR.Line without
+-- blowing past "grey" into "white."
+local PLATE_GRADIENT_LIGHTEN = 0.4
 local PLATE_GRADIENT_DARKEN = 0.85 -- bottom edge: COLOR.Line darkened toward near-black
 local PLATE_SURFACE_INSET = 3 -- pixels of shell visible as a border once the surface sits on top.
 
@@ -1083,13 +1232,27 @@ function HudKit.panelHeader(surface: Frame, title: string, onClose: (() -> ())?)
 		-- Routed through HudKit.button rather than a bare TextButton so the close control gets the
 		-- same hover/press feedback as everything else, instead of being the one dead-looking
 		-- button in an otherwise responsive panel. icon = "close" is the glyph actually authored for
-		-- this; text = "X" stays as the fallback HudKit.button already falls back to whenever the
-		-- "close" key is missing from UiIconConfig/UiIcons (see its icon-resolution branch), so a
-		-- place without that art still gets a legible, clickable close control instead of a blank one.
+		-- this; iconFallbackText = "X" is what actually shows if "close" is missing from
+		-- UiIconConfig/UiIcons, so a place without that art still gets a legible, clickable close
+		-- control instead of a blank one.
+		--
+		-- BUG THIS PREVENTS: this used to pass `text = "X"` alongside `icon = "close"`. HudKit.button
+		-- renders icon AND text together whenever both are supplied, so once "close" started
+		-- resolving, this rendered the close glyph WITH a literal "X" beside it — reported as "two
+		-- close buttons at once." `text` is for a caption meant to sit beside a resolved icon;
+		-- iconFallbackText is for a caption that only exists because the icon didn't resolve. Do not
+		-- swap this back to `text = "X"`.
+		--
+		-- fill IS EXPLICIT, not left to secondary's default: this control's one job is to read as a
+		-- distinct square against the header bar (HudKit.darken(COLOR.Panel, PANEL_HEADER_DARKEN),
+		-- always the darkest thing behind it), so it can't be left implicitly coupled to whatever
+		-- secondary's rest color happens to be tuned to elsewhere — a future retune of that variant
+		-- for unrelated buttons must not silently make this one blend back into the header again.
 		HudKit.button({
 			variant = "secondary",
+			fill = COLOR.PanelLight,
 			icon = "close",
-			text = "X",
+			iconFallbackText = "X",
 			size = UDim2.new(0, PANEL_HEADER_CLOSE_SIZE, 0, PANEL_HEADER_CLOSE_SIZE),
 			position = UDim2.new(1, -(PANEL_HEADER_CLOSE_SIZE + HudKit.SPACE.S), 0.5, -PANEL_HEADER_CLOSE_SIZE / 2),
 			parent = header,
