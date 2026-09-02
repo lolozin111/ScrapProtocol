@@ -547,6 +547,10 @@ export type HudButtonOptions = {
 	-- wants a label beside its icon (unaffected by this option; still rendered every time).
 	iconFallbackText: string?,
 	iconFolder: string?,
+	-- Hard 90-degree corners: skips BOTH the panelframe 9-slice and corner() rounding. A deliberate
+	-- SHAPE contrast, not an oversight — the panel close button uses it so it reads as a distinct
+	-- square against a HUD where everything else is cut. Don't "fix" it to match its neighbours.
+	square: boolean?,
 	iconScale: number?, -- fraction of the button's height the icon occupies; defaults to
 		-- BUTTON_ICON_SCALE_DEFAULT below. Override for a button that wants a stockier or daintier
 		-- icon than the default without forcing every other button's icon to follow.
@@ -664,7 +668,10 @@ function HudKit.button(opts: HudButtonOptions): TextButton
 	-- inventory category tabs are UDim2.new(0, 91, 1, 0): height is pure Scale) and silently
 	-- fails every such button onto the rounded fallback regardless of its real rendered size.
 	local panelFrameImage = UiIconConfig.Get("panelframe")
-	local isSliceable = panelFrameImage ~= nil
+	-- `square` opts out of the angular frame entirely (see the option's comment on the type above).
+	-- Checked FIRST so the size floor below can never quietly route a square button somewhere else.
+	local isSliceable = not opts.square
+		and panelFrameImage ~= nil
 		and axisClears(restSize.X, BUTTON_MIN_SLICE_SIZE)
 		and axisClears(restSize.Y, BUTTON_MIN_SLICE_SIZE)
 
@@ -707,7 +714,7 @@ function HudKit.button(opts: HudButtonOptions): TextButton
 		TextSize = HudKit.TEXTSIZE.Body,
 		Text = resolvedText,
 		Parent = opts.parent,
-	}, if needsBackgroundChild then {} else { HudKit.corner(HudKit.RADIUS.Button), buttonFillGradient() })
+	}, if needsBackgroundChild then {} elseif opts.square then { buttonFillGradient() } else { HudKit.corner(HudKit.RADIUS.Button), buttonFillGradient() })
 	-- No UICorner AND no gradient here when there's a background child: the shape/shading move onto
 	-- that child instead (angular cut corners for the sliceable image, plain corner() for the
 	-- plain-Frame fallback below) — same reasoning as plate()'s shell/surface branch. A dropShadow
@@ -715,13 +722,6 @@ function HudKit.button(opts: HudButtonOptions): TextButton
 	-- below): the gradient and the hard shadow are ALTERNATIVE treatments in the design reference,
 	-- never both at once, since stacking them is what makes a button look muddy. See
 	-- buttonFillGradient above for why it's built fresh per call rather than one shared UIGradient.
-
-	if variant.stroke then
-		HudKit.new("UIStroke", {
-			Color = HudKit.lighten(restColor, BUTTON_STROKE_LIGHTEN),
-			Thickness = BUTTON_STROKE_THICKNESS,
-		}).Parent = btn
-	end
 
 	-- The angular (or, dropShadow-on-a-too-small-to-slice button, plain-rounded) background: a child
 	-- filling the button, sized/positioned to track it automatically (1,0,1,0 relative to `btn`, so
@@ -780,7 +780,7 @@ function HudKit.button(opts: HudButtonOptions): TextButton
 				Position = UDim2.new(0, 0, 0, BUTTON_DROPSHADOW_OFFSET),
 				ZIndex = -1,
 				Parent = btn,
-			}, { HudKit.corner(HudKit.RADIUS.Button) })
+			}, if opts.square then {} else { HudKit.corner(HudKit.RADIUS.Button) })
 			shadowTarget, shadowProperty = shadow, "BackgroundColor3"
 		end
 	end
@@ -807,7 +807,7 @@ function HudKit.button(opts: HudButtonOptions): TextButton
 				Size = UDim2.new(1, 0, 1, 0),
 				ZIndex = 0,
 				Parent = btn,
-			}, { HudKit.corner(HudKit.RADIUS.Button) })
+			}, if opts.square then {} else { HudKit.corner(HudKit.RADIUS.Button) })
 		end
 
 		-- `btn`'s native Text is now invisible (TextTransparency = 1) rather than removed: callers
@@ -848,6 +848,22 @@ function HudKit.button(opts: HudButtonOptions): TextButton
 	-- tweens would have shipped silently.
 	local fillTarget: Instance = backgroundLabel or btn
 	local fillProperty = if isSliceable then "ImageColor3" else "BackgroundColor3"
+
+	-- THE STROKE GOES ON `fillTarget`, NOT ON `btn`. Parented to `btn` it drew absolutely nothing
+	-- through three rounds of "outlines added": whenever a background child exists `btn` is fully
+	-- transparent, and a UIStroke has no rendered background edge to trace on a transparent
+	-- GuiObject. Putting it on the instance that actually carries the visible fill is also strictly
+	-- better than a workaround — a UIStroke on an ImageLabel follows the image's ALPHA, so on the
+	-- sliced path the outline traces panelframe's angular cut corners instead of boxing a rectangle
+	-- around them.
+	local strokeInstance: UIStroke? = nil
+	if variant.stroke then
+		strokeInstance = HudKit.new("UIStroke", {
+			Color = HudKit.lighten(restColor, BUTTON_STROKE_LIGHTEN),
+			Thickness = BUTTON_STROKE_THICKNESS,
+			Parent = fillTarget,
+		})
+	end
 
 	-- Icon is optional and additive: a missing key must fall back to the text label alone, never an
 	-- empty square, per this project's "missing art never breaks the loop" rule. `iconLabel` and the
@@ -933,6 +949,9 @@ function HudKit.button(opts: HudButtonOptions): TextButton
 		fillProperty = fillProperty,
 		shadowTarget = shadowTarget,
 		shadowProperty = shadowProperty,
+		-- Derived from restColor like the fill and the shadow, so a recolour must re-derive it too or
+		-- the button keeps an edge from its previous colour.
+		strokeInstance = strokeInstance,
 	}
 	buttonState[btn] = state
 
@@ -1031,6 +1050,9 @@ function HudKit.setButtonFill(button: TextButton, color: Color3)
 		(state.fillTarget :: any)[state.fillProperty] = state.restColor
 		if state.shadowTarget then
 			(state.shadowTarget :: any)[state.shadowProperty] = HudKit.darken(color, BUTTON_DROPSHADOW_DARKEN)
+		end
+		if state.strokeInstance then
+			state.strokeInstance.Color = HudKit.lighten(color, BUTTON_STROKE_LIGHTEN)
 		end
 	end
 end
@@ -1310,6 +1332,10 @@ function HudKit.panelHeader(surface: Frame, title: string, onClose: (() -> ())?)
 			fill = COLOR.PanelLight,
 			icon = "close",
 			iconFallbackText = "X",
+			-- Deliberately the one SQUARE control in a HUD where every other button carries panelframe's
+			-- 45-degree cut. It reads as variety rather than as a missed migration; see `square` on
+			-- HudButtonOptions. Do not "correct" this to match its neighbours.
+			square = true,
 			size = UDim2.new(0, PANEL_HEADER_CLOSE_SIZE, 0, PANEL_HEADER_CLOSE_SIZE),
 			position = UDim2.new(1, -(PANEL_HEADER_CLOSE_SIZE + HudKit.SPACE.S), 0.5, -PANEL_HEADER_CLOSE_SIZE / 2),
 			parent = header,
