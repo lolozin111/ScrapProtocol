@@ -27,41 +27,38 @@ local UiIconConfig = {}
 
 UiIconConfig.Icons = {
 	-- Wallet readout (top-left). Static display — never hovered, so hover entries are optional.
-	scrap = 0,
-	scrap_hover = 0,
-	cores = 0,
-	cores_hover = 0,
-	energy = 0,
-	energy_hover = 0,
+	scrap = 94296006655680,
+	cores = 112359366159478,
+	energy = 85520253556045,
 
 	-- Action row (bottom-centre). `defense` is the big Start Defense shield.
-	inventory = 0,
-	inventory_hover = 0,
-	defense = 0,
-	defense_hover = 0,
-	recall = 0,
-	recall_hover = 0,
+	inventory = 104907654078136,
+	inventory_hover = 	140560506379845,
+	defense = 81881363230776,
+	defense_hover = 74378692449291,
+	recall = 96674040688372,
+	recall_hover = 91724933512363,
 
 	-- Panel chrome.
-	close = 0,
-	close_hover = 0,
-	chevron = 0,
-	chevron_hover = 0,
+	close = 	119986196809007,
+	close_hover = 	72963123949945,
+	chevron = 	123710429964857,
+	chevron_hover = 	127322593699450,
 
 	-- Inventory tabs.
-	weapons = 0,
-	weapons_hover = 0,
-	robots = 0,
-	robots_hover = 0,
-	mods = 0,
-	mods_hover = 0,
-	materials = 0,
-	materials_hover = 0,
+	weapons = 74069286452743,
+	weapons_hover = 116400364993597,
+	robots = 	94437238830206,
+	robots_hover = 106784062422552,
+	mods = 	134432346461059,
+	mods_hover = 98324493109733,
+	materials = 137045467867215,
+	materials_hover = 137045467867215,
 
 	-- The 9-sliced panel shape: square top-left and bottom-right, 45-degree cut top-right and
 	-- bottom-left. White, tinted per element at runtime, so this one asset is every angular panel,
 	-- button and tile in the HUD. See HudKit.plate for the SliceCenter it is drawn with.
-	panelframe = 0,
+	panelframe = 	107592152687673,
 }
 
 -- Normalizes whatever is in the table above into an Image string, or nil when unset.

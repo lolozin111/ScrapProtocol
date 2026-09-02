@@ -33,7 +33,10 @@ shopUI.surface, shopUI.frame = Hud.plate({
 	Parent = Hud.screenGui,
 })
 
-Hud.panelHeader(shopUI.surface, "Outpost Shop", function()
+-- Static chrome only — Hud.panelHeader already renders the title in Hud.FONT.Display, this just
+-- upper-cases the text to match. Item names inside the list (renderShopList below) are dynamic
+-- (NodeConfig.ShopCatalog) and stay exactly as configured.
+Hud.panelHeader(shopUI.surface, "OUTPOST SHOP", function()
 	shopUI.frame.Visible = false
 end)
 

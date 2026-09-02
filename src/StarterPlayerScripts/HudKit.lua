@@ -479,17 +479,41 @@ function HudKit.button(opts: HudButtonOptions): TextButton
 	end
 
 	-- Icon is optional and additive: a missing key must fall back to the text label alone, never an
-	-- empty square, per this project's "missing art never breaks the loop" rule.
+	-- empty square, per this project's "missing art never breaks the loop" rule. `iconLabel` and the
+	-- two image strings are locals closed over by the hover handlers further down, not stored in
+	-- `state` (unlike the colors) — nothing outside this function ever needs to recolor an icon the
+	-- way setButtonFill recolors a fill, so there's no case for exposing them the same way.
+	local iconLabel: ImageLabel? = nil
+	local iconRestImage: string? = nil
+	local iconHoverImage: string? = nil
 	if opts.icon then
-		local iconLabel = HudKit.new("ImageLabel", {
+		local hasText = opts.text ~= nil and opts.text ~= ""
+		local label = HudKit.new("ImageLabel", {
 			BackgroundTransparency = 1,
-			AnchorPoint = Vector2.new(0, 0.5),
-			Position = UDim2.new(0, 8, 0.5, 0),
+			-- Icon+text: pinned to the left edge, text alone (below) padded clear of it so the two
+			-- don't overlap in the middle. Icon-only: centred, since there's no text to share the
+			-- button with.
+			AnchorPoint = if hasText then Vector2.new(0, 0.5) else Vector2.new(0.5, 0.5),
+			Position = if hasText then UDim2.new(0, 8, 0.5, 0) else UDim2.new(0.5, 0, 0.5, 0),
 			Size = UDim2.new(0, 20, 0, 20),
 			Parent = btn,
 		})
-		if not HudKit.applyIcon(iconLabel, opts.icon, opts.iconFolder) then
-			iconLabel:Destroy()
+		if HudKit.applyIcon(label, opts.icon, opts.iconFolder) then
+			iconLabel = label
+			iconRestImage = label.Image
+			-- Hover art is optional per icon (see UiIconConfig's header comment on the `_hover`
+			-- naming convention) — a missing entry just leaves this nil, and swapIcon() below treats
+			-- nil as "leave it alone" rather than disabling anything.
+			iconHoverImage = UiIconConfig.Get(opts.icon .. "_hover")
+			if hasText then
+				-- Only the button's own Text (rendered by the TextButton itself, not a separate
+				-- label) needs pushing clear of the icon; PaddingLeft reserves exactly the icon's
+				-- footprint (8px inset + 20px icon + one XS gap) without touching the icon's own
+				-- Position above.
+				HudKit.new("UIPadding", { PaddingLeft = UDim.new(0, 8 + 20 + HudKit.SPACE.XS), Parent = btn })
+			end
+		else
+			label:Destroy() -- missing art -> fall back to the text label alone, never an empty square
 		end
 	end
 
@@ -501,11 +525,24 @@ function HudKit.button(opts: HudButtonOptions): TextButton
 
 	local tween = makeTweener(btn, state)
 
+	-- Same destroyed-instance guard as makeTweener above, and for the same reason: panels rebuild
+	-- constantly, so a MouseLeave can fire after `btn` (and `iconLabel`, parented under it) is
+	-- already torn down. `image == nil` also no-ops here, which is what makes a missing `_hover`
+	-- entry "silently keep the rest icon" rather than something every caller has to check for.
+	local function swapIcon(image: string?)
+		if not image or not btn.Parent or not iconLabel then
+			return
+		end
+		iconLabel.Image = image
+	end
+
 	btn.MouseEnter:Connect(function()
 		tween({ BackgroundColor3 = state.hoverColor, Size = hoverSize })
+		swapIcon(iconHoverImage)
 	end)
 	btn.MouseLeave:Connect(function()
 		tween({ BackgroundColor3 = state.restColor, Size = restSize, Position = restPos })
+		swapIcon(iconRestImage)
 	end)
 	btn.MouseButton1Down:Connect(function()
 		tween({ BackgroundColor3 = state.pressColor, Position = pressPos })
@@ -584,20 +621,40 @@ local PLATE_GRADIENT_LIGHTEN = 0.62 -- top edge: COLOR.Line lightened. Pushed we
 local PLATE_GRADIENT_DARKEN = 0.85 -- bottom edge: COLOR.Line darkened toward near-black
 local PLATE_SURFACE_INSET = 3 -- pixels of shell visible as a border once the surface sits on top.
 
+-- panelframe is a 64x64 white PNG: square top-left/bottom-right corners, a 45-degree 16px cut
+-- top-right and bottom-left. SliceCenter's margins land just past that cut on every edge, so the
+-- corner regions (which must stay unstretched to keep the cut crisp) are exactly the drawn art and
+-- only the centre strip between them tiles/stretches to fill whatever size the element is.
+--
+-- MINIMUM SIZE: a 9-slice needs an element at least twice the slice inset per axis (roughly
+-- 40x40 here) or the corner regions overlap and the cut renders wrong. Shell/surface are always
+-- far bigger than that, but this is exactly why panelHeader's 28px close button stays on the
+-- plain rounded HudKit.button path below instead of getting a sliced image of its own.
+local PANEL_FRAME_SLICE_CENTER = Rect.new(20, 20, 44, 44)
+
 -- Returns (surface, shell) in that order: surface is what a caller almost always wants right away
 -- (to parent content into), shell is only needed afterward to move/resize the whole panel — hence
 -- `props` (Position, Size, Parent, AnchorPoint, LayoutOrder, ZIndex, ...) is applied to the shell,
 -- since that's the outer box actually being placed in the screen.
 --
--- KNOWN LIMITATION: the mockup's corners are angular/clipped (faceted cut-steel), which UICorner
--- cannot reproduce — Roblox has no clip-path equivalent. Rounded corners are the interim look, not
--- the final one. Swapping to a 9-slice ImageLabel border later is a change entirely inside this
--- function, which is the whole reason panels should route through plate() rather than hand-rolling
--- the shell Frame per panel.
+-- SHAPE: when UiIconConfig.Get("panelframe") resolves, both shell and surface render as that
+-- 9-sliced image instead of a plain Frame, giving the mockup's angular cut-steel corners that
+-- UICorner can never reproduce (Roblox has no clip-path equivalent). When it doesn't resolve — the
+-- asset ID is still 0, or this repo was forked without it — both fall back to the original rounded
+-- Frame + UICorner path, so a missing asset degrades to "less pretty" rather than "invisible HUD",
+-- per this project's "missing art never breaks the loop" rule.
 function HudKit.plate(props: { [string]: any }?): (Frame, Frame)
+	-- Read once per call, not once per shell/surface build below: the pair must always agree on
+	-- which path they're taking, and re-reading twice only invites them drifting apart if this
+	-- value ever became read-write instead of a static config lookup.
+	local panelFrameImage = UiIconConfig.Get("panelframe")
+
 	local shellProps: { [string]: any } = {
 		BackgroundColor3 = Color3.new(1, 1, 1), -- overpainted by the UIGradient below; this fill is
-			-- never actually seen, but a Frame with Transparency and a UIGradient renders nothing
+			-- never actually seen, but a Frame with Transparency and a UIGradient renders nothing.
+			-- Only read on the fallback path — the slice path below sets BackgroundTransparency = 1
+			-- and tints ImageColor3 instead, so this key just goes unused rather than being fought
+			-- over between the two branches.
 	}
 	for key, value in pairs(props or {}) do
 		shellProps[key] = value
@@ -614,32 +671,46 @@ function HudKit.plate(props: { [string]: any }?): (Frame, Frame)
 	-- the surface — a direction that genuinely works, since the shell no longer depends on itself.
 	-- Popped out of shellProps rather than left in it: `HudKit.new` does `inst[key] = value` for
 	-- every entry, and "automaticSize" is not a real Instance property, so leaving it in would
-	-- throw the moment the shell Frame is constructed below.
+	-- throw the moment the shell instance is constructed below.
 	local automaticSize = shellProps.automaticSize
 	shellProps.automaticSize = nil
 
-	local shell = HudKit.new("Frame", shellProps, {
-		HudKit.corner(HudKit.RADIUS.Panel),
-		HudKit.new("UIGradient", {
-			Rotation = 90, -- 0 is left-to-right; 90 turns the same left->right stops top-to-bottom
-			Color = ColorSequence.new({
-				ColorSequenceKeypoint.new(0, HudKit.lighten(COLOR.Line, PLATE_GRADIENT_LIGHTEN)),
-				ColorSequenceKeypoint.new(1, HudKit.darken(COLOR.Line, PLATE_GRADIENT_DARKEN)),
-			}),
+	-- The bevel gradient is identical either way: UIGradient recolors whichever of
+	-- BackgroundColor3/ImageColor3 is actually visible on the GuiObject it's parented to, so parking
+	-- it on a Frame or an ImageLabel needs no branching of its own.
+	local gradient = HudKit.new("UIGradient", {
+		Rotation = 90, -- 0 is left-to-right; 90 turns the same left->right stops top-to-bottom
+		Color = ColorSequence.new({
+			ColorSequenceKeypoint.new(0, HudKit.lighten(COLOR.Line, PLATE_GRADIENT_LIGHTEN)),
+			ColorSequenceKeypoint.new(1, HudKit.darken(COLOR.Line, PLATE_GRADIENT_DARKEN)),
 		}),
 	})
+
+	local shell
+	if panelFrameImage then
+		shellProps.BackgroundTransparency = 1
+		shellProps.Image = panelFrameImage
+		shellProps.ImageColor3 = Color3.new(1, 1, 1) -- overpainted by the gradient, same convention
+			-- as the fallback's BackgroundColor3 above
+		shellProps.ScaleType = Enum.ScaleType.Slice
+		shellProps.SliceCenter = PANEL_FRAME_SLICE_CENTER
+		-- No UICorner here: the shape now comes from the image's own cut corners, and rounding on
+		-- top of a sliced image would just clip the cut back into a plain rounded rect.
+		shell = HudKit.new("ImageLabel", shellProps, { gradient })
+	else
+		shell = HudKit.new("Frame", shellProps, { HudKit.corner(HudKit.RADIUS.Panel), gradient })
+	end
 
 	if automaticSize then
 		-- Base height is just the two 2px insets (top + bottom bevel) so the surface, once it grows
 		-- to its content, overflows evenly on both edges rather than the shell starting undersized.
-		-- Width is left exactly as the caller set it via props.Size (or the Frame default) — only Y
+		-- Width is left exactly as the caller set it via props.Size (or the default) — only Y
 		-- becomes automatic, so callers keep setting an explicit width the normal way.
 		shell.Size = UDim2.new(shell.Size.X.Scale, shell.Size.X.Offset, 0, PLATE_SURFACE_INSET * 2)
 		shell.AutomaticSize = Enum.AutomaticSize.Y
 	end
 
-	local surface = HudKit.new("Frame", {
-		BackgroundColor3 = COLOR.Panel,
+	local surfaceProps: { [string]: any } = {
 		Position = UDim2.fromOffset(PLATE_SURFACE_INSET, PLATE_SURFACE_INSET),
 		-- Non-auto: unchanged, scale-relative to the shell. Auto: offset-only base (no scale
 		-- component means no dependency on the shell's still-being-computed height) plus
@@ -648,9 +719,22 @@ function HudKit.plate(props: { [string]: any }?): (Frame, Frame)
 			or UDim2.new(1, -PLATE_SURFACE_INSET * 2, 1, -PLATE_SURFACE_INSET * 2),
 		AutomaticSize = automaticSize and Enum.AutomaticSize.Y or nil,
 		Parent = shell,
+	}
+
+	local surface
+	if panelFrameImage then
+		surfaceProps.BackgroundTransparency = 1
+		surfaceProps.Image = panelFrameImage
+		surfaceProps.ImageColor3 = COLOR.Panel
+		surfaceProps.ScaleType = Enum.ScaleType.Slice
+		surfaceProps.SliceCenter = PANEL_FRAME_SLICE_CENTER
+		surface = HudKit.new("ImageLabel", surfaceProps) -- no UICorner; see the shell branch above
+	else
+		surfaceProps.BackgroundColor3 = COLOR.Panel
 		-- slightly smaller radius than the shell's, concentric with it, so the visible bevel reads
 		-- as an even-width border all the way around rather than looking mitred at the corners
-	}, { HudKit.corner(math.max(HudKit.RADIUS.Panel - PLATE_SURFACE_INSET, 0)) })
+		surface = HudKit.new("Frame", surfaceProps, { HudKit.corner(math.max(HudKit.RADIUS.Panel - PLATE_SURFACE_INSET, 0)) })
+	end
 
 	return surface, shell
 end

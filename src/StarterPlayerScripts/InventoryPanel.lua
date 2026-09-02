@@ -111,7 +111,11 @@ function InventoryPanel.new(context)
 		Parent = Hud.screenGui,
 	})
 
-	Hud.panelHeader(inv.surface, "Inventory", function()
+	-- Static chrome only (per this session's uppercase-Display treatment) — Hud.panelHeader already
+	-- sets the title's Font to Hud.FONT.Display; the caller just needs to pass the text upper-cased,
+	-- same as every other panel/tab-label change in this pass. Never do this to dynamic content
+	-- (item/weapon/ore names) — those stay exactly as the server/config spells them.
+	Hud.panelHeader(inv.surface, "INVENTORY", function()
 		inv.frame.Visible = false
 		closeInvDetail()
 		ModPicker.closeModPicker() -- don't leave the mod picker orphaned open behind a closed Inventory
@@ -643,6 +647,30 @@ function InventoryPanel.new(context)
 	-- Fixed left-to-right order the tab row builds in, once, below.
 	local INV_TAB_NAMES = { "Weapons", "Robots", "Mods", "Materials" }
 
+	-- BUG FIX: the panel was re-docked from 640px wide to 420px (see inv.frame above) but this row
+	-- kept the old 140px-per-button sizing, so the four buttons (560px) plus their 3 gaps (Hud.SPACE.S
+	-- = 8 each, 24px) totalled 584px against a row that is actually only 390px wide — pushing the
+	-- fourth tab, Materials, off the edge of the panel entirely. A player literally could not reach
+	-- their ore.
+	--
+	-- The 390px figure is not eyeballed: inv.surface is the plate's inset content surface, 6px
+	-- narrower than the 420px shell (see Hud.plate's PLATE_SURFACE_INSET, 3px each side) = 414px, and
+	-- inv.tabRow itself sits inset 12px each side of THAT (`Position/Size` just above) = 414 - 24 =
+	-- 390px of actual usable width. (The listFrame's own UIGridLayout comment above already assumes
+	-- this same 390px figure for the grid beneath it — this is the same row, so it has to agree.)
+	--
+	-- Text is dropped from the tabs entirely rather than shrunk to fit: with icon+label spacing fixed
+	-- by HudKit.button at 8px inset + 20px icon + 4px gap = 32px before any text even starts, four
+	-- 91px buttons would leave under 60px for a label like "MATERIALS" — a bet against exact glyph
+	-- widths at a size small enough to still read, for a control a player mis-clicks if it's wrong.
+	-- Icon-alone is the same call this file's own makeItemTile already makes a few sections up: a
+	-- tile with a resolved icon never ALSO grows a text caption underneath it. Following that
+	-- precedent here means the four tabs read consistently with the icon grid they sit above, not as
+	-- a new third convention.
+	local INV_TAB_GAP = Hud.SPACE.S -- unchanged from the row's existing UIListLayout Padding, below
+	local INV_TAB_WIDTH = math.floor((390 - INV_TAB_GAP * (#INV_TAB_NAMES - 1)) / #INV_TAB_NAMES)
+	-- INV_TAB_WIDTH = 91: 4 * 91 + 3 * 8 = 388px against 390px available — fits, 2px to spare.
+
 	local selectInvTab
 
 	-- Built ONCE, then recolored in place via HudKit.setButtonVariant on every tab switch. This
@@ -658,8 +686,13 @@ function InventoryPanel.new(context)
 	for index, name in ipairs(INV_TAB_NAMES) do
 		inv.tabButtons[name] = Hud.button({
 			variant = (currentInvTab == name) and "primary" or "secondary",
-			text = name,
-			size = UDim2.new(0, 140, 1, 0),
+			-- icon key matches the lower-cased tab name exactly (weapons/robots/mods/materials in
+			-- UiIconConfig.lua) — no text option passed, so HudKit.button centers the icon alone
+			-- instead of reserving room for a label next to it. Missing art still falls back
+			-- gracefully to a blank secondary/primary-colored square (HudKit.applyIcon's normal
+			-- "missing art never breaks the loop" behavior), same as everywhere else.
+			icon = string.lower(name),
+			size = UDim2.new(0, INV_TAB_WIDTH, 1, 0),
 			layoutOrder = index,
 			parent = inv.tabRow,
 			onClick = function()

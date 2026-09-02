@@ -43,6 +43,39 @@ function ResearchPanel.new(statusPanel: Frame)
 		parent = statusPanel,
 	})
 
+	-- Chevron on the right edge, per the design — this button opens/closes a popup, and the chevron
+	-- is what signals that. HudKit.button's own `icon` option always anchors LEFT of the text (or
+	-- centers if there's no text at all — see its `hasText` branch), with no "icon on the right"
+	-- mode, so a right-edge glyph has to be built by hand here rather than passed through `icon`.
+	-- That's the only reason this doesn't just go through opts.icon like the Inventory tabs do.
+	research.chevron = Hud.new("ImageLabel", {
+		BackgroundTransparency = 1,
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(1, -8, 0.5, 0),
+		Size = UDim2.new(0, 16, 0, 16),
+		Image = "",
+		Parent = research.button,
+	})
+	if Hud.applyIcon(research.chevron, "chevron") then
+		-- Reserve the same footprint on the right that HudKit.button's own left-side icon padding
+		-- uses (8px inset + icon size + one XS gap), so the button's own centered Text never runs
+		-- under the chevron for longer strings like "Research T3 — UPGRADE READY".
+		Hud.new("UIPadding", { PaddingRight = UDim.new(0, 8 + 16 + Hud.SPACE.XS), Parent = research.button })
+		-- Hover swap mirrors HudKit.button's own convention (rest/`_hover` pair), just wired by hand
+		-- since this icon lives outside HudKit.button's own icon machinery. Both connections are
+		-- additive to whatever HudKit.button already connected to MouseEnter/MouseLeave internally —
+		-- Roblox events support multiple listeners, so this doesn't disturb its fill/size tweening.
+		research.button.MouseEnter:Connect(function()
+			Hud.applyIcon(research.chevron, "chevron_hover")
+		end)
+		research.button.MouseLeave:Connect(function()
+			Hud.applyIcon(research.chevron, "chevron")
+		end)
+	else
+		research.chevron:Destroy() -- missing art -> no chevron, per "missing art never breaks the loop"
+		research.chevron = nil
+	end
+
 	-- research.frame is the plate's SHELL (the outer, positioned frame) so existing
 	-- `research.frame.Visible = ...` toggles keep working unchanged; research.surface is the inset
 	-- content surface the header and list parent into.
@@ -61,9 +94,11 @@ function ResearchPanel.new(statusPanel: Frame)
 	end
 
 	-- panelHeader owns the header Frame's construction, but renderResearchPanel() still needs to
-	-- rewrite the title text per tier ("Research Tier 3") — pull the TextLabel back out rather than
-	-- hand-building a second one alongside it.
-	research.header = Hud.panelHeader(research.surface, "Research", closeResearchPanel)
+	-- rewrite the title text per tier ("RESEARCH TIER 3") — pull the TextLabel back out rather than
+	-- hand-building a second one alongside it. Upper-cased for the Display-font chrome treatment,
+	-- same as every other panel title in this pass; the tier NUMBER filled in below is the only
+	-- dynamic part.
+	research.header = Hud.panelHeader(research.surface, "RESEARCH", closeResearchPanel)
 	research.title = research.header:FindFirstChildOfClass("TextLabel")
 
 	research.list = Hud.new("ScrollingFrame", {
@@ -88,7 +123,7 @@ function ResearchPanel.new(statusPanel: Frame)
 		end
 
 		local currentTier, currentIndex = ResearchConfig.GetTier(Hud.profile.ResearchTier or 1)
-		research.title.Text = ("Research Tier %d"):format(currentIndex)
+		research.title.Text = ("RESEARCH TIER %d"):format(currentIndex)
 
 		Hud.makeRow(
 			currentTier.Name,

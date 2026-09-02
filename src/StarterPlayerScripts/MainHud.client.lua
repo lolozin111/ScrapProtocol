@@ -124,12 +124,11 @@ local currencyList = Hud.new("Frame", {
 	}),
 })
 
--- Icon slot + short muted label shared by every group. Icons don't exist yet — Hud.applyIcon
--- returns false when ReplicatedStorage.UiIcons has no "scrap"/"cores"/"energy" entry, and this
--- project's rule is that missing art degrades to a fallback rather than ever breaking or rendering
--- an empty square: the ImageLabel is hidden and the muted label alone carries the meaning. Wired
--- ahead of the art existing on purpose — once the user drops real icons into UiIcons under these
--- keys, they light up with no further code change.
+-- Icon slot + short muted label shared by every group. UiIconConfig now has real asset IDs for
+-- "scrap"/"cores"/"energy", so these render for real — but the fallback stays live: if a key's ID
+-- is ever zeroed out again, Hud.applyIcon returns false, the ImageLabel hides itself, and the
+-- muted label alone carries the meaning, per this project's "missing art never breaks the loop"
+-- rule rather than rendering an empty square.
 --
 -- Group's own height is a fixed offset (24), never a Scale, for the same circularity reason
 -- currencyFrame/currencyList call out above: currencyList AutomaticSizes its Y from this row's
@@ -157,14 +156,17 @@ local function makeCurrencyGroupShell(iconKey: string, labelText: string): Frame
 		icon.Visible = false
 	end
 
+	-- Uppercase + Hud.FONT.Display, same display treatment as every other label in this file —
+	-- TextLabel has no letter-spacing property, so this is the whole treatment (no inserted spaces
+	-- to fake tracking, which would break AutomaticSize.X right above).
 	Hud.new("TextLabel", {
 		BackgroundTransparency = 1,
 		AutomaticSize = Enum.AutomaticSize.X,
 		Size = UDim2.new(0, 0, 0, 18),
-		Font = Hud.FONT.Body,
+		Font = Hud.FONT.Display,
 		TextColor3 = Hud.COLOR.Muted,
 		TextSize = 12,
-		Text = labelText,
+		Text = labelText:upper(),
 		Parent = group,
 	})
 
@@ -2380,6 +2382,10 @@ Hud.new("UIPadding", {
 })
 
 -- Small labelled bar, reused for Health and Stamina so the two stay visually identical.
+-- Uppercased at the caller via :upper() rather than requiring every caller to remember to shout —
+-- this is a section label, not dynamic content, so the display treatment (Hud.FONT.Display +
+-- uppercase; TextLabel has no letter-spacing property, so that's the whole treatment) always
+-- applies here.
 local function makeStatusBar(order: number, label: string, fillColor: Color3, dimmed: boolean?)
 	local holder = Hud.new("Frame", {
 		BackgroundTransparency = 1,
@@ -2390,11 +2396,11 @@ local function makeStatusBar(order: number, label: string, fillColor: Color3, di
 	local caption = Hud.new("TextLabel", {
 		BackgroundTransparency = 1,
 		Size = UDim2.new(1, 0, 0, 14),
-		Font = Enum.Font.SourceSansBold,
+		Font = Hud.FONT.Display,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextColor3 = dimmed and Hud.COLOR.Muted or Hud.COLOR.Text,
 		TextSize = 13,
-		Text = label,
+		Text = label:upper(),
 		Parent = holder,
 	})
 	local track = Hud.new("Frame", {
@@ -2429,11 +2435,12 @@ do
 	statusHealthCaption = Hud.new("TextLabel", {
 		BackgroundTransparency = 1,
 		Size = UDim2.new(1, 0, 0, 14),
-		Font = Enum.Font.SourceSansBold,
+		Font = Hud.FONT.Display,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextColor3 = Hud.COLOR.Text,
 		TextSize = 13,
-		Text = "Health",
+		Text = "INTEGRITY", -- renamed from "Health" to match the design; overwritten with the live
+			-- HP readout by refreshHealthBar below the instant a Humanoid binds
 		Parent = holder,
 	})
 	statusHealthCells = Hud.segmentBar(holder, 10)
@@ -2482,7 +2489,7 @@ local function refreshHealthBar()
 	for i, cell in ipairs(statusHealthCells) do
 		cell.BackgroundColor3 = (i <= filledCount) and filledColor or Hud.COLOR.Line
 	end
-	statusHealthCaption.Text = ("Health  %d / %d"):format(math.ceil(humanoid.Health), math.ceil(playerMaxHealth))
+	statusHealthCaption.Text = ("INTEGRITY  %d / %d"):format(math.ceil(humanoid.Health), math.ceil(playerMaxHealth))
 end
 
 local function bindHealth(character: Model)
@@ -2507,13 +2514,27 @@ LocalPlayer.CharacterAdded:Connect(bindHealth)
 
 -- Assigns into the `local actionRow` forward-declared up in the Forge tab section — see that
 -- comment for why setForgeWidgetsVisible needs to reach this row before it technically exists yet.
+--
+-- Icon-led layout: Inventory/Start Defense/Recall are now square icon buttons with a caption
+-- underneath (see makeActionColumn below), so the row is taller than a single button row and grows
+-- upward from a bottom anchor. AutomaticSize on both axes replaces the old fixed 550x44 — the row's
+-- width also varies with which of Return to Base/Recall/Test Mode happen to be visible right now.
+-- VerticalAlignment = Bottom keeps every column (and the plain text buttons that have no caption)
+-- sitting on the same baseline instead of top-aligned, since Start Defense's column is taller than
+-- its neighbours by design.
 actionRow = Hud.new("Frame", {
 	BackgroundTransparency = 1,
 	AnchorPoint = Vector2.new(0.5, 1),
 	Position = UDim2.new(0.5, 0, 1, -16),
-	Size = UDim2.new(0, 550, 0, 44), -- Inventory + Defend + Return to Base + Recall, at most
+	Size = UDim2.new(0, 0, 0, 0),
+	AutomaticSize = Enum.AutomaticSize.XY,
 	Parent = Hud.screenGui,
-}, { Hud.new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 10), HorizontalAlignment = Enum.HorizontalAlignment.Center }) })
+}, { Hud.new("UIListLayout", {
+	FillDirection = Enum.FillDirection.Horizontal,
+	Padding = UDim.new(0, 10),
+	HorizontalAlignment = Enum.HorizontalAlignment.Center,
+	VerticalAlignment = Enum.VerticalAlignment.Bottom,
+}) })
 
 -- No standalone "Workbench" toggle button anymore — per-station gating (openStationMenu, near
 -- the base-station setup further down) is the only way this menu opens now, so there's nothing
@@ -2525,27 +2546,69 @@ craftCloseButton.MouseButton1Click:Connect(function()
 	ModPicker.closeModPicker() -- don't leave the mod picker orphaned open behind a closed Workbench
 end)
 
+-- Builds one icon-button + caption column (button on top, small uppercase caption below, both
+-- centred) and parents it into actionRow. Returns the button, the caption label, AND the column
+-- itself — a caller that needs to hide the whole action (Recall, conditionally) has to toggle the
+-- COLUMN, not just the button, or the caption would be left floating with no icon above it once the
+-- button's Visible flips off.
+--
+-- UPPERCASE + Hud.FONT.Display is the whole display treatment for the caption: TextLabel has no
+-- letter-spacing property, so this deliberately does NOT try to fake the reference mockup's wide
+-- tracking by inserting spaces between the letters — that breaks text measurement, wrapping, and
+-- AutomaticSize for anyone who touches this later.
+local function makeActionColumn(buttonOpts, captionText: string, captionColor: Color3)
+	local column = Hud.new("Frame", {
+		BackgroundTransparency = 1,
+		Size = UDim2.new(0, buttonOpts.size.X.Offset, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		Parent = actionRow,
+	}, { Hud.new("UIListLayout", {
+		FillDirection = Enum.FillDirection.Vertical,
+		HorizontalAlignment = Enum.HorizontalAlignment.Center,
+		Padding = UDim.new(0, 4),
+	}) })
+
+	buttonOpts.parent = column
+	local button = Hud.button(buttonOpts)
+
+	local caption = Hud.new("TextLabel", {
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 14),
+		Font = Hud.FONT.Display,
+		TextColor3 = captionColor,
+		TextSize = Hud.TEXTSIZE.Label,
+		Text = captionText:upper(),
+		Parent = column,
+	})
+
+	return button, caption, column
+end
+
+-- Grouped into one table rather than a local per button/caption — this file sits right at Luau's
+-- 200-local ceiling for a function scope, and this row alone would otherwise cost six.
+local mainActions = {}
+
 -- Inventory, unlike the Workbench, isn't gated to a physical station — it's just a view onto
 -- `Hud.profile` — so it gets a normal always-available button here instead.
-local inventoryOpenButton = Hud.button({
+mainActions.inventoryButton, mainActions.inventoryCaption = makeActionColumn({
 	variant = "secondary",
-	text = "Inventory",
-	size = UDim2.new(0, 130, 1, 0),
-	parent = actionRow,
+	icon = "inventory",
+	size = UDim2.new(0, 56, 0, 56),
 	onClick = openInventory,
-})
+}, "Inventory", Hud.COLOR.Muted)
 
-local defendButton = Hud.button({
-	variant = "primary",
-	text = "Start Defense",
-	size = UDim2.new(0, 140, 1, 0),
-	parent = actionRow,
-})
+-- The hero action: bigger than its neighbours (108x72 vs 56x56) and the only caption painted in
+-- Accent rather than Muted, so it reads as the one loud thing on screen, per the approved design.
 -- Doubles as the stop button rather than adding a second one — the action row is already tight
 -- (and gets hidden wholesale while the Forge is open). Before StopWave existed this just no-op'd
 -- while a run was active, so there was no way to end a run short of losing or resetting your
 -- character; that's also what turned an unkillable enemy into an unrecoverable hang.
-defendButton.MouseButton1Click:Connect(function()
+mainActions.defendButton, mainActions.defendCaption = makeActionColumn({
+	variant = "primary",
+	icon = "defense",
+	size = UDim2.new(0, 108, 0, 72),
+}, "Start Defense", Hud.COLOR.Accent)
+mainActions.defendButton.MouseButton1Click:Connect(function()
 	if runActive then
 		Remotes.StopWave:FireServer()
 	else
@@ -2556,11 +2619,15 @@ end)
 -- Only shown while an expedition is actually active (see the CurrentSlotId watcher below) —
 -- ends the run for everyone on the shared queue, heals you to full, and keeps whatever you've
 -- already looted (rewards are granted the instant each node resolves, not saved up for an
--- "end of run" payout, so there's nothing separate to preserve here).
+-- "end of run" payout, so there's nothing separate to preserve here). No icon in the set for this
+-- action — stays a plain text button rather than inventing a mapping, per the icon design's own
+-- rule that a wrong icon is worse than a text button. Fixed 56px height (not the old Scale 1,0)
+-- so it doesn't try to size itself off actionRow's own AutomaticSize.Y — that would be circular the
+-- same way Hud.plate's header comment warns about for a shell/surface pair.
 local returnHomeButton = Hud.button({
 	variant = "danger",
 	text = "Return to Base",
-	size = UDim2.new(0, 130, 1, 0),
+	size = UDim2.new(0, 130, 0, 56),
 	parent = actionRow,
 })
 returnHomeButton.Visible = false
@@ -2572,16 +2639,15 @@ end)
 -- at least one level down in the quarry — there's no climb-out mechanic, so once you're a few
 -- levels down this is the only way back short of finding a wall to walk into. Respawns at a
 -- normal SpawnLocation, full health, same as Return to Base — see RecallFromMine's comment.
-local recallButton = Hud.button({
+mainActions.recallButton, mainActions.recallCaption, mainActions.recallColumn = makeActionColumn({
 	variant = "danger",
-	text = "Recall",
-	size = UDim2.new(0, 100, 1, 0),
-	parent = actionRow,
-})
-recallButton.Visible = false
-recallButton.MouseButton1Click:Connect(function()
-	Remotes.RecallFromMine:FireServer()
-end)
+	icon = "recall",
+	size = UDim2.new(0, 56, 0, 56),
+	onClick = function()
+		Remotes.RecallFromMine:FireServer()
+	end,
+}, "Recall", Hud.COLOR.Muted)
+mainActions.recallColumn.Visible = false
 
 -- ExpeditionService replicates "which row is frontmost" via CurrentSlotId on the Expedition
 -- folder (-1 = no expedition active — see that file's comment). Reused here just to know
@@ -2639,10 +2705,13 @@ task.spawn(function()
 	-- ORIGINAL on/off color before the manual override reasserts itself on the next full toggle —
 	-- acceptable here since this is an admin-only, rarely-clicked control, not a first-class UI
 	-- element.
+	-- Fixed 56px height, same reasoning as returnHomeButton above: this button sizes itself off
+	-- actionRow directly, and actionRow's height is now AutomaticSize, so a Scale-relative height
+	-- here would be circular.
 	testMode.button = Hud.button({
 		variant = testMode.on and "danger" or "secondary",
 		text = labelFor(),
-		size = UDim2.new(0, 150, 1, 0),
+		size = UDim2.new(0, 150, 0, 56),
 		parent = actionRow,
 	})
 
@@ -2795,7 +2864,7 @@ end)
 Remotes.DepthUpdate.OnClientEvent:Connect(function(depth: number?)
 	if not depth then
 		depthPanel.Visible = false
-		recallButton.Visible = false
+		mainActions.recallColumn.Visible = false
 		return
 	end
 
@@ -2803,7 +2872,7 @@ Remotes.DepthUpdate.OnClientEvent:Connect(function(depth: number?)
 	-- Visible any time you're anywhere in the mine, including right at the Depth-0 surface floor
 	-- — not just once you've actually descended. It's the one guaranteed way back to base, so it
 	-- should be there the moment you're in the mine at all, not gated behind digging first.
-	recallButton.Visible = true
+	mainActions.recallColumn.Visible = true
 	depthLabel.Text = ("Mine Shaft — Depth %d"):format(depth)
 
 	local suitTier = Hud.profile.SuitTier or 1
@@ -2843,8 +2912,10 @@ Remotes.WaveUpdate.OnClientEvent:Connect(function(update)
 
 	if update.Status == "WaveStart" then
 		runActive = true
-		-- The button is a toggle now, so it has to say what CLICKING it does, not what's happening.
-		defendButton.Text = "Stop Defense"
+		-- The button itself is icon-only now (see makeActionColumn) — the caption underneath is
+		-- what has to say what CLICKING it does, not what's happening, same toggle-label contract
+		-- as before. Uppercase to match the display treatment everywhere else in the row.
+		mainActions.defendCaption.Text = "STOP DEFENSE"
 		waveLabel.Text = ("Wave %d%s"):format(update.Wave, update.IsElite and "  (BOSS WAVE)" or "")
 		wallCaption.Text = "Wall: — / —"
 		enemyCaption.Text = "Enemies: —"
@@ -2886,11 +2957,11 @@ Remotes.WaveUpdate.OnClientEvent:Connect(function(update)
 		-- StopWave clears the server's activeRuns flag, but the wave already in progress still has
 		-- to resolve before the loop notices — so this is an acknowledgement, not the end. RunEnded
 		-- follows and does the real reset.
-		defendButton.Text = "Stopping…"
+		mainActions.defendCaption.Text = "STOPPING…"
 		waveLabel.Text = "Stopping after this wave…"
 	elseif update.Status == "RunEnded" then
 		runActive = false
-		defendButton.Text = "Start Defense"
+		mainActions.defendCaption.Text = "START DEFENSE"
 		waveLabel.Text = ("Run ended — best wave %d"):format(update.HighestWave)
 		task.delay(5, function()
 			if not runActive then -- don't hide it if a new run started in the meantime

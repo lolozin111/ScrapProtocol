@@ -50,9 +50,10 @@ local function closeTurretPanel()
 end
 
 -- panelHeader owns the header Frame's construction, but renderTurretPanel() still needs to
--- rewrite the title text per slot ("Turret Slot 3") — pull the TextLabel back out rather than
--- hand-building a second one alongside it.
-turretPanel.header = Hud.panelHeader(turretPanel.surface, "Turret Slot", closeTurretPanel)
+-- rewrite the title text per slot ("TURRET SLOT 3") — pull the TextLabel back out rather than
+-- hand-building a second one alongside it. Upper-cased for the Display-font chrome treatment; the
+-- slot NUMBER interpolated in below is the only dynamic part, the words around it are static chrome.
+turretPanel.header = Hud.panelHeader(turretPanel.surface, "TURRET SLOT", closeTurretPanel)
 turretPanel.title = turretPanel.header:FindFirstChildOfClass("TextLabel")
 
 turretPanel.list = Hud.new("ScrollingFrame", {
@@ -101,7 +102,7 @@ local function renderTurretPanel()
 		end
 	end
 
-	turretPanel.title.Text = ("Turret Slot %d"):format(slotIndex)
+	turretPanel.title.Text = ("TURRET SLOT %d"):format(slotIndex)
 
 	if occupant then
 		local typeData = TurretConfig.Types[occupant.TypeKey]
