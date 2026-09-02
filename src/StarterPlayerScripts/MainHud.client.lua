@@ -820,9 +820,10 @@ local actionRow
 local testMode
 
 -- Forward-declared: renderCraftList's "Smelting" branch (below) needs to call this, but the real
--- definition lives in the "Ore Smelting" section much further down — it needs makeItemTile/
--- getItemIcon/showInvDetail (Inventory panel helpers) and a popup frame of its own, same ordering
--- constraint as refreshPityBar/refreshPotionButton above.
+-- definition lives in the "Smelting" section much further down, same ordering constraint as
+-- refreshPityBar/refreshPotionButton above. (It used to additionally depend on makeItemTile/
+-- showInvDetail and a popup frame of its own; the Batch Dial rebuild dropped all three when the
+-- ore picker became a permanent rail, so only the renderCraftList cycle keeps it down there now.)
 local renderSmeltingTab
 
 local function renderForgeWeapons()
@@ -1907,375 +1908,467 @@ local function formatDuration(seconds: number): string
 	return ("%d:%02d"):format(minutes, secs)
 end
 
--- Same Hud.screenGui-sibling popup pattern as ModPicker.lua's, just a grid of ore tiles (reusing
--- makeItemTile/getItemIcon from the Inventory panel section) instead of a list of makeRow entries —
--- this IS "a GUI directly into your ore inventory," per the ask.
-local orePickerFrame = Hud.new("Frame", {
-	Name = "OrePicker",
-	BackgroundColor3 = Hud.COLOR.Panel,
-	Position = UDim2.new(0.5, -170, 0.5, -180),
-	Size = UDim2.new(0, 340, 0, 360),
-	Visible = false,
-	ZIndex = 5,
-	Parent = Hud.screenGui,
-}, { Hud.corner(10), Hud.stroke() })
+-- Smelting, rebuilt as HUD phase 3's "Batch Dial" (design round, section C).
+--
+-- WHAT CHANGED AND WHY. The old shape was a 260px square that started blank, plus a popup grid
+-- covering the HUD to pick an ore. Two problems the redesign fixes. The popup hid the very
+-- inventory numbers you were choosing between — you picked an ore, then had to close the thing to
+-- see how much of it you had. And nothing on screen ever said that RefinedOreConfig's batch time is
+-- LOGARITHMIC: a bigger batch is strictly cheaper per ore, which is the only real decision this tab
+-- has, and it was completely invisible.
+--
+-- So the ore list is now a permanent left rail (the popup and openOrePicker are deleted outright,
+-- not hidden), and the right side is one large batch-time readout with the per-ore cost spelled out
+-- directly beneath it, next to what that same ore cost at the smallest batch.
+--
+-- NO TRUE ARC, DELIBERATELY. The design draws batch time as a ring filling clockwise. Roblox has no
+-- arc primitive and this project has no radial-fill image asset, so the readout is a circular plate
+-- with the time at Display size, and a running job shows progress on Hud.segmentBar beneath it
+-- instead. A real ring drops in later with no layout change: add a radial-fill ImageLabel and drive
+-- its ImageRectOffset, exactly the way HudKit.applyIcon already anticipates a sprite atlas.
+--
+-- QUANTITY IS ALWAYS A LEGAL MULTIPLE. Every path that sets smeltQuantity below snaps it to a
+-- whole number of RefineRatio-sized batches. This is not cosmetic: SmeltService.StartSmelt rejects
+-- a quantity that is not a positive multiple of the ore's ratio, so a free-dragging slider that
+-- could land on 91 Scrap Iron would produce a rejection the player cannot interpret. The old
+-- bulk-add buttons got this right by adding BATCHES rather than raw ore; the track below keeps that
+-- guarantee by snapping every click.
+local smelt = {
+	railWidth = 176,
+	dialSize = 168,
+	-- The tab's body fills the plate rather than scrolling: listFrame's own height is the plate
+	-- height minus the header/tab stack (116) — see craftFrame's vertical-stack comment — and this
+	-- is that, less the 12px bottom margin the surface's other edges use. Derived from the Forge's
+	-- configured size rather than written out, for the same reason forgeDock's offsets are: the
+	-- plate is sized per station now, and a constant here would silently stop filling it.
+	height = (StationConfig.Types.Forge.PanelSize or StationConfig.DefaultPanelSize).Y - 116 - 12,
+}
 
-Hud.new("TextLabel", {
-	BackgroundTransparency = 1,
-	Position = UDim2.new(0, 12, 0, 10),
-	Size = UDim2.new(1, -60, 0, 24),
-	Font = Enum.Font.SourceSansBold,
-	TextXAlignment = Enum.TextXAlignment.Left,
-	TextColor3 = Hud.COLOR.Text,
-	TextSize = 18,
-	Text = "Select Ore",
-	Parent = orePickerFrame,
-})
-
-local orePickerClose = Hud.button({
-	variant = "secondary",
-	text = "X",
-	size = UDim2.new(0, 28, 0, 28),
-	position = UDim2.new(1, -40, 0, 8),
-	parent = orePickerFrame,
-})
-
-local orePickerList = Hud.new("ScrollingFrame", {
-	BackgroundTransparency = 1,
-	Position = UDim2.new(0, 12, 0, 44),
-	Size = UDim2.new(1, -24, 1, -56),
-	CanvasSize = UDim2.new(0, 0, 0, 0),
-	AutomaticCanvasSize = Enum.AutomaticSize.Y,
-	ScrollBarThickness = 6,
-	Parent = orePickerFrame,
-}, { Hud.new("UIGridLayout", { CellSize = UDim2.new(0, TILE_SIZE, 0, TILE_SIZE), CellPadding = UDim2.new(0, 8, 0, 8) }) })
-
-local function closeOrePicker()
-	orePickerFrame.Visible = false
+-- Snap a raw-ore quantity down to a whole number of batches, never below one batch. Every setter
+-- goes through this — see the section comment above for why an unsnapped quantity is a bug, not a
+-- rounding detail.
+local function snapSmeltQuantity(quantity: number, refineRatio: number): number
+	local batches = math.max(math.floor(quantity / refineRatio), 1)
+	return batches * refineRatio
 end
-orePickerClose.MouseButton1Click:Connect(closeOrePicker)
 
-local function selectOreForSmelt(oreKey: string)
+-- How many raw ore of this key can actually be committed right now, snapped. Zero means the player
+-- cannot smelt this ore at all yet (they hold less than one batch of it).
+local function maxSmeltQuantity(oreKey: string): number
 	local oreData = RefinedOreConfig.Ores[oreKey]
-	smeltSelectedOreKey = oreKey
-	smeltQuantity = oreData.RefineRatio -- smallest legal batch to start with
-	closeOrePicker()
-	renderCraftList()
-end
-
--- Only lists ores you actually own AT LEAST one legal batch of (owned >= RefineRatio) — picking
--- one you can't afford a single unit of would just land you straight back on an empty stepper.
-local function renderOrePickerList()
-	for _, child in ipairs(orePickerList:GetChildren()) do
-		if child:IsA("ImageButton") then
-			child:Destroy()
-		end
+	local owned = (Hud.profile.OreCounts or {})[oreKey] or 0
+	if owned < oreData.RefineRatio then
+		return 0
 	end
-	for _, oreKey in ipairs(SMELT_ORE_ORDER) do
-		local oreData = RefinedOreConfig.Ores[oreKey]
-		local owned = (Hud.profile.OreCounts or {})[oreKey] or 0
-		if owned >= oreData.RefineRatio then
-			local oreDisplayName = OreConfig.Ores[oreKey].DisplayName
-			makeItemTile(oreKey, oreDisplayName, ("x%d"):format(owned), oreKey == smeltSelectedOreKey, function()
-				selectOreForSmelt(oreKey)
-			end).Parent = orePickerList
-		end
+	return math.floor(owned / oreData.RefineRatio) * oreData.RefineRatio
+end
+
+-- One row of the left rail. A TextButton rather than a Frame so the whole row is the hit target,
+-- not just an icon — the old popup's tiles were 64px squares and this is a 28px-tall row, so
+-- anything smaller than the full row would be a fiddly target.
+local function makeSmeltOreRow(oreKey: string, order: number, parent: Instance)
+	local oreData = RefinedOreConfig.Ores[oreKey]
+	local displayName = (OreConfig.Ores[oreKey] and OreConfig.Ores[oreKey].DisplayName) or oreKey
+	local owned = (Hud.profile.OreCounts or {})[oreKey] or 0
+	local usable = maxSmeltQuantity(oreKey) > 0
+	local selected = smeltSelectedOreKey == oreKey
+
+	local row = Hud.new("TextButton", {
+		AutoButtonColor = false,
+		BackgroundColor3 = selected and Hud.COLOR.PanelLight or Hud.COLOR.Panel,
+		BorderSizePixel = 0,
+		LayoutOrder = order,
+		Size = UDim2.new(1, 0, 0, 44),
+		Text = "",
+		Parent = parent,
+	})
+
+	-- Selection reads as an accent edge on the left, matching the design's rail and the same
+	-- language ResearchPanel's active row uses — not a fill swap, which at this size would fight
+	-- the plate behind it.
+	Hud.new("Frame", {
+		BackgroundColor3 = selected and Hud.COLOR.Accent or Hud.COLOR.Line,
+		BorderSizePixel = 0,
+		Size = UDim2.new(0, 3, 1, 0),
+		Parent = row,
+	})
+
+	local icon = Hud.new("ImageLabel", {
+		BackgroundTransparency = 1,
+		Image = Hud.getItemIcon(oreKey) or "",
+		ImageColor3 = usable and Color3.new(1, 1, 1) or Hud.COLOR.Muted,
+		Position = UDim2.new(0, 11, 0.5, -11),
+		ScaleType = Enum.ScaleType.Fit,
+		Size = UDim2.fromOffset(22, 22),
+		Parent = row,
+	})
+
+	Hud.new("TextLabel", {
+		BackgroundTransparency = 1,
+		Font = Hud.FONT.Body,
+		Position = UDim2.new(0, 41, 0, 5),
+		Size = UDim2.new(1, -49, 0, 18),
+		Text = displayName,
+		TextColor3 = usable and Hud.COLOR.Text or Hud.COLOR.Muted,
+		TextSize = Hud.TEXTSIZE.Body,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Parent = row,
+	})
+
+	-- Owned count and refine ratio share the second line: the ratio is what turns "412" into "how
+	-- many ingots is that", and hiding it behind a tooltip would put the arithmetic back on the
+	-- player. Muted throughout because the row's job is selection, not readout.
+	Hud.new("TextLabel", {
+		BackgroundTransparency = 1,
+		Font = Hud.FONT.Mono,
+		Position = UDim2.new(0, 41, 0, 22),
+		Size = UDim2.new(1, -49, 0, 16),
+		Text = ("%d  ·  %d:1"):format(owned, oreData.RefineRatio),
+		TextColor3 = Hud.COLOR.Muted,
+		TextSize = Hud.TEXTSIZE.Label,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Parent = row,
+	})
+
+	if not usable then
+		-- Deliberately still VISIBLE rather than filtered out of the rail: an ore you cannot yet
+		-- smelt is information ("this exists, go mine it"), and a rail whose contents change length
+		-- as your inventory does is harder to build a habit around than a fixed list of five.
+		icon.ImageTransparency = 0.4
+		return row
 	end
-end
 
-local function openOrePicker()
-	renderOrePickerList()
-	orePickerFrame.Visible = true
-end
+	row.MouseButton1Click:Connect(function()
+		smeltSelectedOreKey = oreKey
+		-- Re-snap against the NEW ore's ratio rather than carrying the old quantity across: 90 is a
+		-- legal Scrap Iron batch (3:1) but not a legal Voidium one (1:1 — legal, but 90 of them is
+		-- not something the player asked for). Starting each ore at one batch is the honest default.
+		smeltQuantity = oreData.RefineRatio
+		renderCraftList()
+	end)
 
-local SMELT_SQUARE_SIZE = 260
+	return row
+end
 
 -- Assigns into the `local renderSmeltingTab` forward-declared up in the Forge tab section — see
--- that comment for why. Builds one square panel (per the exact "background that is like a square"
--- ask) as the Smelting tab's only listFrame child; state picked by Hud.profile.SmeltJob (server-
--- authoritative, wins over everything) then smeltSelectedOreKey (client-only, pending a click).
+-- that comment for why. State is picked by Hud.profile.SmeltJob (server-authoritative, always
+-- wins) and then smeltSelectedOreKey (client-only, pending a click).
 renderSmeltingTab = function()
-	local outer = Hud.new("Frame", {
+	local body = Hud.new("Frame", {
 		BackgroundTransparency = 1,
-		Size = UDim2.new(1, 0, 0, SMELT_SQUARE_SIZE + 20),
+		Size = UDim2.new(1, 0, 0, smelt.height),
 		Parent = listFrame,
 	})
 
-	local square = Hud.new("Frame", {
-		BackgroundColor3 = Hud.COLOR.PanelLight,
-		Position = UDim2.new(0.5, -SMELT_SQUARE_SIZE / 2, 0, 0),
-		Size = UDim2.new(0, SMELT_SQUARE_SIZE, 0, SMELT_SQUARE_SIZE),
-		Parent = outer,
-	}, { Hud.corner(10), Hud.stroke() })
+	local rail = Hud.new("Frame", {
+		BackgroundTransparency = 1,
+		Size = UDim2.new(0, smelt.railWidth, 1, 0),
+		Parent = body,
+	}, { Hud.new("UIListLayout", {
+		Padding = UDim.new(0, Hud.SPACE.XS),
+		SortOrder = Enum.SortOrder.LayoutOrder,
+	}) })
+
+	for order, oreKey in ipairs(SMELT_ORE_ORDER) do
+		makeSmeltOreRow(oreKey, order, rail)
+	end
+
+	local stage = Hud.new("Frame", {
+		BackgroundColor3 = Hud.COLOR.Panel,
+		BorderSizePixel = 0,
+		Position = UDim2.new(0, smelt.railWidth + Hud.SPACE.M, 0, 0),
+		Size = UDim2.new(1, -(smelt.railWidth + Hud.SPACE.M), 1, 0),
+		Parent = body,
+	}, { Hud.corner(Hud.RADIUS.Panel), Hud.stroke() })
+
+	-- The circular readout. UICorner at scale 0.5 makes a Frame a circle; see the section comment
+	-- for why this is a plate rather than the design's filling ring.
+	local dial = Hud.new("Frame", {
+		BackgroundColor3 = Hud.darken(Hud.COLOR.Panel, 0.25),
+		BorderSizePixel = 0,
+		Position = UDim2.new(0.5, -smelt.dialSize / 2, 0, Hud.SPACE.L),
+		Size = UDim2.fromOffset(smelt.dialSize, smelt.dialSize),
+		Parent = stage,
+	}, { Hud.new("UICorner", { CornerRadius = UDim.new(0.5, 0) }), Hud.stroke() })
+
+	local dialValue = Hud.new("TextLabel", {
+		BackgroundTransparency = 1,
+		Font = Hud.FONT.Mono,
+		Position = UDim2.new(0, 0, 0.5, -26),
+		Size = UDim2.new(1, 0, 0, 34),
+		TextColor3 = Hud.COLOR.Text,
+		TextSize = 30,
+		Parent = dial,
+	})
+
+	local dialCaption = Hud.new("TextLabel", {
+		BackgroundTransparency = 1,
+		Font = Hud.FONT.Display,
+		Position = UDim2.new(0, 0, 0.5, 10),
+		Size = UDim2.new(1, 0, 0, 16),
+		TextColor3 = Hud.COLOR.Muted,
+		TextSize = Hud.TEXTSIZE.Label,
+		Parent = dial,
+	})
 
 	local job = Hud.profile.SmeltJob
 
 	if job then
-		local oreDisplayName = (OreConfig.Ores[job.OreKey] and OreConfig.Ores[job.OreKey].DisplayName) or job.OreKey
+		local oreDisplayName = (OreConfig.Ores[job.OreKey] and OreConfig.Ores[job.OreKey].DisplayName)
+			or job.OreKey
 		local refinedInfo = RefinedOreConfig.ByRefinedKey[job.RefinedKey]
 		local refinedDisplayName = refinedInfo and refinedInfo.DisplayName or job.RefinedKey
 
-		Hud.new("ImageLabel", {
-			BackgroundTransparency = 1,
-			Image = Hud.getItemIcon(job.RefinedKey) or Hud.getItemIcon(job.OreKey) or "",
-			ScaleType = Enum.ScaleType.Fit,
-			Position = UDim2.new(0.5, -40, 0, 16),
-			Size = UDim2.new(0, 80, 0, 80),
-			Parent = square,
-		})
-
-		Hud.new("TextLabel", {
-			BackgroundTransparency = 1,
-			Position = UDim2.new(0, 12, 0, 104),
-			Size = UDim2.new(1, -24, 0, 20),
-			Font = Enum.Font.SourceSansBold,
-			TextColor3 = Hud.COLOR.Text,
-			TextSize = 15,
-			TextXAlignment = Enum.TextXAlignment.Center,
-			Text = ("Smelting %d %s"):format(job.Quantity, oreDisplayName),
-			Parent = square,
-		})
-
-		Hud.new("TextLabel", {
-			BackgroundTransparency = 1,
-			Position = UDim2.new(0, 12, 0, 126),
-			Size = UDim2.new(1, -24, 0, 18),
-			Font = Enum.Font.Code,
-			TextColor3 = Hud.COLOR.Muted,
-			TextSize = 13,
-			TextXAlignment = Enum.TextXAlignment.Center,
-			Text = ("-> %d %s"):format(job.RefinedAmount, refinedDisplayName),
-			Parent = square,
-		})
-
 		-- Re-derives the batch's original duration from the same shared formula rather than storing
-		-- it separately on the job — remaining/duration then gives a 0..1 progress ratio directly.
+		-- it on the job, so remaining/duration gives a 0..1 progress ratio directly.
 		local duration = math.max(RefinedOreConfig.ComputeSmeltSeconds(job.Quantity), 1)
 		local remaining = job.FinishTime - os.time()
 		local ratio = math.clamp(1 - (remaining / duration), 0, 1)
 
+		-- SmeltService's completion loop only sweeps every RefinedOreConfig.SmeltTime.TickSeconds
+		-- (2s), so the countdown genuinely reaches zero a moment before the ore is granted. Saying
+		-- "finishing" is the honest reading of that gap — a frozen 0:00 reads as a hung job.
+		dialValue.Text = remaining > 0 and formatDuration(remaining) or "··"
+		dialCaption.Text = remaining > 0 and "REMAINING" or "FINISHING"
+
 		Hud.new("TextLabel", {
 			BackgroundTransparency = 1,
-			Position = UDim2.new(0, 12, 0, 152),
-			Size = UDim2.new(1, -24, 0, 20),
-			Font = Enum.Font.Code,
+			Font = Hud.FONT.Body,
+			Position = UDim2.new(0, Hud.SPACE.L, 0, smelt.dialSize + Hud.SPACE.XL),
+			Size = UDim2.new(1, -Hud.SPACE.L * 2, 0, 22),
+			Text = ("Smelting %d %s"):format(job.Quantity, oreDisplayName),
 			TextColor3 = Hud.COLOR.Text,
-			TextSize = 14,
-			TextXAlignment = Enum.TextXAlignment.Center,
-			Text = remaining > 0 and ("Ready in " .. formatDuration(remaining)) or "Finishing up...",
-			Parent = square,
+			TextSize = Hud.TEXTSIZE.Body,
+			Parent = stage,
 		})
 
-		local track = Hud.new("Frame", {
-			BackgroundColor3 = Hud.COLOR.Panel,
-			Position = UDim2.new(0, 12, 0, 176),
-			Size = UDim2.new(1, -24, 0, 12),
-			Parent = square,
-		}, { Hud.corner(4) })
-		Hud.new("Frame", {
-			BackgroundColor3 = Hud.COLOR.Accent,
-			Size = UDim2.new(ratio, 0, 1, 0),
-			Parent = track,
-		}, { Hud.corner(4) })
+		Hud.new("TextLabel", {
+			BackgroundTransparency = 1,
+			Font = Hud.FONT.Mono,
+			Position = UDim2.new(0, Hud.SPACE.L, 0, smelt.dialSize + Hud.SPACE.XL + 22),
+			Size = UDim2.new(1, -Hud.SPACE.L * 2, 0, 20),
+			Text = ("→  %d %s"):format(job.RefinedAmount, refinedDisplayName),
+			TextColor3 = Hud.COLOR.Good,
+			TextSize = Hud.TEXTSIZE.Body,
+			Parent = stage,
+		})
+
+		local progressHolder = Hud.new("Frame", {
+			BackgroundTransparency = 1,
+			Position = UDim2.new(0, Hud.SPACE.L, 0, smelt.dialSize + Hud.SPACE.XL + 52),
+			Size = UDim2.new(1, -Hud.SPACE.L * 2, 0, 20),
+			Parent = stage,
+		})
+
+		-- Reused rather than another hand-rolled track+fill pair: segmentBar is what the wave HUD
+		-- already uses, and a second implementation is how the two drift apart.
+		local cells = Hud.segmentBar(progressHolder, 20)
+		for index, cell in ipairs(cells) do
+			cell.BackgroundColor3 = (index / #cells) <= ratio and Hud.COLOR.Accent or Hud.COLOR.Line
+		end
 
 		Hud.new("TextLabel", {
 			BackgroundTransparency = 1,
-			Position = UDim2.new(0, 12, 0, 200),
-			Size = UDim2.new(1, -24, 0, 40),
-			Font = Enum.Font.Code,
-			TextColor3 = Hud.COLOR.Muted,
-			TextSize = 12,
-			TextWrapped = true,
-			TextXAlignment = Enum.TextXAlignment.Center,
+			Font = Hud.FONT.Body,
+			Position = UDim2.new(0, Hud.SPACE.L, 1, -44),
+			Size = UDim2.new(1, -Hud.SPACE.L * 2, 0, 34),
 			Text = "One smelt at a time — the next batch can start the moment this one finishes.",
-			Parent = square,
+			TextColor3 = Hud.COLOR.Muted,
+			TextSize = Hud.TEXTSIZE.Label,
+			TextWrapped = true,
+			Parent = stage,
 		})
-	elseif smeltSelectedOreKey then
-		local oreData = RefinedOreConfig.Ores[smeltSelectedOreKey]
-		local refinedInfo = RefinedOreConfig.ByRefinedKey[oreData.RefinedKey]
-		local oreDisplayName = OreConfig.Ores[smeltSelectedOreKey].DisplayName
-		local owned = (Hud.profile.OreCounts or {})[smeltSelectedOreKey] or 0
-		local maxQuantity = math.max(math.floor(owned / oreData.RefineRatio) * oreData.RefineRatio, oreData.RefineRatio)
-		smeltQuantity = math.clamp(smeltQuantity, oreData.RefineRatio, maxQuantity)
 
-		local iconButton = Hud.new("ImageButton", {
-			BackgroundTransparency = 1,
-			AutoButtonColor = false,
-			Image = Hud.getItemIcon(smeltSelectedOreKey) or "",
-			ScaleType = Enum.ScaleType.Fit,
-			Position = UDim2.new(0.5, -32, 0, 8),
-			Size = UDim2.new(0, 64, 0, 64),
-			Parent = square,
-		})
-		iconButton.MouseButton1Click:Connect(openOrePicker) -- click the icon again to change ore
+		return
+	end
+
+	if not smeltSelectedOreKey then
+		dialValue.Text = "—"
+		dialCaption.Text = "BATCH TIME"
 
 		Hud.new("TextLabel", {
 			BackgroundTransparency = 1,
-			Position = UDim2.new(0, 12, 0, 76),
-			Size = UDim2.new(1, -24, 0, 18),
-			Font = Enum.Font.SourceSansBold,
-			TextColor3 = Hud.COLOR.Text,
-			TextSize = 14,
-			TextXAlignment = Enum.TextXAlignment.Center,
-			Text = ("%s (owned %d)"):format(oreDisplayName, owned),
-			Parent = square,
+			Font = Hud.FONT.Body,
+			Position = UDim2.new(0, Hud.SPACE.L, 0, smelt.dialSize + Hud.SPACE.XL),
+			Size = UDim2.new(1, -Hud.SPACE.L * 2, 0, 40),
+			Text = "Pick an ore on the left. Bigger batches cost less time per ore, so it pays to hold out for a full load.",
+			TextColor3 = Hud.COLOR.Muted,
+			TextSize = Hud.TEXTSIZE.Body,
+			TextWrapped = true,
+			Parent = stage,
 		})
 
-		-- Quantity readout on the left, a small Reset (back down to one batch) on the right, sharing
-		-- one row so the four bulk-add buttons below get their own row instead of fighting for space.
-		Hud.new("TextLabel", {
-			BackgroundTransparency = 1,
-			Position = UDim2.new(0, 12, 0, 96),
-			Size = UDim2.new(0, 130, 0, 22),
-			Font = Enum.Font.Code,
-			TextColor3 = Hud.COLOR.Text,
-			TextSize = 18,
-			TextXAlignment = Enum.TextXAlignment.Left,
-			Text = ("%d ore"):format(smeltQuantity),
-			Parent = square,
-		})
+		return
+	end
 
+	local oreKey = smeltSelectedOreKey
+	local oreData = RefinedOreConfig.Ores[oreKey]
+	local refinedInfo = RefinedOreConfig.ByRefinedKey[oreData.RefinedKey]
+	local refinedDisplayName = refinedInfo and refinedInfo.DisplayName or oreData.RefinedKey
+	local oreDisplayName = (OreConfig.Ores[oreKey] and OreConfig.Ores[oreKey].DisplayName) or oreKey
+	local maxQuantity = maxSmeltQuantity(oreKey)
+
+	smeltQuantity = math.clamp(
+		snapSmeltQuantity(smeltQuantity, oreData.RefineRatio),
+		oreData.RefineRatio,
+		math.max(maxQuantity, oreData.RefineRatio)
+	)
+
+	local seconds = RefinedOreConfig.ComputeSmeltSeconds(smeltQuantity)
+	dialValue.Text = formatDuration(seconds)
+	dialCaption.Text = "BATCH TIME"
+
+	Hud.new("TextLabel", {
+		BackgroundTransparency = 1,
+		Font = Hud.FONT.Body,
+		Position = UDim2.new(0, Hud.SPACE.L, 0, smelt.dialSize + Hud.SPACE.L),
+		Size = UDim2.new(1, -Hud.SPACE.L * 2, 0, 24),
+		RichText = true,
+		Text = ("<b>%d</b> %s  →  <b>%d</b> %s"):format(
+			smeltQuantity,
+			oreDisplayName,
+			smeltQuantity / oreData.RefineRatio,
+			refinedDisplayName
+		),
+		TextColor3 = Hud.COLOR.Text,
+		TextSize = Hud.TEXTSIZE.Body,
+		Parent = stage,
+	})
+
+	-- THE POINT OF THIS SCREEN. ComputeSmeltSeconds is BaseSeconds + LogSecondsPerOre * ln(qty), so
+	-- seconds-per-ore falls the whole way up the range — 20 + 24*ln(3) at one Scrap Iron batch is
+	-- ~8.8s per ore, and at 90 it is ~1.4s. Nothing in the old UI said so, so nobody could act on it.
+	local perOre = seconds / smeltQuantity
+	local smallestBatch = oreData.RefineRatio
+	local perOreAtSmallest = RefinedOreConfig.ComputeSmeltSeconds(smallestBatch) / smallestBatch
+
+	Hud.new("TextLabel", {
+		BackgroundTransparency = 1,
+		Font = Hud.FONT.Mono,
+		Position = UDim2.new(0, Hud.SPACE.L, 0, smelt.dialSize + Hud.SPACE.L + 24),
+		Size = UDim2.new(1, -Hud.SPACE.L * 2, 0, 20),
+		Text = ("%.1fs per ore  ·  %.1fs at one batch"):format(perOre, perOreAtSmallest),
+		TextColor3 = perOre < perOreAtSmallest and Hud.COLOR.Good or Hud.COLOR.Muted,
+		TextSize = Hud.TEXTSIZE.Label,
+		Parent = stage,
+	})
+
+	local trackY = smelt.dialSize + Hud.SPACE.L + 56
+
+	-- A CLICKABLE track rather than a draggable handle: a click maps to one position and snaps, so
+	-- there is no drag state to get stuck, no pointer capture to lose when the cursor leaves the
+	-- track, and no way to end a gesture on an illegal quantity. The handle below is a readout of
+	-- where that click landed, not a grab target.
+	local track = Hud.new("TextButton", {
+		AutoButtonColor = false,
+		BackgroundColor3 = Hud.darken(Hud.COLOR.Panel, 0.3),
+		BorderSizePixel = 0,
+		Position = UDim2.new(0, Hud.SPACE.L, 0, trackY),
+		Size = UDim2.new(1, -Hud.SPACE.L * 2, 0, 18),
+		Text = "",
+		Parent = stage,
+	})
+
+	local fillRatio = if maxQuantity > oreData.RefineRatio
+		then (smeltQuantity - oreData.RefineRatio) / (maxQuantity - oreData.RefineRatio)
+		else 1
+
+	Hud.new("Frame", {
+		BackgroundColor3 = Hud.COLOR.Accent,
+		BorderSizePixel = 0,
+		Size = UDim2.new(fillRatio, 0, 1, 0),
+		Parent = track,
+	})
+
+	Hud.new("Frame", {
+		BackgroundColor3 = Hud.COLOR.Text,
+		BorderSizePixel = 0,
+		Position = UDim2.new(fillRatio, -2, 0, -3),
+		Size = UDim2.fromOffset(4, 24),
+		Parent = track,
+	})
+
+	if maxQuantity > oreData.RefineRatio then
+		track.InputBegan:Connect(function(input)
+			if
+				input.UserInputType ~= Enum.UserInputType.MouseButton1
+				and input.UserInputType ~= Enum.UserInputType.Touch
+			then
+				return
+			end
+			-- AbsolutePosition/AbsoluteSize rather than the click's own offset: MouseButton1Click
+			-- carries no position at all, and this arithmetic is the same one the wave HUD's bars
+			-- use to map a screen point onto a value.
+			local width = track.AbsoluteSize.X
+			if width <= 0 then
+				return
+			end
+			local ratio = math.clamp((input.Position.X - track.AbsolutePosition.X) / width, 0, 1)
+			local span = maxQuantity - oreData.RefineRatio
+			smeltQuantity = snapSmeltQuantity(oreData.RefineRatio + ratio * span, oreData.RefineRatio)
+			renderCraftList()
+		end)
+	end
+
+	Hud.new("TextLabel", {
+		BackgroundTransparency = 1,
+		Font = Hud.FONT.Mono,
+		Position = UDim2.new(0, Hud.SPACE.L, 0, trackY + 22),
+		Size = UDim2.new(1, -Hud.SPACE.L * 2, 0, 16),
+		Text = ("%d"):format(oreData.RefineRatio),
+		TextColor3 = Hud.COLOR.Muted,
+		TextSize = Hud.TEXTSIZE.Label,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Parent = stage,
+	})
+
+	Hud.new("TextLabel", {
+		BackgroundTransparency = 1,
+		Font = Hud.FONT.Mono,
+		Position = UDim2.new(0, Hud.SPACE.L, 0, trackY + 22),
+		Size = UDim2.new(1, -Hud.SPACE.L * 2, 0, 16),
+		Text = maxQuantity > 0 and ("%d all"):format(maxQuantity) or "none",
+		TextColor3 = Hud.COLOR.Muted,
+		TextSize = Hud.TEXTSIZE.Label,
+		TextXAlignment = Enum.TextXAlignment.Right,
+		Parent = stage,
+	})
+
+	if maxQuantity <= 0 then
 		Hud.button({
 			variant = "secondary",
-			text = "Reset",
-			position = UDim2.new(1, -78, 0, 97),
-			size = UDim2.new(0, 66, 0, 20),
-			parent = square,
+			text = ("Need %d %s"):format(oreData.RefineRatio, oreDisplayName),
+			position = UDim2.new(0, Hud.SPACE.L, 1, -56),
+			size = UDim2.new(1, -Hud.SPACE.L * 2, 0, 44),
+			parent = stage,
 			onClick = function()
-				smeltQuantity = oreData.RefineRatio
-				renderCraftList()
+				Hud.showFailure("Not enough ore", ("A batch needs at least %d %s."):format(oreData.RefineRatio, oreDisplayName))
 			end,
 		})
-
-		-- Bulk-add row — "+1"/"+10"/"+100"/"MAX" ADD BATCHES (RefineRatio-sized steps), not raw ore
-		-- 1-at-a-time, so the quantity landed on is always a legal multiple without any rounding —
-		-- e.g. "+10" on a 3:1 ore adds 30 raw ore (10 batches), not 10 raw ore. Much faster than the
-		-- old lone +/- stepper for stocking up a big batch.
-		local stepButtonsRow = Hud.new("Frame", {
-			BackgroundTransparency = 1,
-			Position = UDim2.new(0, 12, 0, 122),
-			Size = UDim2.new(1, -24, 0, 28),
-			Parent = square,
-		}, { Hud.new("UIListLayout", {
-			FillDirection = Enum.FillDirection.Horizontal,
-			Padding = UDim.new(0, 6),
-			HorizontalAlignment = Enum.HorizontalAlignment.Center,
-		}) })
-
-		local function makeBulkAddButton(label: string, batches: number?)
-			local button = Hud.button({
-				variant = "secondary",
-				text = label,
-				size = UDim2.new(0, 52, 1, 0),
-				parent = stepButtonsRow,
-			})
-			button.MouseButton1Click:Connect(function()
-				if batches then
-					smeltQuantity = math.min(smeltQuantity + batches * oreData.RefineRatio, maxQuantity)
-				else
-					smeltQuantity = maxQuantity -- MAX
-				end
-				renderCraftList()
-			end)
-			return button
-		end
-
-		makeBulkAddButton("+1", 1)
-		makeBulkAddButton("+10", 10)
-		makeBulkAddButton("+100", 100)
-		makeBulkAddButton("MAX", nil)
-
-		local estSeconds = RefinedOreConfig.ComputeSmeltSeconds(smeltQuantity)
-		Hud.new("TextLabel", {
-			BackgroundTransparency = 1,
-			Position = UDim2.new(0, 12, 0, 154),
-			Size = UDim2.new(1, -24, 0, 18),
-			Font = Enum.Font.Code,
-			TextColor3 = Hud.COLOR.Muted,
-			TextSize = 13,
-			TextXAlignment = Enum.TextXAlignment.Center,
-			Text = ("-> %d %s · %s"):format(
-				smeltQuantity / oreData.RefineRatio,
-				refinedInfo.DisplayName,
-				formatDuration(estSeconds)
-			),
-			Parent = square,
-		})
-
-		-- The "button [that] would allow you to smelt the ore" — only ever appears once an ore is
-		-- actually selected, per the ask.
-		local smeltButton = Hud.button({
-			variant = "primary",
-			text = "Smelt",
-			position = UDim2.new(0.5, -60, 0, 180),
-			size = UDim2.new(0, 120, 0, 36),
-			parent = square,
-		})
-		smeltButton.MouseButton1Click:Connect(function()
-			local oreKey, quantity = smeltSelectedOreKey, smeltQuantity
-			local result = Remotes.StartSmelt:InvokeServer(oreKey, quantity)
-			if not result.Success then
-				Hud.showFailure("Start smelt failed", result.Reason)
-			else
-				smeltSelectedOreKey = nil
-				smeltQuantity = 0
-				renderCraftList()
-			end
-		end)
-	else
-		-- State 1: nothing picked yet — "on the middle of it you would have a clickable icon where
-		-- it would [open] a gui directly into your ore inventory."
-		local icon = Hud.getItemIcon("Smelting")
-		local iconButton = Hud.new("ImageButton", {
-			BackgroundColor3 = Hud.COLOR.Panel,
-			AutoButtonColor = false,
-			Image = icon or "",
-			ScaleType = Enum.ScaleType.Fit,
-			Position = UDim2.new(0.5, -48, 0, 60),
-			Size = UDim2.new(0, 96, 0, 96),
-			Parent = square,
-		}, { Hud.corner(8), Hud.stroke() })
-
-		if not icon then
-			Hud.new("TextLabel", {
-				BackgroundTransparency = 1,
-				Position = UDim2.new(0, 4, 0, 4),
-				Size = UDim2.new(1, -8, 1, -8),
-				Font = Enum.Font.SourceSansBold,
-				TextColor3 = Hud.COLOR.Muted,
-				TextSize = 13,
-				TextWrapped = true,
-				Text = "Select\nOre",
-				Parent = iconButton,
-			})
-		end
-		iconButton.MouseButton1Click:Connect(openOrePicker)
-
-		Hud.new("TextLabel", {
-			BackgroundTransparency = 1,
-			Position = UDim2.new(0, 12, 0, 168),
-			Size = UDim2.new(1, -24, 0, 20),
-			Font = Enum.Font.SourceSansBold,
-			TextColor3 = Hud.COLOR.Text,
-			TextSize = 15,
-			TextXAlignment = Enum.TextXAlignment.Center,
-			Text = "Select Ore to Smelt",
-			Parent = square,
-		})
-
-		Hud.new("TextLabel", {
-			BackgroundTransparency = 1,
-			Position = UDim2.new(0, 12, 0, 190),
-			Size = UDim2.new(1, -24, 0, 40),
-			Font = Enum.Font.Code,
-			TextColor3 = Hud.COLOR.Muted,
-			TextSize = 12,
-			TextWrapped = true,
-			TextXAlignment = Enum.TextXAlignment.Center,
-			Text = "Click the icon to open your ore inventory and pick something to refine.",
-			Parent = square,
-		})
+		return
 	end
+
+	Hud.button({
+		variant = "primary",
+		text = "Start pour",
+		dropShadow = true,
+		position = UDim2.new(0, Hud.SPACE.L, 1, -56),
+		size = UDim2.new(1, -Hud.SPACE.L * 2, 0, 44),
+		parent = stage,
+		onClick = function()
+			local result = Remotes.StartSmelt:InvokeServer(oreKey, smeltQuantity)
+			if not result.Success then
+				Hud.showFailure("Smelt failed", result.Reason)
+				return
+			end
+			-- Clear the client-only pending selection the instant the server takes over: from here
+			-- Hud.profile.SmeltJob is truthy and the job state above wins every render.
+			smeltSelectedOreKey = nil
+			smeltQuantity = 0
+			renderCraftList()
+		end,
+	})
 end
 
 -- Keeps the countdown/progress bar live while the Smelting tab is actually open and a job is
