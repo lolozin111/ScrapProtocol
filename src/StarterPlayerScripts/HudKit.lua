@@ -60,11 +60,37 @@ local COLOR = HudKit.COLOR
 -- eyeballing whatever the panel next to it used, which is how the file ended up with a dozen
 -- near-identical-but-not-quite text sizes.
 
+-- Enum.Font membership for a specific weight isn't as stable across Roblox versions/forks as the
+-- ancient standbys (SourceSans/SourceSansBold have been there for years); indexing a name that
+-- doesn't exist THROWS immediately, and unlike every other "missing art" fallback in this file
+-- (icons, panelframe), there is no nil-and-continue here — a bad guess would fail the moment this
+-- module is required, which is before any panel exists to show a warning in. Resolve defensively:
+-- pcall the lookup by name and fall back to a long-stable Gotham weight (present in Roblox's
+-- original font set) rather than assume the newer name is spelled/available exactly as expected.
+local function resolveFont(name: string, fallback: Enum.Font): Enum.Font
+	local ok, value = pcall(function()
+		return (Enum.Font :: any)[name]
+	end)
+	if ok and typeof(value) == "EnumItem" then
+		return value
+	end
+	warn(("[HudKit] Enum.Font.%s not available on this Roblox version; falling back to %s"):format(name, fallback.Name))
+	return fallback
+end
+
 -- Montserrat for anything that should read as a heading/display number (chosen because it's a real
 -- Roblox enum font AND is what the design mockups use); SourceSans/-Bold for body copy; Code for
 -- numeric readouts (ore counts, timers) where a monospaced look reads as "instrument panel".
+--
+-- Display was Enum.Font.Montserrat (the REGULAR weight) and rendered thin/papery next to the
+-- mockup's heavy, solid headings — MontserratBold is the fix. DisplayMedium is additive: a lighter
+-- display weight for anywhere Bold is too heavy, without forcing a caller down to Body's SourceSans
+-- look. Both fall back to a Gotham weight (see resolveFont above) if the exact enum name isn't
+-- present; falling back to a MATCHING family for both keeps a fallback HUD internally consistent
+-- rather than pairing a heavy Gotham heading with a Montserrat subheading.
 HudKit.FONT = {
-	Display = Enum.Font.Montserrat,
+	Display = resolveFont("MontserratBold", Enum.Font.GothamBold),
+	DisplayMedium = resolveFont("MontserratMedium", Enum.Font.GothamMedium),
 	Body = Enum.Font.SourceSans,
 	BodyBold = Enum.Font.SourceSansBold,
 	Mono = Enum.Font.Code,
@@ -367,6 +393,25 @@ function HudKit.makeRow(displayName: string, subtitle: string, buttonText: strin
 end
 
 ----------------------------------------------------------------------
+-- Shared 9-slice panel asset
+----------------------------------------------------------------------
+-- panelframe is a 64x64 white PNG: square top-left/bottom-right corners, a 45-degree 16px cut
+-- top-right and bottom-left. SliceCenter's margins land just past that cut on every edge, so the
+-- corner regions (which must stay unstretched to keep the cut crisp) are exactly the drawn art and
+-- only the centre strip between them tiles/stretches to fill whatever size the element is.
+--
+-- Shared between HudKit.button() (right below) and HudKit.plate() (further down): both need the
+-- exact same slice geometry to look cut from the same sheet metal, and a future retune of the
+-- asset only has one Rect to touch instead of two that can silently drift apart.
+--
+-- MINIMUM SIZE: a 9-slice needs an element at least twice the slice inset per axis (roughly 40x40
+-- here) or the corner regions overlap and the cut renders wrong. plate()'s shell/surface are always
+-- far bigger than that so it never has to check; HudKit.button() DOES check, via
+-- BUTTON_MIN_SLICE_SIZE below, because panelHeader's 28px close button is exactly the case that
+-- would render broken — it deliberately stays on the plain rounded HudKit.corner() path instead.
+local PANEL_FRAME_SLICE_CENTER = Rect.new(20, 20, 44, 44)
+
+----------------------------------------------------------------------
 -- Buttons: variants + hover/press feedback
 ----------------------------------------------------------------------
 -- There was not one TweenService call anywhere in the HUD before this, and no hover/press state on
@@ -377,6 +422,10 @@ end
 local BUTTON_TWEEN_INFO = TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local BUTTON_HOVER_LIGHTEN = 0.12
 local BUTTON_PRESS_DARKEN = 0.18
+-- Below this (on either axis), a button falls back to the plain rounded-corner path instead of the
+-- 9-slice — see PANEL_FRAME_SLICE_CENTER's MINIMUM SIZE note above for why. panelHeader's 28px
+-- close button is the concrete case this exists for.
+local BUTTON_MIN_SLICE_SIZE = 40
 
 -- Fraction of the button's own height, not a fixed pixel count: a 20px icon read as tiny on a
 -- 108x72 hero button and identically-sized on a 56x56 secondary one, so the hero action never read
@@ -440,19 +489,30 @@ local buttonState = setmetatable({}, { __mode = "k" })
 -- Playing a Tween on a destroyed instance throws, so every call here bails out on `not btn.Parent`
 -- instead of assuming the button is still mounted.
 --
--- `state` holds the tween AND the button's rest/hover/press colors (see `buttonState` above) so
+-- `state` holds the tweens AND the button's rest/hover/press colors (see `buttonState` above) so
 -- HudKit.setButtonFill can both cancel an in-flight tween and update the very colors this function
 -- reads on the next MouseEnter/Leave -- there is no closed-over color left to go stale.
-local function makeTweener(btn: TextButton, state)
+--
+-- TWO INDEPENDENT SLOTS, not one: a hover/press event now animates the button's own Size/Position
+-- (`tween`, using `key`) AND the visible fill color (`tweenFill`, using a different key) in the same
+-- breath, and those can land on the SAME instance (the plain-rounded fallback path, where the fill
+-- IS the button's own BackgroundColor3) or DIFFERENT instances (the 9-slice path, where the fill is
+-- a child ImageLabel's ImageColor3 -- see HudKit.button's isSliceable branch). Sharing one slot
+-- would make the second tween() call of the pair cancel the first before it ever plays, since
+-- makeTweener unconditionally cancels whatever already occupies that slot. `target` and `state`'s
+-- Parent-guard both key off `btn` specifically (not `target`) because a 9-slice fill target is a
+-- child of `btn` and is torn down along with it -- checking the child's own .Parent would work too,
+-- but checking `btn` once here matches every other destroyed-instance guard in this file.
+local function makeTweener(btn: TextButton, target: Instance, state, key: string)
 	return function(goal: { [string]: any })
 		if not btn.Parent then
 			return
 		end
-		if state.activeTween then
-			state.activeTween:Cancel()
+		if state[key] then
+			state[key]:Cancel()
 		end
-		state.activeTween = TweenService:Create(btn, BUTTON_TWEEN_INFO, goal)
-		state.activeTween:Play()
+		state[key] = TweenService:Create(target, BUTTON_TWEEN_INFO, goal)
+		state[key]:Play()
 	end
 end
 
@@ -476,8 +536,25 @@ function HudKit.button(opts: HudButtonOptions): TextButton
 		then UDim2.new(restSize.X.Scale, restSize.X.Offset + 4, restSize.Y.Scale, restSize.Y.Offset + 2)
 		else restSize
 
+	-- Same 9-slice plate() panels use, so buttons carry the mockup's angular cut-steel corners
+	-- instead of HudKit.corner()'s rounded ones. Guarded by BUTTON_MIN_SLICE_SIZE (see its comment
+	-- above) so a button smaller than that -- panelHeader's 28px close button -- degrades to the
+	-- rounded fallback instead of rendering with overlapping/broken corners. Read fresh per call,
+	-- same reasoning as plate()'s panelFrameImage local: the two must never disagree about which
+	-- path they took. Offsets only (not Scale) because restSize.Y.Offset is already the load-bearing
+	-- "actual button height in pixels" assumption pressPos/hoverSize/the icon padding above all make.
+	local panelFrameImage = UiIconConfig.Get("panelframe")
+	local isSliceable = panelFrameImage ~= nil
+		and restSize.X.Offset >= BUTTON_MIN_SLICE_SIZE
+		and restSize.Y.Offset >= BUTTON_MIN_SLICE_SIZE
+
 	local btn = HudKit.new("TextButton", {
+		-- Only actually visible on the fallback (non-sliceable) path below; the sliceable path hides
+		-- this via BackgroundTransparency and paints the fill on the background ImageLabel's
+		-- ImageColor3 instead. Set unconditionally anyway, same "only one path shows it" convention
+		-- plate() already uses for its own BackgroundColor3/ImageColor3 split.
 		BackgroundColor3 = restColor,
+		BackgroundTransparency = if isSliceable then 1 else 0,
 		Position = restPos,
 		AnchorPoint = opts.anchorPoint or Vector2.new(0, 0),
 		Size = restSize,
@@ -488,11 +565,47 @@ function HudKit.button(opts: HudButtonOptions): TextButton
 		TextSize = HudKit.TEXTSIZE.Body,
 		Text = opts.text or "",
 		Parent = opts.parent,
-	}, { HudKit.corner(HudKit.RADIUS.Button) })
+	}, if isSliceable then {} else { HudKit.corner(HudKit.RADIUS.Button) })
+	-- No UICorner on the sliceable path: the shape comes from the image's own cut corners, and
+	-- rounding on top of a sliced image would just clip the cut back into a plain rounded rect --
+	-- same reasoning as plate()'s shell/surface branch.
 
 	if variant.stroke then
 		HudKit.stroke().Parent = btn
 	end
+
+	-- The angular background: a child ImageLabel filling the button, sized/positioned to track it
+	-- automatically (1,0,1,0 relative to `btn`, so no separate Size/Position tween is ever needed
+	-- for it — only its ImageColor3 changes on hover/press, via tweenFill below).
+	--
+	-- ZIndex = 0 keeps it below the icon (a sibling child, ZIndex defaults to 1, made explicit
+	-- below): two children of the same GuiObject DO respect ZIndex ordering against each other. The
+	-- button's own Text, though, is not a child at all — it's part of `btn`'s own rendering — and a
+	-- TextButton's native Text always paints on top of every child regardless of ZIndex (the same
+	-- behaviour that already let iconLabel and Text coexist above/below each other by POSITION alone
+	-- rather than needing any ZIndex dance between them). That's what makes an opaque, full-covering
+	-- background child safe to add here without it ever swallowing the button's caption.
+	local backgroundLabel: ImageLabel? = nil
+	if isSliceable then
+		backgroundLabel = HudKit.new("ImageLabel", {
+			BackgroundTransparency = 1,
+			Image = panelFrameImage,
+			ImageColor3 = restColor,
+			ScaleType = Enum.ScaleType.Slice,
+			SliceCenter = PANEL_FRAME_SLICE_CENTER,
+			Size = UDim2.new(1, 0, 1, 0),
+			ZIndex = 0,
+			Parent = btn,
+		})
+	end
+
+	-- Whichever instance/property actually carries the visible fill: the background ImageLabel's
+	-- ImageColor3 when sliced, or the button's own BackgroundColor3 on the fallback path (unchanged
+	-- from before this background existed). Every hover/press/setButtonFill call goes through this
+	-- pair instead of hardcoding BackgroundColor3, which is the fix for the "sliced buttons never
+	-- recolor" regression a naive port of the old tweens would have shipped silently.
+	local fillTarget: Instance = backgroundLabel or btn
+	local fillProperty = if backgroundLabel then "ImageColor3" else "BackgroundColor3"
 
 	-- Icon is optional and additive: a missing key must fall back to the text label alone, never an
 	-- empty square, per this project's "missing art never breaks the loop" rule. `iconLabel` and the
@@ -521,6 +634,10 @@ function HudKit.button(opts: HudButtonOptions): TextButton
 			-- fromScale; that silently distorts every non-square button's icon.
 			Size = UDim2.fromScale(iconScale, iconScale),
 			SizeConstraint = Enum.SizeConstraint.RelativeYY,
+			-- Explicit, not relying on the instance default (which happens to also be 1): must stay
+			-- above the background ImageLabel's ZIndex = 0 above, since those two ARE ordinary
+			-- sibling children and DO get ordered by ZIndex against each other.
+			ZIndex = 1,
 			Parent = btn,
 		})
 		if HudKit.applyIcon(label, opts.icon, opts.iconFolder) then
@@ -551,11 +668,23 @@ function HudKit.button(opts: HudButtonOptions): TextButton
 
 	-- Colors live in `state`, not as closed-over locals, so HudKit.setButtonFill can rewrite them
 	-- later and have every handler below see the new values on the very next hover/press -- this
-	-- table IS the fix for the button-recolors-then-reverts-on-MouseLeave bug.
-	local state = { restColor = restColor, hoverColor = hoverColor, pressColor = pressColor }
+	-- table IS the fix for the button-recolors-then-reverts-on-MouseLeave bug. fillTarget/fillProperty
+	-- ride along too so setButtonFill/setButtonVariant (below) can recolor a built button correctly
+	-- without re-deriving which path (sliced vs. fallback) it took at build time.
+	local state = {
+		restColor = restColor,
+		hoverColor = hoverColor,
+		pressColor = pressColor,
+		fillTarget = fillTarget,
+		fillProperty = fillProperty,
+	}
 	buttonState[btn] = state
 
-	local tween = makeTweener(btn, state)
+	-- Two tweeners, not one: `tween` drives `btn`'s own Size/Position, `tweenFill` drives whichever
+	-- instance/property carries the visible fill (see fillTarget/fillProperty above). See
+	-- makeTweener's header comment for why these need separate state slots rather than sharing one.
+	local tween = makeTweener(btn, btn, state, "activeTween")
+	local tweenFill = makeTweener(btn, fillTarget, state, "activeFillTween")
 
 	-- Same destroyed-instance guard as makeTweener above, and for the same reason: panels rebuild
 	-- constantly, so a MouseLeave can fire after `btn` (and `iconLabel`, parented under it) is
@@ -568,19 +697,29 @@ function HudKit.button(opts: HudButtonOptions): TextButton
 		iconLabel.Image = image
 	end
 
+	-- Size/Position (via `tween`, on `btn`) and the visible fill color (via `tweenFill`, on
+	-- fillTarget/fillProperty) are now two separate TweenService:Create calls instead of one combined
+	-- goal table -- both fired with the same BUTTON_TWEEN_INFO, so they start and ease together and
+	-- look identical to one tween. They MUST stay separate: on the fallback path they'd target the
+	-- same instance but still need independent cancel-tracking (see makeTweener's header comment),
+	-- and on the sliceable path they target different instances entirely.
 	btn.MouseEnter:Connect(function()
-		tween({ BackgroundColor3 = state.hoverColor, Size = hoverSize })
+		tween({ Size = hoverSize })
+		tweenFill({ [fillProperty] = state.hoverColor })
 		swapIcon(iconHoverImage)
 	end)
 	btn.MouseLeave:Connect(function()
-		tween({ BackgroundColor3 = state.restColor, Size = restSize, Position = restPos })
+		tween({ Size = restSize, Position = restPos })
+		tweenFill({ [fillProperty] = state.restColor })
 		swapIcon(iconRestImage)
 	end)
 	btn.MouseButton1Down:Connect(function()
-		tween({ BackgroundColor3 = state.pressColor, Position = pressPos })
+		tween({ Position = pressPos })
+		tweenFill({ [fillProperty] = state.pressColor })
 	end)
 	btn.MouseButton1Up:Connect(function()
-		tween({ BackgroundColor3 = state.hoverColor, Position = restPos, Size = hoverSize })
+		tween({ Position = restPos, Size = hoverSize })
+		tweenFill({ [fillProperty] = state.hoverColor })
 	end)
 
 	if opts.onClick then
@@ -603,10 +742,19 @@ end
 -- separate problem. This writes into the same `state` table the handlers read from every time
 -- (see `buttonState` above), so there is nothing left to go stale.
 --
--- Also cancels any in-flight tween before applying the new rest color directly: without this, a
+-- Also cancels any in-flight fill tween before applying the new rest color directly: without this, a
 -- MouseLeave tween already mid-flight (queued before this call, animating toward the OLD rest
 -- color it captured when it started) would finish and visually overwrite the color this function
--- just set, a moment later and for no visible reason.
+-- just set, a moment later and for no visible reason. Only the FILL tween slot is cancelled, not
+-- the Size/Position one (`state.activeTween`) -- those two were split into independent slots
+-- specifically so a color change like this one no longer has to interrupt an in-flight hover-grow
+-- animation just to touch a color it doesn't own.
+--
+-- RETARGETED for the 9-slice background: the visible fill used to always be `button.BackgroundColor3`
+-- directly; a sliceable button's fill is its background ImageLabel's ImageColor3 instead (that
+-- Frame's own BackgroundColor3 is transparent on that path and would silently do nothing). state.
+-- fillTarget/fillProperty were captured once at HudKit.button() build time so this function doesn't
+-- need to re-derive which path a given button took.
 function HudKit.setButtonFill(button: TextButton, color: Color3)
 	local state = buttonState[button]
 	if not state then
@@ -615,12 +763,12 @@ function HudKit.setButtonFill(button: TextButton, color: Color3)
 	state.restColor = color
 	state.hoverColor = HudKit.lighten(color, BUTTON_HOVER_LIGHTEN)
 	state.pressColor = HudKit.darken(color, BUTTON_PRESS_DARKEN)
-	if state.activeTween then
-		state.activeTween:Cancel()
-		state.activeTween = nil
+	if state.activeFillTween then
+		state.activeFillTween:Cancel()
+		state.activeFillTween = nil
 	end
 	if button.Parent then -- same destroyed-instance guard as makeTweener; a destroyed button can't be recolored
-		button.BackgroundColor3 = state.restColor
+		(state.fillTarget :: any)[state.fillProperty] = state.restColor
 	end
 end
 
@@ -653,16 +801,8 @@ local PLATE_GRADIENT_LIGHTEN = 0.62 -- top edge: COLOR.Line lightened. Pushed we
 local PLATE_GRADIENT_DARKEN = 0.85 -- bottom edge: COLOR.Line darkened toward near-black
 local PLATE_SURFACE_INSET = 3 -- pixels of shell visible as a border once the surface sits on top.
 
--- panelframe is a 64x64 white PNG: square top-left/bottom-right corners, a 45-degree 16px cut
--- top-right and bottom-left. SliceCenter's margins land just past that cut on every edge, so the
--- corner regions (which must stay unstretched to keep the cut crisp) are exactly the drawn art and
--- only the centre strip between them tiles/stretches to fill whatever size the element is.
---
--- MINIMUM SIZE: a 9-slice needs an element at least twice the slice inset per axis (roughly
--- 40x40 here) or the corner regions overlap and the cut renders wrong. Shell/surface are always
--- far bigger than that, but this is exactly why panelHeader's 28px close button stays on the
--- plain rounded HudKit.button path below instead of getting a sliced image of its own.
-local PANEL_FRAME_SLICE_CENTER = Rect.new(20, 20, 44, 44)
+-- Slice geometry: PANEL_FRAME_SLICE_CENTER, defined once above the Buttons section since
+-- HudKit.button() shares this exact asset/geometry for its own angular background.
 
 -- Returns (surface, shell) in that order: surface is what a caller almost always wants right away
 -- (to parent content into), shell is only needed afterward to move/resize the whole panel — hence

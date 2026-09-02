@@ -65,7 +65,7 @@ local runActive = false
 
 
 ----------------------------------------------------------------------
--- Currency readout (top-left)
+-- Currency readout (top-centre, flush against the top edge)
 ----------------------------------------------------------------------
 
 -- Only the surface is bound (Hud.plate's second return, the shell, is discarded) — nothing else
@@ -83,12 +83,18 @@ local runActive = false
 -- a too-narrow surface clips silently (Frames don't clip children by default) rather than erroring:
 -- the last group's value rendered outside the plate entirely, on top of the game world. XY instead
 -- of the plain Y every other plate() caller uses sizes the surface to its actual content on BOTH
--- axes, so the strip grows rightward as groups/text grow instead of guessing again. Position is
--- top-left anchored, so growing rightward from there is the correct direction and needs no offset
--- math to compensate.
+-- axes, so the strip grows to fit groups/text as they change instead of guessing again.
+--
+-- Top-CENTRE, flush against the very top edge of the screen (AnchorPoint 0.5,0 + Position
+-- 0.5,0,0,0 — no offset on either axis, on purpose: this was moved off the top-left corner and
+-- explicitly asked to sit flush, no inset). With a 0.5 AnchorPoint the strip grows outward from
+-- its own centre on both sides as groups/text change width, so it stays centred without any
+-- offset math to compensate — same idea as the old top-left/grows-rightward pairing, just
+-- centred instead of corner-anchored.
 local currencyFrame = Hud.plate({
 	Name = "Currency",
-	Position = UDim2.new(0, 16, 0, 16),
+	AnchorPoint = Vector2.new(0.5, 0),
+	Position = UDim2.new(0.5, 0, 0, 0),
 	Size = UDim2.new(0, 0, 0, 0), -- both placeholders; automaticSize below drives the real size
 	automaticSize = Enum.AutomaticSize.XY,
 	Parent = Hud.screenGui,
@@ -2376,7 +2382,7 @@ end
 
 ----------------------------------------------------------------------
 -- Status panel (bottom-left) — the always-on readout of how the PLAYER is doing, as opposed to the
--- top-left currency readout (what they own) and the wave panel (how the current fight is going).
+-- top-centre currency readout (what they own) and the wave panel (how the current fight is going).
 --
 -- Health lived only inside the raid panel before this, so outside a raid there was no HP readout at
 -- all — despite mine hazards, lava and outpost fights all being able to kill you.
