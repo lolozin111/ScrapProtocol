@@ -504,8 +504,9 @@ local BUTTON_ICON_LEFT_INSET = 8
 -- status panel reads correctly): a slightly LARGER copy of the same shape sitting behind the
 -- button, in a lighter shade of its own fill, so only its edges show around the button's rim.
 -- OUTLINE_EXPAND is per-side, so the visible rim is that many pixels thick.
-local DIAG_BUTTONS_LOGGED = 0 -- TEMPORARY: see the diagnostic block in HudKit.button
-local BUTTON_OUTLINE_EXPAND = 4 -- temporarily widened from 3 while diagnosing visibility
+-- Rim thickness in pixels. 3 reads clearly at normal UI scale without eating into the fill; the
+-- inventory tabs sit 8px apart, so a thicker rim would start closing that gap visually.
+local BUTTON_OUTLINE_EXPAND = 3
 local BUTTON_OUTLINE_LIGHTEN = 0.35
 -- Hard offset shadow (HudButtonOptions.dropShadow), an ALTERNATIVE to the gradient above, not a
 -- second layer on top of it — the reference draws tab buttons with a flat fill and a dropped-out
@@ -805,45 +806,50 @@ function HudKit.button(opts: HudButtonOptions): TextButton
 	-- ZIndex involved at all. Three previous attempts leaned on ZIndex (including negative values)
 	-- to put a layer behind another and none of them ever appeared on screen. Nesting cannot fail
 	-- the same way. Do not "flatten" these back into siblings.
-	-- ============================ TEMPORARY DIAGNOSTIC ============================
-	-- Stripped to the simplest thing that could possibly be visible: a plain bright-red Frame.
-	-- No panelframe image, no slice, no gradient, no corner. The fill nests inside it, inset by
-	-- BUTTON_OUTLINE_EXPAND, so a red ring should surround every button.
-	--   * Red ring appears  -> nesting is sound; the panelframe/slice/gradient path was the problem.
-	--   * No red ring       -> the problem is structural, above this code entirely.
-	-- The warn() below reports what the instances ACTUALLY measure once a frame has rendered, since
-	-- AbsoluteSize is 0 until then. Revert this whole block once the answer is known.
+	-- THE OUTLINE — the same construction plate() uses for its bevel, which is what finally made a
+	-- rim appear on buttons after a UIStroke and three ZIndex-layered attempts all produced nothing.
+	--
+	-- It is a full-size shape filling the button, with the FILL nested INSIDE it and inset by
+	-- BUTTON_OUTLINE_EXPAND, so the outline shows as a rim around the fill's edge. Nothing reaches
+	-- outside the button's own bounds.
+	--
+	-- The fill being a CHILD of the outline rather than a sibling is load-bearing: under
+	-- ZIndexBehavior.Sibling a child is unconditionally drawn in front of its parent, so nesting
+	-- guarantees the order structurally with no ZIndex involved. Every earlier attempt tried to put
+	-- one sibling behind another via ZIndex and none of them ever rendered. Do not flatten these.
+	--
+	-- On the sliced path the rim is the same panelframe image, so it follows the 45-degree cut
+	-- corners exactly instead of boxing a rectangle around them — the thing a UIStroke could not do.
+	-- It carries the same gradient as the fill so the rim shades with the button rather than reading
+	-- as a flat sticker behind a shaded face.
 	local outlineHost: GuiObject
 	do
-		local outline = HudKit.new("Frame", {
-			BackgroundColor3 = Color3.fromRGB(255, 0, 0),
-			BackgroundTransparency = 0,
-			Size = UDim2.new(1, 0, 1, 0),
-			Parent = btn,
-		})
-		outlineTarget, outlineProperty = outline, "BackgroundColor3"
-		outlineHost = outline
-
-		if DIAG_BUTTONS_LOGGED < 3 then
-			DIAG_BUTTONS_LOGGED += 1
-			task.delay(2, function()
-				if not outline.Parent then
-					warn("[HudKit DIAG] outline was destroyed before it could be measured")
-					return
-				end
-				local fill = outline:FindFirstChildWhichIsA("GuiObject")
-				warn(("[HudKit DIAG] btn=%s vis=%s btnAbs=%s | outline abs=%s pos=%s vis=%s transp=%.2f | fill=%s abs=%s"):format(
-					tostring(btn.Name),
-					tostring(btn.Visible),
-					tostring(btn.AbsoluteSize),
-					tostring(outline.AbsoluteSize),
-					tostring(outline.AbsolutePosition),
-					tostring(outline.Visible),
-					outline.BackgroundTransparency,
-					tostring(fill and fill.Name or "NONE"),
-					tostring(fill and fill.AbsoluteSize or "-")
-				))
-			end)
+		local outlineColor = HudKit.lighten(restColor, BUTTON_OUTLINE_LIGHTEN)
+		if isSliceable then
+			local outline = HudKit.new("ImageLabel", {
+				BackgroundTransparency = 1,
+				Image = panelFrameImage,
+				ImageColor3 = outlineColor,
+				ScaleType = Enum.ScaleType.Slice,
+				SliceCenter = PANEL_FRAME_SLICE_CENTER,
+				Size = UDim2.new(1, 0, 1, 0),
+				Parent = btn,
+			}, { buttonFillGradient() })
+			outlineTarget, outlineProperty = outline, "ImageColor3"
+			outlineHost = outline
+		else
+			-- Square and rounded-fallback buttons, same idea in plain Frame form. The rounded case bumps
+			-- its radius by the rim width so the rim stays an even thickness around the curve rather
+			-- than pinching at the corners.
+			local outline = HudKit.new("Frame", {
+				BackgroundColor3 = outlineColor,
+				Size = UDim2.new(1, 0, 1, 0),
+				Parent = btn,
+			}, if opts.square
+				then { buttonFillGradient() }
+				else { HudKit.corner(HudKit.RADIUS.Button + BUTTON_OUTLINE_EXPAND), buttonFillGradient() })
+			outlineTarget, outlineProperty = outline, "BackgroundColor3"
+			outlineHost = outline
 		end
 	end
 
