@@ -72,11 +72,15 @@ HudKit.FONT = {
 
 -- Small type scale, pulled from sizes already scattered across the file (13/14/16 body text, 18-ish
 -- headings) rather than invented fresh — so adopting these in a panel is a no-visual-diff change.
+-- Bumped from the original 11/15/18/17 after a Studio screenshot showed everything reading too
+-- small at actual play distance. Readout gets the biggest jump of the four (17 -> 20, proportionally
+-- more than Title's 18 -> 20) because the wallet numbers it sizes are the single most-glanced value
+-- on screen and were sitting at literal body-copy size before this.
 HudKit.TEXTSIZE = {
-	Label = 11,
-	Body = 15,
-	Title = 18,
-	Readout = 17,
+	Label = 13,
+	Body = 16,
+	Title = 20,
+	Readout = 20,
 }
 
 -- Spacing scale. Panels currently hardcode padding/gaps as raw numbers; this exists so new panels
@@ -374,6 +378,15 @@ local BUTTON_TWEEN_INFO = TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.Easing
 local BUTTON_HOVER_LIGHTEN = 0.12
 local BUTTON_PRESS_DARKEN = 0.18
 
+-- Fraction of the button's own height, not a fixed pixel count: a 20px icon read as tiny on a
+-- 108x72 hero button and identically-sized on a 56x56 secondary one, so the hero action never read
+-- as one. 0.55 was picked by eye against the design's Start Defense button.
+local BUTTON_ICON_SCALE_DEFAULT = 0.55
+-- Pixels between the button's left edge and an icon-with-text layout. Kept as its own named constant
+-- (rather than inlined into the Position/padding math below) because both of those need to agree on
+-- it, and the icon-only (centred) layout does not use it at all.
+local BUTTON_ICON_LEFT_INSET = 8
+
 -- Base fill/text per variant. Hover/press shades are DERIVED from `fill` via lighten()/darken() at
 -- button-build time rather than listed here, so this table is the only place a variant's color is
 -- ever spelled out.
@@ -397,6 +410,9 @@ export type HudButtonOptions = {
 	text: string?,
 	icon: string?, -- optional key into UiIcons (or `iconFolder`); falls back to text-only if missing
 	iconFolder: string?,
+	iconScale: number?, -- fraction of the button's height the icon occupies; defaults to
+		-- BUTTON_ICON_SCALE_DEFAULT below. Override for a button that wants a stockier or daintier
+		-- icon than the default without forcing every other button's icon to follow.
 	size: UDim2?,
 	position: UDim2?,
 	anchorPoint: Vector2?,
@@ -488,14 +504,23 @@ function HudKit.button(opts: HudButtonOptions): TextButton
 	local iconHoverImage: string? = nil
 	if opts.icon then
 		local hasText = opts.text ~= nil and opts.text ~= ""
+		local iconScale = opts.iconScale or BUTTON_ICON_SCALE_DEFAULT
 		local label = HudKit.new("ImageLabel", {
 			BackgroundTransparency = 1,
 			-- Icon+text: pinned to the left edge, text alone (below) padded clear of it so the two
 			-- don't overlap in the middle. Icon-only: centred, since there's no text to share the
 			-- button with.
 			AnchorPoint = if hasText then Vector2.new(0, 0.5) else Vector2.new(0.5, 0.5),
-			Position = if hasText then UDim2.new(0, 8, 0.5, 0) else UDim2.new(0.5, 0, 0.5, 0),
-			Size = UDim2.new(0, 20, 0, 20),
+			Position = if hasText then UDim2.new(0, BUTTON_ICON_LEFT_INSET, 0.5, 0) else UDim2.new(0.5, 0, 0.5, 0),
+			-- Scale of the button's height, NOT a fixed pixel size — see BUTTON_ICON_SCALE_DEFAULT
+			-- above for why a fixed number made the hero button and a tiny secondary button get an
+			-- identical icon. SizeConstraint.RelativeYY ties BOTH the X and Y scale components to the
+			-- parent's (the button's) AbsoluteSize.Y specifically, which is what keeps the icon square
+			-- on a wide-but-short button — fromScale alone resolves X against AbsoluteSize.X, so a
+			-- 108x72 button would stretch it into an oblong. Do not "simplify" this back to a bare
+			-- fromScale; that silently distorts every non-square button's icon.
+			Size = UDim2.fromScale(iconScale, iconScale),
+			SizeConstraint = Enum.SizeConstraint.RelativeYY,
 			Parent = btn,
 		})
 		if HudKit.applyIcon(label, opts.icon, opts.iconFolder) then
@@ -507,10 +532,17 @@ function HudKit.button(opts: HudButtonOptions): TextButton
 			iconHoverImage = UiIconConfig.Get(opts.icon .. "_hover")
 			if hasText then
 				-- Only the button's own Text (rendered by the TextButton itself, not a separate
-				-- label) needs pushing clear of the icon; PaddingLeft reserves exactly the icon's
-				-- footprint (8px inset + 20px icon + one XS gap) without touching the icon's own
-				-- Position above.
-				HudKit.new("UIPadding", { PaddingLeft = UDim.new(0, 8 + 20 + HudKit.SPACE.XS), Parent = btn })
+				-- label) needs pushing clear of the icon; PaddingLeft reserves the icon's ACTUAL
+				-- footprint (inset + icon pixels + one XS gap), not the old fixed 20px, so a bigger
+				-- icon doesn't crowd the text and a smaller one doesn't strand it with dead space.
+				-- restSize.Y.Offset is the same offset-based-height assumption pressPos/hoverSize
+				-- above already make about how this function's callers size their buttons, so this
+				-- pixel math and the icon's live RelativeYY size agree.
+				local iconPixels = restSize.Y.Offset * iconScale
+				HudKit.new("UIPadding", {
+					PaddingLeft = UDim.new(0, BUTTON_ICON_LEFT_INSET + iconPixels + HudKit.SPACE.XS),
+					Parent = btn,
+				})
 			end
 		else
 			label:Destroy() -- missing art -> fall back to the text label alone, never an empty square
@@ -701,13 +733,30 @@ function HudKit.plate(props: { [string]: any }?): (Frame, Frame)
 		shell = HudKit.new("Frame", shellProps, { HudKit.corner(HudKit.RADIUS.Panel), gradient })
 	end
 
-	if automaticSize then
-		-- Base height is just the two 2px insets (top + bottom bevel) so the surface, once it grows
-		-- to its content, overflows evenly on both edges rather than the shell starting undersized.
-		-- Width is left exactly as the caller set it via props.Size (or the default) — only Y
-		-- becomes automatic, so callers keep setting an explicit width the normal way.
-		shell.Size = UDim2.new(shell.Size.X.Scale, shell.Size.X.Offset, 0, PLATE_SURFACE_INSET * 2)
-		shell.AutomaticSize = Enum.AutomaticSize.Y
+	-- `automaticSize` accepts `true` (height only, the original behaviour and still what most panels
+	-- want) or an Enum.AutomaticSize for the axes to automate. X exists because a fixed-width panel
+	-- whose contents are laid out horizontally silently OVERFLOWS rather than clipping: the wallet
+	-- strip's last group rendered outside the plate, on top of the game world, with nothing in
+	-- Output to say so. A row of content should size to its content.
+	local autoAxis = if automaticSize == true
+		then Enum.AutomaticSize.Y
+		elseif automaticSize then automaticSize
+		else nil
+	local autoX = autoAxis == Enum.AutomaticSize.X or autoAxis == Enum.AutomaticSize.XY
+	local autoY = autoAxis == Enum.AutomaticSize.Y or autoAxis == Enum.AutomaticSize.XY
+
+	if autoAxis then
+		-- Base size on an automated axis is just the two insets (the bevel on both edges), so the
+		-- surface growing to its content overflows evenly rather than the shell starting undersized.
+		-- An axis left manual keeps exactly what the caller set via props.Size.
+		local inset = PLATE_SURFACE_INSET * 2
+		shell.Size = UDim2.new(
+			if autoX then 0 else shell.Size.X.Scale,
+			if autoX then inset else shell.Size.X.Offset,
+			if autoY then 0 else shell.Size.Y.Scale,
+			if autoY then inset else shell.Size.Y.Offset
+		)
+		shell.AutomaticSize = autoAxis
 	end
 
 	local surfaceProps: { [string]: any } = {
@@ -715,9 +764,16 @@ function HudKit.plate(props: { [string]: any }?): (Frame, Frame)
 		-- Non-auto: unchanged, scale-relative to the shell. Auto: offset-only base (no scale
 		-- component means no dependency on the shell's still-being-computed height) plus
 		-- AutomaticSize.Y so it grows to whatever's parented into it.
-		Size = automaticSize and UDim2.new(1, -PLATE_SURFACE_INSET * 2, 0, 0)
-			or UDim2.new(1, -PLATE_SURFACE_INSET * 2, 1, -PLATE_SURFACE_INSET * 2),
-		AutomaticSize = automaticSize and Enum.AutomaticSize.Y or nil,
+		-- An automated axis gets an offset-only base (no scale component, so it carries no dependency
+		-- on the shell's still-being-computed size — that circularity is what silently collapses a
+		-- nested AutomaticSize). A manual axis stays scale-relative to the shell exactly as before.
+		Size = UDim2.new(
+			if autoX then 0 else 1,
+			if autoX then 0 else -PLATE_SURFACE_INSET * 2,
+			if autoY then 0 else 1,
+			if autoY then 0 else -PLATE_SURFACE_INSET * 2
+		),
+		AutomaticSize = autoAxis,
 		Parent = shell,
 	}
 

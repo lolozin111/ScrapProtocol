@@ -78,16 +78,19 @@ local runActive = false
 -- remembered to recompute the magic number. Hud.plate's automaticSize option breaks that
 -- circularity on the shell/surface pair; currencyList below has to do the equivalent for itself
 -- to actually benefit from it (see its own comment).
--- Widened from the old 220 (a 3-line vertical stack) to fit one horizontal row of three
--- icon+label+value groups plus dividers — see currencyList below. Picked by hand-summing group
--- widths (icon 18 + gaps + "Scrap"/"Cores"/"Energy" labels + fixed-width values); pad generously
--- rather than exactly, since a too-narrow surface clips silently (Frames don't clip children by
--- default) instead of erroring.
+-- Used to be a hand-summed fixed 400 width (icon 18 + gaps + labels + fixed-width values) — that
+-- guess was already wrong before the icon/text scale-up in this pass made every group wider, and
+-- a too-narrow surface clips silently (Frames don't clip children by default) rather than erroring:
+-- the last group's value rendered outside the plate entirely, on top of the game world. XY instead
+-- of the plain Y every other plate() caller uses sizes the surface to its actual content on BOTH
+-- axes, so the strip grows rightward as groups/text grow instead of guessing again. Position is
+-- top-left anchored, so growing rightward from there is the correct direction and needs no offset
+-- math to compensate.
 local currencyFrame = Hud.plate({
 	Name = "Currency",
 	Position = UDim2.new(0, 16, 0, 16),
-	Size = UDim2.new(0, 400, 0, 0), -- Y is a placeholder; automaticSize below drives the real height
-	automaticSize = true,
+	Size = UDim2.new(0, 0, 0, 0), -- both placeholders; automaticSize below drives the real size
+	automaticSize = Enum.AutomaticSize.XY,
 	Parent = Hud.screenGui,
 })
 Hud.accentCap(currencyFrame) -- full-width, parented straight onto the surface (not into
@@ -99,18 +102,23 @@ Hud.accentCap(currencyFrame) -- full-width, parented straight onto the surface (
 -- keep their original padding untouched.
 --
 -- Size/AutomaticSize here mirror the same fix Hud.plate applies to its own shell/surface pair:
--- Size.Y has no Scale component (an offset-only 0), so it doesn't depend on currencyFrame's
--- still-being-computed automatic height, and AutomaticSize.Y then grows this frame to fit its
--- UIListLayout'd rows. A Scale-based Y here (the old `1, -4`) would be circular against
--- currencyFrame's own AutomaticSize.Y and quietly collapse instead of erroring.
+-- neither axis carries a Scale component (both offset-only zeroes), so this frame's size never
+-- depends on currencyFrame's own still-being-computed automatic size, and AutomaticSize.XY then
+-- grows it to fit its UIListLayout'd row on both axes. X used to be Scale (`1, 0`), which was
+-- harmless while currencyFrame's width was a fixed 400 — now that currencyFrame is AutomaticSize.XY
+-- too (see its own comment: the fixed-400 plate is what overflowed), a Scale-X child here would be
+-- circular against that and quietly collapse instead of erroring, the same failure mode the Y-axis
+-- comment above already describes. accentCap below stays Scale-width on purpose: it's a passive
+-- follower with no content of its own to drive a size from, so it just resolves to whatever this
+-- frame (the actual driver) ends up computing.
 --
 -- Now a single horizontal row (direction C / the "Forged Rig" hybrid) instead of three stacked
 -- lines — FillDirection/VerticalAlignment replace the old vertical Padding-only layout.
 local currencyList = Hud.new("Frame", {
 	BackgroundTransparency = 1,
 	Position = UDim2.fromOffset(0, 4),
-	Size = UDim2.new(1, 0, 0, 0),
-	AutomaticSize = Enum.AutomaticSize.Y,
+	Size = UDim2.new(0, 0, 0, 0),
+	AutomaticSize = Enum.AutomaticSize.XY,
 	Parent = currencyFrame,
 }, {
 	Hud.new("UIListLayout", {
@@ -130,14 +138,15 @@ local currencyList = Hud.new("Frame", {
 -- muted label alone carries the meaning, per this project's "missing art never breaks the loop"
 -- rule rather than rendering an empty square.
 --
--- Group's own height is a fixed offset (24), never a Scale, for the same circularity reason
--- currencyFrame/currencyList call out above: currencyList AutomaticSizes its Y from this row's
--- height, so this row's height can't in turn depend on currencyList's.
+-- Group's own height is a fixed offset (28, up from 24 to fit the bigger icon below), never a
+-- Scale, for the same circularity reason currencyFrame/currencyList call out above: currencyList
+-- AutomaticSizes its Y from this row's height, so this row's height can't in turn depend on
+-- currencyList's.
 local function makeCurrencyGroupShell(iconKey: string, labelText: string): Frame
 	local group = Hud.new("Frame", {
 		BackgroundTransparency = 1,
 		AutomaticSize = Enum.AutomaticSize.X,
-		Size = UDim2.new(0, 0, 0, 24),
+		Size = UDim2.new(0, 0, 0, 28),
 		Parent = currencyList,
 	}, {
 		Hud.new("UIListLayout", {
@@ -147,9 +156,10 @@ local function makeCurrencyGroupShell(iconKey: string, labelText: string): Frame
 		}),
 	})
 
+	-- 18x18 -> 24x24 (Studio screenshot: too small to read next to the larger readout text below).
 	local icon = Hud.new("ImageLabel", {
 		BackgroundTransparency = 1,
-		Size = UDim2.fromOffset(18, 18),
+		Size = UDim2.fromOffset(24, 24),
 		Parent = group,
 	})
 	if not Hud.applyIcon(icon, iconKey) then
@@ -162,10 +172,10 @@ local function makeCurrencyGroupShell(iconKey: string, labelText: string): Frame
 	Hud.new("TextLabel", {
 		BackgroundTransparency = 1,
 		AutomaticSize = Enum.AutomaticSize.X,
-		Size = UDim2.new(0, 0, 0, 18),
+		Size = UDim2.new(0, 0, 0, 20),
 		Font = Hud.FONT.Display,
 		TextColor3 = Hud.COLOR.Muted,
-		TextSize = 12,
+		TextSize = Hud.TEXTSIZE.Label,
 		Text = labelText:upper(),
 		Parent = group,
 	})
@@ -179,7 +189,7 @@ local function makeCurrencyDivider()
 	Hud.new("Frame", {
 		BackgroundColor3 = Hud.COLOR.Line,
 		BorderSizePixel = 0,
-		Size = UDim2.new(0, 1, 0, 18),
+		Size = UDim2.new(0, 1, 0, 22), -- 18 -> 22, matching the group row's growth to 28 tall
 		Parent = currencyList,
 	})
 end
@@ -191,11 +201,11 @@ end
 local function makeCurrencyValue(parent: Frame, color: Color3, width: number): TextLabel
 	return Hud.new("TextLabel", {
 		BackgroundTransparency = 1,
-		Size = UDim2.new(0, width, 0, 18),
+		Size = UDim2.new(0, width, 0, 24),
 		Font = Hud.FONT.Mono,
 		TextXAlignment = Enum.TextXAlignment.Right,
 		TextColor3 = color,
-		TextSize = 15,
+		TextSize = Hud.TEXTSIZE.Readout,
 		Text = "",
 		Parent = parent,
 	})
@@ -204,9 +214,9 @@ end
 -- Grouped into one table (rather than one local per label) to stay under Luau's 200-local cap —
 -- see this file's header note on that budget. refreshCurrency below addresses these by field name.
 local currencyStrip = {}
-currencyStrip.scrap = makeCurrencyValue(makeCurrencyGroupShell("scrap", "Scrap"), Hud.COLOR.Accent, 56)
+currencyStrip.scrap = makeCurrencyValue(makeCurrencyGroupShell("scrap", "Scrap"), Hud.COLOR.Accent, 64)
 makeCurrencyDivider()
-currencyStrip.cores = makeCurrencyValue(makeCurrencyGroupShell("cores", "Cores"), Hud.COLOR.Good, 56)
+currencyStrip.cores = makeCurrencyValue(makeCurrencyGroupShell("cores", "Cores"), Hud.COLOR.Good, 64)
 makeCurrencyDivider()
 
 -- Energy gets a second, Muted "/max" segment instead of one combined string — RichText would also
@@ -214,17 +224,36 @@ makeCurrencyDivider()
 -- MaxEnergy is a session constant (never changes at runtime), so this segment is set once here and
 -- never touched by refreshCurrency — only the current-energy segment needs the anti-jitter
 -- fixed-width treatment makeCurrencyValue gives it.
+--
+-- BUG FIX: energyCurrent/energyMax used to be two direct children of energyGroup, so energyGroup's
+-- own UIListLayout put its normal 5px inter-item Padding between them too (the same padding it puts
+-- between the icon and the label) — that's what a Studio screenshot caught rendering as "5 /5"
+-- instead of "5/10". They're nested in their own zero-padding frame instead: the outer group still
+-- gives that frame one 5px gap after the label, same as any other item, but nothing separates the
+-- two labels inside it, so the value reads as one tight "5/10".
 local energyGroup = makeCurrencyGroupShell("energy", "Energy")
-currencyStrip.energyCurrent = makeCurrencyValue(energyGroup, Hud.COLOR.Text, 26)
+local energyValue = Hud.new("Frame", {
+	BackgroundTransparency = 1,
+	Size = UDim2.new(0, 0, 0, 24),
+	AutomaticSize = Enum.AutomaticSize.X,
+	Parent = energyGroup,
+}, {
+	Hud.new("UIListLayout", {
+		FillDirection = Enum.FillDirection.Horizontal,
+		VerticalAlignment = Enum.VerticalAlignment.Center,
+		Padding = UDim.new(0, 0),
+	}),
+})
+currencyStrip.energyCurrent = makeCurrencyValue(energyValue, Hud.COLOR.Text, 32)
 currencyStrip.energyMax = Hud.new("TextLabel", {
 	BackgroundTransparency = 1,
 	AutomaticSize = Enum.AutomaticSize.X,
-	Size = UDim2.new(0, 0, 0, 18),
+	Size = UDim2.new(0, 0, 0, 24),
 	Font = Hud.FONT.Mono,
 	TextColor3 = Hud.COLOR.Muted,
-	TextSize = 15,
+	TextSize = Hud.TEXTSIZE.Readout,
 	Text = ("/%d"):format(RaidEnergyConfig.MaxEnergy),
-	Parent = energyGroup,
+	Parent = energyValue,
 })
 
 -- Ore/material counts used to live here too (one label per ore plus a divider), but that made
@@ -2389,7 +2418,7 @@ Hud.new("UIPadding", {
 local function makeStatusBar(order: number, label: string, fillColor: Color3, dimmed: boolean?)
 	local holder = Hud.new("Frame", {
 		BackgroundTransparency = 1,
-		Size = UDim2.new(1, 0, 0, 30),
+		Size = UDim2.new(1, 0, 0, 32), -- 30 -> 32 to fit the track's 12 -> 14 bump below
 		LayoutOrder = order,
 		Parent = statusPanel,
 	})
@@ -2399,14 +2428,16 @@ local function makeStatusBar(order: number, label: string, fillColor: Color3, di
 		Font = Hud.FONT.Display,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextColor3 = dimmed and Hud.COLOR.Muted or Hud.COLOR.Text,
-		TextSize = 13,
+		TextSize = Hud.TEXTSIZE.Label,
 		Text = label:upper(),
 		Parent = holder,
 	})
+	-- 12 -> 14: kept in step with the segmented Integrity bar's own bump below, so Stamina's
+	-- placeholder slot doesn't look thinner/lower-effort than its neighbour once that one grows.
 	local track = Hud.new("Frame", {
 		BackgroundColor3 = Hud.COLOR.PanelLight,
 		Position = UDim2.new(0, 0, 0, 16),
-		Size = UDim2.new(1, 0, 0, 12),
+		Size = UDim2.new(1, 0, 0, 14),
 		Parent = holder,
 	}, { Hud.corner(4) })
 	local fill = Hud.new("Frame", {
@@ -2427,8 +2458,8 @@ local statusHealthCaption, statusHealthCells
 do
 	local holder = Hud.new("Frame", {
 		BackgroundTransparency = 1,
-		Size = UDim2.new(1, 0, 0, 32), -- 2px taller than makeStatusBar's 30: segmentBar's track is a
-			-- fixed 16px tall (vs. the old plain fill's 12px), same 16px caption-to-bar offset below
+		Size = UDim2.new(1, 0, 0, 36), -- grown from 32 to fit statusHealthTrack's height override
+			-- below (20, up from segmentBar's own fixed 16) at the same 16px caption-to-bar offset
 		LayoutOrder = 1,
 		Parent = statusPanel,
 	})
@@ -2438,7 +2469,7 @@ do
 		Font = Hud.FONT.Display,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextColor3 = Hud.COLOR.Text,
-		TextSize = 13,
+		TextSize = Hud.TEXTSIZE.Label,
 		Text = "INTEGRITY", -- renamed from "Health" to match the design; overwritten with the live
 			-- HP readout by refreshHealthBar below the instant a Humanoid binds
 		Parent = holder,
@@ -2448,6 +2479,13 @@ do
 	-- caption, matching makeStatusBar's original 16px offset.
 	local statusHealthTrack = statusHealthCells[1].Parent.Parent
 	statusHealthTrack.Position = UDim2.fromOffset(0, 16)
+	-- HudKit.segmentBar's track height is a fixed internal constant (16px, sized before the
+	-- Studio-screenshot text bump that prompted this pass) with no parameter to override it — and
+	-- HudKit.lua is out of scope for this change, so it's grown here instead by reaching into the
+	-- plain Frame instance segmentBar handed back. inner/cells below the track are Scale-sized
+	-- relative to it (see segmentBar's own SEGMENT_INSET math), so bumping just the track's Size.Y
+	-- grows the whole bar proportionately with no further changes needed.
+	statusHealthTrack.Size = UDim2.new(1, 0, 0, 20)
 end
 
 -- Stamina is a PLACEHOLDER. There is no stamina or dash system in this codebase yet — no input
@@ -2593,11 +2631,11 @@ local mainActions = {}
 mainActions.inventoryButton, mainActions.inventoryCaption = makeActionColumn({
 	variant = "secondary",
 	icon = "inventory",
-	size = UDim2.new(0, 56, 0, 56),
+	size = UDim2.new(0, 72, 0, 72), -- 56x56 -> 72x72, Studio screenshot: everything read too small
 	onClick = openInventory,
 }, "Inventory", Hud.COLOR.Muted)
 
--- The hero action: bigger than its neighbours (108x72 vs 56x56) and the only caption painted in
+-- The hero action: bigger than its neighbours (now 144x96 vs 72x72) and the only caption painted in
 -- Accent rather than Muted, so it reads as the one loud thing on screen, per the approved design.
 -- Doubles as the stop button rather than adding a second one — the action row is already tight
 -- (and gets hidden wholesale while the Forge is open). Before StopWave existed this just no-op'd
@@ -2606,7 +2644,8 @@ mainActions.inventoryButton, mainActions.inventoryCaption = makeActionColumn({
 mainActions.defendButton, mainActions.defendCaption = makeActionColumn({
 	variant = "primary",
 	icon = "defense",
-	size = UDim2.new(0, 108, 0, 72),
+	size = UDim2.new(0, 144, 0, 96), -- 108x72 -> 144x96, kept at the same 3:2 ratio so it's still
+		-- unmistakably the largest, most hero-shaped thing in the row after the scale-up
 }, "Start Defense", Hud.COLOR.Accent)
 mainActions.defendButton.MouseButton1Click:Connect(function()
 	if runActive then
@@ -2621,13 +2660,14 @@ end)
 -- already looted (rewards are granted the instant each node resolves, not saved up for an
 -- "end of run" payout, so there's nothing separate to preserve here). No icon in the set for this
 -- action — stays a plain text button rather than inventing a mapping, per the icon design's own
--- rule that a wrong icon is worse than a text button. Fixed 56px height (not the old Scale 1,0)
--- so it doesn't try to size itself off actionRow's own AutomaticSize.Y — that would be circular the
+-- rule that a wrong icon is worse than a text button. Fixed 72px height (not the old Scale 1,0,
+-- and up from 56 to match the icon buttons' new size so the row bottom-aligns cleanly) so it
+-- doesn't try to size itself off actionRow's own AutomaticSize.Y — that would be circular the
 -- same way Hud.plate's header comment warns about for a shell/surface pair.
 local returnHomeButton = Hud.button({
 	variant = "danger",
 	text = "Return to Base",
-	size = UDim2.new(0, 130, 0, 56),
+	size = UDim2.new(0, 130, 0, 72),
 	parent = actionRow,
 })
 returnHomeButton.Visible = false
@@ -2642,7 +2682,7 @@ end)
 mainActions.recallButton, mainActions.recallCaption, mainActions.recallColumn = makeActionColumn({
 	variant = "danger",
 	icon = "recall",
-	size = UDim2.new(0, 56, 0, 56),
+	size = UDim2.new(0, 72, 0, 72), -- 56x56 -> 72x72, matching Inventory's bump
 	onClick = function()
 		Remotes.RecallFromMine:FireServer()
 	end,
@@ -2698,20 +2738,22 @@ task.spawn(function()
 		return text
 	end
 
-	-- variant picked from the STARTING state (on = danger/Bad, off = secondary/PanelLight); the
-	-- toggle handler below still overwrites BackgroundColor3 directly on every flip, same as
-	-- before. KNOWN QUIRK: Hud.button's hover/mouse-leave tween always animates back to the fill
-	-- captured at construction time, so hovering this button after a toggle can flash back to the
-	-- ORIGINAL on/off color before the manual override reasserts itself on the next full toggle —
-	-- acceptable here since this is an admin-only, rarely-clicked control, not a first-class UI
-	-- element.
-	-- Fixed 56px height, same reasoning as returnHomeButton above: this button sizes itself off
-	-- actionRow directly, and actionRow's height is now AutomaticSize, so a Scale-relative height
-	-- here would be circular.
+	-- Secondary (a plain, muted fill) when OFF, danger only when ON, where the loudness is actually
+	-- the point — an admin debug toggle should read as subordinate to the primary action beside it
+	-- except in the one state (test data live) where standing out is the whole point of the color.
+	-- Was previously a wide, always-red-or-bright slab (a manual BackgroundColor3 poke on every
+	-- toggle, bypassing the variant's text/stroke) — routed through Hud.setButtonVariant below
+	-- instead, same as the tab-switcher elsewhere in this file, which also fixes the old KNOWN QUIRK
+	-- where hovering after a toggle could flash back to the button's ORIGINAL construction-time
+	-- color: setButtonVariant rewrites the state the hover tween itself reads from, so there's
+	-- nothing left to flash back to.
+	-- Fixed 72px height, same reasoning as returnHomeButton above (and matching the icon buttons'
+	-- new size so the row bottom-aligns cleanly): this button sizes itself off actionRow directly,
+	-- and actionRow's height is now AutomaticSize, so a Scale-relative height here would be circular.
 	testMode.button = Hud.button({
 		variant = testMode.on and "danger" or "secondary",
 		text = labelFor(),
-		size = UDim2.new(0, 150, 0, 56),
+		size = UDim2.new(0, 150, 0, 72),
 		parent = actionRow,
 	})
 
@@ -2724,7 +2766,7 @@ task.spawn(function()
 
 		testMode.on = toggleResult.On
 		result.InTestSession = toggleResult.InTestSession
-		testMode.button.BackgroundColor3 = testMode.on and Hud.COLOR.Bad or Hud.COLOR.PanelLight
+		Hud.setButtonVariant(testMode.button, testMode.on and "danger" or "secondary")
 		testMode.button.Text = labelFor()
 
 		-- The single thing most likely to confuse: the label already shows the NEW flag, but this

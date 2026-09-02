@@ -35,10 +35,13 @@ function ResearchPanel.new(statusPanel: Frame)
 	-- refreshResearchButton() below (Accent vs. Good when a tier is claimable) — that still works
 	-- on top of Hud.button's hover/press tweens, since those only ever touch
 	-- BackgroundColor3/Size/Position, never TextColor3.
+	-- Height grown 30 -> 34: HudKit.button()'s default text size is Hud.TEXTSIZE.Body, raised this
+	-- pass from 14 to 16 — this button's text also grows the longest at "UPGRADE READY" swap
+	-- (refreshResearchButton below), so it needs the extra couple of pixels more than most.
 	research.button = Hud.button({
 		variant = "secondary",
 		text = "Research Tier 1",
-		size = UDim2.new(1, 0, 0, 30),
+		size = UDim2.new(1, 0, 0, 34),
 		layoutOrder = 3,
 		parent = statusPanel,
 	})
@@ -101,10 +104,15 @@ function ResearchPanel.new(statusPanel: Frame)
 	research.header = Hud.panelHeader(research.surface, "RESEARCH", closeResearchPanel)
 	research.title = research.header:FindFirstChildOfClass("TextLabel")
 
+	-- Position moved 44 -> 52, Size's offset grown by the same 8 (-56 -> -64): Hud.panelHeader is a
+	-- fixed 48px tall (PANEL_HEADER_HEIGHT in HudKit.lua), so 44 sat 4px INSIDE it — both are
+	-- default-ZIndex siblings of a Sibling-ZIndexBehavior ScreenGui, so this list (added after the
+	-- header) was quietly painting its first rows' top few pixels over the header's own bottom edge.
+	-- The size offset grows by the same amount the position does, so the list's bottom edge doesn't move.
 	research.list = Hud.new("ScrollingFrame", {
 		BackgroundTransparency = 1,
-		Position = UDim2.new(0, 12, 0, 44),
-		Size = UDim2.new(1, -24, 1, -56),
+		Position = UDim2.new(0, 12, 0, 52),
+		Size = UDim2.new(1, -24, 1, -64),
 		CanvasSize = UDim2.new(0, 0, 0, 0),
 		AutomaticCanvasSize = Enum.AutomaticSize.Y,
 		ScrollBarThickness = 6,

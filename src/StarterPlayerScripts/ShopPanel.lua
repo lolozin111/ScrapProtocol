@@ -40,10 +40,16 @@ Hud.panelHeader(shopUI.surface, "OUTPOST SHOP", function()
 	shopUI.frame.Visible = false
 end)
 
+-- Position moved 44 -> 52: Hud.panelHeader is a fixed 48px tall (PANEL_HEADER_HEIGHT in
+-- HudKit.lua), so 44 sat 4px INSIDE it — both are default-ZIndex siblings of a
+-- Sibling-ZIndexBehavior ScreenGui, so this list (added after the header) was quietly painting its
+-- first 4px of rows over the header's own bottom edge. 52 = 48 (header) + Hud.SPACE.S (4-ish
+-- rounded up to the standard gap) clears it outright. Size's offset grows by the same 8px
+-- (-100 -> -108) so the list's bottom edge — and the skip button below it — don't move.
 shopUI.listFrame = Hud.new("ScrollingFrame", {
 	BackgroundTransparency = 1,
-	Position = UDim2.new(0, 12, 0, 44),
-	Size = UDim2.new(1, -24, 1, -100),
+	Position = UDim2.new(0, 12, 0, 52),
+	Size = UDim2.new(1, -24, 1, -108),
 	CanvasSize = UDim2.new(0, 0, 0, 0),
 	AutomaticCanvasSize = Enum.AutomaticSize.Y,
 	ScrollBarThickness = 6,
@@ -53,11 +59,15 @@ shopUI.listFrame = Hud.new("ScrollingFrame", {
 -- Expedition Shop nodes are one-time — if you can't (or don't want to) buy anything, Skip
 -- destroys the node outright and lets the queue move on rather than leaving you stuck standing
 -- in front of a shop you can't use.
+--
+-- Height grown 32 -> 36: HudKit.button()'s default text size is Hud.TEXTSIZE.Body, raised this pass
+-- from 14 to 16 — 32px was comfortable at the old size but reads tight at 16px against a button with
+-- vertical hover/press tweening on top of it.
 shopUI.skipButton = Hud.button({
 	variant = "secondary",
 	text = "Skip — move to the next node",
-	position = UDim2.new(0, 12, 1, -40),
-	size = UDim2.new(1, -24, 0, 32),
+	position = UDim2.new(0, 12, 1, -44),
+	size = UDim2.new(1, -24, 0, 36),
 	parent = shopUI.surface,
 })
 
