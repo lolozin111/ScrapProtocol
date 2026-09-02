@@ -2045,3 +2045,34 @@ precisely because the look was settled on a page first.
 The toast, ModPicker, the ultimate picker and the case-opening flow never got the chrome pass. They
 should be included in the design round above rather than retrofitted afterwards, since a popup that
 does not match its parent menu is more jarring than one that matches nothing.
+
+#### A-revised: Recall as a universal "go home" button
+
+Decision: Recall is a single button meaning "bring me back to base", visible at all times. Where it
+is not allowed, it toasts the reason rather than hiding. That also RETIRES Return to Base as a
+separate control — same intent, different remote underneath — which removes the shared-slot problem
+and leaves the action row a clean symmetric three.
+
+**The trap, found before building it.** `RecallFromMine` is deliberately gated to the mine shaft.
+Its own comment records why: it had no validation, and since `LoadCharacter` respawns at FULL
+HEALTH, it was a free full-heal on demand anywhere in the game — including mid-raid with damage
+ticking — making a player who bound it to a key effectively unkillable. Widening that remote to
+"anywhere" re-opens exactly that exploit.
+
+**So the general case must not respawn the character.** Move the character to the plot anchor via
+CFrame instead, preserving health. `LoadCharacter` stays only for the mine, where it is already the
+established way out and the heal is part of the deal.
+
+Server-side rules, all enforced on the server and each with a toast on rejection:
+
+- In the mine shaft -> existing `RecallFromMine` path, unchanged.
+- On an expedition -> existing `EndExpedition` path. Note this ends the run for EVERY player on the
+  shared queue, so it needs a confirmation, not a single click.
+- In combat (a wave, a raid, an outpost) -> REFUSE, with a toast saying so. Teleporting out of a
+  fight is the exploit in a different costume. `PlayerActivityService.Get` already knows the
+  player's authoritative activity and is the right thing to ask.
+- Otherwise -> CFrame move to the player's plot anchor, health untouched.
+
+One new remote is cleaner than overloading `RecallFromMine`, so the mine's existing guard stays
+exactly as tight as it is now. The client button picks the path from state it already tracks; the
+server re-checks regardless, since the client can lie about all of it.
