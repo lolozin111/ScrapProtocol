@@ -427,6 +427,13 @@ end
 -- render broken and needs the plain rounded HudKit.corner() path instead.
 local PANEL_FRAME_SLICE_CENTER = Rect.new(20, 20, 44, 44)
 
+-- The pixel size of that 45-degree cut itself, in the 64px source (matches SliceCenter's margins:
+-- 64 - 44 = 20, minus the 4px of unstretched corner art past the cut = 16). Named so anything that
+-- needs to stay clear of the diagonal — currently just HudKit.accentCap below — reads its intent
+-- off one shared number instead of a bare 16 that looks unrelated to PANEL_FRAME_SLICE_CENTER at
+-- a glance and could drift from it on a future asset retune.
+local PANEL_FRAME_CORNER_CUT = 16
+
 ----------------------------------------------------------------------
 -- Buttons: variants + hover/press feedback
 ----------------------------------------------------------------------
@@ -444,6 +451,26 @@ local BUTTON_PRESS_DARKEN = 0.18
 -- specifically so it clears it and gets the sliced/angular frame instead.
 local BUTTON_MIN_SLICE_SIZE = 40
 
+-- BUG THIS FIXES: isSliceable used to compare restSize.X.Offset/.Y.Offset straight against
+-- BUTTON_MIN_SLICE_SIZE, which only means anything for an Offset-sized axis. The inventory
+-- category tabs are UDim2.new(0, 91, 1, 0) — height is 1 Scale / 0 Offset — so
+-- restSize.Y.Offset read as 0, failed the floor, and every scale-sized button silently fell back
+-- to the plain rounded HudKit.corner() path no matter how tall it actually rendered. A caller
+-- raising that row's height had zero effect on this check, because the UDim2 never carried a
+-- pixel number for this to read in the first place.
+--
+-- A Scale-based axis has no knowable pixel size at BUILD time (AbsoluteSize is still 0 before the
+-- first layout pass runs), so there is no correct number to compare here. Assume it clears the
+-- floor: a scale-sized button living inside an already-laid-out row is essentially always well
+-- past 40px, and guessing "too small" is the worse failure of the two — it would silently round
+-- off a button that should be angular, with nothing in Output to explain why.
+local function axisClears(dim: UDim, minPx: number): boolean
+	if dim.Scale > 0 then
+		return true
+	end
+	return dim.Offset >= minPx
+end
+
 -- Fraction of the button's own height, not a fixed pixel count: a 20px icon read as tiny on a
 -- 108x72 hero button and identically-sized on a 56x56 secondary one, so the hero action never read
 -- as one. 0.55 was picked by eye against the design's Start Defense button.
@@ -454,16 +481,28 @@ local BUTTON_ICON_SCALE_DEFAULT = 0.55
 local BUTTON_ICON_LEFT_INSET = 8
 
 -- Every variant gets a UIStroke now — buttons were reading flat against the world without one.
--- `stroke` names WHICH derivation a variant wants rather than just on/off, because the two loud
--- filled variants (primary/danger) and the one flat-dark variant (secondary) need opposite
--- directions to actually read: "line" keeps secondary's original fixed COLOR.Line edge (a dark,
--- low-contrast fill needs a LIGHTER line to read, and COLOR.Line already reads as exactly that
--- against PanelLight); "darken" derives the rim from restColor at build time (see BUTTON_STROKE_DARKEN
--- below) because primary/danger's fills are bright/saturated enough that a darker edge reads as a
--- cut, and deriving it from whatever fill is ACTUALLY in play (variant default or an opts.fill
--- override) means a custom-tinted button — a rarity color, an equipped mod's own color — still gets
--- a correctly-toned edge instead of the wrong variant's baked-in one.
-local BUTTON_STROKE_DARKEN = 0.22
+-- BUG THIS FIXES: primary/danger originally derived their edge via darken(restColor, ...) — a
+-- DARKER edge on a fill that's already dark relative to this HUD's near-black panels/world
+-- backdrop is functionally invisible, which is exactly why "outlines were added" and the user
+-- still reported seeing no outline at all. Every variant now derives its stroke by LIGHTENING
+-- restColor instead, so the rim reads brighter than the fill against both a dark panel and the
+-- game world behind it, regardless of variant. Deriving from whatever fill is ACTUALLY in play
+-- (variant default or an opts.fill override) means a custom-tinted button — a rarity color, an
+-- equipped mod's own color — still gets a correctly-toned edge instead of the wrong variant's
+-- baked-in one.
+--
+-- 0.28: enough to clearly separate the edge from the fill at a glance (0.12's hover-lighten was
+-- tried first and read as barely-there once actually screenshotted) without lerping so far toward
+-- white that the stroke reads as its own bright border rather than an edge on the button. Secondary
+-- used to get a fixed COLOR.Line stroke instead of a derived one; COLOR.Line (60, 53, 47) is dimmer
+-- than lighten(PanelLight, 0.28) lands, which would make secondary the one washed-out-looking
+-- variant next to primary/danger's new edges — so secondary now derives the same way as the other
+-- two instead of keeping its own fixed color.
+local BUTTON_STROKE_LIGHTEN = 0.28
+-- Bumped from the original 1px: asked for twice now ("buttons should pop"), and 1px was hard to
+-- see even once it was the right color. 2 reads as a deliberate rim at normal UI scale without
+-- ballooning into a border that fights the fill for attention.
+local BUTTON_STROKE_THICKNESS = 2
 
 -- Hard offset shadow (HudButtonOptions.dropShadow), an ALTERNATIVE to the gradient above, not a
 -- second layer on top of it — the reference draws tab buttons with a flat fill and a dropped-out
@@ -477,14 +516,18 @@ local BUTTON_DROPSHADOW_DARKEN = 0.35 -- deliberately steeper than the gradient'
 -- Base fill/text per variant. Hover/press shades are DERIVED from `fill` via lighten()/darken() at
 -- button-build time rather than listed here, so this table is the only place a variant's color is
 -- ever spelled out.
+-- `stroke` is now just on/off: every variant that wants one gets the same LIGHTEN-from-restColor
+-- derivation (see BUTTON_STROKE_LIGHTEN above) rather than picking a per-variant direction, so all
+-- three read as one consistent "lighter edge" family instead of secondary looking dimmer or
+-- differently-toned than primary/danger.
 local BUTTON_VARIANTS = {
 	-- The one loud action on screen: Accent fill, dark text so it reads as a solid, confident button
 	-- rather than colored outline text.
-	primary = { fill = COLOR.Accent, text = COLOR.Panel, stroke = "darken" },
+	primary = { fill = COLOR.Accent, text = COLOR.Panel, stroke = true },
 	-- Everything else: matches the existing PanelLight/Line look used by rows and most panel chrome.
-	secondary = { fill = COLOR.PanelLight, text = COLOR.Text, stroke = "line" },
+	secondary = { fill = COLOR.PanelLight, text = COLOR.Text, stroke = true },
 	-- Destructive actions (unequip, scrap, abandon...): Bad fill, light text for contrast.
-	danger = { fill = COLOR.Bad, text = COLOR.Text, stroke = "darken" },
+	danger = { fill = COLOR.Bad, text = COLOR.Text, stroke = true },
 }
 
 export type HudButtonOptions = {
@@ -616,12 +659,14 @@ function HudKit.button(opts: HudButtonOptions): TextButton
 	-- with overlapping/broken corners -- panelHeader's close button was the concrete case this
 	-- existed for until it grew to 40px specifically to clear this floor. Read fresh per call,
 	-- same reasoning as plate()'s panelFrameImage local: the two must never disagree about which
-	-- path they took. Offsets only (not Scale) because restSize.Y.Offset is already the load-bearing
-	-- "actual button height in pixels" assumption pressPos/hoverSize/the icon padding above all make.
+	-- path they took. Goes through axisClears (see its header comment above), NOT a bare
+	-- restSize.*.Offset compare -- an Offset-only check reads 0 for a Scale-sized axis (the
+	-- inventory category tabs are UDim2.new(0, 91, 1, 0): height is pure Scale) and silently
+	-- fails every such button onto the rounded fallback regardless of its real rendered size.
 	local panelFrameImage = UiIconConfig.Get("panelframe")
 	local isSliceable = panelFrameImage ~= nil
-		and restSize.X.Offset >= BUTTON_MIN_SLICE_SIZE
-		and restSize.Y.Offset >= BUTTON_MIN_SLICE_SIZE
+		and axisClears(restSize.X, BUTTON_MIN_SLICE_SIZE)
+		and axisClears(restSize.Y, BUTTON_MIN_SLICE_SIZE)
 
 	-- A drop shadow needs a real background CHILD to hide behind — see the shadow block below for
 	-- why it can never just be a lower-ZIndex sibling of `btn` itself. So `dropShadow` pushes even an
@@ -671,12 +716,10 @@ function HudKit.button(opts: HudButtonOptions): TextButton
 	-- never both at once, since stacking them is what makes a button look muddy. See
 	-- buttonFillGradient above for why it's built fresh per call rather than one shared UIGradient.
 
-	if variant.stroke == "line" then
-		HudKit.stroke().Parent = btn
-	elseif variant.stroke == "darken" then
+	if variant.stroke then
 		HudKit.new("UIStroke", {
-			Color = HudKit.darken(restColor, BUTTON_STROKE_DARKEN),
-			Thickness = 1,
+			Color = HudKit.lighten(restColor, BUTTON_STROKE_LIGHTEN),
+			Thickness = BUTTON_STROKE_THICKNESS,
 		}).Parent = btn
 	end
 
@@ -1160,14 +1203,28 @@ function HudKit.plate(props: { [string]: any }?): (Frame, Frame)
 	return surface, shell
 end
 
--- The 4px full-width accent bar across the top of a panel. Returns it so a caller can recolor a
--- specific panel later (a raid warning panel accenting Bad instead of Accent, say) without this
--- function needing a per-panel-type color lookup of its own.
+-- The 4px accent bar across the top of a panel. Returns it so a caller can recolor a specific
+-- panel later (a raid warning panel accenting Bad instead of Accent, say) without this function
+-- needing a per-panel-type color lookup of its own.
+--
+-- BUG THIS FIXES: a plain full-width `UDim2.new(1, 0, 0, 4)` bar runs straight past the top-right
+-- corner's 45-degree cut on a sliced `surface` (panelframe's square corner is top-LEFT only — see
+-- PANEL_FRAME_SLICE_CENTER's header comment) and juts out over the diagonal, clearly visible on
+-- the wallet strip. Inset the right edge by PANEL_FRAME_CORNER_CUT so the bar stops exactly where
+-- the cut begins instead of overrunning it; the left edge stays flush at x=0 since that corner is
+-- square and has nothing to clear.
+--
+-- GATED on the same panelframe availability every other slice-aware path in this file checks:
+-- on the rounded fallback (no panelframe asset) `surface` has no diagonal to clear at all, so an
+-- inset there would just read as an unexplained gap on the right, not a fix.
 function HudKit.accentCap(surface: Frame, color: Color3?): Frame
+	local panelFrameImage = UiIconConfig.Get("panelframe")
 	return HudKit.new("Frame", {
 		BackgroundColor3 = color or COLOR.Accent,
 		BorderSizePixel = 0,
-		Size = UDim2.new(1, 0, 0, 4),
+		Size = if panelFrameImage
+			then UDim2.new(1, -PANEL_FRAME_CORNER_CUT, 0, 4)
+			else UDim2.new(1, 0, 0, 4),
 		Parent = surface,
 	})
 end

@@ -122,6 +122,11 @@ function InventoryPanel.new(context)
 		AnchorPoint = Vector2.new(1, 0.5),
 		Position = UDim2.new(1, 0, 0.5, 0),
 		Size = UDim2.new(0, 420, 0, 488),
+		-- Above the action row and the wallet strip, which sit at the default ZIndex of 1: with
+		-- ZIndexBehavior.Sibling a tie is broken by tree order, so the later-built action row was
+		-- drawing OVER this panel's bottom edge. Deliberately below ModPicker (5) and
+		-- ResearchPanel (6), both of which open on top of the inventory.
+		ZIndex = 4,
 		Visible = false,
 		Parent = Hud.screenGui,
 	})
@@ -253,6 +258,7 @@ function InventoryPanel.new(context)
 		AnchorPoint = Vector2.new(1, 0.5),
 		Position = UDim2.new(1, -(420 + Hud.SPACE.M), 0.5, 0),
 		Size = UDim2.new(0, 260, 0, 400),
+		ZIndex = 4, -- same layer as the main panel; see its comment above
 		Visible = false,
 		Parent = Hud.screenGui,
 	})
