@@ -287,6 +287,27 @@ no manual copy-pasting scripts into Studio.
   `UiIconConfig.Icons` (the keys are already there, set to `0`) swaps in a real silhouette image
   instead, and the drawn chassis becomes the fallback — same "missing art never breaks the loop"
   rule as everything else.
+- **Welding Station → Mods** — crafting mods, not fitting them. The stage draws the selected mod's
+  three multipliers as bars running out from a `1.0x` centre line: right in green for a buff, left in
+  red for a nerf, against a fixed +/-50% scale so two mods can be compared by shape. Every mod in the
+  game is a trade, and that is the thing a row of text could not show. Underneath, **FITTED ON**
+  lists every robot or weapon type currently carrying it and in which slot — reconstructing that by
+  hand is otherwise near-impossible, since mods apply per item TYPE and can sit in any of three
+  slots. The footer crafts it (`CraftItem` with the `Mods` tree) or, once owned, says where to fit it.
+- **Welding Station → Turrets** — the six types differ on four axes at once, so damage / range / fire
+  rate / targets-per-shot are bars scaled against the best in class rather than four numbers in a
+  subtitle. Shown at Level 1 deliberately: this screen is for choosing WHICH to build, and a placed
+  turret's own levelled numbers live on its slot panel (`TurretPanel.lua`). Below them, a
+  `HudKit.segmentBar` of your real base-defense slots (`TurretConfig.GetSlotCount(ResearchTier)`) in
+  three states — a slot with a turret in it, a turret built but not yet carried out to a pad, and an
+  empty slot — so "can I even place another one" is answered on the same screen as "which one".
+  Locked types stay listed with their blueprint price and where to buy it, rather than being hidden.
+- **Welding Station → Drones** — one Core slotted at a time out of four, which makes it a loadout
+  screen rather than a catalogue. The drone is drawn on the same chassis machinery the robots use,
+  with a SINGLE hardpoint at its core bay and one card on the end of a leader line naming what is in
+  it, so the bay holding exactly one thing is visible rather than stated. The footer slots/unslots it
+  (`EquipDroneCore`), crafts it, or — for the two Cores that only drop from Epic Black Market rolls —
+  says so. Before Research Tier 3 the whole bay draws dim and the header reads `BAY locked · tier 3`.
 - **Weapon/robot mods** — Welding Station → Mods tab (or the Inventory panel's Mods tab) to craft
   permanent mod unlocks (`ModConfig.lua`, 3 slots per weapon/robot type — see `DESIGN_NOTES.md`'s
   "Base" section for the full design and why mods apply per item type rather than per robot/weapon
@@ -574,11 +595,16 @@ actually visible before any real art or UI design happens.
 
 It's no longer one script doing all of that: `MainHud.client.lua` shares a `StarterPlayerScripts`
 folder with `HudKit.lua` (the palette/design-token/instance-builder foundation every panel is built
-from) and four panel ModuleScripts split out of it — `ShopPanel.lua` (Outpost Shop), `TurretPanel.lua`
-(the turret slot popup), `ResearchPanel.lua` (the Research requirements popup), and
-`InventoryPanel.lua` — plus the earlier `ModPicker.lua` (the mod-slot picker). The split exists
-purely to stay under Luau's 200-local-per-function-scope compile ceiling (see `CLAUDE.md`); it
-changes nothing about what you click or see. Because that ceiling is a *compile*-time limit, not a
+from) and five panel ModuleScripts split out of it — `ShopPanel.lua` (Outpost Shop), `TurretPanel.lua`
+(the turret slot popup), `ResearchPanel.lua` (the Research requirements popup), `InventoryPanel.lua`,
+and `WeldingPanel.lua` (all four of the Welding Station's tabs) — plus the earlier `ModPicker.lua`
+(the mod-slot picker). The split exists partly to stay under Luau's 200-local-per-function-scope
+compile ceiling (see `CLAUDE.md`) — `WeldingPanel.lua` also exists because a whole station's worth of
+redesigned tabs is its own thing, not a section of the HUD script.
+
+**The Welding Station is one shape used four times.** Every tab is a rail of candidates on the left
+and the selected one rendered large on the right, with its action in the footer. The rail, the stage
+title, the stat bars and the footer are one implementation each — see the four tabs below. Because that ceiling is a *compile*-time limit, not a
 runtime one, breaking it again wouldn't show up as a broken panel — it fails the whole script's
 compile, so nothing prints but "Out of local registers" (or a `require` error, if a panel module
 itself fails to compile) and the HUD doesn't appear **at all**. So: **the first thing to check in
@@ -918,8 +944,11 @@ to end:
     Research row (bottom-left; the requirements popup it opens is `ResearchPanel.lua`, its own
     ModuleScript now, constructed with the status panel it docks into). Then **`/givedrone`** and
     open **Welding Station → Drones**. Before
-    the tier, that tab should show a "Drone Bay — locked" row naming the tier; after it, four Cores
-    with Equip buttons. Slot **Combat** and confirm a neon ball appears over your shoulder, trails
+    the tier, the header should read `BAY locked · tier 3` and the drone on the stage should be drawn
+    dim with an empty, dashed core bay; after it, the drone lights up and the four Cores are listed in
+    the rail split into OWNED / NOT OWNED. Slot **Combat** — the header should switch to
+    `CORE Combat Core`, the bay hardpoint should fill in, its card should read "Combat Core", and the
+    rail row should pick up a green **SLOTTED** badge. Confirm a neon ball appears over your shoulder, trails
     you with a bit of lag rather than being welded on, and survives a respawn and a raid teleport.
     Start a wave and confirm it turns to face what it shoots and lands orange damage numbers. Swap
     to **Support**, take some damage, and confirm it does NOT heal you while you're being hit, then

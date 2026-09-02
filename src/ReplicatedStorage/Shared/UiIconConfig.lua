@@ -64,6 +64,8 @@ UiIconConfig.Icons = {
 	rig_SentryDrone = 0,
 	rig_IronGuardian = 0,
 	rig_ArcTurret = 0,
+	-- The companion drone, drawn on the same machinery for the Drones tab's core bay.
+	rig_drone = 0,
 	-- Drawn for a robot key with no rig_<key> entry at all (a Tier 5 added to CraftingRecipes before
 	-- its art exists). Also unset, which just falls through to the drawn generic chassis.
 	rig_generic = 0,

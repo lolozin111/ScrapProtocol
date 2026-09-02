@@ -2183,11 +2183,10 @@ building as a shared HudKit helper before the first menu that raises one.
 
 **Progress (2026-09-02).** Done AND verified in Studio by the user: `HudKit.modal` (the Popups B
 plate), per-station panel sizing, Smelting B, and Workbench B. Built but NOT yet verified in Studio:
-Welding A. Not started: Forge A.
+the whole Welding Station — Robots (Welding A), then Mods, Turrets and Drones. Not started: Forge A.
 
-**Welding A, as built (`StarterPlayerScripts/WeldingPanel.lua`).** The Robots tab only — Mods,
-Turrets and Drones keep their existing row lists; the design round only ever redrew Robots. Four
-things came out of it that the Forge build should reuse or knows about:
+**Welding A, as built (`StarterPlayerScripts/WeldingPanel.lua`).** All four of the station's tabs.
+Four things came out of it that the Forge build should reuse or knows about:
 
 - `HudKit.dashedLine` / `HudKit.dashedBox` — a dashed rule and a dashed border, built out of short
   Frames for the same reason `HudKit.ring` is built out of rotated ones: Roblox has no dash pattern
@@ -2201,9 +2200,39 @@ things came out of it that the Forge build should reuse or knows about:
 - `CraftingRecipes.MaxDeployedRobots(profile)` — base slots plus the ExtraRobotSlot pass, shared for
   the same reason: the header's "DEPLOYED 2 / 3" denominator and the one `DeployRobot` enforces are
   now the same function.
-- The old `makeEquipmentRow` / `makeRobotRow` / `MOD_SLOT_WIDTH` are DELETED from
-  `MainHud.client.lua`, and `renderCraftList` no longer has a fall-through branch — an unrecognised
+- The old `makeEquipmentRow` / `makeRobotRow` / `MOD_SLOT_WIDTH` / `renderModsRow` /
+  `renderTurretsRow` / `renderDroneRows` are DELETED from `MainHud.client.lua`, which routes all four
+  Welding tabs to the panel off a set DERIVED from `StationConfig.Types.Welding.Tabs` rather than a
+  hand-written list. `renderCraftList` no longer has a fall-through branch either — an unrecognised
   tab name now warns instead of rendering nothing.
+
+**The other three tabs had no mockup, and that was a decision rather than an oversight.** The design
+round only ever drew Welding A, for the Robots tab. Rather than open a second round for Mods /
+Turrets / Drones, they take the shape that round produced — rail of candidates left, selected one
+rendered large right, action in the footer — which by then WAS the station's identity, and which the
+phase-3 brief asked each station to have. Section C's "design first, then build" rule still stands
+for a menu that needs a DIRECTION; it does not demand a fresh round to apply a direction already
+chosen to the tabs sitting beside it in the same panel.
+
+What each stage DRAWS is the part that differs, and in each case it is the thing the row list could
+not say:
+
+- **Mods** — each multiplier as a bar running out from a `1.0x` centre line (right/Good for a buff,
+  left/Bad for a nerf) against a FIXED +/-50% scale, so two mods compare by shape rather than by
+  re-reading an axis every time. Plus a "FITTED ON" list, which is the genuinely hard question:
+  `EquippedMods` is keyed itemKey -> slot -> modKey, so "where is this mod" has no reverse index and
+  nothing else in the HUD answers it.
+- **Turrets** — damage / range / fire rate / targets as bars scaled against the best in class, at
+  Level 1 (this screen picks WHICH to build; a placed turret's levelled numbers are TurretPanel's
+  job), plus a `HudKit.segmentBar` of real slot usage in three states: placed, built-but-unplaced,
+  empty. "Which one" and "can I even place another" belong on the same screen.
+- **Drones** — the drone drawn on the same chassis machinery as the robots, with ONE hardpoint at its
+  core bay. One Core at a time is then visible rather than stated.
+
+Two refactors fell out of doing three more tabs rather than one, both worth knowing before the Forge:
+`drawRig` split into a general `drawChassis(spec, opts)` plus a robot-specific wrapper, and
+`drawLeader` now takes a card LAYOUT rather than a mod-slot index — so a one-socket machine can reuse
+both. The rail, stage title, stat bars and footer are likewise one implementation each.
 
 **Where the build deviates from the mockup, and why.** Three, all deliberate:
 

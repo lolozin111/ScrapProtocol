@@ -170,9 +170,12 @@ trick (bundling related UI elements into one table — `inv`, `research`, `turre
 growing anyway, so four of those five groups have since been lifted into their own ModuleScripts
 beside `HudKit.lua` and `ModPicker.lua`: `ShopPanel.lua`, `TurretPanel.lua`, `ResearchPanel.lua`, and
 `InventoryPanel.lua`. `WeldingPanel.lua` joined them later for a different reason — not a grouped
-table but a whole TAB (the Welding Station's Robots tab), extracted as it was rewritten, so the
-rewrite landed ~700 lines in a new file instead of in this one. That is the pattern to follow for
-the remaining phase-3 menus: a tab that grows past a screenful moves out as it's redone, not after.
+table but a whole STATION (all four of the Welding Station's tabs), extracted as it was rewritten, so
+the rewrite landed ~2,000 lines in a new file instead of in this one. That is the pattern to follow
+for the remaining phase-3 menus: a station's tabs move out as they're redone, not after. It is also
+where the phase-3 station shape lives — rail of candidates left, selected one rendered large right,
+action in the footer, with the rail/title/stat-bar/footer builders shared by all four tabs — so a
+new tab in that station is a stage, not a screen.
 `MainHud.client.lua` went from 4121 lines / ~164 top-level locals to 3121
 lines / ~151 — a smaller drop than the four extractions suggest, because the grouped-table trick had
 already banked most of the register savings; each extraction only nets back one local (`require`)

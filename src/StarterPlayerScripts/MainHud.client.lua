@@ -1008,41 +1008,6 @@ local function renderSuitRow()
 end
 
 ----------------------------------------------------------------------
--- Mods tab — CRAFTING mods. Fitting one into a slot is elsewhere now: the Welding Station's rig
--- diagram (WeldingPanel.lua) and the Inventory panel's detail view both raise the shared ModPicker.
--- See ModConfig.lua's header for the design (3 slots per weapon/robot TYPE, applied
--- multiplicatively via ModConfig.ApplyMods, which CombatMath.GetEffectiveStats also calls).
-----------------------------------------------------------------------
-
-local function renderModsRow()
-	local keys = {}
-	for key in pairs(ModConfig.Mods) do
-		table.insert(keys, key)
-	end
-	table.sort(keys, function(a, b)
-		return ModConfig.Mods[a].DisplayName < ModConfig.Mods[b].DisplayName
-	end)
-
-	for _, key in ipairs(keys) do
-		local mod = ModConfig.Mods[key]
-		local owned = Hud.profile.CraftedMods and Hud.profile.CraftedMods[key]
-		Hud.makeRow(
-			mod.DisplayName,
-			owned and mod.Description or ("%s · %s"):format(mod.Description, Hud.costString(mod.Cost)),
-			owned and "Owned" or "Craft",
-			function()
-				if owned then return end
-				local result = Remotes.CraftItem:InvokeServer("Mods", key)
-				if not result.Success then
-					Hud.showFailure("Craft failed", result.Reason)
-				end
-			end
-		).Parent = listFrame
-	end
-end
-
-
-----------------------------------------------------------------------
 -- Shared item helpers — small readouts several tabs and panels need. (The "Turret slot panel"
 -- banner that used to head this section went with the last of its code: the panel itself moved to
 -- TurretPanel.lua a while back, and makeEquipmentRow — the only thing still sitting under the
@@ -1077,16 +1042,26 @@ local function affixSummary(affixes)
 	return table.concat(parts, ", ")
 end
 
--- The Welding Station's Robots tab. Everything that used to be here — makeEquipmentRow (the 90px
--- title/stats/button row with three mod-slot buttons stapled underneath) and makeRobotRow, plus the
--- MOD_SLOT_WIDTH those slot buttons were sized with — moved into WeldingPanel.lua and became the
--- Rig Diagram (HUD phase 3, design round section C). See that file's header for what changed and
--- why; nothing else in this file used any of the three.
+-- All four of the Welding Station's tabs. Everything that used to be here — makeEquipmentRow (the
+-- 90px title/stats/button row with three mod-slot buttons stapled underneath), makeRobotRow, the
+-- MOD_SLOT_WIDTH those slot buttons were sized with, plus renderModsRow / renderTurretsRow /
+-- renderDroneRows — moved into WeldingPanel.lua for HUD phase 3 (design round section C). See that
+-- file's header for what each tab became and why; nothing else in this file used any of them.
 --
 -- Constructed HERE rather than up with the other panels because it needs deployedCountForRobot,
 -- declared just above. `refresh` is wrapped in a closure rather than passed directly because
 -- renderCraftList is forward-declared and still nil at this point in the chunk — a closure captures
 -- the upvalue and sees the real function once it is assigned further down.
+-- DERIVED from StationConfig rather than written out, so adding a tab to the Welding Station is
+-- still a one-entry change: a new name routes here automatically and WeldingPanel.render warns that
+-- it has no renderer for it, instead of falling through to MainHud's own dispatch chain and drawing
+-- a blank panel. These four names are declared by no other station, so matching on the name alone
+-- is unambiguous.
+local WELDING_TABS: { [string]: boolean } = {}
+for _, tabName in ipairs(StationConfig.Types.Welding.Tabs) do
+	WELDING_TABS[tabName] = true
+end
+
 local weldingPanel = WeldingPanel.new({
 	listFrame = listFrame,
 	craftHeader = craftHeader,
@@ -1654,141 +1629,6 @@ local function renderDecodeRow()
 	end
 end
 
-local function renderTurretsRow()
-	local unlocked = Hud.profile.UnlockedTurretBlueprints or {}
-
-	-- Sorted by craft cost so the list reads as a progression rather than a hash order.
-	local keys = {}
-	for key in pairs(TurretConfig.Types) do
-		table.insert(keys, key)
-	end
-	table.sort(keys, function(a, b)
-		return (TurretConfig.Types[a].BlueprintCost.Scrap or 0) < (TurretConfig.Types[b].BlueprintCost.Scrap or 0)
-	end)
-
-	local knownCount = 0
-	for _, key in ipairs(keys) do
-		if unlocked[key] then
-			knownCount += 1
-		end
-	end
-
-	if knownCount == 0 then
-		Hud.makeRow(
-			"No blueprints yet",
-			"Buy one at the Hub Shop, then come back here to build the turret with Scrap and ore",
-			"OK",
-			function() end
-		).Parent = listFrame
-	end
-
-	for _, key in ipairs(keys) do
-		local typeData = TurretConfig.Types[key]
-		local known = unlocked[key] == true
-		local stats = TurretConfig.GetTurretEffectiveStats(key, 1)
-		Hud.makeRow(
-			known and typeData.DisplayName or ("%s (locked)"):format(typeData.DisplayName),
-			known
-				and ("%s · %s"):format(
-					stats and ("%.0f dmg · %.0f range · %.1f/s · %d AOE"):format(stats.Damage, stats.Range, stats.FireRate, stats.AOE) or typeData.Description,
-					Hud.costString(typeData.CraftCost))
-				or ("%s · blueprint not owned — buy it at the Hub Shop"):format(typeData.Description),
-			known and "Build" or "Locked",
-			function()
-				if not known then
-					Hud.showFailure("Locked", ("You need the %s blueprint — buy it at the Hub Shop."):format(typeData.DisplayName))
-					return
-				end
-				-- Reuses the shared CraftItem remote with a "Turrets" tree — same plot/station gate
-				-- and cost validation Robots and Mods already go through. See CraftingService.
-				local result = Remotes.CraftItem:InvokeServer("Turrets", key)
-				if not result.Success then
-					Hud.showFailure("Build failed", result.Reason)
-				else
-					Hud.showToast(("Built a %s — click a slot pad at your base to place it."):format(typeData.DisplayName), 4)
-					renderCraftList()
-				end
-			end
-		).Parent = listFrame
-	end
-end
-
--- Drones tab (Welding Station). Every Core is listed whether or not you can get it yet, with the
--- row's button saying what stands between you and it — craft cost, "Black Market", or the Research
--- tier. A tab that hides everything you have not earned tells a new player nothing about what the
--- system even is.
-local function renderDroneRows()
-	local unlocked = DroneConfig.IsUnlocked(Hud.profile)
-	local owned = Hud.profile.OwnedDroneCores or {}
-	local equipped = Hud.profile.EquippedDroneCore
-
-	if not unlocked then
-		Hud.makeRow(
-			"Drone Bay — locked",
-			("Unlocks at Research Tier %d. Cores can't be built until the drone exists to carry them."):format(
-				DroneConfig.UnlockResearchTier),
-			"Locked",
-			function() end
-		).Parent = listFrame
-	end
-
-	for _, key in ipairs(DroneConfig.Order) do
-		local core = DroneConfig.Cores[key]
-		local isOwned = owned[key] == true
-		local isEquipped = equipped == key
-
-		local detail, action, onClick
-		if isOwned then
-			-- Owned Cores show what they do AT YOUR TIER, not the flavour line. Once you own it the
-			-- question stops being "what is this" and becomes "how good is mine right now" — and the
-			-- numbers grow with Research Tier, so a static description would go quietly stale.
-			detail = DroneConfig.EffectSummary(key, Hud.profile)
-			action = isEquipped and "Unequip" or "Equip"
-			onClick = function()
-				-- See the EquipToolMod call above for why this cannot be written as
-				-- `isEquipped and nil or key`.
-				local desired: string? = nil
-				if not isEquipped then
-					desired = key
-				end
-				local result = Remotes.EquipDroneCore:InvokeServer(desired)
-				if not result.Success then
-					Hud.showFailure("Couldn't slot that Core", result.Reason)
-				else
-					renderCraftList()
-				end
-			end
-		elseif core.Source == "Craft" then
-			detail = ("%s · %s"):format(Hud.costString(core.Cost), core.Description)
-			action = "Craft"
-			onClick = function()
-				local result = Remotes.CraftItem:InvokeServer("Drones", key)
-				if not result.Success then
-					Hud.showFailure("Craft failed", result.Reason)
-				else
-					renderCraftList()
-				end
-			end
-		else
-			detail = ("Black Market · Epic roll · %s"):format(core.Description)
-			action = "Locked"
-			onClick = function()
-				Hud.showFailure(
-					("%s can't be built"):format(core.DisplayName),
-					"It only drops from Epic rolls in Black Market cases.")
-			end
-		end
-
-		Hud.makeRow(
-			isEquipped and ("%s  [SLOTTED]"):format(core.DisplayName) or core.DisplayName,
-			detail,
-			action,
-			onClick
-		).Parent = listFrame
-	end
-end
-
-
 renderCraftList = function()
 	for _, child in ipairs(listFrame:GetChildren()) do
 		if child:IsA("Frame") then
@@ -1796,15 +1636,19 @@ renderCraftList = function()
 		end
 	end
 
-	-- The Welding tab's deploy readout lives in the panel HEADER, which the sweep above deliberately
-	-- doesn't touch (it only clears listFrame). Hidden here and shown again by the panel's own render,
-	-- so it can never sit there over the Mods or Turrets tab still claiming a deploy count.
+	-- All four Welding Station tabs live in WeldingPanel.lua — Robots, Mods, Turrets and Drones are
+	-- declared by no other station (see StationConfig.Types), so the tab name alone routes them.
+	if WELDING_TABS[currentTab] then
+		weldingPanel.render(currentTab)
+		return
+	end
+
+	-- The Welding tabs' header readout lives in the panel HEADER, which the sweep above deliberately
+	-- doesn't touch (it only clears listFrame). Hidden here rather than by the panel, so it can never
+	-- sit there over the Forge's Weapons tab still claiming a deploy count.
 	weldingPanel.hideReadout()
 
-	if currentTab == "Robots" then
-		weldingPanel.render()
-		return
-	elseif currentTab == "Auto-Miner" then
+	if currentTab == "Auto-Miner" then
 		renderAutoMinerRow()
 		return
 	elseif currentTab == "Tools" then
@@ -1821,20 +1665,11 @@ renderCraftList = function()
 	elseif currentTab == "Blueprints" then
 		renderBlueprintsRow()
 		return
-	elseif currentTab == "Turrets" then
-		renderTurretsRow()
-		return
-	elseif currentTab == "Drones" then
-		renderDroneRows()
-		return
 	elseif currentTab == "Cases" then
 		renderCasesRow()
 		return
 	elseif currentTab == "Decode" then
 		renderDecodeRow()
-		return
-	elseif currentTab == "Mods" then
-		renderModsRow()
 		return
 	elseif currentTab == "Weapons" then
 		renderForgeWeapons()
