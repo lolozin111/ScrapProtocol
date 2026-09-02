@@ -2046,7 +2046,7 @@ The toast, ModPicker, the ultimate picker and the case-opening flow never got th
 should be included in the design round above rather than retrofitted afterwards, since a popup that
 does not match its parent menu is more jarring than one that matches nothing.
 
-#### A-revised: Recall as a universal "go home" button
+#### A-revised: Recall as a universal "go home" button — BUILT (2a652f1)
 
 Decision: Recall is a single button meaning "bring me back to base", visible at all times. Where it
 is not allowed, it toasts the reason rather than hiding. That also RETIRES Return to Base as a
@@ -2076,3 +2076,16 @@ Server-side rules, all enforced on the server and each with a toast on rejection
 One new remote is cleaner than overloading `RecallFromMine`, so the mine's existing guard stays
 exactly as tight as it is now. The client button picks the path from state it already tracks; the
 server re-checks regardless, since the client can lie about all of it.
+
+
+### Resuming after a context reset
+
+Everything above is the live plan. Section A is BUILT; B, C and D are not started. The next step is
+C's design round: a page showing 2-3 genuinely different directions PER MENU (Workbench, Forge,
+Welding, Smelting) plus the popups, each with its own character rather than one house style applied
+four times — then pick or hybridise, then build. The HUD overhaul went well because the look was
+settled on a page first; do that again rather than starting in code.
+
+Open question to put to the user before drafting: whether to draft the directions blind, or after
+they describe how the Forge should feel. Their one concrete steer so far is that the Forge is a
+machine you feed — ore in, visible processing, collect the output — not a list of rows.

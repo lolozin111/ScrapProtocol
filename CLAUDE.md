@@ -270,6 +270,33 @@ context, waiting on a round trip — costs more than a one-line fix takes to mak
 exists to avoid burning Opus on exploration and multi-file work, not to turn every edit into a
 ceremony.
 
+## Keeping usage down
+
+Every turn re-sends the whole conversation, so a long session costs more with each message even when
+the work is small. Three habits matter, in order of how much they save:
+
+**Prefer a direct edit to a subagent for anything you already understand.** A subagent starts COLD:
+it re-reads the files to make its change, so a three-line edit can cost 40-100k tokens that two tool
+calls would have done for a fraction. Agents earn their cost on genuine multi-file work, on broad
+investigation where you don't yet know what you're looking for, and on long verbatim moves — not on
+"bump this constant" or "rename this field". This is an amendment to **Agent routing** above, not a
+contradiction of it: route reads to Haiku scouts and multi-file writes to Sonnet implementers, but
+do not dispatch a cold agent to do something you could type yourself in one call.
+
+**Batch verification.** One command with several greps beats six commands with one each; each round
+trip re-sends the conversation.
+
+**Screenshots and large file dumps are permanent.** An image stays in context for every subsequent
+turn of the session. Read the part of a file you need, not the whole file, and don't re-read what
+you have already read this session.
+
+**`/clear` between distinct tasks is safe in this repo, and is the biggest single saving.** It is
+safe *because* the state lives on disk rather than in the conversation: this file loads
+automatically, the memory directory reloads, `DESIGN_NOTES.md` carries the live plan and its
+"Resuming after a context reset" section says where to pick up, and commit messages record why each
+change was made. If something is worth carrying across a reset, write it to one of those before
+clearing — not into a longer conversation.
+
 ## Where design intent lives
 
 - `README.md` documents what's actually built, organized by system, plus the numbered
