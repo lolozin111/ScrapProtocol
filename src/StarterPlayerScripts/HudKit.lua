@@ -498,12 +498,14 @@ local BUTTON_ICON_LEFT_INSET = 8
 -- than lighten(PanelLight, 0.28) lands, which would make secondary the one washed-out-looking
 -- variant next to primary/danger's new edges — so secondary now derives the same way as the other
 -- two instead of keeping its own fixed color.
-local BUTTON_STROKE_LIGHTEN = 0.28
--- Bumped from the original 1px: asked for twice now ("buttons should pop"), and 1px was hard to
--- see even once it was the right color. 2 reads as a deliberate rim at normal UI scale without
--- ballooning into a border that fights the fill for attention.
-local BUTTON_STROKE_THICKNESS = 2
-
+-- The outline is NOT a UIStroke. Three attempts at one rendered nothing: a UIStroke has no
+-- background edge to trace on a transparent GuiObject, and `btn` is transparent whenever its fill
+-- lives on a child. This is the technique plate() already uses for its bevel (and the reason the
+-- status panel reads correctly): a slightly LARGER copy of the same shape sitting behind the
+-- button, in a lighter shade of its own fill, so only its edges show around the button's rim.
+-- OUTLINE_EXPAND is per-side, so the visible rim is that many pixels thick.
+local BUTTON_OUTLINE_EXPAND = 3
+local BUTTON_OUTLINE_LIGHTEN = 0.35
 -- Hard offset shadow (HudButtonOptions.dropShadow), an ALTERNATIVE to the gradient above, not a
 -- second layer on top of it — the reference draws tab buttons with a flat fill and a dropped-out
 -- duplicate shape beneath, never both a gradient AND a shadow on the same button.
@@ -516,18 +518,16 @@ local BUTTON_DROPSHADOW_DARKEN = 0.35 -- deliberately steeper than the gradient'
 -- Base fill/text per variant. Hover/press shades are DERIVED from `fill` via lighten()/darken() at
 -- button-build time rather than listed here, so this table is the only place a variant's color is
 -- ever spelled out.
--- `stroke` is now just on/off: every variant that wants one gets the same LIGHTEN-from-restColor
--- derivation (see BUTTON_STROKE_LIGHTEN above) rather than picking a per-variant direction, so all
--- three read as one consistent "lighter edge" family instead of secondary looking dimmer or
--- differently-toned than primary/danger.
+-- No `stroke` field any more: every button gets the outline layer unconditionally (see
+-- BUTTON_OUTLINE_EXPAND above), so there is nothing left for a variant to opt in or out of.
 local BUTTON_VARIANTS = {
 	-- The one loud action on screen: Accent fill, dark text so it reads as a solid, confident button
 	-- rather than colored outline text.
-	primary = { fill = COLOR.Accent, text = COLOR.Panel, stroke = true },
+	primary = { fill = COLOR.Accent, text = COLOR.Panel },
 	-- Everything else: matches the existing PanelLight/Line look used by rows and most panel chrome.
-	secondary = { fill = COLOR.PanelLight, text = COLOR.Text, stroke = true },
+	secondary = { fill = COLOR.PanelLight, text = COLOR.Text },
 	-- Destructive actions (unequip, scrap, abandon...): Bad fill, light text for contrast.
-	danger = { fill = COLOR.Bad, text = COLOR.Text, stroke = true },
+	danger = { fill = COLOR.Bad, text = COLOR.Text },
 }
 
 export type HudButtonOptions = {
@@ -681,7 +681,12 @@ function HudKit.button(opts: HudButtonOptions): TextButton
 	-- path that used to be exclusive to isSliceable; below the slice-size floor that child is a plain
 	-- UICorner'd Frame instead of the angular ImageLabel, but either way `btn` itself goes fully
 	-- transparent and the real fill moves onto `backgroundLabel`.
-	local needsBackgroundChild = isSliceable or opts.dropShadow == true
+	-- ALWAYS true now, not just for sliced/shadowed buttons. The outline layer below has to sit
+	-- BEHIND the button's visible fill, and under ZIndexBehavior.Sibling a child is unconditionally
+	-- drawn in front of its parent — so an outline child of `btn` would cover `btn`'s own background
+	-- rather than peek out around it. Moving the fill onto a child too makes the outline and the fill
+	-- siblings, which is the only arrangement ZIndex can actually order.
+	local needsBackgroundChild = true
 
 	-- Resolved BEFORE `btn` exists (see resolveIconImage's header comment for why applyIcon itself
 	-- can't answer this yet): whether the caption actually shown is a real `text`, an
@@ -749,6 +754,8 @@ function HudKit.button(opts: HudButtonOptions): TextButton
 	local captionLabel: TextLabel? = nil
 	local shadowTarget: GuiObject? = nil
 	local shadowProperty: string? = nil
+	local outlineTarget: GuiObject? = nil
+	local outlineProperty: string? = nil
 
 	if opts.dropShadow then
 		-- Built BEFORE backgroundLabel so it's visually behind it (ZIndex -1 vs 0) once both exist.
@@ -769,7 +776,7 @@ function HudKit.button(opts: HudButtonOptions): TextButton
 				SliceCenter = PANEL_FRAME_SLICE_CENTER,
 				Size = UDim2.new(1, 0, 1, 0),
 				Position = UDim2.new(0, 0, 0, BUTTON_DROPSHADOW_OFFSET),
-				ZIndex = -1,
+				ZIndex = -2, -- behind the outline (-1), which is behind the fill (0)
 				Parent = btn,
 			})
 			shadowTarget, shadowProperty = shadow, "ImageColor3"
@@ -778,10 +785,53 @@ function HudKit.button(opts: HudButtonOptions): TextButton
 				BackgroundColor3 = shadowColor,
 				Size = UDim2.new(1, 0, 1, 0),
 				Position = UDim2.new(0, 0, 0, BUTTON_DROPSHADOW_OFFSET),
-				ZIndex = -1,
+				ZIndex = -2, -- behind the outline (-1), which is behind the fill (0)
 				Parent = btn,
 			}, if opts.square then {} else { HudKit.corner(HudKit.RADIUS.Button) })
 			shadowTarget, shadowProperty = shadow, "BackgroundColor3"
+		end
+	end
+
+	-- THE OUTLINE. A copy of the button's own shape, BUTTON_OUTLINE_EXPAND px larger on every side,
+	-- sitting behind the fill in a lighter shade of the same colour, so only its rim shows. On the
+	-- sliced path it is the same panelframe image, which means the rim follows the 45-degree cut
+	-- corners exactly rather than boxing a rectangle around them — the thing a UIStroke could never
+	-- do here. Carries the same gradient as the fill so the rim shades top-to-bottom with it instead
+	-- of reading as a flat sticker behind a shaded button.
+	--
+	-- ZIndex -1: behind the fill (0), in front of the drop shadow (-2). All three are siblings under
+	-- `btn`, which is the only relationship ZIndex can order (see the long note below).
+	do
+		local outlineColor = HudKit.lighten(restColor, BUTTON_OUTLINE_LIGHTEN)
+		local outlineSize = UDim2.new(1, BUTTON_OUTLINE_EXPAND * 2, 1, BUTTON_OUTLINE_EXPAND * 2)
+		local outlinePos = UDim2.fromOffset(-BUTTON_OUTLINE_EXPAND, -BUTTON_OUTLINE_EXPAND)
+		if isSliceable then
+			local outline = HudKit.new("ImageLabel", {
+				BackgroundTransparency = 1,
+				Image = panelFrameImage,
+				ImageColor3 = outlineColor,
+				ScaleType = Enum.ScaleType.Slice,
+				SliceCenter = PANEL_FRAME_SLICE_CENTER,
+				Size = outlineSize,
+				Position = outlinePos,
+				ZIndex = -1,
+				Parent = btn,
+			}, { buttonFillGradient() })
+			outlineTarget, outlineProperty = outline, "ImageColor3"
+		else
+			-- Square and rounded-fallback buttons get the same treatment in plain Frame form. The
+			-- rounded case bumps its radius by the expansion so the rim stays an even width around the
+			-- curve instead of pinching at the corners.
+			local outline = HudKit.new("Frame", {
+				BackgroundColor3 = outlineColor,
+				Size = outlineSize,
+				Position = outlinePos,
+				ZIndex = -1,
+				Parent = btn,
+			}, if opts.square
+				then { buttonFillGradient() }
+				else { HudKit.corner(HudKit.RADIUS.Button + BUTTON_OUTLINE_EXPAND), buttonFillGradient() })
+			outlineTarget, outlineProperty = outline, "BackgroundColor3"
 		end
 	end
 
@@ -849,21 +899,6 @@ function HudKit.button(opts: HudButtonOptions): TextButton
 	local fillTarget: Instance = backgroundLabel or btn
 	local fillProperty = if isSliceable then "ImageColor3" else "BackgroundColor3"
 
-	-- THE STROKE GOES ON `fillTarget`, NOT ON `btn`. Parented to `btn` it drew absolutely nothing
-	-- through three rounds of "outlines added": whenever a background child exists `btn` is fully
-	-- transparent, and a UIStroke has no rendered background edge to trace on a transparent
-	-- GuiObject. Putting it on the instance that actually carries the visible fill is also strictly
-	-- better than a workaround — a UIStroke on an ImageLabel follows the image's ALPHA, so on the
-	-- sliced path the outline traces panelframe's angular cut corners instead of boxing a rectangle
-	-- around them.
-	local strokeInstance: UIStroke? = nil
-	if variant.stroke then
-		strokeInstance = HudKit.new("UIStroke", {
-			Color = HudKit.lighten(restColor, BUTTON_STROKE_LIGHTEN),
-			Thickness = BUTTON_STROKE_THICKNESS,
-			Parent = fillTarget,
-		})
-	end
 
 	-- Icon is optional and additive: a missing key must fall back to the text label alone, never an
 	-- empty square, per this project's "missing art never breaks the loop" rule. `iconLabel` and the
@@ -949,9 +984,10 @@ function HudKit.button(opts: HudButtonOptions): TextButton
 		fillProperty = fillProperty,
 		shadowTarget = shadowTarget,
 		shadowProperty = shadowProperty,
-		-- Derived from restColor like the fill and the shadow, so a recolour must re-derive it too or
-		-- the button keeps an edge from its previous colour.
-		strokeInstance = strokeInstance,
+		-- Derived from restColor like the fill and the shadow, so a recolour must re-derive these too
+		-- or the button keeps an edge from its previous colour.
+		outlineTarget = outlineTarget,
+		outlineProperty = outlineProperty,
 	}
 	buttonState[btn] = state
 
@@ -1051,8 +1087,8 @@ function HudKit.setButtonFill(button: TextButton, color: Color3)
 		if state.shadowTarget then
 			(state.shadowTarget :: any)[state.shadowProperty] = HudKit.darken(color, BUTTON_DROPSHADOW_DARKEN)
 		end
-		if state.strokeInstance then
-			state.strokeInstance.Color = HudKit.lighten(color, BUTTON_STROKE_LIGHTEN)
+		if state.outlineTarget then
+			(state.outlineTarget :: any)[state.outlineProperty] = HudKit.lighten(color, BUTTON_OUTLINE_LIGHTEN)
 		end
 	end
 end
