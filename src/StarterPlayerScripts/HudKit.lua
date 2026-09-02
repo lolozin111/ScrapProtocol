@@ -504,7 +504,7 @@ local BUTTON_ICON_LEFT_INSET = 8
 -- status panel reads correctly): a slightly LARGER copy of the same shape sitting behind the
 -- button, in a lighter shade of its own fill, so only its edges show around the button's rim.
 -- OUTLINE_EXPAND is per-side, so the visible rim is that many pixels thick.
-local BUTTON_OUTLINE_EXPAND = 3
+local BUTTON_OUTLINE_EXPAND = 4 -- temporarily widened from 3 while diagnosing visibility
 local BUTTON_OUTLINE_LIGHTEN = 0.35
 -- Hard offset shadow (HudButtonOptions.dropShadow), an ALTERNATIVE to the gradient above, not a
 -- second layer on top of it — the reference draws tab buttons with a flat fill and a dropped-out
@@ -776,7 +776,7 @@ function HudKit.button(opts: HudButtonOptions): TextButton
 				SliceCenter = PANEL_FRAME_SLICE_CENTER,
 				Size = UDim2.new(1, 0, 1, 0),
 				Position = UDim2.new(0, 0, 0, BUTTON_DROPSHADOW_OFFSET),
-				ZIndex = -2, -- behind the outline (-1), which is behind the fill (0)
+				ZIndex = 0,
 				Parent = btn,
 			})
 			shadowTarget, shadowProperty = shadow, "ImageColor3"
@@ -785,7 +785,7 @@ function HudKit.button(opts: HudButtonOptions): TextButton
 				BackgroundColor3 = shadowColor,
 				Size = UDim2.new(1, 0, 1, 0),
 				Position = UDim2.new(0, 0, 0, BUTTON_DROPSHADOW_OFFSET),
-				ZIndex = -2, -- behind the outline (-1), which is behind the fill (0)
+				ZIndex = 0,
 				Parent = btn,
 			}, if opts.square then {} else { HudKit.corner(HudKit.RADIUS.Button) })
 			shadowTarget, shadowProperty = shadow, "BackgroundColor3"
@@ -799,10 +799,15 @@ function HudKit.button(opts: HudButtonOptions): TextButton
 	-- do here. Carries the same gradient as the fill so the rim shades top-to-bottom with it instead
 	-- of reading as a flat sticker behind a shaded button.
 	--
-	-- ZIndex -1: behind the fill (0), in front of the drop shadow (-2). All three are siblings under
-	-- `btn`, which is the only relationship ZIndex can order (see the long note below).
+	-- LAYERS ARE ALL NON-NEGATIVE ON PURPOSE: shadow 0, outline 1, fill 2, icon 3, caption 4. This
+	-- used to run -2/-1/0/1/2 and neither the shadow nor the outline was ever visible in game.
+	-- Negative ZIndex is not dependably honoured, and since every one of these is a sibling child of
+	-- `btn` the ordering only ever needed to be RELATIVE — nothing here requires going below zero, so
+	-- there is no reason to bet on it. Do not renumber these back through zero.
 	do
-		local outlineColor = HudKit.lighten(restColor, BUTTON_OUTLINE_LIGHTEN)
+		-- TEMPORARY DIAGNOSTIC: pure white, to rule out the colour derivation as the reason the rim
+		-- is not visible. Revert to HudKit.lighten(restColor, BUTTON_OUTLINE_LIGHTEN) once confirmed.
+		local outlineColor = Color3.new(1, 1, 1)
 		local outlineSize = UDim2.new(1, BUTTON_OUTLINE_EXPAND * 2, 1, BUTTON_OUTLINE_EXPAND * 2)
 		local outlinePos = UDim2.fromOffset(-BUTTON_OUTLINE_EXPAND, -BUTTON_OUTLINE_EXPAND)
 		if isSliceable then
@@ -814,7 +819,7 @@ function HudKit.button(opts: HudButtonOptions): TextButton
 				SliceCenter = PANEL_FRAME_SLICE_CENTER,
 				Size = outlineSize,
 				Position = outlinePos,
-				ZIndex = -1,
+				ZIndex = 1,
 				Parent = btn,
 			}, { buttonFillGradient() })
 			outlineTarget, outlineProperty = outline, "ImageColor3"
@@ -826,7 +831,7 @@ function HudKit.button(opts: HudButtonOptions): TextButton
 				BackgroundColor3 = outlineColor,
 				Size = outlineSize,
 				Position = outlinePos,
-				ZIndex = -1,
+				ZIndex = 1,
 				Parent = btn,
 			}, if opts.square
 				then { buttonFillGradient() }
@@ -844,7 +849,7 @@ function HudKit.button(opts: HudButtonOptions): TextButton
 				ScaleType = Enum.ScaleType.Slice,
 				SliceCenter = PANEL_FRAME_SLICE_CENTER,
 				Size = UDim2.new(1, 0, 1, 0),
-				ZIndex = 0,
+				ZIndex = 2,
 				Parent = btn,
 			}, if opts.dropShadow then {} else { buttonFillGradient() })
 		else
@@ -855,7 +860,7 @@ function HudKit.button(opts: HudButtonOptions): TextButton
 			backgroundLabel = HudKit.new("Frame", {
 				BackgroundColor3 = restColor,
 				Size = UDim2.new(1, 0, 1, 0),
-				ZIndex = 0,
+				ZIndex = 2,
 				Parent = btn,
 			}, if opts.square then {} else { HudKit.corner(HudKit.RADIUS.Button) })
 		end
@@ -878,7 +883,7 @@ function HudKit.button(opts: HudButtonOptions): TextButton
 			TextColor3 = btn.TextColor3,
 			TextSize = btn.TextSize,
 			Text = btn.Text,
-			ZIndex = 2, -- above the background (0) and the icon (1)
+			ZIndex = 4,
 			Parent = btn,
 		})
 		btn:GetPropertyChangedSignal("Text"):Connect(function()
@@ -934,7 +939,7 @@ function HudKit.button(opts: HudButtonOptions): TextButton
 			-- Explicit, not relying on the instance default (which happens to also be 1): must stay
 			-- above the background ImageLabel's ZIndex = 0 above, since those two ARE ordinary
 			-- sibling children and DO get ordered by ZIndex against each other.
-			ZIndex = 1,
+			ZIndex = 3,
 			Parent = btn,
 		})
 		if HudKit.applyIcon(label, opts.icon, opts.iconFolder) then
