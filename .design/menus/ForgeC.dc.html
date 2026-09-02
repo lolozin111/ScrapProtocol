@@ -1,0 +1,141 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;800&family=Source+Sans+3:wght@400;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
+  <style>
+    body { margin: 0; font-family: 'Source Sans 3', system-ui, sans-serif; }
+    a { color: #E07A3B; } a:hover { color: #B24C18; }
+    .lbl { font-family: 'Montserrat', system-ui, sans-serif; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
+    .num { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .cut { clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px)); }
+    .cutin { clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px)); }
+    .cs { clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px)); }
+    .grid { background-image: linear-gradient(#2A2521 1px, transparent 1px), linear-gradient(90deg, #2A2521 1px, transparent 1px); background-size: 24px 24px; }
+  </style>
+</helmet>
+
+<div style="width: 800px; height: 560px; background: radial-gradient(120% 100% at 50% 30%, #241F1B 0%, #14110F 74%); display: flex; align-items: center; justify-content: center;">
+
+  <div class="cut" style="width: 760px; height: 520px; background: linear-gradient(#4C443C, #14110F); padding: 2px;">
+    <div class="cutin" style="width: 100%; height: 100%; background: #16120F; display: flex; flex-direction: column;">
+
+      <div style="height: 4px; background: #E07A3B;"></div>
+
+      <div style="height: 44px; display: flex; align-items: center; gap: 12px; padding: 0 14px; background: #1C1815; border-bottom: 1px solid #3C352F;">
+        <svg width="20" height="20" viewBox="0 0 22 22" fill="none" stroke="#E07A3B" stroke-width="1.7"><path d="M3 5h16v12H3z"></path><path d="M3 9h16M8 9v8"></path></svg>
+        <span class="lbl" style="color: #EDE7DC; font-size: 15px; flex-grow: 1;">Forge &mdash; schematic bench</span>
+        <span class="num" style="color: #A79C8C; font-size: 11px;">sheet 03 / snipers</span>
+        <svg width="16" height="16" viewBox="0 0 16 16" stroke="#A79C8C" stroke-width="1.8" fill="none"><path d="M3 3l10 10M13 3L3 13"></path></svg>
+      </div>
+
+      <div style="flex-grow: 1; display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 0;">
+
+        <div style="border-right: 1px solid #3C352F; background: #1A1614; display: flex; flex-direction: column; padding: 10px 0;">
+          <span class="lbl" style="color: #A79C8C; font-size: 9px; padding: 0 12px 8px;">Families</span>
+
+          <div style="border-left: 3px solid #E07A3B; background: #221D1A; padding: 9px 12px; display: flex; align-items: center; gap: 8px;">
+            <svg width="16" height="16" viewBox="0 0 22 22" fill="none" stroke="#E07A3B" stroke-width="1.6"><path d="M3 13h12l4-3-4-3H3z"></path><path d="M6 13v4"></path></svg>
+            <span class="lbl" style="color: #EDE7DC; font-size: 10px;">Snipers</span>
+          </div>
+          <div style="border-left: 3px solid transparent; padding: 9px 12px; display: flex; align-items: center; gap: 8px;">
+            <svg width="16" height="16" viewBox="0 0 22 22" fill="none" stroke="#A79C8C" stroke-width="1.6"><path d="M4 12h9l5 4"></path><path d="M4 12l3-4h6"></path></svg>
+            <span class="lbl" style="color: #A79C8C; font-size: 10px;">Salvage</span>
+          </div>
+          <div style="border-left: 3px solid transparent; padding: 9px 12px; display: flex; align-items: center; gap: 8px;">
+            <svg width="16" height="16" viewBox="0 0 22 22" fill="none" stroke="#A79C8C" stroke-width="1.6"><path d="M5 14c3-1 4-4 3-7 3 2 5 5 4 9"></path></svg>
+            <span class="lbl" style="color: #A79C8C; font-size: 10px;">Flame</span>
+          </div>
+          <div style="border-left: 3px solid transparent; padding: 9px 12px; display: flex; align-items: center; gap: 8px;">
+            <svg width="16" height="16" viewBox="0 0 22 22" fill="none" stroke="#A79C8C" stroke-width="1.6"><path d="M5 4c6 2 10 7 12 14"></path><path d="M5 4l12 14"></path></svg>
+            <span class="lbl" style="color: #A79C8C; font-size: 10px;">Bows</span>
+          </div>
+          <div style="border-left: 3px solid transparent; padding: 9px 12px; display: flex; align-items: center; gap: 8px;">
+            <svg width="16" height="16" viewBox="0 0 22 22" fill="none" stroke="#A79C8C" stroke-width="1.6"><circle cx="11" cy="12" r="5"></circle><path d="M11 4v3"></path></svg>
+            <span class="lbl" style="color: #A79C8C; font-size: 10px;">Grenades</span>
+          </div>
+          <div style="border-left: 3px solid transparent; padding: 9px 12px; display: flex; align-items: center; gap: 8px;">
+            <svg width="16" height="16" viewBox="0 0 22 22" fill="none" stroke="#A79C8C" stroke-width="1.6"><path d="M4 9h12v6H4z"></path><path d="M16 12h3"></path></svg>
+            <span class="lbl" style="color: #A79C8C; font-size: 10px;">Miniguns</span>
+          </div>
+
+          <div style="flex-grow: 1;"></div>
+
+          <div style="padding: 0 12px;">
+            <div style="height: 1px; background: #2A2521; margin-bottom: 9px;"></div>
+            <span class="lbl" style="color: #A79C8C; font-size: 9px;">Bench</span>
+            <div style="display: flex; align-items: baseline; gap: 5px; margin-top: 5px;">
+              <span style="color: #EDE7DC; font-size: 11px; flex-grow: 1;">Tempered</span>
+              <span class="num" style="color: #5FA082; font-size: 11px;">+35</span>
+            </div>
+            <div style="display: flex; align-items: baseline; gap: 5px; margin-top: 3px;">
+              <span style="color: #A79C8C; font-size: 11px; flex-grow: 1;">Pity</span>
+              <span class="num" style="color: #E07A3B; font-size: 11px;">11 / 15</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid" style="position: relative; background-color: #191512; overflow: hidden;">
+
+          <div style="position: absolute; left: 22px; top: 18px; display: flex; align-items: center; gap: 8px;">
+            <span class="lbl" style="color: #16120F; background: #5A96DC; font-size: 9px; padding: 3px 7px;">Rare</span>
+            <span class="lbl" style="color: #EDE7DC; font-size: 15px;">Longshot Rifle</span>
+          </div>
+
+          <svg width="470" height="200" viewBox="0 0 470 200" fill="none" style="position: absolute; left: 100px; top: 118px;">
+            <path d="M20 96h250l70-26v26h60" stroke="#EDE7DC" stroke-width="2" stroke-linejoin="round"></path>
+            <path d="M20 96v26h48l14-26" stroke="#EDE7DC" stroke-width="2" stroke-linejoin="round"></path>
+            <path d="M400 96h44" stroke="#EDE7DC" stroke-width="2"></path>
+            <rect x="176" y="60" width="70" height="20" stroke="#E07A3B" stroke-width="2"></rect>
+            <path d="M196 60V44M226 60V44" stroke="#E07A3B" stroke-width="2"></path>
+            <circle cx="120" cy="96" r="12" stroke="#5A96DC" stroke-width="2"></circle>
+            <path d="M120 84V60" stroke="#5A96DC" stroke-width="1" stroke-dasharray="4 3"></path>
+            <path d="M211 44V22" stroke="#E07A3B" stroke-width="1" stroke-dasharray="4 3"></path>
+            <path d="M420 96v34" stroke="#5FA082" stroke-width="1" stroke-dasharray="4 3"></path>
+          </svg>
+
+          <div style="position: absolute; left: 158px; top: 148px; display: flex; flex-direction: column; gap: 1px;">
+            <span class="lbl" style="color: #5A96DC; font-size: 9px;">Sharpened</span>
+            <span class="num" style="color: #EDE7DC; font-size: 12px;">+22% dmg</span>
+          </div>
+
+          <div style="position: absolute; left: 262px; top: 108px; display: flex; flex-direction: column; gap: 1px;">
+            <span class="lbl" style="color: #E07A3B; font-size: 9px;">Lightweight</span>
+            <span class="num" style="color: #EDE7DC; font-size: 12px;">+14% rate</span>
+          </div>
+
+          <div style="position: absolute; left: 478px; top: 250px; display: flex; flex-direction: column; gap: 1px;">
+            <span class="lbl" style="color: #5FA082; font-size: 9px;">Base tier</span>
+            <span class="num" style="color: #A79C8C; font-size: 12px;">t3</span>
+          </div>
+
+          <div style="position: absolute; left: 22px; right: 22px; bottom: 16px; display: flex; align-items: flex-end; gap: 14px;">
+            <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 6px;">
+              <span class="lbl" style="color: #A79C8C; font-size: 9px;">Materials to stamp a new sheet</span>
+              <div style="display: flex; gap: 14px;">
+                <span class="num" style="color: #EDE7DC; font-size: 12px;">250 scrap</span>
+                <span class="num" style="color: #EDE7DC; font-size: 12px;">4 steel ingot</span>
+                <span class="num" style="color: #BE5A4B; font-size: 12px;">1 / 2 copper coil</span>
+              </div>
+            </div>
+            <div class="cs" style="background: #28231F; border: 1px solid #4C443C; padding: 11px 16px;">
+              <span class="lbl" style="color: #A79C8C; font-size: 11px;">+ Potion</span>
+            </div>
+            <div class="cs" style="background: linear-gradient(#E07A3B, #B24C18); padding: 12px 30px; box-shadow: 0 3px 0 #7A3410;">
+              <span class="lbl" style="color: #16120F; font-size: 13px;">Stamp</span>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

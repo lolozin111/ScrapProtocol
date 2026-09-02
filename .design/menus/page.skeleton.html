@@ -1,0 +1,388 @@
+<title>Station Menu Directions</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800&family=Source+Sans+3:wght@400;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<style>
+  :root {
+    --ground: #14110F;
+    --panel: #1E1A17;
+    --panel-light: #282320;
+    --line: #3C352F;
+    --line-hi: #5A5148;
+    --text: #EDE7DC;
+    --muted: #A79C8C;
+    --accent: #E07A3B;
+    --accent-dark: #B24C18;
+    --good: #5FA082;
+    --bad: #BE5A4B;
+    --display: 'Montserrat', system-ui, sans-serif;
+    --body: 'Source Sans 3', system-ui, sans-serif;
+    --mono: 'IBM Plex Mono', ui-monospace, monospace;
+  }
+
+  /* Single-theme by intent, same as forged-rig.html: this documents a dark game
+     HUD, and a light ground would misrepresent every colour in every mockup. */
+  html { color-scheme: dark; }
+  body { background: var(--ground); color: var(--text); font-family: var(--body); margin: 0; }
+  * { box-sizing: border-box; }
+
+  .wrap { max-width: 1400px; margin: 0 auto; padding: 52px 24px 90px; }
+
+  .eyebrow { font-family: var(--display); font-weight: 700; font-size: 11px;
+             letter-spacing: 0.18em; text-transform: uppercase; color: var(--accent); }
+  h1 { font-family: var(--display); font-weight: 800; font-size: clamp(30px, 4vw, 44px);
+       line-height: 1.05; margin: 14px 0 0; letter-spacing: -0.01em; text-wrap: balance; }
+  .lede { color: var(--muted); font-size: 17px; line-height: 1.6; max-width: 68ch; margin: 16px 0 0; }
+  .lede + .lede { margin-top: 12px; }
+  .lede strong { color: var(--text); font-weight: 600; }
+
+  h2 { font-family: var(--display); font-weight: 800; font-size: 24px; margin: 0;
+       letter-spacing: -0.01em; }
+  .sec { margin: 64px 0 0; border-top: 1px solid var(--line); padding-top: 26px; }
+  .sec-head { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+  .sec-head .tag { font-family: var(--display); font-weight: 700; font-size: 10px;
+                   letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); }
+  .sec p { color: var(--muted); font-size: 15px; line-height: 1.65; max-width: 72ch; margin: 12px 0 0; }
+  .sec p strong { color: var(--text); font-weight: 600; }
+
+  .opt { margin: 30px 0 0; display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 20px;
+         align-items: start; }
+  @media (max-width: 1080px) { .opt { grid-template-columns: minmax(0, 1fr); } }
+
+  .stage { overflow-x: auto; border: 1px solid var(--line); background: #0E0C0B; }
+  .stage > div { margin: 0 auto; }
+
+  .note { background: var(--panel); border: 1px solid var(--line); padding: 18px 20px; }
+  .note .kicker { font-family: var(--display); font-weight: 800; font-size: 11px;
+                  letter-spacing: 0.14em; text-transform: uppercase; color: var(--text); }
+  .note .size { font-family: var(--mono); font-weight: 500; font-size: 12px; color: var(--muted);
+                margin: 6px 0 0; display: block; }
+  .note h4 { font-family: var(--display); font-weight: 700; font-size: 10px; letter-spacing: 0.16em;
+             text-transform: uppercase; color: var(--muted); margin: 16px 0 6px; }
+  .note p { font-size: 14px; line-height: 1.6; margin: 0; color: var(--text); }
+  .note p + p { margin-top: 8px; }
+  .note .fits { color: var(--good); }
+  .note .grows { color: var(--accent); }
+
+  .lead { border-color: var(--accent); }
+  .lead .kicker::after { content: 'Leading candidate'; font-size: 9px; letter-spacing: 0.12em;
+                         color: var(--accent); margin-left: 8px; }
+
+  .ask { margin: 64px 0 0; background: var(--panel); border: 1px solid var(--line);
+         border-top: 3px solid var(--accent); padding: 26px 28px; }
+  .ask h2 { font-size: 20px; }
+  .ask ol { margin: 14px 0 0; padding-left: 20px; }
+  .ask li { color: var(--muted); font-size: 15px; line-height: 1.7; margin-bottom: 10px; max-width: 74ch; }
+  .ask li:last-child { margin-bottom: 0; }
+  .ask li strong { color: var(--text); font-weight: 600; }
+
+  a { color: var(--accent); }
+  a:hover { color: var(--accent-dark); }
+
+  /* ---- vocabulary the mockups themselves use (extracted with them) ---- */
+  .lbl { font-family: var(--display); font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
+  .num { font-family: var(--mono); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .cut { clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px)); }
+  .cutin { clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px)); }
+  .cs { clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px)); }
+  .grid { background-image: linear-gradient(#2A2521 1px, transparent 1px), linear-gradient(90deg, #2A2521 1px, transparent 1px); background-size: 24px 24px; }
+  .dot { width: 13px; height: 13px; border: 2px solid #3C352F; background: #16120F; }
+  .dot.on { border-color: #E07A3B; background: #E07A3B; }
+  .dot.now { border-color: #EDE7DC; background: #E07A3B; }
+  .rail { flex-grow: 1; height: 2px; background: #2A2521; }
+  .rail.on { background: #E07A3B; }
+  .cap { font-family: var(--display); font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; font-size: 9px; color: #6E6A64; }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">Salvage Protocol &middot; HUD phase 3, section C</div>
+    <h1>Station menu directions</h1>
+    <p class="lede">
+      Eight directions across four station menus, plus two takes on the popups. The brief was that
+      these should <strong>not look like one another</strong> &mdash; so the shared vocabulary is
+      deliberately thin: the bevelled plate, the accent cap, the angular cut, and the type roles
+      already settled in the Forged Rig round. Everything inside the plate is per-menu.
+    </p>
+    <p class="lede">
+      Every colour is a live <strong>HudKit</strong> token rather than an invented one, and every
+      number on screen is a real config value &mdash; RefinedOreConfig&rsquo;s refine ratios and log
+      batch-time curve, ForgeConfig&rsquo;s tiers and 15-roll pity floor, OreConfig&rsquo;s tool
+      tiers, CraftingRecipes&rsquo; costs. The layouts are sized against content that actually exists.
+    </p>
+    <p class="lede">
+      The craft panel is <strong>640&times;424</strong> today. Some directions fit that; some need it
+      to grow, which is a real cost and is marked on each.
+    </p>
+  </header>
+
+  <section class="sec">
+    <div class="sec-head">
+      <h2>Forge</h2>
+      <span class="tag">Weapons + Smelting tabs &middot; three directions</span>
+    </div>
+    <p>
+      Your one concrete steer was here: <em>a slot where you put unprocessed ore in, it processes it,
+      and you pick it up</em>. Worth naming a thing that fell out of reading the code &mdash; that
+      describes the <strong>Smelting</strong> tab almost exactly, and Smelting already lives on the
+      Forge station. So direction A treats both tabs as one machine in two modes, which is the
+      strongest reading of the steer. B and C take it somewhere else on purpose, so the choice is real.
+    </p>
+
+    <div class="opt">
+      <div class="stage"><!--MOCKUP:Main--></div>
+      <div class="note lead">
+        <span class="kicker">A &mdash; Crucible</span>
+        <span class="size grows">760&times;520 &mdash; panel must grow</span>
+        <h4>What it is</h4>
+        <p>A machine you feed. Left is an input bay showing the cost as loaded material, centre is a
+        chamber that visibly runs, right is an output tray you collect from. Pity becomes
+        <em>heat</em> on the machine body; the Luck Potion becomes a physical additive you slot in.</p>
+        <h4>Why</h4>
+        <p>It makes the Forge a place rather than a list, and it unifies both tabs &mdash; Smelting is
+        the same machine in a different mode.</p>
+        <h4>Tradeoff</h4>
+        <p>Three columns at 760px leaves each one narrow. The output tray also implies a roll result
+        that persists until collected &mdash; a server change, since ForgeWeapon currently writes the
+        instance straight to the profile. Not just a re-skin.</p>
+      </div>
+    </div>
+
+    <div class="opt">
+      <div class="stage"><!--MOCKUP:ForgeB--></div>
+      <div class="note">
+        <span class="kicker">B &mdash; Roll Table</span>
+        <span class="size fits">640&times;424 &mdash; fits today</span>
+        <h4>What it is</h4>
+        <p>The Forge as what it mechanically is: a weighted roll. The odds table is the screen, the
+        pity floor is a line drawn across it, and the last five results sit underneath as a streak you
+        can read.</p>
+        <h4>Why</h4>
+        <p>Honest about the system, and it makes Forge tier and Luck Potion legible &mdash; buy either
+        and you watch the bars move. Cheapest of the three, and the only Forge direction needing no
+        resize.</p>
+        <h4>Tradeoff</h4>
+        <p>It is a stats screen, not a machine. It answers your ore-in-collect-out steer with a no.</p>
+      </div>
+    </div>
+
+    <div class="opt">
+      <div class="stage"><!--MOCKUP:ForgeC--></div>
+      <div class="note">
+        <span class="kicker">C &mdash; Schematic Bench</span>
+        <span class="size grows">760&times;520 &mdash; panel must grow</span>
+        <h4>What it is</h4>
+        <p>The weapon drawn as a technical schematic on grid paper, with the rolled affixes as
+        annotation callouts pointing at the part they modify. Families are a left rail; forging is
+        &ldquo;stamping a new sheet&rdquo;.</p>
+        <h4>Why</h4>
+        <p>The most distinctive of the three, and it gives affixes somewhere meaningful to live. Scales
+        cleanly &mdash; a Legendary with four affixes gets four callouts, not a longer list.</p>
+        <h4>Tradeoff</h4>
+        <p>The most art-dependent. Six weapon families each need their own line drawing or the
+        metaphor collapses into a box with labels.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <div class="sec-head">
+      <h2>Smelting</h2>
+      <span class="tag">Forge&rsquo;s second tab &middot; two directions</span>
+    </div>
+    <p>
+      Both directions exist to surface something the current list hides completely:
+      <strong>RefinedOreConfig&rsquo;s batch time is logarithmic</strong>, so a bigger batch is always
+      better per ore. Nothing on screen says so today.
+    </p>
+
+    <div class="opt">
+      <div class="stage"><!--MOCKUP:SmeltA--></div>
+      <div class="note">
+        <span class="kicker">A &mdash; Pour Line</span>
+        <span class="size grows">760&times;470 &mdash; panel must grow</span>
+        <h4>What it is</h4>
+        <p>Hoppers across the top &mdash; all five raw ores with counts and refine ratios &mdash;
+        feeding one visible pour. The batch bar is the process; the tray below fills when it lands.</p>
+        <h4>Why</h4>
+        <p>Choice and state on one screen with no navigation, and it is the direction that pairs with
+        Forge A, being the same machine idea.</p>
+        <h4>Tradeoff</h4>
+        <p>Only one batch is visible. If smelting ever runs two jobs, this layout has nowhere to put
+        the second.</p>
+      </div>
+    </div>
+
+    <div class="opt">
+      <div class="stage"><!--MOCKUP:SmeltB--></div>
+      <div class="note">
+        <span class="kicker">B &mdash; Batch Dial</span>
+        <span class="size fits">640&times;424 &mdash; fits today</span>
+        <h4>What it is</h4>
+        <p>Built around the only decision that matters: how much to melt at once. The dial reads batch
+        time, the slider sets quantity, and the per-ore figure underneath makes the curve visible
+        &mdash; 3.4s per ore at 30, 1.4s at 90.</p>
+        <h4>Why</h4>
+        <p>Teaches the mechanic outright, and fits the panel as-is.</p>
+        <h4>Tradeoff</h4>
+        <p>Less atmosphere than the pour line, and the dial is a bigger custom widget than it looks
+        &mdash; an arc animating against a server-authoritative finish time.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <div class="sec-head">
+      <h2>Welding Station</h2>
+      <span class="tag">Robots / Mods / Turrets / Drones &middot; two directions</span>
+    </div>
+    <p>
+      Welding is about attaching mods to a machine, so the axis here is
+      <strong>one rig in depth</strong> versus <strong>every rig at a glance</strong>.
+    </p>
+
+    <div class="opt">
+      <div class="stage"><!--MOCKUP:WeldA--></div>
+      <div class="note">
+        <span class="kicker">A &mdash; Rig Diagram</span>
+        <span class="size grows">760&times;520 &mdash; panel must grow</span>
+        <h4>What it is</h4>
+        <p>The robot drawn centre-stage with its three mod slots as hardpoints on leader lines, so
+        &ldquo;this mod goes here&rdquo; is spatial rather than a list position.</p>
+        <h4>Why</h4>
+        <p>The only direction whose screen actually says what welding is. An empty third slot reads as
+        a hole in the rig &mdash; a far better prompt than a greyed-out row.</p>
+        <h4>Tradeoff</h4>
+        <p>Needs a silhouette per robot, and shows one at a time; comparing two loadouts means clicking
+        back and forth.</p>
+      </div>
+    </div>
+
+    <div class="opt">
+      <div class="stage"><!--MOCKUP:WeldB--></div>
+      <div class="note">
+        <span class="kicker">B &mdash; Loadout Cards</span>
+        <span class="size fits">640&times;424 &mdash; fits today</span>
+        <h4>What it is</h4>
+        <p>One card per robot, slots inline as chips, deploy state on the card&rsquo;s own button.
+        Unbuilt robots are dashed cards showing their cost.</p>
+        <h4>Why</h4>
+        <p>Every robot and every fitted mod visible at once &mdash; what you want when deciding what to
+        send out against a wave.</p>
+        <h4>Tradeoff</h4>
+        <p>It is a grid of rows in nicer clothes: the closest of all eight to what exists today, and
+        the least distinct from the other stations.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <div class="sec-head">
+      <h2>Workbench</h2>
+      <span class="tag">Tools / Auto-Miner / Suit / Base &middot; two directions</span>
+    </div>
+    <p>
+      The axis here is <strong>overview versus detail</strong>, and it is really a question about the
+      tabs: A deletes them, B keeps them and makes each one earn its click.
+    </p>
+
+    <div class="opt">
+      <div class="stage"><!--MOCKUP:WorkA--></div>
+      <div class="note">
+        <span class="kicker">A &mdash; Progression Rails</span>
+        <span class="size fits">640&times;424 &mdash; fits today</span>
+        <h4>What it is</h4>
+        <p>No tabs. All four tracks are rails with your position marked, the next step named, and the
+        cost underneath. Affordable steps get the accent button; unaffordable ones say what you are
+        short.</p>
+        <h4>Why</h4>
+        <p>The Workbench is one question &mdash; how upgraded am I &mdash; and tabs hide three quarters
+        of the answer behind clicks. Seeing all four costs together is also how you decide what to mine
+        next.</p>
+        <h4>Tradeoff</h4>
+        <p>Dropping tabs means <span class="num">StationConfig.Types.Crafting.Tabs</span> stops
+        describing this station, and the Base tab&rsquo;s turret placement has nowhere to go.</p>
+      </div>
+    </div>
+
+    <div class="opt">
+      <div class="stage"><!--MOCKUP:WorkB--></div>
+      <div class="note">
+        <span class="kicker">B &mdash; Spec Sheet</span>
+        <span class="size fits">640&times;424 &mdash; fits today</span>
+        <h4>What it is</h4>
+        <p>Tabs stay, but each becomes a page about one thing: the equipped item as a hero with real
+        stats, what it still cannot do, its fitted mods, then an explicit before/after for the next
+        tier.</p>
+        <h4>Why</h4>
+        <p>The before/after row is the piece missing today &mdash; the current list states a cost but
+        never states what you get. Also the only Workbench direction with room for turret placement.</p>
+        <h4>Tradeoff</h4>
+        <p>Four clicks to see four numbers. The overview A gives for free costs navigation here.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <div class="sec-head">
+      <h2>Popups</h2>
+      <span class="tag">Toast, confirm, mod picker, case opening &middot; two directions</span>
+    </div>
+    <p>
+      Included in this round rather than retrofitted, since a popup that does not match its parent is
+      more jarring than one that matches nothing. The axis is whether a popup
+      <strong>belongs to the panel that raised it</strong> or <strong>interrupts everything</strong>.
+    </p>
+
+    <div class="opt">
+      <div class="stage"><!--MOCKUP:PopupA--></div>
+      <div class="note">
+        <span class="kicker">A &mdash; Docked</span>
+        <h4>What it is</h4>
+        <p>Every popup borrows the open panel&rsquo;s edges: the toast hangs off its accent cap, a
+        confirmation replaces the footer, the mod picker slides out of the right edge, a case opens
+        inside the panel body.</p>
+        <h4>Why</h4>
+        <p>Nothing floats unattached, so a popup always tells you which menu raised it &mdash; and it
+        inherits whichever menu direction wins instead of being a fifth style.</p>
+        <h4>Tradeoff</h4>
+        <p>Each parent panel has to reserve the space, and a popup raised from the world rather than a
+        menu has no frame to dock to.</p>
+      </div>
+    </div>
+
+    <div class="opt">
+      <div class="stage"><!--MOCKUP:PopupB--></div>
+      <div class="note">
+        <span class="kicker">B &mdash; Lifted Slabs</span>
+        <h4>What it is</h4>
+        <p>Each popup is its own plate on a scrim, with a shadow and its own accent cap &mdash; red for
+        a destructive confirm, orange for a choice, gold for a reveal.</p>
+        <h4>Why</h4>
+        <p>Unmissable and consistent regardless of what raised it. The case opening in particular wants
+        a full takeover.</p>
+        <h4>Tradeoff</h4>
+        <p>The scrim interrupts. Right for a confirm, wrong for a rejection toast firing mid-wave
+        &mdash; so realistically the toast wants A&rsquo;s treatment even if everything else takes
+        B&rsquo;s.</p>
+      </div>
+    </div>
+  </section>
+
+  <div class="ask">
+    <h2>What I need from you to converge</h2>
+    <ol>
+      <li><strong>Forge: A, B or C.</strong> This is the one real fork. A is the literal reading of
+      your steer and costs a server change; B is cheap and fits today; C is the most distinctive and
+      costs six line drawings.</li>
+      <li><strong>Is the panel allowed to grow past 640&times;424?</strong> Four of the ten directions
+      need it. If the answer is no, the set collapses to B / Batch Dial / Loadout Cards / either
+      Workbench &mdash; a coherent but much tamer round.</li>
+      <li><strong>Workbench: keep the tabs or not.</strong> Rails deletes them, which contradicts
+      StationConfig as written. Worth deciding before either gets built.</li>
+      <li><strong>Popups: one treatment or a split.</strong> My recommendation is the split &mdash;
+      docked toast, lifted everything else &mdash; but that is two mechanisms to maintain instead of
+      one.</li>
+    </ol>
+  </div>
+
+</div>

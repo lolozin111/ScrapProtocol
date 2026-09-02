@@ -1,0 +1,115 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;800&family=Source+Sans+3:wght@400;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
+  <style>
+    body { margin: 0; font-family: 'Source Sans 3', system-ui, sans-serif; }
+    a { color: #E07A3B; } a:hover { color: #B24C18; }
+    .lbl { font-family: 'Montserrat', system-ui, sans-serif; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
+    .num { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .cs { clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px)); }
+    .cap { font-family: 'Montserrat', system-ui, sans-serif; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; font-size: 9px; color: #6E6A64; }
+  </style>
+</helmet>
+
+<div style="width: 840px; height: 580px; background: radial-gradient(120% 100% at 50% 30%, #241F1B 0%, #14110F 74%); padding: 18px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: auto repeat(2, minmax(0, 1fr)); gap: 14px;">
+
+  <div style="grid-column: span 2; display: flex; align-items: baseline; gap: 12px;">
+    <span class="lbl" style="color: #EDE7DC; font-size: 15px;">Popups B &mdash; lifted slabs</span>
+    <span style="color: #A79C8C; font-size: 12px;">Each popup is its own plate on a scrim, with a shadow and the accent cap. Interrupts on purpose.</span>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 6px;">
+    <span class="cap">Rejection toast &mdash; floats above everything</span>
+    <div style="position: relative; flex-grow: 1; background: #191512; border: 1px solid #2A2521;">
+      <div style="position: absolute; left: 14px; right: 14px; top: 14px; bottom: 14px; background: #16120F; border: 1px solid #3C352F;">
+        <div style="height: 3px; background: #E07A3B;"></div>
+        <div style="padding: 9px 11px; display: flex; flex-direction: column; gap: 7px;">
+          <div style="height: 8px; width: 40%; background: #2A2521;"></div>
+          <div style="height: 8px; width: 66%; background: #221D1A;"></div>
+          <div style="height: 8px; width: 54%; background: #221D1A;"></div>
+        </div>
+      </div>
+      <div class="cs" style="position: absolute; left: 50%; top: 34px; transform: translateX(-50%); background: #1C1815; border: 1px solid #BE5A4B; box-shadow: 0 6px 14px rgba(0,0,0,0.6); display: flex; flex-direction: column;">
+        <div style="height: 3px; background: #BE5A4B;"></div>
+        <div style="display: flex; align-items: center; gap: 9px; padding: 9px 14px;">
+          <svg width="15" height="15" viewBox="0 0 18 18" fill="none" stroke="#BE5A4B" stroke-width="1.8"><path d="M9 3l7 12H2z"></path><path d="M9 8v3M9 13h.01"></path></svg>
+          <span style="color: #EDE7DC; font-size: 12px;">Tool tier too low for Voidium.</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 6px;">
+    <span class="cap">Confirm &mdash; centred slab, world dimmed</span>
+    <div style="position: relative; flex-grow: 1; background: #191512; border: 1px solid #2A2521;">
+      <div style="position: absolute; left: 14px; right: 14px; top: 14px; bottom: 14px; background: #16120F; border: 1px solid #3C352F;">
+        <div style="height: 3px; background: #E07A3B;"></div>
+        <div style="padding: 9px 11px; display: flex; flex-direction: column; gap: 7px;">
+          <div style="height: 8px; width: 40%; background: #2A2521;"></div>
+          <div style="height: 8px; width: 66%; background: #221D1A;"></div>
+        </div>
+      </div>
+      <div style="position: absolute; inset: 0; background: rgba(10,8,7,0.66);"></div>
+      <div class="cs" style="position: absolute; left: 50%; top: 50%; width: 216px; transform: translate(-50%, -50%); background: #1C1815; border: 1px solid #4C443C; box-shadow: 0 8px 20px rgba(0,0,0,0.7);">
+        <div style="height: 3px; background: #BE5A4B;"></div>
+        <div style="padding: 12px 13px; display: flex; flex-direction: column; gap: 9px;">
+          <span class="lbl" style="color: #EDE7DC; font-size: 11px;">Recall from expedition?</span>
+          <span style="color: #A79C8C; font-size: 11px;">This ends the run for every player on the queue, not just you.</span>
+          <div style="display: flex; gap: 6px;">
+            <div class="cs" style="flex-grow: 1; background: #28231F; border: 1px solid #4C443C; padding: 8px; text-align: center;"><span class="lbl" style="color: #A79C8C; font-size: 9px;">Stay</span></div>
+            <div class="cs" style="flex-grow: 1; background: #BE5A4B; padding: 8px; text-align: center;"><span class="lbl" style="color: #16120F; font-size: 9px;">Recall</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 6px;">
+    <span class="cap">Mod picker &mdash; slab with its own grid</span>
+    <div style="position: relative; flex-grow: 1; background: #191512; border: 1px solid #2A2521;">
+      <div style="position: absolute; left: 14px; right: 14px; top: 14px; bottom: 14px; background: #16120F; border: 1px solid #3C352F;">
+        <div style="height: 3px; background: #E07A3B;"></div>
+      </div>
+      <div style="position: absolute; inset: 0; background: rgba(10,8,7,0.66);"></div>
+      <div class="cs" style="position: absolute; left: 50%; top: 50%; width: 236px; transform: translate(-50%, -50%); background: #1C1815; border: 1px solid #4C443C; box-shadow: 0 8px 20px rgba(0,0,0,0.7);">
+        <div style="height: 3px; background: #E07A3B;"></div>
+        <div style="padding: 11px 12px; display: flex; flex-direction: column; gap: 8px;">
+          <div style="display: flex; align-items: baseline; gap: 8px;">
+            <span class="lbl" style="color: #EDE7DC; font-size: 11px; flex-grow: 1;">Fit a mod</span>
+            <span class="num" style="color: #A79C8C; font-size: 10px;">slot 3</span>
+          </div>
+          <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px;">
+            <div class="cs" style="background: #221D1A; border: 1px solid #4C443C; padding: 8px 4px; text-align: center;"><span style="color: #EDE7DC; font-size: 9px;">Speed Coil</span></div>
+            <div class="cs" style="background: #221D1A; border: 1px solid #E07A3B; padding: 8px 4px; text-align: center;"><span style="color: #EDE7DC; font-size: 9px;">Stabilizer</span></div>
+            <div class="cs" style="background: #221D1A; border: 1px solid #4C443C; padding: 8px 4px; text-align: center;"><span style="color: #EDE7DC; font-size: 9px;">Overclock</span></div>
+          </div>
+          <div class="cs" style="background: linear-gradient(#E07A3B, #B24C18); padding: 8px; text-align: center;"><span class="lbl" style="color: #16120F; font-size: 10px;">Fit</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 6px;">
+    <span class="cap">Case opening &mdash; full takeover</span>
+    <div style="position: relative; flex-grow: 1; background: radial-gradient(60% 70% at 50% 50%, #33260F 0%, #14110F 76%); border: 1px solid #2A2521; overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px;">
+      <div style="position: absolute; left: 50%; top: 50%; width: 300px; height: 300px; transform: translate(-50%, -50%) rotate(45deg); border: 1px solid #4A3A1A;"></div>
+      <div class="cs" style="width: 74px; height: 92px; background: #221D1A; border: 2px solid #E6AF3C; box-shadow: 0 0 26px rgba(230,175,60,0.35); display: flex; align-items: center; justify-content: center;">
+        <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#E6AF3C" stroke-width="1.6"><path d="M12 3l7 4v10l-7 4-7-4V7z"></path><path d="M12 10v7"></path></svg>
+      </div>
+      <span class="lbl" style="color: #E6AF3C; font-size: 13px;">Legendary</span>
+      <span style="color: #EDE7DC; font-size: 13px;">Overclocked Core</span>
+      <div class="cs" style="background: #28231F; border: 1px solid #4C443C; padding: 8px 22px; margin-top: 3px;"><span class="lbl" style="color: #A79C8C; font-size: 10px;">Claim</span></div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>

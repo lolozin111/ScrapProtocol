@@ -1,0 +1,104 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700&family=Source+Sans+3:wght@400;600&family=IBM+Plex+Mono:wght@500&display=swap">
+  <style>
+    body { margin: 0; font-family: 'Source Sans 3', system-ui, sans-serif; }
+    a { color: #E07A3B; } a:hover { color: #B24C18; }
+    .lbl { font-family: 'Montserrat', system-ui, sans-serif; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; }
+    .num { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-weight: 500; }
+  </style>
+</helmet>
+
+<div style="position: relative; width: 1280px; height: 720px; overflow: hidden; background: radial-gradient(120% 90% at 50% 38%, #2A241F 0%, #14110F 72%);">
+
+  <div style="position: absolute; left: 50%; top: 54%; width: 940px; height: 300px; transform: translateX(-50%); background: #241F1B; clip-path: polygon(21% 0%, 79% 0%, 100% 100%, 0% 100%); border-top: 1px solid #3C352F;"></div>
+
+  <div style="position: absolute; left: 24px; top: 24px; display: flex; flex-direction: column; gap: 14px; background: rgba(20, 17, 15, 0.82); border: 1px solid #3C352F; border-radius: 14px; padding: 18px 20px; width: 216px;">
+    <div style="display: flex; flex-direction: column; gap: 3px;">
+      <span class="lbl" style="color: #A79C8C; font-size: 9px;">Scrap</span>
+      <span class="num" style="color: #EDE7DC; font-size: 24px; line-height: 1;">12,480</span>
+    </div>
+    <div style="display: flex; gap: 20px;">
+      <div style="display: flex; flex-direction: column; gap: 3px; flex-grow: 1;">
+        <span class="lbl" style="color: #A79C8C; font-size: 9px;">Cores</span>
+        <span class="num" style="color: #5FA082; font-size: 16px; line-height: 1;">318</span>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 3px; flex-grow: 1;">
+        <span class="lbl" style="color: #A79C8C; font-size: 9px;">Energy</span>
+        <span class="num" style="color: #EDE7DC; font-size: 16px; line-height: 1;">7 <span style="color: #A79C8C;">/ 10</span></span>
+      </div>
+    </div>
+  </div>
+
+  <div style="position: absolute; left: 50%; top: 70px; transform: translateX(-50%); display: flex; align-items: center; gap: 12px; background: rgba(20, 17, 15, 0.9); border: 1px solid #4C443C; border-radius: 12px; padding: 13px 22px;">
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#E07A3B" stroke-width="1.6"><circle cx="8" cy="8" r="6.5"/><path d="M8 4.6v4M8 11.2v.6"/></svg>
+    <span style="color: #EDE7DC; font-size: 15px;">Tool tier too low for Titanium.</span>
+  </div>
+
+  <div style="position: absolute; left: 50%; top: 50%; width: 660px; transform: translate(-50%, -50%); background: rgba(20, 17, 15, 0.94); border: 1px solid #3C352F; border-radius: 16px; overflow: hidden;">
+    <div style="display: flex; align-items: center; padding: 22px 26px 0;">
+      <span class="lbl" style="color: #EDE7DC; font-size: 12px; flex-grow: 1;">Inventory</span>
+      <svg width="14" height="14" viewBox="0 0 12 12" stroke="#A79C8C" stroke-width="1.6"><path d="M2 2l8 8M10 2l-8 8"/></svg>
+    </div>
+    <div style="display: flex; gap: 26px; padding: 20px 26px 0;">
+      <div style="display: flex; flex-direction: column; gap: 9px;">
+        <span class="lbl" style="font-size: 10px; color: #EDE7DC;">Weapons</span>
+        <div style="height: 2px; background: #E07A3B; border-radius: 2px;"></div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 9px;">
+        <span class="lbl" style="font-size: 10px; color: #A79C8C;">Tools</span>
+        <div style="height: 2px; background: transparent;"></div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 9px;">
+        <span class="lbl" style="font-size: 10px; color: #A79C8C;">Mods</span>
+        <div style="height: 2px; background: transparent;"></div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 9px;">
+        <span class="lbl" style="font-size: 10px; color: #A79C8C;">Ore</span>
+        <div style="height: 2px; background: transparent;"></div>
+      </div>
+    </div>
+    <div style="height: 1px; background: #282320; margin: 0 0 4px;"></div>
+    <div style="display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; padding: 22px 26px 28px;">
+      <div style="height: 82px; background: #221D1A; border: 1px solid #E07A3B; border-radius: 10px; display: flex; align-items: flex-end; padding: 9px;"><span class="num" style="color: #E07A3B; font-size: 11px;">II</span></div>
+      <div style="height: 82px; background: #221D1A; border: 1px solid #302A26; border-radius: 10px;"></div>
+      <div style="height: 82px; background: #221D1A; border: 1px solid #302A26; border-radius: 10px;"></div>
+      <div style="height: 82px; background: #221D1A; border: 1px solid #302A26; border-radius: 10px;"></div>
+      <div style="height: 82px; background: #1A1614; border: 1px solid #241F1C; border-radius: 10px;"></div>
+      <div style="height: 82px; background: #1A1614; border: 1px solid #241F1C; border-radius: 10px;"></div>
+    </div>
+  </div>
+
+  <div style="position: absolute; left: 24px; bottom: 24px; width: 236px; display: flex; flex-direction: column; gap: 14px; background: rgba(20, 17, 15, 0.82); border: 1px solid #3C352F; border-radius: 14px; padding: 18px 20px;">
+    <div style="display: flex; flex-direction: column; gap: 8px;">
+      <div style="display: flex; align-items: baseline;">
+        <span class="lbl" style="color: #A79C8C; font-size: 9px; flex-grow: 1;">Integrity</span>
+        <span class="num" style="color: #EDE7DC; font-size: 12px;">86</span>
+      </div>
+      <div style="height: 5px; background: #282320; border-radius: 3px; overflow: hidden;">
+        <div style="width: 86%; height: 100%; background: #5FA082;"></div>
+      </div>
+    </div>
+    <div style="display: flex; align-items: center; gap: 10px;">
+      <span class="lbl" style="color: #EDE7DC; font-size: 10px; flex-grow: 1;">Research T3</span>
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#E07A3B" stroke-width="1.8"><path d="M4 2l4 4-4 4"/></svg>
+    </div>
+  </div>
+
+  <div style="position: absolute; left: 50%; bottom: 26px; transform: translateX(-50%); display: flex; align-items: center; gap: 14px;">
+    <div class="lbl" style="display: grid; place-items: center; width: 130px; height: 46px; font-size: 10px; color: #EDE7DC; background: rgba(40, 35, 32, 0.9); border: 1px solid #3C352F; border-radius: 23px;">Inventory</div>
+    <div class="lbl" style="display: grid; place-items: center; width: 190px; height: 54px; font-size: 12px; color: #241407; background: #E07A3B; border-radius: 27px; box-shadow: 0 0 0 6px rgba(224, 122, 59, 0.14);">Start Defense</div>
+    <div class="lbl" style="display: grid; place-items: center; width: 130px; height: 46px; font-size: 10px; color: #EDE7DC; background: rgba(40, 35, 32, 0.9); border: 1px solid #3C352F; border-radius: 23px;">Recall</div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>

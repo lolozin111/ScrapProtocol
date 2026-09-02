@@ -1,0 +1,101 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;800&family=Source+Sans+3:wght@400;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
+  <style>
+    body { margin: 0; font-family: 'Source Sans 3', system-ui, sans-serif; }
+    a { color: #E07A3B; } a:hover { color: #B24C18; }
+    .lbl { font-family: 'Montserrat', system-ui, sans-serif; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; }
+    .num { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-weight: 600; }
+  </style>
+</helmet>
+
+<div style="position: relative; width: 1280px; height: 720px; overflow: hidden; background: radial-gradient(120% 90% at 50% 38%, #2A241F 0%, #14110F 72%);">
+
+  <div style="position: absolute; left: 50%; top: 54%; width: 940px; height: 300px; transform: translateX(-50%); background: #241F1B; clip-path: polygon(21% 0%, 79% 0%, 100% 100%, 0% 100%); border-top: 3px solid #3C352F;"></div>
+  <div style="position: absolute; left: 50%; top: 54%; width: 470px; height: 3px; transform: translateX(-50%); background: #E07A3B; opacity: 0.45;"></div>
+
+  <div style="position: absolute; left: 16px; top: 16px; width: 236px; background: #1E1A17; border: 2px solid #3C352F; border-top-color: #4C443C; border-bottom-color: #14110F; border-radius: 4px;">
+    <div style="height: 4px; background: #E07A3B;"></div>
+    <div style="display: flex; flex-direction: column; gap: 9px; padding: 12px 14px;">
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="#E07A3B" stroke-width="1.6"><path d="M4 7l5-3 7 3-2 8-8 1z"/></svg>
+        <span class="lbl" style="color: #A79C8C; font-size: 11px; flex-grow: 1;">Scrap</span>
+        <span class="num" style="color: #E07A3B; font-size: 17px;">12,480</span>
+      </div>
+      <div style="height: 1px; background: #3C352F;"></div>
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="#5FA082" stroke-width="1.6"><path d="M10 3l6 3.5v7L10 17l-6-3.5v-7z"/></svg>
+        <span class="lbl" style="color: #A79C8C; font-size: 11px; flex-grow: 1;">Cores</span>
+        <span class="num" style="color: #5FA082; font-size: 17px;">318</span>
+      </div>
+      <div style="height: 1px; background: #3C352F;"></div>
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="#5FA082" stroke-width="1.6"><path d="M11 2L5 11h4l-1 7 7-9h-4z"/></svg>
+        <span class="lbl" style="color: #A79C8C; font-size: 11px; flex-grow: 1;">Energy</span>
+        <span class="num" style="color: #EDE7DC; font-size: 17px;">7<span style="color: #A79C8C;"> / 10</span></span>
+      </div>
+    </div>
+  </div>
+
+  <div style="position: absolute; left: 50%; top: 62px; transform: translateX(-50%); background: #1E1A17; border: 2px solid #3C352F; border-left: 4px solid #E07A3B; border-radius: 4px; padding: 11px 20px;">
+    <span style="color: #EDE7DC; font-size: 15px;">Tool tier too low for Titanium.</span>
+  </div>
+
+  <div style="position: absolute; left: 50%; top: 50%; width: 640px; transform: translate(-50%, -50%); background: #1E1A17; border: 2px solid #3C352F; border-top-color: #4C443C; border-bottom-color: #14110F; border-radius: 4px;">
+    <div style="display: flex; align-items: center; gap: 12px; padding: 0 16px; height: 48px; background: #14110F; border-bottom: 2px solid #3C352F;">
+      <div style="width: 4px; height: 20px; background: #E07A3B;"></div>
+      <span class="lbl" style="color: #EDE7DC; font-size: 14px; flex-grow: 1;">Inventory</span>
+      <div style="width: 26px; height: 26px; display: grid; place-items: center; background: #282320; border: 1px solid #3C352F; border-radius: 3px;">
+        <svg width="12" height="12" viewBox="0 0 12 12" stroke="#A79C8C" stroke-width="1.8"><path d="M2 2l8 8M10 2l-8 8"/></svg>
+      </div>
+    </div>
+    <div style="display: flex; gap: 6px; padding: 12px 16px 0;">
+      <div class="lbl" style="font-size: 11px; color: #14110F; background: #E07A3B; padding: 8px 15px; border-radius: 3px;">Weapons</div>
+      <div class="lbl" style="font-size: 11px; color: #A79C8C; background: #282320; padding: 8px 15px; border-radius: 3px;">Tools</div>
+      <div class="lbl" style="font-size: 11px; color: #A79C8C; background: #282320; padding: 8px 15px; border-radius: 3px;">Mods</div>
+      <div class="lbl" style="font-size: 11px; color: #A79C8C; background: #282320; padding: 8px 15px; border-radius: 3px;">Ore</div>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; padding: 14px 16px 18px;">
+      <div style="height: 78px; background: #282320; border: 2px solid #E07A3B; border-radius: 3px; display: flex; align-items: flex-end; padding: 8px;"><span class="num" style="color: #E07A3B; font-size: 12px;">II</span></div>
+      <div style="height: 78px; background: #282320; border: 1px solid #3C352F; border-radius: 3px;"></div>
+      <div style="height: 78px; background: #282320; border: 1px solid #3C352F; border-radius: 3px;"></div>
+      <div style="height: 78px; background: #282320; border: 1px solid #3C352F; border-radius: 3px;"></div>
+      <div style="height: 78px; background: #1A1614; border: 1px dashed #3C352F; border-radius: 3px;"></div>
+      <div style="height: 78px; background: #1A1614; border: 1px dashed #3C352F; border-radius: 3px;"></div>
+    </div>
+  </div>
+
+  <div style="position: absolute; left: 16px; bottom: 16px; width: 248px; background: #1E1A17; border: 2px solid #3C352F; border-top-color: #4C443C; border-bottom-color: #14110F; border-radius: 4px; padding: 12px 14px;">
+    <div style="display: flex; flex-direction: column; gap: 9px;">
+      <div style="display: flex; align-items: baseline; gap: 8px;">
+        <span class="lbl" style="color: #A79C8C; font-size: 10px; flex-grow: 1;">Integrity</span>
+        <span class="num" style="color: #EDE7DC; font-size: 13px;">86 / 100</span>
+      </div>
+      <div style="height: 12px; background: #14110F; border: 1px solid #3C352F; border-radius: 2px; overflow: hidden;">
+        <div style="width: 86%; height: 100%; background: linear-gradient(#6FB694, #5FA082);"></div>
+      </div>
+      <div style="display: flex; align-items: center; gap: 10px; background: #282320; border: 1px solid #3C352F; border-radius: 3px; padding: 10px 12px;">
+        <div style="width: 4px; height: 16px; background: #E07A3B;"></div>
+        <span class="lbl" style="color: #EDE7DC; font-size: 11px; flex-grow: 1;">Research T3</span>
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#A79C8C" stroke-width="1.8"><path d="M4 2l4 4-4 4"/></svg>
+      </div>
+    </div>
+  </div>
+
+  <div style="position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); display: flex; align-items: stretch; gap: 10px;">
+    <div class="lbl" style="display: grid; place-items: center; width: 132px; height: 50px; font-size: 12px; color: #EDE7DC; background: #282320; border: 2px solid #3C352F; border-top-color: #4C443C; border-radius: 4px; box-shadow: 0 3px 0 #14110F;">Inventory</div>
+    <div class="lbl" style="display: grid; place-items: center; width: 180px; height: 50px; font-size: 14px; color: #241407; background: linear-gradient(#EE8C4B, #E07A3B); border: 2px solid #B24C18; border-top-color: #F3A76B; border-radius: 4px; box-shadow: 0 4px 0 #8E3C12;">Start Defense</div>
+    <div class="lbl" style="display: grid; place-items: center; width: 132px; height: 50px; font-size: 12px; color: #EDE7DC; background: #282320; border: 2px solid #3C352F; border-top-color: #4C443C; border-radius: 4px; box-shadow: 0 3px 0 #14110F;">Recall</div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>

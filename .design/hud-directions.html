@@ -1,0 +1,447 @@
+<title>Salvage Protocol HUD Directions</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700;800&family=Source+Sans+3:wght@400;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<style>
+  :root {
+    --ground: #14110F;
+    --panel: #1E1A17;
+    --panel-light: #282320;
+    --line: #3C352F;
+    --line-hi: #4C443C;
+    --text: #EDE7DC;
+    --muted: #A79C8C;
+    --accent: #E07A3B;
+    --accent-dark: #B24C18;
+    --good: #5FA082;
+    --bad: #BE5A4B;
+    --display: 'Montserrat', system-ui, sans-serif;
+    --body: 'Source Sans 3', system-ui, sans-serif;
+    --mono: 'IBM Plex Mono', ui-monospace, monospace;
+  }
+
+  /* Deliberately single-theme: these are mockups of a dark game HUD, and
+     showing them on a light ground would misrepresent every colour in them. */
+
+  body { background: var(--ground); color: var(--text); font-family: var(--body); }
+  * { box-sizing: border-box; }
+
+  .wrap { max-width: 1360px; margin: 0 auto; padding: 56px 24px 88px; }
+
+  .eyebrow {
+    font-family: var(--display); font-weight: 700; font-size: 11px;
+    letter-spacing: 0.18em; text-transform: uppercase; color: var(--accent);
+  }
+  h1 {
+    font-family: var(--display); font-weight: 800; font-size: clamp(30px, 4vw, 46px);
+    line-height: 1.05; margin: 14px 0 0; text-wrap: balance; letter-spacing: -0.01em;
+  }
+  .lede { color: var(--muted); font-size: 17px; line-height: 1.6; max-width: 62ch; margin: 18px 0 0; }
+
+  .swatches { display: flex; flex-wrap: wrap; gap: 10px; margin: 32px 0 0; }
+  .sw { display: flex; align-items: center; gap: 9px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 8px 12px; }
+  .chip { width: 16px; height: 16px; border-radius: 3px; border: 1px solid rgba(255,255,255,0.09); }
+  .sw code { font-family: var(--mono); font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  .rule { height: 1px; background: var(--line); margin: 56px 0; border: 0; }
+
+  .dirhead { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; }
+  .badge {
+    font-family: var(--display); font-weight: 800; font-size: 13px; letter-spacing: 0.1em;
+    color: var(--ground); background: var(--accent); padding: 6px 12px; border-radius: 4px;
+  }
+  h2 { font-family: var(--display); font-weight: 800; font-size: 27px; margin: 0; letter-spacing: -0.01em; }
+  .tag { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+
+  .stage {
+    margin: 24px 0 0; overflow-x: auto; border: 1px solid var(--line);
+    border-radius: 8px; background: #0E0C0B;
+  }
+
+  .rationale { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; margin: 22px 0 0; }
+  @media (max-width: 760px) { .rationale { grid-template-columns: minmax(0, 1fr); } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 18px 20px; }
+  .card.trade { border-left: 3px solid var(--bad); }
+  .card h3 {
+    font-family: var(--display); font-weight: 700; font-size: 10px; letter-spacing: 0.16em;
+    text-transform: uppercase; color: var(--muted); margin: 0 0 9px;
+  }
+  .card p { margin: 0; font-size: 15px; line-height: 1.6; color: var(--text); }
+
+  .next { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 26px 28px; }
+  .next h2 { font-size: 20px; margin: 0 0 14px; }
+  .next p { color: var(--muted); font-size: 15px; line-height: 1.65; margin: 0 0 12px; max-width: 68ch; }
+  .next p:last-child { margin-bottom: 0; }
+  .next strong { color: var(--text); font-weight: 600; }
+  .next code { font-family: var(--mono); font-size: 13px; color: var(--accent); }
+
+  /* ---- shared mockup vocabulary ---- */
+  .screen { position: relative; width: 1280px; height: 720px; overflow: hidden;
+            background: radial-gradient(120% 90% at 50% 38%, #2A241F 0%, #14110F 72%); }
+  .ground-plane { position: absolute; left: 50%; top: 54%; width: 940px; height: 300px;
+                  transform: translateX(-50%); background: #241F1B;
+                  clip-path: polygon(21% 0%, 79% 0%, 100% 100%, 0% 100%); }
+  .num { font-family: var(--mono); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .lbl-forged { font-family: var(--display); font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; }
+  .lbl-deck   { font-family: var(--display); font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; }
+  .lbl-edge   { font-family: var(--display); font-weight: 800; letter-spacing: 0.10em; text-transform: uppercase; }
+  .cut { clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px)); }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">Salvage Protocol</div>
+    <h1>Three directions for the HUD</h1>
+    <p class="lede">
+      Every one of these is built from the palette already in <code style="font-family:var(--mono);font-size:15px;color:var(--accent)">HudKit.lua</code> — no invented colours.
+      Each shows the same furniture so they compare fairly: wallet top-left, a rejection toast top-centre,
+      status bottom-left, the action row bottom-centre, and the inventory panel open.
+    </p>
+
+    <div class="swatches">
+      <div class="sw"><span class="chip" style="background:#1E1A17"></span><code>Panel 1E1A17</code></div>
+      <div class="sw"><span class="chip" style="background:#282320"></span><code>PanelLight 282320</code></div>
+      <div class="sw"><span class="chip" style="background:#3C352F"></span><code>Line 3C352F</code></div>
+      <div class="sw"><span class="chip" style="background:#EDE7DC"></span><code>Text EDE7DC</code></div>
+      <div class="sw"><span class="chip" style="background:#A79C8C"></span><code>Muted A79C8C</code></div>
+      <div class="sw"><span class="chip" style="background:#E07A3B"></span><code>Accent E07A3B</code></div>
+      <div class="sw"><span class="chip" style="background:#5FA082"></span><code>Good 5FA082</code></div>
+      <div class="sw"><span class="chip" style="background:#BE5A4B"></span><code>Bad BE5A4B</code></div>
+    </div>
+  </header>
+
+  <hr class="rule">
+
+  <!-- ============ A ============ -->
+  <section>
+    <div class="dirhead">
+      <span class="badge">A</span>
+      <h2>Forged Panel</h2>
+      <span class="tag">heavy chrome · 4px radii · 2px bevelled borders</span>
+    </div>
+
+    <div class="stage">
+      <div class="screen">
+        <div class="ground-plane" style="border-top: 3px solid #3C352F;"></div>
+        <div style="position:absolute;left:50%;top:54%;width:470px;height:3px;transform:translateX(-50%);background:#E07A3B;opacity:0.45;"></div>
+
+        <div style="position:absolute;left:16px;top:16px;width:236px;background:#1E1A17;border:2px solid #3C352F;border-top-color:#4C443C;border-bottom-color:#14110F;border-radius:4px;">
+          <div style="height:4px;background:#E07A3B;"></div>
+          <div style="display:flex;flex-direction:column;gap:9px;padding:12px 14px;">
+            <div style="display:flex;align-items:center;gap:10px;">
+              <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="#E07A3B" stroke-width="1.6"><path d="M4 7l5-3 7 3-2 8-8 1z"/></svg>
+              <span class="lbl-forged" style="color:#A79C8C;font-size:11px;flex-grow:1;">Scrap</span>
+              <span class="num" style="color:#E07A3B;font-size:17px;">12,480</span>
+            </div>
+            <div style="height:1px;background:#3C352F;"></div>
+            <div style="display:flex;align-items:center;gap:10px;">
+              <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="#5FA082" stroke-width="1.6"><path d="M10 3l6 3.5v7L10 17l-6-3.5v-7z"/></svg>
+              <span class="lbl-forged" style="color:#A79C8C;font-size:11px;flex-grow:1;">Cores</span>
+              <span class="num" style="color:#5FA082;font-size:17px;">318</span>
+            </div>
+            <div style="height:1px;background:#3C352F;"></div>
+            <div style="display:flex;align-items:center;gap:10px;">
+              <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="#5FA082" stroke-width="1.6"><path d="M11 2L5 11h4l-1 7 7-9h-4z"/></svg>
+              <span class="lbl-forged" style="color:#A79C8C;font-size:11px;flex-grow:1;">Energy</span>
+              <span class="num" style="color:#EDE7DC;font-size:17px;">7<span style="color:#A79C8C;"> / 10</span></span>
+            </div>
+          </div>
+        </div>
+
+        <div style="position:absolute;left:50%;top:62px;transform:translateX(-50%);background:#1E1A17;border:2px solid #3C352F;border-left:4px solid #E07A3B;border-radius:4px;padding:11px 20px;">
+          <span style="color:#EDE7DC;font-size:15px;">Tool tier too low for Titanium.</span>
+        </div>
+
+        <div style="position:absolute;left:50%;top:50%;width:640px;transform:translate(-50%,-50%);background:#1E1A17;border:2px solid #3C352F;border-top-color:#4C443C;border-bottom-color:#14110F;border-radius:4px;">
+          <div style="display:flex;align-items:center;gap:12px;padding:0 16px;height:48px;background:#14110F;border-bottom:2px solid #3C352F;">
+            <div style="width:4px;height:20px;background:#E07A3B;"></div>
+            <span class="lbl-forged" style="color:#EDE7DC;font-size:14px;flex-grow:1;">Inventory</span>
+            <div style="width:26px;height:26px;display:grid;place-items:center;background:#282320;border:1px solid #3C352F;border-radius:3px;">
+              <svg width="12" height="12" viewBox="0 0 12 12" stroke="#A79C8C" stroke-width="1.8"><path d="M2 2l8 8M10 2l-8 8"/></svg>
+            </div>
+          </div>
+          <div style="display:flex;gap:6px;padding:12px 16px 0;">
+            <div class="lbl-forged" style="font-size:11px;color:#14110F;background:#E07A3B;padding:8px 15px;border-radius:3px;">Weapons</div>
+            <div class="lbl-forged" style="font-size:11px;color:#A79C8C;background:#282320;padding:8px 15px;border-radius:3px;">Tools</div>
+            <div class="lbl-forged" style="font-size:11px;color:#A79C8C;background:#282320;padding:8px 15px;border-radius:3px;">Mods</div>
+            <div class="lbl-forged" style="font-size:11px;color:#A79C8C;background:#282320;padding:8px 15px;border-radius:3px;">Ore</div>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;padding:14px 16px 18px;">
+            <div style="height:78px;background:#282320;border:2px solid #E07A3B;border-radius:3px;display:flex;align-items:flex-end;padding:8px;"><span class="num" style="color:#E07A3B;font-size:12px;">II</span></div>
+            <div style="height:78px;background:#282320;border:1px solid #3C352F;border-radius:3px;"></div>
+            <div style="height:78px;background:#282320;border:1px solid #3C352F;border-radius:3px;"></div>
+            <div style="height:78px;background:#282320;border:1px solid #3C352F;border-radius:3px;"></div>
+            <div style="height:78px;background:#1A1614;border:1px dashed #3C352F;border-radius:3px;"></div>
+            <div style="height:78px;background:#1A1614;border:1px dashed #3C352F;border-radius:3px;"></div>
+          </div>
+        </div>
+
+        <div style="position:absolute;left:16px;bottom:16px;width:248px;background:#1E1A17;border:2px solid #3C352F;border-top-color:#4C443C;border-bottom-color:#14110F;border-radius:4px;padding:12px 14px;">
+          <div style="display:flex;flex-direction:column;gap:9px;">
+            <div style="display:flex;align-items:baseline;gap:8px;">
+              <span class="lbl-forged" style="color:#A79C8C;font-size:10px;flex-grow:1;">Integrity</span>
+              <span class="num" style="color:#EDE7DC;font-size:13px;">86 / 100</span>
+            </div>
+            <div style="height:12px;background:#14110F;border:1px solid #3C352F;border-radius:2px;overflow:hidden;">
+              <div style="width:86%;height:100%;background:linear-gradient(#6FB694,#5FA082);"></div>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;background:#282320;border:1px solid #3C352F;border-radius:3px;padding:10px 12px;">
+              <div style="width:4px;height:16px;background:#E07A3B;"></div>
+              <span class="lbl-forged" style="color:#EDE7DC;font-size:11px;flex-grow:1;">Research T3</span>
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#A79C8C" stroke-width="1.8"><path d="M4 2l4 4-4 4"/></svg>
+            </div>
+          </div>
+        </div>
+
+        <div style="position:absolute;left:50%;bottom:18px;transform:translateX(-50%);display:flex;align-items:stretch;gap:10px;">
+          <div class="lbl-forged" style="display:grid;place-items:center;width:132px;height:50px;font-size:12px;color:#EDE7DC;background:#282320;border:2px solid #3C352F;border-top-color:#4C443C;border-radius:4px;box-shadow:0 3px 0 #14110F;">Inventory</div>
+          <div class="lbl-forged" style="display:grid;place-items:center;width:180px;height:50px;font-size:14px;color:#241407;background:linear-gradient(#EE8C4B,#E07A3B);border:2px solid #B24C18;border-top-color:#F3A76B;border-radius:4px;box-shadow:0 4px 0 #8E3C12;">Start Defense</div>
+          <div class="lbl-forged" style="display:grid;place-items:center;width:132px;height:50px;font-size:12px;color:#EDE7DC;background:#282320;border:2px solid #3C352F;border-top-color:#4C443C;border-radius:4px;box-shadow:0 3px 0 #14110F;">Recall</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="rationale">
+      <div class="card">
+        <h3>Why this one</h3>
+        <p>Leans hard into the salvage identity. Panels read as steel plates — 2px borders with a lit top edge and a dark bottom, tight 4px radii, an accent bar capping each panel. The primary button is a physical switch with a hard drop shadow under it. The chrome has weight, so buttons look pressable instead of like coloured rectangles.</p>
+      </div>
+      <div class="card trade">
+        <h3>What it costs</h3>
+        <p>The heaviest of the three. More chrome means less visible screen, and during a wave with the panel open it can start to feel busy. It also commits you hardest to a look — if the game's art direction shifts later, this is the option that fights it.</p>
+      </div>
+    </div>
+  </section>
+
+  <hr class="rule">
+
+  <!-- ============ B ============ -->
+  <section>
+    <div class="dirhead">
+      <span class="badge">B</span>
+      <h2>Command Deck</h2>
+      <span class="tag">restraint · 14–16px radii · 1px hairlines · wide tracking</span>
+    </div>
+
+    <div class="stage">
+      <div class="screen">
+        <div class="ground-plane" style="border-top: 1px solid #3C352F;"></div>
+
+        <div style="position:absolute;left:24px;top:24px;display:flex;flex-direction:column;gap:14px;background:rgba(20,17,15,0.82);border:1px solid #3C352F;border-radius:14px;padding:18px 20px;width:216px;">
+          <div style="display:flex;flex-direction:column;gap:3px;">
+            <span class="lbl-deck" style="color:#A79C8C;font-size:9px;">Scrap</span>
+            <span class="num" style="color:#EDE7DC;font-size:24px;line-height:1;">12,480</span>
+          </div>
+          <div style="display:flex;gap:20px;">
+            <div style="display:flex;flex-direction:column;gap:3px;flex-grow:1;">
+              <span class="lbl-deck" style="color:#A79C8C;font-size:9px;">Cores</span>
+              <span class="num" style="color:#5FA082;font-size:16px;line-height:1;">318</span>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:3px;flex-grow:1;">
+              <span class="lbl-deck" style="color:#A79C8C;font-size:9px;">Energy</span>
+              <span class="num" style="color:#EDE7DC;font-size:16px;line-height:1;">7 <span style="color:#A79C8C;">/ 10</span></span>
+            </div>
+          </div>
+        </div>
+
+        <div style="position:absolute;left:50%;top:70px;transform:translateX(-50%);display:flex;align-items:center;gap:12px;background:rgba(20,17,15,0.9);border:1px solid #4C443C;border-radius:12px;padding:13px 22px;">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#E07A3B" stroke-width="1.6"><circle cx="8" cy="8" r="6.5"/><path d="M8 4.6v4M8 11.2v.6"/></svg>
+          <span style="color:#EDE7DC;font-size:15px;">Tool tier too low for Titanium.</span>
+        </div>
+
+        <div style="position:absolute;left:50%;top:50%;width:660px;transform:translate(-50%,-50%);background:rgba(20,17,15,0.94);border:1px solid #3C352F;border-radius:16px;overflow:hidden;">
+          <div style="display:flex;align-items:center;padding:22px 26px 0;">
+            <span class="lbl-deck" style="color:#EDE7DC;font-size:12px;flex-grow:1;">Inventory</span>
+            <svg width="14" height="14" viewBox="0 0 12 12" stroke="#A79C8C" stroke-width="1.6"><path d="M2 2l8 8M10 2l-8 8"/></svg>
+          </div>
+          <div style="display:flex;gap:26px;padding:20px 26px 0;">
+            <div style="display:flex;flex-direction:column;gap:9px;">
+              <span class="lbl-deck" style="font-size:10px;color:#EDE7DC;">Weapons</span>
+              <div style="height:2px;background:#E07A3B;border-radius:2px;"></div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:9px;">
+              <span class="lbl-deck" style="font-size:10px;color:#A79C8C;">Tools</span>
+              <div style="height:2px;background:transparent;"></div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:9px;">
+              <span class="lbl-deck" style="font-size:10px;color:#A79C8C;">Mods</span>
+              <div style="height:2px;background:transparent;"></div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:9px;">
+              <span class="lbl-deck" style="font-size:10px;color:#A79C8C;">Ore</span>
+              <div style="height:2px;background:transparent;"></div>
+            </div>
+          </div>
+          <div style="height:1px;background:#282320;"></div>
+          <div style="display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px;padding:22px 26px 28px;">
+            <div style="height:82px;background:#221D1A;border:1px solid #E07A3B;border-radius:10px;display:flex;align-items:flex-end;padding:9px;"><span class="num" style="color:#E07A3B;font-size:11px;">II</span></div>
+            <div style="height:82px;background:#221D1A;border:1px solid #302A26;border-radius:10px;"></div>
+            <div style="height:82px;background:#221D1A;border:1px solid #302A26;border-radius:10px;"></div>
+            <div style="height:82px;background:#221D1A;border:1px solid #302A26;border-radius:10px;"></div>
+            <div style="height:82px;background:#1A1614;border:1px solid #241F1C;border-radius:10px;"></div>
+            <div style="height:82px;background:#1A1614;border:1px solid #241F1C;border-radius:10px;"></div>
+          </div>
+        </div>
+
+        <div style="position:absolute;left:24px;bottom:24px;width:236px;display:flex;flex-direction:column;gap:14px;background:rgba(20,17,15,0.82);border:1px solid #3C352F;border-radius:14px;padding:18px 20px;">
+          <div style="display:flex;flex-direction:column;gap:8px;">
+            <div style="display:flex;align-items:baseline;">
+              <span class="lbl-deck" style="color:#A79C8C;font-size:9px;flex-grow:1;">Integrity</span>
+              <span class="num" style="color:#EDE7DC;font-size:12px;">86</span>
+            </div>
+            <div style="height:5px;background:#282320;border-radius:3px;overflow:hidden;">
+              <div style="width:86%;height:100%;background:#5FA082;"></div>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span class="lbl-deck" style="color:#EDE7DC;font-size:10px;flex-grow:1;">Research T3</span>
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#E07A3B" stroke-width="1.8"><path d="M4 2l4 4-4 4"/></svg>
+          </div>
+        </div>
+
+        <div style="position:absolute;left:50%;bottom:26px;transform:translateX(-50%);display:flex;align-items:center;gap:14px;">
+          <div class="lbl-deck" style="display:grid;place-items:center;width:130px;height:46px;font-size:10px;color:#EDE7DC;background:rgba(40,35,32,0.9);border:1px solid #3C352F;border-radius:23px;">Inventory</div>
+          <div class="lbl-deck" style="display:grid;place-items:center;width:190px;height:54px;font-size:12px;color:#241407;background:#E07A3B;border-radius:27px;box-shadow:0 0 0 6px rgba(224,122,59,0.14);">Start Defense</div>
+          <div class="lbl-deck" style="display:grid;place-items:center;width:130px;height:46px;font-size:10px;color:#EDE7DC;background:rgba(40,35,32,0.9);border:1px solid #3C352F;border-radius:23px;">Recall</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="rationale">
+      <div class="card">
+        <h3>Why this one</h3>
+        <p>Modern and restrained. Translucent panels over the world, 1px hairlines, big soft radii, wide letterspaced labels and real padding. Accent appears in exactly two places — the primary action and the active tab — so the numbers become the loudest thing on screen. This is the option that stays legible when a lot is happening.</p>
+      </div>
+      <div class="card trade">
+        <h3>What it costs</h3>
+        <p>The least characterful. It's handsome, but it could belong to any sci-fi game rather than specifically to a grimy salvage one. If you want players to recognise a screenshot as <em>yours</em>, this is the weakest of the three at that job.</p>
+      </div>
+    </div>
+  </section>
+
+  <hr class="rule">
+
+  <!-- ============ C ============ -->
+  <section>
+    <div class="dirhead">
+      <span class="badge">C</span>
+      <h2>Edge Rig</h2>
+      <span class="tag">edge-anchored · clipped corners · icon-led actions</span>
+    </div>
+
+    <div class="stage">
+      <div class="screen">
+        <div class="ground-plane" style="border-top: 1px solid #3C352F;"></div>
+        <div style="position:absolute;left:0;top:0;width:300px;height:96px;border-left:3px solid #E07A3B;border-top:3px solid #E07A3B;opacity:0.55;"></div>
+
+        <div class="cut" style="position:absolute;left:18px;top:18px;display:flex;gap:22px;background:rgba(20,17,15,0.88);padding:14px 22px;">
+          <div style="display:flex;align-items:center;gap:9px;">
+            <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="#E07A3B" stroke-width="1.8"><path d="M4 7l5-3 7 3-2 8-8 1z"/></svg>
+            <span class="num" style="color:#EDE7DC;font-size:18px;">12,480</span>
+          </div>
+          <div style="width:1px;background:#3C352F;"></div>
+          <div style="display:flex;align-items:center;gap:9px;">
+            <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="#5FA082" stroke-width="1.8"><path d="M10 3l6 3.5v7L10 17l-6-3.5v-7z"/></svg>
+            <span class="num" style="color:#EDE7DC;font-size:18px;">318</span>
+          </div>
+          <div style="width:1px;background:#3C352F;"></div>
+          <div style="display:flex;align-items:center;gap:9px;">
+            <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="#5FA082" stroke-width="1.8"><path d="M11 2L5 11h4l-1 7 7-9h-4z"/></svg>
+            <span class="num" style="color:#EDE7DC;font-size:18px;">7<span style="color:#A79C8C;">/10</span></span>
+          </div>
+        </div>
+
+        <div class="cut" style="position:absolute;left:50%;top:60px;transform:translateX(-50%);background:rgba(190,90,75,0.16);border-left:3px solid #BE5A4B;padding:12px 22px;">
+          <span style="color:#EDE7DC;font-size:15px;">Tool tier too low for Titanium.</span>
+        </div>
+
+        <div class="cut" style="position:absolute;right:0;top:50%;width:420px;transform:translateY(-50%);background:rgba(20,17,15,0.94);border-left:3px solid #E07A3B;">
+          <div style="display:flex;align-items:center;padding:20px 24px 0;">
+            <span class="lbl-edge" style="color:#EDE7DC;font-size:13px;flex-grow:1;">Inventory</span>
+            <svg width="13" height="13" viewBox="0 0 12 12" stroke="#A79C8C" stroke-width="1.8"><path d="M2 2l8 8M10 2l-8 8"/></svg>
+          </div>
+          <div style="display:flex;gap:8px;padding:16px 24px 0;">
+            <div class="lbl-edge" style="font-size:9px;color:#14110F;background:#E07A3B;padding:7px 12px;">Weapons</div>
+            <div class="lbl-edge" style="font-size:9px;color:#A79C8C;background:#262120;padding:7px 12px;">Tools</div>
+            <div class="lbl-edge" style="font-size:9px;color:#A79C8C;background:#262120;padding:7px 12px;">Mods</div>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;padding:18px 24px 24px;">
+            <div class="cut" style="height:76px;background:#282320;box-shadow:inset 0 0 0 2px #E07A3B;display:flex;align-items:flex-end;padding:8px;"><span class="num" style="color:#E07A3B;font-size:11px;">II</span></div>
+            <div class="cut" style="height:76px;background:#282320;"></div>
+            <div class="cut" style="height:76px;background:#282320;"></div>
+            <div class="cut" style="height:76px;background:#282320;"></div>
+            <div class="cut" style="height:76px;background:#1A1614;"></div>
+            <div class="cut" style="height:76px;background:#1A1614;"></div>
+            <div class="cut" style="height:76px;background:#1A1614;"></div>
+            <div class="cut" style="height:76px;background:#1A1614;"></div>
+          </div>
+        </div>
+
+        <div style="position:absolute;left:18px;bottom:18px;display:flex;flex-direction:column;gap:10px;width:260px;">
+          <div style="display:flex;align-items:baseline;gap:8px;">
+            <span class="lbl-edge" style="color:#A79C8C;font-size:9px;flex-grow:1;">Integrity</span>
+            <span class="num" style="color:#EDE7DC;font-size:13px;">86</span>
+          </div>
+          <div style="display:flex;gap:3px;height:10px;">
+            <div style="flex-grow:1;background:#5FA082;"></div>
+            <div style="flex-grow:1;background:#5FA082;"></div>
+            <div style="flex-grow:1;background:#5FA082;"></div>
+            <div style="flex-grow:1;background:#5FA082;"></div>
+            <div style="flex-grow:1;background:#5FA082;"></div>
+            <div style="flex-grow:1;background:#5FA082;"></div>
+            <div style="flex-grow:1;background:#5FA082;"></div>
+            <div style="flex-grow:1;background:#5FA082;"></div>
+            <div style="flex-grow:1;background:#2C2724;"></div>
+            <div style="flex-grow:1;background:#2C2724;"></div>
+          </div>
+          <div class="cut" style="display:flex;align-items:center;gap:10px;background:rgba(20,17,15,0.88);padding:10px 14px;">
+            <span class="lbl-edge" style="color:#EDE7DC;font-size:10px;flex-grow:1;">Research T3</span>
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#E07A3B" stroke-width="2"><path d="M4 2l4 4-4 4"/></svg>
+          </div>
+        </div>
+
+        <div style="position:absolute;left:50%;bottom:20px;transform:translateX(-50%);display:flex;align-items:flex-end;gap:12px;">
+          <div style="display:flex;flex-direction:column;align-items:center;gap:7px;">
+            <div class="cut" style="width:56px;height:56px;display:grid;place-items:center;background:rgba(40,35,32,0.9);">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#EDE7DC" stroke-width="1.7"><path d="M4 7h16v13H4z"/><path d="M4 7l2-3h12l2 3M12 7v13"/></svg>
+            </div>
+            <span class="lbl-edge" style="color:#A79C8C;font-size:8px;">Inventory</span>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:7px;">
+            <div class="cut" style="width:108px;height:72px;display:grid;place-items:center;background:#E07A3B;box-shadow:0 0 26px rgba(224,122,59,0.45);">
+              <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#241407" stroke-width="2"><path d="M12 3l7 3v6c0 4-3 6.6-7 9-4-2.4-7-5-7-9V6z"/></svg>
+            </div>
+            <span class="lbl-edge" style="color:#E07A3B;font-size:9px;">Start Defense</span>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:7px;">
+            <div class="cut" style="width:56px;height:56px;display:grid;place-items:center;background:rgba(40,35,32,0.9);">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#EDE7DC" stroke-width="1.7"><path d="M20 12a8 8 0 1 1-3-6.2M20 4v5h-5"/></svg>
+            </div>
+            <span class="lbl-edge" style="color:#A79C8C;font-size:8px;">Recall</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="rationale">
+      <div class="card">
+        <h3>Why this one</h3>
+        <p>Everything hugs the screen edges. Angular clipped corners instead of rounded ones, the wallet collapses to a single compact strip, and panels dock to the right edge rather than covering the middle of the fight. Actions become icon buttons with the primary one much larger and glowing. Most distinctive silhouette, and the clearest view of the game during a wave.</p>
+      </div>
+      <div class="card trade">
+        <h3>What it costs</h3>
+        <p>Icon-led actions have to be learned — a new player sees a shield, not the words "Start Defense", though the labels underneath soften that. The docked panel is also narrower, so the inventory grid drops from 6 columns to 4 and you scroll more.</p>
+      </div>
+    </div>
+  </section>
+
+  <hr class="rule">
+
+  <section class="next">
+    <h2>What happens after you pick</h2>
+    <p><strong>Nothing here is final</strong> — these are direction sketches, not the finished HUD. Mixing is fine and probably right: B's spacing with A's button weight, or C's edge-docked panels with B's typography.</p>
+    <p>Once a direction is settled, the build order is <strong>structure first</strong>. <code>MainHud.client.lua</code> sits at 164 of Luau's 200 locals, and exceeding that is a compile error that makes the HUD silently never appear — so the panels get extracted into their own ModuleScripts before any restyling begins. Then the tokens and button variants land in <code>HudKit.lua</code>, which restyles every panel at once, and the panels get worked one at a time.</p>
+    <p>The fonts were chosen to be buildable, not just to look good on this page: <strong>Montserrat</strong> and <strong>Source Sans</strong> both exist in Roblox as <code>Enum.Font.Montserrat</code> and <code>Enum.Font.SourceSans</code>, and the mono maps to <code>Enum.Font.Code</code>. Nothing here needs a font you can't actually set in Studio.</p>
+    <p>The one thing no mockup can show is <strong>feedback</strong>. Your HUD currently has no hover state, no press state and no tween anywhere. Adding those to the shared button helper will do more for "buttons catch attention" than any of these palettes.</p>
+  </section>
+
+</div>

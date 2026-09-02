@@ -1,0 +1,122 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;800&family=Source+Sans+3:wght@400;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
+  <style>
+    body { margin: 0; font-family: 'Source Sans 3', system-ui, sans-serif; }
+    a { color: #E07A3B; } a:hover { color: #B24C18; }
+    .lbl { font-family: 'Montserrat', system-ui, sans-serif; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
+    .num { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .cut { clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px)); }
+    .cutin { clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px)); }
+    .cs { clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px)); }
+  </style>
+</helmet>
+
+<div style="width: 800px; height: 510px; background: radial-gradient(120% 100% at 50% 30%, #241F1B 0%, #14110F 74%); display: flex; align-items: center; justify-content: center;">
+
+  <div class="cut" style="width: 760px; height: 470px; background: linear-gradient(#4C443C, #14110F); padding: 2px;">
+    <div class="cutin" style="width: 100%; height: 100%; background: #16120F; display: flex; flex-direction: column;">
+
+      <div style="height: 4px; background: #E07A3B;"></div>
+
+      <div style="height: 44px; display: flex; align-items: center; gap: 12px; padding: 0 14px; background: #1C1815; border-bottom: 1px solid #3C352F;">
+        <svg width="20" height="20" viewBox="0 0 22 22" fill="none" stroke="#E07A3B" stroke-width="1.7"><path d="M4 16V9l7-4 7 4v7z"></path><path d="M9 16v-4h4v4"></path></svg>
+        <span class="lbl" style="color: #EDE7DC; font-size: 15px; flex-grow: 1;">Forge</span>
+        <svg width="16" height="16" viewBox="0 0 16 16" stroke="#A79C8C" stroke-width="1.8" fill="none"><path d="M3 3l10 10M13 3L3 13"></path></svg>
+      </div>
+
+      <div style="display: flex; gap: 6px; padding: 8px 12px 0;">
+        <div class="cs" style="background: #221D1A; padding: 9px 20px;"><span class="lbl" style="color: #A79C8C; font-size: 11px;">Weapons</span></div>
+        <div class="cs" style="background: #E07A3B; padding: 9px 20px;"><span class="lbl" style="color: #16120F; font-size: 11px;">Smelting</span></div>
+      </div>
+
+      <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 10px; padding: 10px 12px 12px;">
+
+        <span class="lbl" style="color: #A79C8C; font-size: 10px;">Hoppers &mdash; pick what to melt</span>
+
+        <div style="display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 7px;">
+
+          <div class="cs" style="background: #28231F; border: 1px solid #E07A3B; padding: 9px; display: flex; flex-direction: column; gap: 5px;">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="#E07A3B" stroke-width="1.6"><path d="M4 7l5-3 7 3-2 8-8 1z"></path></svg>
+            <span class="lbl" style="color: #EDE7DC; font-size: 9px;">Scrap Iron</span>
+            <span class="num" style="color: #EDE7DC; font-size: 15px;">412</span>
+            <span class="num" style="color: #A79C8C; font-size: 9px;">3 : 1</span>
+          </div>
+
+          <div class="cs" style="background: #1C1815; border: 1px solid #3C352F; padding: 9px; display: flex; flex-direction: column; gap: 5px;">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="#A79C8C" stroke-width="1.6"><path d="M5 6h10M5 10h10M5 14h10"></path></svg>
+            <span class="lbl" style="color: #A79C8C; font-size: 9px;">Copper Wire</span>
+            <span class="num" style="color: #EDE7DC; font-size: 15px;">188</span>
+            <span class="num" style="color: #A79C8C; font-size: 9px;">3 : 1</span>
+          </div>
+
+          <div class="cs" style="background: #1C1815; border: 1px solid #3C352F; padding: 9px; display: flex; flex-direction: column; gap: 5px;">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="#A79C8C" stroke-width="1.6"><path d="M4 6h12v8H4z"></path><path d="M4 10h12"></path></svg>
+            <span class="lbl" style="color: #A79C8C; font-size: 9px;">Steel Plating</span>
+            <span class="num" style="color: #EDE7DC; font-size: 15px;">64</span>
+            <span class="num" style="color: #A79C8C; font-size: 9px;">2 : 1</span>
+          </div>
+
+          <div class="cs" style="background: #1C1815; border: 1px solid #3C352F; padding: 9px; display: flex; flex-direction: column; gap: 5px;">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="#E6AF3C" stroke-width="1.6"><path d="M6 5h8l2 5-6 5-6-5z"></path></svg>
+            <span class="lbl" style="color: #A79C8C; font-size: 9px;">Gold Contacts</span>
+            <span class="num" style="color: #EDE7DC; font-size: 15px;">21</span>
+            <span class="num" style="color: #A79C8C; font-size: 9px;">2 : 1</span>
+          </div>
+
+          <div class="cs" style="background: #1A1614; border: 1px solid #2A2521; padding: 9px; display: flex; flex-direction: column; gap: 5px;">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="#4C443C" stroke-width="1.6"><path d="M10 3l6 4v6l-6 4-6-4V7z"></path></svg>
+            <span class="lbl" style="color: #4C443C; font-size: 9px;">Voidium</span>
+            <span class="num" style="color: #4C443C; font-size: 15px;">0</span>
+            <span class="num" style="color: #4C443C; font-size: 9px;">1 : 1</span>
+          </div>
+
+        </div>
+
+        <div class="cs" style="flex-grow: 1; background: linear-gradient(180deg, #1C1815 0%, #241B14 100%); border: 1px solid #3C352F; padding: 14px 16px; display: flex; flex-direction: column; gap: 11px;">
+
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <span class="lbl" style="color: #E07A3B; font-size: 11px;">Melting</span>
+            <span style="color: #EDE7DC; font-size: 14px; flex-grow: 1;">90 Scrap Iron &rarr; 30 Steel Ingot</span>
+            <span class="num" style="color: #EDE7DC; font-size: 19px;">1 : 12</span>
+          </div>
+
+          <div style="position: relative; height: 26px; background: #14110F; border: 1px solid #2A2521; overflow: hidden;">
+            <div style="width: 62%; height: 100%; background: linear-gradient(90deg, #B24C18, #E07A3B);"></div>
+            <div style="position: absolute; left: 62%; top: 0; width: 2px; height: 100%; background: #EDE7DC;"></div>
+          </div>
+
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <svg width="17" height="17" viewBox="0 0 20 20" fill="none" stroke="#A79C8C" stroke-width="1.6"><circle cx="10" cy="10" r="7"></circle><path d="M10 6v4l3 2"></path></svg>
+            <span style="color: #A79C8C; font-size: 12px; flex-grow: 1;">Batch takes 2:08 &mdash; a 30-ore batch would take 1:42 for a third of the output.</span>
+          </div>
+
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <div class="cs" style="background: #1A1614; border: 1px dashed #4C443C; padding: 10px 14px; display: flex; align-items: center; gap: 9px; flex-grow: 1;">
+              <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="#4C443C" stroke-width="1.6"><path d="M3 12l3-4h11l-3 4z"></path><path d="M3 12v3h11v-3"></path></svg>
+              <span style="color: #A79C8C; font-size: 12px;">Output tray fills when the pour finishes</span>
+            </div>
+            <div class="cs" style="background: #28231F; border: 1px solid #4C443C; padding: 11px 18px;">
+              <span class="lbl" style="color: #A79C8C; font-size: 11px;">Cancel</span>
+            </div>
+            <div class="cs" style="background: #2A2A28; padding: 11px 26px;">
+              <span class="lbl" style="color: #6E6A64; font-size: 11px;">Collect</span>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

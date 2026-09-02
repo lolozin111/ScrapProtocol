@@ -1,0 +1,123 @@
+{
+  "pages": [
+    { "id": "page-1", "name": "Forge" },
+    { "id": "page-2", "name": "Smelting" },
+    { "id": "page-3", "name": "Welding + Workbench" },
+    { "id": "page-4", "name": "Popups" }
+  ],
+  "artboards": [
+    { "file": "Main.dc.html", "title": "Forge A - Crucible", "page": "page-1", "x": 0, "y": 0, "w": 800, "h": 560 },
+    { "file": "ForgeB.dc.html", "title": "Forge B - Roll Table", "page": "page-1", "x": 880, "y": 0, "w": 680, "h": 464 },
+    { "file": "ForgeC.dc.html", "title": "Forge C - Schematic Bench", "page": "page-1", "x": 1640, "y": 0, "w": 800, "h": 560 },
+
+    { "file": "SmeltA.dc.html", "title": "Smelting A - Pour Line", "page": "page-2", "x": 0, "y": 0, "w": 800, "h": 510 },
+    { "file": "SmeltB.dc.html", "title": "Smelting B - Batch Dial", "page": "page-2", "x": 880, "y": 0, "w": 680, "h": 464 },
+
+    { "file": "WeldA.dc.html", "title": "Welding A - Rig Diagram", "page": "page-3", "x": 0, "y": 0, "w": 800, "h": 560 },
+    { "file": "WeldB.dc.html", "title": "Welding B - Loadout Cards", "page": "page-3", "x": 880, "y": 0, "w": 680, "h": 464 },
+    { "file": "WorkA.dc.html", "title": "Workbench A - Progression Rails", "page": "page-3", "x": 0, "y": 720, "w": 680, "h": 464 },
+    { "file": "WorkB.dc.html", "title": "Workbench B - Spec Sheet", "page": "page-3", "x": 760, "y": 720, "w": 680, "h": 464 },
+
+    { "file": "PopupA.dc.html", "title": "Popups A - Docked", "page": "page-4", "x": 0, "y": 0, "w": 840, "h": 580 },
+    { "file": "PopupB.dc.html", "title": "Popups B - Lifted Slabs", "page": "page-4", "x": 920, "y": 0, "w": 840, "h": 580 }
+  ],
+  "annotations": [
+    {
+      "id": "brief",
+      "page": "page-1",
+      "x": 0,
+      "y": -300,
+      "w": 620,
+      "text": "SALVAGE PROTOCOL - station menu directions (HUD phase 3, section C)\n\nEvery artboard uses the live HudKit tokens, not invented ones: Panel #16120F, PanelLight #28231F, Line #3C352F, Text #EDE7DC, Muted #A79C8C, Accent #E07A3B, Good #5FA082, Bad #BE5A4B - plus the angular cut and bevelled shell already chosen for the HUD in the Forged Rig round.\n\nThe brief was that these four should NOT look like one another. So the shared vocabulary is deliberately thin: the plate, the accent cap, the cut corner, the type roles. Everything inside the plate is per-menu.\n\nSizes are called out per direction. The panel is 640x424 today (MainHud.client.lua craftFrame). Some directions fit that; some need it to grow, which is a real cost and is marked.\n\nAll numbers on screen are real config values (RefinedOreConfig ratios and the log batch-time formula, ForgeConfig tiers and pity 15/Rare, OreConfig tool tiers, CraftingRecipes costs), so the layouts are sized against content that actually exists."
+    },
+    {
+      "id": "note-forge-a",
+      "page": "page-1",
+      "x": 0,
+      "y": 680,
+      "w": 380,
+      "text": "FORGE A - CRUCIBLE  (760x520, panel must grow)\n\nYour steer, taken literally: a machine you feed. Left is an input bay showing the actual cost as loaded material, centre is a chamber that visibly runs, right is an output tray you collect from. Pity becomes HEAT on the machine body; the Luck Potion becomes a physical additive you slot in.\n\nWhy: it makes the Forge a place rather than a list, and it unifies both tabs - Smelting is the same machine in a different mode, ore in / ingots out.\n\nTradeoff: needs the panel at 760x520, and the three-column split leaves each column narrow. The 'output tray' also implies the roll result persists until collected, which is a server change (ForgeWeapon currently hands the instance straight to the profile), not just a re-skin."
+    },
+    {
+      "id": "note-forge-b",
+      "page": "page-1",
+      "x": 880,
+      "y": 680,
+      "w": 380,
+      "text": "FORGE B - ROLL TABLE  (fits 640x424 today)\n\nTreats the Forge as what it mechanically is: a weighted roll. The odds table IS the screen, the pity floor is drawn as a line across it, and the last five results sit underneath as a streak you can read.\n\nWhy: it is honest about the system and it makes Forge tier and Luck Potion legible - buy either and you watch the bars move. Cheapest of the three to build, and the only Forge direction that needs no panel resize.\n\nTradeoff: it is a stats screen, not a machine. It answers your 'ore in, collect it out' steer with a no. If the Forge should feel physical, this is the wrong one."
+    },
+    {
+      "id": "note-forge-c",
+      "page": "page-1",
+      "x": 1640,
+      "y": 680,
+      "w": 380,
+      "text": "FORGE C - SCHEMATIC BENCH  (760x520, panel must grow)\n\nThe weapon is drawn as a technical schematic on grid paper, and the rolled affixes are annotation callouts pointing at the part they modify. Families are a left rail; forging is 'stamping a new sheet'.\n\nWhy: it is the most distinctive of the three and it gives affixes somewhere meaningful to live instead of a text line. Scales well - a Legendary with four affixes gets four callouts, not a longer list.\n\nTradeoff: the most art-dependent. Every weapon family needs its own line drawing or the metaphor collapses, and there are six families. Without that art it degrades to a box with labels."
+    },
+    {
+      "id": "note-smelt-a",
+      "page": "page-2",
+      "x": 0,
+      "y": 640,
+      "w": 380,
+      "text": "SMELTING A - POUR LINE  (760x470)\n\nHoppers across the top - all five raw ores with counts and their refine ratios - feeding one visible pour. The batch bar is the process; the tray below it fills when it lands.\n\nWhy: it puts the choice (which ore) and the state (how long, how much) on one screen with no navigation, and it is the direction that pairs with Forge A, since it is the same machine idea.\n\nTradeoff: only one batch is visible at a time. If smelting ever runs more than one job, this layout has nowhere to put the second."
+    },
+    {
+      "id": "note-smelt-b",
+      "page": "page-2",
+      "x": 880,
+      "y": 640,
+      "w": 380,
+      "text": "SMELTING B - BATCH DIAL  (fits 640x424 today)\n\nBuilt around the one decision that actually matters: how much to melt at once. The dial reads batch time, the slider sets quantity, and the per-ore cost underneath makes the logarithm visible - 3.4s per ore at 30, 1.4s at 90.\n\nWhy: RefinedOreConfig's log curve is a genuinely good mechanic that is currently invisible. This direction is entirely about teaching it, and it fits the panel as-is.\n\nTradeoff: less atmosphere than the pour line, and the dial is a bigger custom widget than it looks - an SVG arc that has to animate against a server-authoritative finish time."
+    },
+    {
+      "id": "note-weld-a",
+      "page": "page-3",
+      "x": 1640,
+      "y": 0,
+      "w": 380,
+      "text": "WELDING A - RIG DIAGRAM  (760x520, panel must grow)\n\nThe robot is drawn centre-stage with its three mod slots as hardpoints on leader lines, so 'this mod goes here' is spatial rather than a list position. Built robots on the left rail with deploy pips; stats and the deploy control along the bottom.\n\nWhy: Welding is about attaching things to a machine, and this is the only direction where the screen says that. The empty third slot reads as a hole in the rig, which is a much better prompt than a greyed row.\n\nTradeoff: needs a silhouette per robot (four now, more later), and it only shows one robot at a time - comparing two loadouts means clicking back and forth."
+    },
+    {
+      "id": "note-weld-b",
+      "page": "page-3",
+      "x": 1640,
+      "y": 300,
+      "w": 380,
+      "text": "WELDING B - LOADOUT CARDS  (fits 640x424 today)\n\nOne card per robot, slots inline as chips, deploy state on the card's own button. Unbuilt robots are dashed cards with their cost.\n\nWhy: every robot and every fitted mod is visible at once, which is what you want when deciding what to send out against a wave. Deployed vs. stored is one glance. Fits the panel and scales by scrolling.\n\nTradeoff: it is a grid of rows in nicer clothes - the closest of all eight directions to what exists today, and the least distinct from the other stations."
+    },
+    {
+      "id": "note-work-a",
+      "page": "page-3",
+      "x": 1520,
+      "y": 720,
+      "w": 380,
+      "text": "WORKBENCH A - PROGRESSION RAILS  (fits 640x424 today)\n\nDrops the tabs entirely. All four tracks - Tool, Suit, Auto-Miner, Base - are rails with your position marked, next step named, cost underneath. Affordable steps get the accent button; unaffordable ones say what you are short.\n\nWhy: the Workbench is one thing, 'how upgraded am I', and tabs currently hide three quarters of that answer behind clicks. This is also where a player decides what to mine next, so seeing all four costs together is the useful view.\n\nTradeoff: removing tabs means StationConfig.Types.Crafting.Tabs stops describing this station, and anything that needs more than a line per track (turret placement lives on the Base tab) has nowhere to go."
+    },
+    {
+      "id": "note-work-b",
+      "page": "page-3",
+      "x": 1520,
+      "y": 1020,
+      "w": 380,
+      "text": "WORKBENCH B - SPEC SHEET  (fits 640x424 today)\n\nKeeps the tabs, but each tab becomes a page about one thing: the equipped item as a hero with its real stats, what it still cannot do, its fitted mods, then an explicit before/after for the next tier.\n\nWhy: the before/after row is the piece that is missing today - the current list says a cost but never says what you get. Also the only Workbench direction with room for the Base tab's turret placement.\n\nTradeoff: four clicks to see four numbers. The overview that A gives for free costs navigation here."
+    },
+    {
+      "id": "note-popup-a",
+      "page": "page-4",
+      "x": 0,
+      "y": 700,
+      "w": 380,
+      "text": "POPUPS A - DOCKED\n\nPopups belong to the panel that raised them: the toast hangs off its accent cap, a confirmation replaces the panel's footer, the mod picker slides out of its right edge, a case opens inside the panel body.\n\nWhy: nothing ever floats unattached, so a popup always tells you which menu it came from - and it matches whichever menu direction wins, rather than being a fifth style.\n\nTradeoff: needs each parent panel to reserve space, and a popup raised from the world (not from a menu) has no frame to dock to, so those still need a home."
+    },
+    {
+      "id": "note-popup-b",
+      "page": "page-4",
+      "x": 920,
+      "y": 700,
+      "w": 380,
+      "text": "POPUPS B - LIFTED SLABS\n\nEach popup is its own plate on a scrim, with a shadow and its own accent cap - red for a destructive confirm, orange for a choice, gold for a reveal.\n\nWhy: unmissable, and consistent everywhere regardless of what raised it. The case opening in particular wants a full takeover; a reveal that happens inside a panel body is a smaller moment.\n\nTradeoff: the scrim interrupts. Fine for a confirm, wrong for a rejection toast that fires mid-wave - so realistically the toast wants A's treatment even if everything else takes B's."
+    }
+  ],
+  "launch": { "view": "canvas", "page": "page-1" }
+}

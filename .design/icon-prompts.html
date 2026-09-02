@@ -1,0 +1,234 @@
+<title>Salvage Protocol Icon Prompts</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800&family=Source+Sans+3:wght@400;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --ground: #14110F;
+    --panel: #1E1A17;
+    --panel-hi: #282320;
+    --line: #3C352F;
+    --text: #EDE7DC;
+    --muted: #A79C8C;
+    --accent: #E07A3B;
+    --good: #5FA082;
+    --bad: #BE5A4B;
+    --display: 'Montserrat', system-ui, sans-serif;
+    --body: 'Source Sans 3', system-ui, sans-serif;
+    --mono: 'IBM Plex Mono', ui-monospace, monospace;
+  }
+  /* Single-theme by intent: this sheet is read beside the game's own dark UI. */
+  body { background: var(--ground); color: var(--text); font-family: var(--body); }
+  * { box-sizing: border-box; }
+
+  .wrap { max-width: 940px; margin: 0 auto; padding: 52px 24px 88px; }
+
+  .eyebrow { font-family: var(--display); font-weight: 700; font-size: 11px;
+             letter-spacing: 0.18em; text-transform: uppercase; color: var(--accent); }
+  h1 { font-family: var(--display); font-weight: 800; font-size: clamp(28px, 4vw, 42px);
+       line-height: 1.05; margin: 14px 0 0; letter-spacing: -0.01em; }
+  .lede { color: var(--muted); font-size: 17px; line-height: 1.6; max-width: 64ch; margin: 16px 0 0; }
+
+  h2 { font-family: var(--display); font-weight: 800; font-size: 22px; margin: 48px 0 14px;
+       padding-top: 28px; border-top: 1px solid var(--line); }
+  h2:first-of-type { border-top: 0; padding-top: 0; }
+
+  p { font-size: 15px; line-height: 1.65; color: var(--muted); max-width: 68ch; }
+  p strong { color: var(--text); font-weight: 600; }
+
+  .callout { background: var(--panel); border-left: 3px solid var(--bad); border-radius: 6px;
+             padding: 16px 20px; margin: 20px 0; }
+  .callout p { margin: 0; }
+
+  pre { background: #0E0C0B; border: 1px solid var(--line); border-radius: 8px;
+        padding: 18px 20px; overflow-x: auto; margin: 0; }
+  code { font-family: var(--mono); font-size: 13px; line-height: 1.7; color: var(--text);
+         white-space: pre-wrap; }
+
+  .swatches { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0 0; }
+  .sw { display: flex; align-items: center; gap: 8px; background: var(--panel);
+        border: 1px solid var(--line); border-radius: 6px; padding: 7px 11px; }
+  .chip { width: 15px; height: 15px; border-radius: 3px; border: 1px solid rgba(255,255,255,0.08); }
+  .sw code { font-size: 11px; color: var(--muted); }
+
+  .cards { display: grid; gap: 16px; margin: 22px 0 0; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .card header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
+                 padding: 14px 20px; background: var(--panel-hi); border-bottom: 1px solid var(--line); }
+  .key { font-family: var(--mono); font-size: 14px; color: var(--accent); font-weight: 500; }
+  .what { font-size: 14px; color: var(--muted); }
+  .card .body { padding: 16px 20px 20px; }
+  .card pre { background: #0E0C0B; }
+
+  ol { color: var(--muted); font-size: 15px; line-height: 1.7; padding-left: 22px; max-width: 68ch; }
+  ol strong { color: var(--text); font-weight: 600; }
+  ol code, p code { font-family: var(--mono); font-size: 13px; color: var(--accent); }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">Salvage Protocol</div>
+    <h1>Icon prompts</h1>
+    <p class="lede">
+      Twelve icons for the HUD. Each prompt below is self-contained — paste one at a time.
+      <strong style="color:var(--text)">Do all twelve in a single ChatGPT conversation</strong>, in order, so it
+      carries the style forward. A set that doesn't match is worse than no icons at all.
+    </p>
+  </header>
+
+  <h2>The palette</h2>
+  <p>Every prompt restricts itself to these, so the icons sit inside the game's existing colours instead of next to them.</p>
+  <div class="swatches">
+    <div class="sw"><span class="chip" style="background:#E07A3B"></span><code>#E07A3B burnt orange</code></div>
+    <div class="sw"><span class="chip" style="background:#B24C18"></span><code>#B24C18 deep rust</code></div>
+    <div class="sw"><span class="chip" style="background:#EDE7DC"></span><code>#EDE7DC brushed silver</code></div>
+    <div class="sw"><span class="chip" style="background:#A79C8C"></span><code>#A79C8C muted tan</code></div>
+    <div class="sw"><span class="chip" style="background:#5FA082"></span><code>#5FA082 teal green</code></div>
+    <div class="sw"><span class="chip" style="background:#14110F"></span><code>#14110F near-black</code></div>
+  </div>
+
+  <div class="callout">
+    <p><strong>The one thing that will ruin these:</strong> they render at roughly 18–24 pixels in game. Anything
+    finer than a chunky stroke disappears entirely. Every prompt says so — don't soften that line if you rewrite it,
+    and judge each result by shrinking it to thumbnail size, not by how it looks at full resolution.</p>
+  </div>
+
+  <h2>The twelve</h2>
+
+  <div class="cards">
+
+    <div class="card">
+      <header><span class="key">scrap</span><span class="what">the common currency</span></header>
+      <div class="body"><pre><code>Flat vector icon, minimalist industrial game UI style. A single hex-head screw seen at a slight three-quarter angle — chunky head, tapering shaft, thread suggested by three or four short notches cut out of the silhouette rather than drawn as lines. Brushed silver #EDE7DC shaft, burnt orange #E07A3B head, near-black #14110F for the few cut details.
+
+Fully transparent background. Bold simple shapes that stay legible at 24 pixels — no thin lines, no fine detail, no text, no numbers. Use deliberate negative space: leave small gaps in the form so the eye completes the shape instead of every edge being drawn. Flat colour fills only — no gradients, no drop shadows, no glow, no 3D shading. Square 1024x1024, subject centred with about 10% empty margin on all sides.</code></pre></div>
+    </div>
+
+    <div class="card">
+      <header><span class="key">cores</span><span class="what">the premium currency</span></header>
+      <div class="body"><pre><code>Flat vector icon, minimalist industrial game UI style. A compact power cell: a squat cylinder with a hexagonal window in its middle, metal collars at the top and bottom. The hexagonal window glows teal green #5FA082 and is left as an open shape rather than fully enclosed. Brushed silver #EDE7DC body, near-black #14110F collar shadows.
+
+Fully transparent background. Bold simple shapes that stay legible at 24 pixels — no thin lines, no fine detail, no text, no numbers. Use deliberate negative space: leave small gaps in the form so the eye completes the shape instead of every edge being drawn. Flat colour fills only — no gradients, no drop shadows, no glow, no 3D shading. Square 1024x1024, subject centred with about 10% empty margin on all sides.</code></pre></div>
+    </div>
+
+    <div class="card">
+      <header><span class="key">energy</span><span class="what">raid energy, 7/10</span></header>
+      <div class="body"><pre><code>Flat vector icon, minimalist industrial game UI style. A battery cell standing upright with a lightning bolt cut clean out of its centre as pure negative space — the bolt is a hole, not a drawn shape, so the background shows through it. Brushed silver #EDE7DC casing, teal green #5FA082 band across the base, near-black #14110F terminal cap.
+
+Fully transparent background. Bold simple shapes that stay legible at 24 pixels — no thin lines, no fine detail, no text, no numbers. Use deliberate negative space: leave small gaps in the form so the eye completes the shape instead of every edge being drawn. Flat colour fills only — no gradients, no drop shadows, no glow, no 3D shading. Square 1024x1024, subject centred with about 10% empty margin on all sides.</code></pre></div>
+    </div>
+
+    <div class="card">
+      <header><span class="key">inventory</span><span class="what">the backpack button</span></header>
+      <div class="body"><pre><code>Flat vector icon, minimalist industrial game UI style. A small rugged backpack seen straight on: one top flap, two shoulder straps suggested by short marks at the sides, one buckle. The flap's lower edge is left open as negative space rather than outlined all the way round. Burnt orange #E07A3B body, brushed silver #EDE7DC buckle, near-black #14110F seam under the flap.
+
+Fully transparent background. Bold simple shapes that stay legible at 24 pixels — no thin lines, no fine detail, no text, no numbers. Use deliberate negative space: leave small gaps in the form so the eye completes the shape instead of every edge being drawn. Flat colour fills only — no gradients, no drop shadows, no glow, no 3D shading. Square 1024x1024, subject centred with about 10% empty margin on all sides.</code></pre></div>
+    </div>
+
+    <div class="card">
+      <header><span class="key">defense</span><span class="what">the big Start Defense button — the hero icon</span></header>
+      <div class="body"><pre><code>Flat vector icon, minimalist industrial game UI style. A riveted metal shield: flat across the top, tapering to a point at the base, with one horizontal seam across the middle and two rivets. A wedge is cut out of the seam as negative space so the plate reads as two pieces bolted together. Burnt orange #E07A3B plate, near-black #14110F seam and rivets, a brushed silver #EDE7DC edge along the top only.
+
+Fully transparent background. Bold simple shapes that stay legible at 24 pixels — no thin lines, no fine detail, no text, no numbers. Use deliberate negative space: leave small gaps in the form so the eye completes the shape instead of every edge being drawn. Flat colour fills only — no gradients, no drop shadows, no glow, no 3D shading. Square 1024x1024, subject centred with about 10% empty margin on all sides.</code></pre></div>
+    </div>
+
+    <div class="card">
+      <header><span class="key">recall</span><span class="what">return from the mine</span></header>
+      <div class="body"><pre><code>Flat vector icon, minimalist industrial game UI style. A thick arrow curving three-quarters of the way around a circle, with a clear break in the ring rather than a closed loop, and a small solid dot at the centre like a beacon being returned to. The arrowhead is a chunky triangle. Brushed silver #EDE7DC ring, burnt orange #E07A3B arrowhead, teal green #5FA082 centre dot.
+
+Fully transparent background. Bold simple shapes that stay legible at 24 pixels — no thin lines, no fine detail, no text, no numbers. Use deliberate negative space: leave small gaps in the form so the eye completes the shape instead of every edge being drawn. Flat colour fills only — no gradients, no drop shadows, no glow, no 3D shading. Square 1024x1024, subject centred with about 10% empty margin on all sides.</code></pre></div>
+    </div>
+
+    <div class="card">
+      <header><span class="key">weapons</span><span class="what">inventory tab</span></header>
+      <div class="body"><pre><code>Flat vector icon, minimalist industrial game UI style. A blocky sidearm in side profile, reduced to barrel, body and grip only — no sights, no fine mechanism. The trigger guard is a clean hole punched through the shape as negative space. Near-black #14110F body, brushed silver #EDE7DC barrel, one burnt orange #E07A3B block on the grip.
+
+Fully transparent background. Bold simple shapes that stay legible at 24 pixels — no thin lines, no fine detail, no text, no numbers. Use deliberate negative space: leave small gaps in the form so the eye completes the shape instead of every edge being drawn. Flat colour fills only — no gradients, no drop shadows, no glow, no 3D shading. Square 1024x1024, subject centred with about 10% empty margin on all sides.</code></pre></div>
+    </div>
+
+    <div class="card">
+      <header><span class="key">robots</span><span class="what">inventory tab</span></header>
+      <div class="body"><pre><code>Flat vector icon, minimalist industrial game UI style. A small robot head: a rounded-square housing with two horizontal eye slots and one short antenna with a dot on top. The lower jaw area is left open as negative space instead of being enclosed. Brushed silver #EDE7DC housing, teal green #5FA082 eye slots, near-black #14110F antenna.
+
+Fully transparent background. Bold simple shapes that stay legible at 24 pixels — no thin lines, no fine detail, no text, no numbers. Use deliberate negative space: leave small gaps in the form so the eye completes the shape instead of every edge being drawn. Flat colour fills only — no gradients, no drop shadows, no glow, no 3D shading. Square 1024x1024, subject centred with about 10% empty margin on all sides.</code></pre></div>
+    </div>
+
+    <div class="card">
+      <header><span class="key">mods</span><span class="what">inventory tab</span></header>
+      <div class="body"><pre><code>Flat vector icon, minimalist industrial game UI style. A microchip: a square body with three chunky pins on the left and right sides, one corner cut off at 45 degrees, and a single short circuit trace inside that stops before it reaches the edge. Near-black #14110F body, teal green #5FA082 trace, brushed silver #EDE7DC pins.
+
+Fully transparent background. Bold simple shapes that stay legible at 24 pixels — no thin lines, no fine detail, no text, no numbers. Use deliberate negative space: leave small gaps in the form so the eye completes the shape instead of every edge being drawn. Flat colour fills only — no gradients, no drop shadows, no glow, no 3D shading. Square 1024x1024, subject centred with about 10% empty margin on all sides.</code></pre></div>
+    </div>
+
+    <div class="card">
+      <header><span class="key">materials</span><span class="what">inventory tab — raw and refined ore</span></header>
+      <div class="body"><pre><code>Flat vector icon, minimalist industrial game UI style. A cluster of three angular ore chunks — one large, two small — with hard faceted edges like cut rock. The facets are shown as a few flat colour breaks, not outlines, and the chunks overlap so the gaps between them read as negative space. Burnt orange #E07A3B large chunk, muted tan #A79C8C smaller chunks, near-black #14110F facet breaks.
+
+Fully transparent background. Bold simple shapes that stay legible at 24 pixels — no thin lines, no fine detail, no text, no numbers. Use deliberate negative space: leave small gaps in the form so the eye completes the shape instead of every edge being drawn. Flat colour fills only — no gradients, no drop shadows, no glow, no 3D shading. Square 1024x1024, subject centred with about 10% empty margin on all sides.</code></pre></div>
+    </div>
+
+    <div class="card">
+      <header><span class="key">close</span><span class="what">panel close button</span></header>
+      <div class="body"><pre><code>Flat vector icon, minimalist industrial game UI style. An X made of two thick angled bars with chamfered ends, and a small square gap left where they cross so the two bars read as separate pieces rather than one solid cross. Muted tan #A79C8C bars, near-black #14110F gap.
+
+Fully transparent background. Bold simple shapes that stay legible at 24 pixels — no thin lines, no fine detail, no text, no numbers. Use deliberate negative space: leave small gaps in the form so the eye completes the shape instead of every edge being drawn. Flat colour fills only — no gradients, no drop shadows, no glow, no 3D shading. Square 1024x1024, subject centred with about 10% empty margin on all sides.</code></pre></div>
+    </div>
+
+    <div class="card">
+      <header><span class="key">chevron</span><span class="what">the "open this" arrow on the Research row</span></header>
+      <div class="body"><pre><code>Flat vector icon, minimalist industrial game UI style. A single thick chevron pointing right, with both ends cut at a clean angle rather than rounded, and a small notch taken out of its inner corner as negative space. Burnt orange #E07A3B.
+
+Fully transparent background. Bold simple shapes that stay legible at 24 pixels — no thin lines, no fine detail, no text, no numbers. Keep this one especially simple — it is the smallest icon in the set and sits beside text. Flat colour fills only — no gradients, no drop shadows, no glow, no 3D shading. Square 1024x1024, subject centred with about 10% empty margin on all sides.</code></pre></div>
+    </div>
+
+  </div>
+
+  <h2>Hover variants</h2>
+  <p>The icons above are the <strong>rest</strong> state. For anything that sits on a button, a second
+  version gets swapped in on hover — that colour shift is most of what makes the HUD feel alive.</p>
+
+  <div class="callout" style="border-left-color: var(--good)">
+    <p><strong>Only nine need one.</strong> <code>scrap</code>, <code>cores</code> and <code>energy</code> live in
+    the wallet readout, which is a static display — it is never hovered, so a variant for those is wasted work.
+    The other nine all sit on buttons or tabs: <code>inventory</code>, <code>defense</code>, <code>recall</code>,
+    <code>close</code>, <code>chevron</code>, <code>weapons</code>, <code>robots</code>, <code>mods</code>,
+    <code>materials</code>.</p>
+  </div>
+
+  <p>Ask for it as a <strong>follow-up in the same chat, immediately after each icon</strong> — while that image is
+  still in context. Asking later, or in a fresh chat, gets you a redraw rather than a recolour, and the silhouette
+  will drift.</p>
+
+  <pre><code>Now make the hover-state version of that exact icon.
+
+This is a RECOLOUR, not a redraw. Keep the shape, proportions, line weights, negative space and composition pixel-identical to what you just made — the two images get swapped in place on mouse-over, so any shift in the silhouette will read as the icon jumping rather than lighting up.
+
+Change only the colours: the dominant element becomes burnt orange #E07A3B, and any brushed silver or muted tan parts brighten to near-white #FFFFFF, as though the icon were lit from within. Leave near-black details black so the form still reads.
+
+Same fully transparent background, same 1024x1024 canvas, same centring and margin.</code></pre>
+
+  <p style="margin-top:18px"><strong>Name the variant <code>&lt;key&gt;_hover</code></strong> — so <code>defense</code>
+  and <code>defense_hover</code>, <code>close</code> and <code>close_hover</code>, and so on. Same folder, same
+  <code>ImageLabel</code> setup. I'll wire the button helper to look for that suffix and swap on
+  <code>MouseEnter</code>, falling back to the plain tint when no variant exists — so a half-finished set still
+  works, and each variant starts behaving the moment you add it.</p>
+
+  <h2>After they're generated</h2>
+  <ol>
+    <li><strong>Check each at thumbnail size.</strong> Shrink it to about 24px. If it turns to mush, ask for a chunkier version — that is the only test that matters.</li>
+    <li><strong>Make sure the background is actually transparent.</strong> Image models often hand back a white or checkered square that only looks transparent. If it isn't, remove it before uploading, or you'll get a white box around every icon in game.</li>
+    <li><strong>Resize to 256×256.</strong> Roblox caps image assets at 1024 and downsamples anything larger; 256 is plenty for a 24px icon and keeps the upload small.</li>
+    <li><strong>Upload each to Roblox</strong> — Asset Manager → Images. Each comes back with an asset ID after moderation.</li>
+    <li><strong>In Studio, create an <code>ImageLabel</code> inside <code>ReplicatedStorage.UiIcons</code></strong>, name it exactly the key from its card above (<code>scrap</code>, <code>cores</code>, …, all lowercase), and set its <code>Image</code> to that asset ID.</li>
+  </ol>
+  <p>That's the whole handoff — the resolver already reads that folder. Anything missing falls back to text rather than breaking, so you can drop them in one at a time and watch them appear.</p>
+
+  <h2>Still outstanding: the panel frame</h2>
+  <p>Separate from the icons, and the thing that actually makes the HUD look angular rather than rounded. Not an
+  AI-generation job — it's a precise shape, faster to draw by hand in any vector tool:</p>
+  <p><strong>96×96 PNG, transparent, solid white.</strong> A rectangle with a square top-left corner, a
+  <strong>45° cut top-right</strong>, a square bottom-right, and a <strong>45° cut bottom-left</strong> — the
+  asymmetric cut from the reference. Cut size around 24px. Name it <code>panelframe</code> in the same folder.</p>
+  <p>It's white because this one <em>is</em> tinted at runtime — one asset gives every panel, button and tile its
+  angular geometry, in whatever colour each needs.</p>
+
+</div>

@@ -1,0 +1,38 @@
+{
+  "artboards": [
+    { "file": "Main.dc.html", "title": "A - Forged Panel", "x": 0, "y": 0, "w": 1280, "h": 720 },
+    { "file": "CommandDeck.dc.html", "title": "B - Command Deck", "x": 1400, "y": 0, "w": 1280, "h": 720 },
+    { "file": "EdgeRig.dc.html", "title": "C - Edge Rig", "x": 2800, "y": 0, "w": 1280, "h": 720 }
+  ],
+  "annotations": [
+    {
+      "id": "brief",
+      "x": 0,
+      "y": -220,
+      "w": 520,
+      "text": "Salvage Protocol - HUD direction options\n\nAll three use your existing HudKit palette exactly: Panel #1E1A17, PanelLight #282320, Line #3C352F, Text #EDE7DC, Muted #A79C8C, Accent #E07A3B, Good #5FA082, Bad #BE5A4B.\n\nSame screen furniture in each so they compare fairly: wallet top-left, toast top-centre, status bottom-left, action row bottom-centre, inventory panel open.\n\nPick one and I will build it into HudKit + the panels."
+    },
+    {
+      "id": "note-a",
+      "x": 0,
+      "y": 780,
+      "w": 400,
+      "text": "A - FORGED PANEL\n\nLeans into the salvage identity. Panels are steel plates: 2px borders with a lighter top edge and darker bottom, small 4px radii, an accent bar capping each panel. The primary button is a physical switch with a hard drop shadow.\n\nWhy: the chrome has weight, so buttons read as pressable objects rather than coloured rectangles.\n\nTradeoff: the heaviest option. More chrome on screen means less room, and it can look busy during a wave."
+    },
+    {
+      "id": "note-b",
+      "x": 1400,
+      "y": 780,
+      "w": 400,
+      "text": "B - COMMAND DECK\n\nModern and restrained. Translucent panels, 1px hairlines, large 14-16px radii, wide letterspaced labels, generous padding. Accent appears only on the primary action and the active tab.\n\nWhy: the numbers are the loudest thing on screen. Reads premium and stays legible with a lot going on.\n\nTradeoff: least characterful of the three. Could belong to any sci-fi game rather than specifically yours."
+    },
+    {
+      "id": "note-c",
+      "x": 2800,
+      "y": 780,
+      "w": 400,
+      "text": "C - EDGE RIG\n\nEverything hugs the screen edges. Angular clipped corners instead of rounded, wallet collapses to one compact strip, panels dock to the right edge instead of covering the middle, actions become icon buttons with the primary one much larger and glowing.\n\nWhy: maximum clear view of the game during combat, and the most distinctive silhouette.\n\nTradeoff: icon-led actions need players to learn them, and the docked panel is narrower - the inventory grid drops from 6 columns to 4."
+    }
+  ],
+  "launch": { "view": "canvas" }
+}

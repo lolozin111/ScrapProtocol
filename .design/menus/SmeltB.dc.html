@@ -1,0 +1,123 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;800&family=Source+Sans+3:wght@400;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
+  <style>
+    body { margin: 0; font-family: 'Source Sans 3', system-ui, sans-serif; }
+    a { color: #E07A3B; } a:hover { color: #B24C18; }
+    .lbl { font-family: 'Montserrat', system-ui, sans-serif; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
+    .num { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .cut { clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px)); }
+    .cutin { clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px)); }
+    .cs { clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px)); }
+  </style>
+</helmet>
+
+<div style="width: 680px; height: 464px; background: radial-gradient(120% 100% at 50% 30%, #241F1B 0%, #14110F 74%); display: flex; align-items: center; justify-content: center;">
+
+  <div class="cut" style="width: 640px; height: 424px; background: linear-gradient(#4C443C, #14110F); padding: 2px;">
+    <div class="cutin" style="width: 100%; height: 100%; background: #16120F; display: flex; flex-direction: column;">
+
+      <div style="height: 4px; background: #E07A3B;"></div>
+
+      <div style="height: 40px; display: flex; align-items: center; gap: 10px; padding: 0 13px; background: #1C1815; border-bottom: 1px solid #3C352F;">
+        <svg width="18" height="18" viewBox="0 0 22 22" fill="none" stroke="#E07A3B" stroke-width="1.7"><path d="M4 16V9l7-4 7 4v7z"></path><path d="M9 16v-4h4v4"></path></svg>
+        <span class="lbl" style="color: #EDE7DC; font-size: 14px; flex-grow: 1;">Forge</span>
+        <svg width="15" height="15" viewBox="0 0 16 16" stroke="#A79C8C" stroke-width="1.8" fill="none"><path d="M3 3l10 10M13 3L3 13"></path></svg>
+      </div>
+
+      <div style="display: flex; gap: 6px; padding: 7px 11px 0;">
+        <div class="cs" style="background: #221D1A; padding: 8px 18px;"><span class="lbl" style="color: #A79C8C; font-size: 10px;">Weapons</span></div>
+        <div class="cs" style="background: #E07A3B; padding: 8px 18px;"><span class="lbl" style="color: #16120F; font-size: 10px;">Smelting</span></div>
+      </div>
+
+      <div style="flex-grow: 1; display: grid; grid-template-columns: 176px minmax(0, 1fr); gap: 10px; padding: 9px 11px 11px;">
+
+        <div style="display: flex; flex-direction: column; gap: 5px;">
+          <span class="lbl" style="color: #A79C8C; font-size: 10px;">Ore</span>
+
+          <div class="cs" style="background: #28231F; border-left: 3px solid #E07A3B; padding: 8px 9px; display: flex; align-items: center; gap: 8px;">
+            <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="#E07A3B" stroke-width="1.6"><path d="M4 7l5-3 7 3-2 8-8 1z"></path></svg>
+            <span style="color: #EDE7DC; font-size: 12px; flex-grow: 1;">Scrap Iron</span>
+            <span class="num" style="color: #EDE7DC; font-size: 12px;">412</span>
+          </div>
+          <div class="cs" style="background: #1C1815; border-left: 3px solid transparent; padding: 8px 9px; display: flex; align-items: center; gap: 8px;">
+            <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="#A79C8C" stroke-width="1.6"><path d="M5 6h10M5 10h10M5 14h10"></path></svg>
+            <span style="color: #A79C8C; font-size: 12px; flex-grow: 1;">Copper Wire</span>
+            <span class="num" style="color: #A79C8C; font-size: 12px;">188</span>
+          </div>
+          <div class="cs" style="background: #1C1815; border-left: 3px solid transparent; padding: 8px 9px; display: flex; align-items: center; gap: 8px;">
+            <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="#A79C8C" stroke-width="1.6"><path d="M4 6h12v8H4z"></path><path d="M4 10h12"></path></svg>
+            <span style="color: #A79C8C; font-size: 12px; flex-grow: 1;">Steel Plating</span>
+            <span class="num" style="color: #A79C8C; font-size: 12px;">64</span>
+          </div>
+          <div class="cs" style="background: #1C1815; border-left: 3px solid transparent; padding: 8px 9px; display: flex; align-items: center; gap: 8px;">
+            <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="#E6AF3C" stroke-width="1.6"><path d="M6 5h8l2 5-6 5-6-5z"></path></svg>
+            <span style="color: #A79C8C; font-size: 12px; flex-grow: 1;">Gold Contacts</span>
+            <span class="num" style="color: #A79C8C; font-size: 12px;">21</span>
+          </div>
+          <div class="cs" style="background: #1A1614; border-left: 3px solid transparent; padding: 8px 9px; display: flex; align-items: center; gap: 8px;">
+            <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="#4C443C" stroke-width="1.6"><path d="M10 3l6 4v6l-6 4-6-4V7z"></path></svg>
+            <span style="color: #4C443C; font-size: 12px; flex-grow: 1;">Voidium</span>
+            <span class="num" style="color: #4C443C; font-size: 12px;">0</span>
+          </div>
+
+          <div style="flex-grow: 1;"></div>
+
+          <div style="height: 1px; background: #2A2521;"></div>
+          <div style="display: flex; align-items: baseline; gap: 6px;">
+            <span class="lbl" style="color: #A79C8C; font-size: 9px; flex-grow: 1;">Per ore</span>
+            <span class="num" style="color: #5FA082; font-size: 12px;">1.4s</span>
+          </div>
+          <span style="color: #A79C8C; font-size: 10px;">Was 3.4s at a 30-ore batch.</span>
+        </div>
+
+        <div class="cs" style="background: #1A1614; border: 1px solid #3C352F; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 12px;">
+
+          <svg width="150" height="150" viewBox="0 0 150 150" fill="none">
+            <circle cx="75" cy="75" r="62" stroke="#2A2521" stroke-width="12"></circle>
+            <circle cx="75" cy="75" r="62" stroke="#E07A3B" stroke-width="12" stroke-linecap="butt" stroke-dasharray="389.6" stroke-dashoffset="148" transform="rotate(-90 75 75)"></circle>
+            <circle cx="75" cy="75" r="46" stroke="#2A2521" stroke-width="1"></circle>
+            <text x="75" y="70" text-anchor="middle" fill="#EDE7DC" font-family="IBM Plex Mono, monospace" font-weight="600" font-size="30">2:08</text>
+            <text x="75" y="90" text-anchor="middle" fill="#A79C8C" font-family="Montserrat, sans-serif" font-weight="800" font-size="10" letter-spacing="1.4">BATCH TIME</text>
+          </svg>
+
+          <div style="width: 100%; display: flex; align-items: baseline; gap: 8px;">
+            <span class="num" style="color: #E07A3B; font-size: 20px;">90</span>
+            <span style="color: #A79C8C; font-size: 12px; flex-grow: 1;">Scrap Iron in</span>
+            <span class="num" style="color: #5FA082; font-size: 20px;">30</span>
+            <span style="color: #A79C8C; font-size: 12px;">ingots out</span>
+          </div>
+
+          <div style="width: 100%; position: relative; height: 18px;">
+            <div style="position: absolute; left: 0; right: 0; top: 7px; height: 4px; background: #2A2521;"></div>
+            <div style="position: absolute; left: 0; width: 22%; top: 7px; height: 4px; background: #E07A3B;"></div>
+            <div style="position: absolute; left: 22%; top: 0; width: 6px; height: 18px; background: #EDE7DC; transform: translateX(-3px);"></div>
+          </div>
+
+          <div style="width: 100%; display: flex; justify-content: space-between;">
+            <span class="num" style="color: #A79C8C; font-size: 10px;">3</span>
+            <span class="num" style="color: #A79C8C; font-size: 10px;">90</span>
+            <span class="num" style="color: #A79C8C; font-size: 10px;">210</span>
+            <span class="num" style="color: #A79C8C; font-size: 10px;">412 all</span>
+          </div>
+
+          <div class="cs" style="width: 100%; background: linear-gradient(#E07A3B, #B24C18); padding: 13px; text-align: center; box-shadow: 0 3px 0 #7A3410;">
+            <span class="lbl" style="color: #16120F; font-size: 13px;">Start pour</span>
+          </div>
+
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

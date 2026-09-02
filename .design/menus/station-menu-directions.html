@@ -1,0 +1,1565 @@
+<title>Station Menu Directions</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800&family=Source+Sans+3:wght@400;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<style>
+  :root {
+    --ground: #14110F;
+    --panel: #1E1A17;
+    --panel-light: #282320;
+    --line: #3C352F;
+    --line-hi: #5A5148;
+    --text: #EDE7DC;
+    --muted: #A79C8C;
+    --accent: #E07A3B;
+    --accent-dark: #B24C18;
+    --good: #5FA082;
+    --bad: #BE5A4B;
+    --display: 'Montserrat', system-ui, sans-serif;
+    --body: 'Source Sans 3', system-ui, sans-serif;
+    --mono: 'IBM Plex Mono', ui-monospace, monospace;
+  }
+
+  /* Single-theme by intent, same as forged-rig.html: this documents a dark game
+     HUD, and a light ground would misrepresent every colour in every mockup. */
+  html { color-scheme: dark; }
+  body { background: var(--ground); color: var(--text); font-family: var(--body); margin: 0; }
+  * { box-sizing: border-box; }
+
+  .wrap { max-width: 1400px; margin: 0 auto; padding: 52px 24px 90px; }
+
+  .eyebrow { font-family: var(--display); font-weight: 700; font-size: 11px;
+             letter-spacing: 0.18em; text-transform: uppercase; color: var(--accent); }
+  h1 { font-family: var(--display); font-weight: 800; font-size: clamp(30px, 4vw, 44px);
+       line-height: 1.05; margin: 14px 0 0; letter-spacing: -0.01em; text-wrap: balance; }
+  .lede { color: var(--muted); font-size: 17px; line-height: 1.6; max-width: 68ch; margin: 16px 0 0; }
+  .lede + .lede { margin-top: 12px; }
+  .lede strong { color: var(--text); font-weight: 600; }
+
+  h2 { font-family: var(--display); font-weight: 800; font-size: 24px; margin: 0;
+       letter-spacing: -0.01em; }
+  .sec { margin: 64px 0 0; border-top: 1px solid var(--line); padding-top: 26px; }
+  .sec-head { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+  .sec-head .tag { font-family: var(--display); font-weight: 700; font-size: 10px;
+                   letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); }
+  .sec p { color: var(--muted); font-size: 15px; line-height: 1.65; max-width: 72ch; margin: 12px 0 0; }
+  .sec p strong { color: var(--text); font-weight: 600; }
+
+  .opt { margin: 30px 0 0; display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 20px;
+         align-items: start; }
+  @media (max-width: 1080px) { .opt { grid-template-columns: minmax(0, 1fr); } }
+
+  .stage { overflow-x: auto; border: 1px solid var(--line); background: #0E0C0B; }
+  .stage > div { margin: 0 auto; }
+
+  .note { background: var(--panel); border: 1px solid var(--line); padding: 18px 20px; }
+  .note .kicker { font-family: var(--display); font-weight: 800; font-size: 11px;
+                  letter-spacing: 0.14em; text-transform: uppercase; color: var(--text); }
+  .note .size { font-family: var(--mono); font-weight: 500; font-size: 12px; color: var(--muted);
+                margin: 6px 0 0; display: block; }
+  .note h4 { font-family: var(--display); font-weight: 700; font-size: 10px; letter-spacing: 0.16em;
+             text-transform: uppercase; color: var(--muted); margin: 16px 0 6px; }
+  .note p { font-size: 14px; line-height: 1.6; margin: 0; color: var(--text); }
+  .note p + p { margin-top: 8px; }
+  .note .fits { color: var(--good); }
+  .note .grows { color: var(--accent); }
+
+  .lead { border-color: var(--accent); }
+  .lead .kicker::after { content: 'Leading candidate'; font-size: 9px; letter-spacing: 0.12em;
+                         color: var(--accent); margin-left: 8px; }
+
+  .ask { margin: 64px 0 0; background: var(--panel); border: 1px solid var(--line);
+         border-top: 3px solid var(--accent); padding: 26px 28px; }
+  .ask h2 { font-size: 20px; }
+  .ask ol { margin: 14px 0 0; padding-left: 20px; }
+  .ask li { color: var(--muted); font-size: 15px; line-height: 1.7; margin-bottom: 10px; max-width: 74ch; }
+  .ask li:last-child { margin-bottom: 0; }
+  .ask li strong { color: var(--text); font-weight: 600; }
+
+  a { color: var(--accent); }
+  a:hover { color: var(--accent-dark); }
+
+  /* ---- vocabulary the mockups themselves use (extracted with them) ---- */
+  .lbl { font-family: var(--display); font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
+  .num { font-family: var(--mono); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .cut { clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px)); }
+  .cutin { clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px)); }
+  .cs { clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px)); }
+  .grid { background-image: linear-gradient(#2A2521 1px, transparent 1px), linear-gradient(90deg, #2A2521 1px, transparent 1px); background-size: 24px 24px; }
+  .dot { width: 13px; height: 13px; border: 2px solid #3C352F; background: #16120F; }
+  .dot.on { border-color: #E07A3B; background: #E07A3B; }
+  .dot.now { border-color: #EDE7DC; background: #E07A3B; }
+  .rail { flex-grow: 1; height: 2px; background: #2A2521; }
+  .rail.on { background: #E07A3B; }
+  .cap { font-family: var(--display); font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; font-size: 9px; color: #6E6A64; }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">Salvage Protocol &middot; HUD phase 3, section C</div>
+    <h1>Station menu directions</h1>
+    <p class="lede">
+      Eight directions across four station menus, plus two takes on the popups. The brief was that
+      these should <strong>not look like one another</strong> &mdash; so the shared vocabulary is
+      deliberately thin: the bevelled plate, the accent cap, the angular cut, and the type roles
+      already settled in the Forged Rig round. Everything inside the plate is per-menu.
+    </p>
+    <p class="lede">
+      Every colour is a live <strong>HudKit</strong> token rather than an invented one, and every
+      number on screen is a real config value &mdash; RefinedOreConfig&rsquo;s refine ratios and log
+      batch-time curve, ForgeConfig&rsquo;s tiers and 15-roll pity floor, OreConfig&rsquo;s tool
+      tiers, CraftingRecipes&rsquo; costs. The layouts are sized against content that actually exists.
+    </p>
+    <p class="lede">
+      The craft panel is <strong>640&times;424</strong> today. Some directions fit that; some need it
+      to grow, which is a real cost and is marked on each.
+    </p>
+  </header>
+
+  <section class="sec">
+    <div class="sec-head">
+      <h2>Forge</h2>
+      <span class="tag">Weapons + Smelting tabs &middot; three directions</span>
+    </div>
+    <p>
+      Your one concrete steer was here: <em>a slot where you put unprocessed ore in, it processes it,
+      and you pick it up</em>. Worth naming a thing that fell out of reading the code &mdash; that
+      describes the <strong>Smelting</strong> tab almost exactly, and Smelting already lives on the
+      Forge station. So direction A treats both tabs as one machine in two modes, which is the
+      strongest reading of the steer. B and C take it somewhere else on purpose, so the choice is real.
+    </p>
+
+    <div class="opt">
+      <div class="stage">
+
+<div style="width: 800px; height: 560px; background: radial-gradient(120% 100% at 50% 30%, #241F1B 0%, #14110F 74%); display: flex; align-items: center; justify-content: center;">
+
+  <div class="cut" style="width: 760px; height: 520px; background: linear-gradient(#4C443C, #14110F); padding: 2px;">
+    <div class="cutin" style="width: 100%; height: 100%; background: #16120F; display: flex; flex-direction: column;">
+
+      <div style="height: 4px; background: #E07A3B;"></div>
+
+      <div style="height: 44px; display: flex; align-items: center; gap: 12px; padding: 0 14px; background: #1C1815; border-bottom: 1px solid #3C352F;">
+        <svg width="20" height="20" viewBox="0 0 22 22" fill="none" stroke="#E07A3B" stroke-width="1.7" stroke-linejoin="round"><path d="M4 15c0-4 3-5 3-9 2 2 2 3 2 4 1-1 2-3 1-6 3 2 5 6 5 11"></path><path d="M4 15h11l2 4H4z"></path></svg>
+        <span class="lbl" style="color: #EDE7DC; font-size: 15px; flex-grow: 1;">Forge</span>
+        <span class="lbl" style="color: #A79C8C; font-size: 10px;">Tempered Forge</span>
+        <span class="num" style="color: #5FA082; font-size: 13px;">+35 luck</span>
+        <div class="cs" style="background: #28231F; border: 1px solid #3C352F; padding: 4px 9px;"><span class="lbl" style="color: #A79C8C; font-size: 10px;">Upgrade</span></div>
+        <svg width="16" height="16" viewBox="0 0 16 16" stroke="#A79C8C" stroke-width="1.8" fill="none"><path d="M3 3l10 10M13 3L3 13"></path></svg>
+      </div>
+
+      <div style="display: flex; gap: 6px; padding: 8px 12px 0;">
+        <div class="cs" style="background: #E07A3B; padding: 9px 20px;"><span class="lbl" style="color: #16120F; font-size: 11px;">Weapons</span></div>
+        <div class="cs" style="background: #221D1A; padding: 9px 20px;"><span class="lbl" style="color: #A79C8C; font-size: 11px;">Smelting</span></div>
+      </div>
+
+      <div style="flex-grow: 1; display: grid; grid-template-columns: 196px minmax(0, 1fr) 196px; gap: 10px; padding: 10px 12px 12px;">
+
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <span class="lbl" style="color: #A79C8C; font-size: 10px;">Input bay</span>
+
+          <div class="cs" style="background: #1C1815; border: 1px solid #3C352F; padding: 9px 10px; display: flex; flex-direction: column; gap: 8px;">
+            <div style="display: flex; align-items: center; gap: 9px;">
+              <svg width="17" height="17" viewBox="0 0 20 20" fill="none" stroke="#E07A3B" stroke-width="1.6"><path d="M4 7l5-3 7 3-2 8-8 1z"></path></svg>
+              <span style="color: #EDE7DC; font-size: 13px; flex-grow: 1;">Scrap</span>
+              <span class="num" style="color: #EDE7DC; font-size: 13px;">250</span>
+            </div>
+            <div style="height: 1px; background: #2A2521;"></div>
+            <div style="display: flex; align-items: center; gap: 9px;">
+              <svg width="17" height="17" viewBox="0 0 20 20" fill="none" stroke="#A79C8C" stroke-width="1.6"><path d="M3 12l3-4h11l-3 4z"></path><path d="M3 12v3h11v-3"></path></svg>
+              <span style="color: #EDE7DC; font-size: 13px; flex-grow: 1;">Steel Ingot</span>
+              <span class="num" style="color: #EDE7DC; font-size: 13px;">4</span>
+            </div>
+            <div style="height: 1px; background: #2A2521;"></div>
+            <div style="display: flex; align-items: center; gap: 9px;">
+              <svg width="17" height="17" viewBox="0 0 20 20" fill="none" stroke="#BE5A4B" stroke-width="1.6"><path d="M5 6h10M5 10h10M5 14h10"></path><path d="M7 4v12M13 4v12"></path></svg>
+              <span style="color: #BE5A4B; font-size: 13px; flex-grow: 1;">Copper Coil</span>
+              <span class="num" style="color: #BE5A4B; font-size: 13px;">1 / 2</span>
+            </div>
+          </div>
+
+          <span class="lbl" style="color: #A79C8C; font-size: 10px; margin-top: 2px;">Family</span>
+          <div class="cs" style="background: #28231F; border: 1px solid #4C443C; padding: 10px; display: flex; align-items: center; gap: 9px;">
+            <svg width="19" height="19" viewBox="0 0 22 22" fill="none" stroke="#E07A3B" stroke-width="1.6"><path d="M3 13h12l4-3-4-3H3z"></path><path d="M6 13v4"></path></svg>
+            <span class="lbl" style="color: #EDE7DC; font-size: 11px; flex-grow: 1;">Snipers</span>
+            <svg width="12" height="12" viewBox="0 0 12 12" stroke="#A79C8C" stroke-width="1.8" fill="none"><path d="M2 4l4 4 4-4"></path></svg>
+          </div>
+
+          <span class="lbl" style="color: #A79C8C; font-size: 10px; margin-top: 2px;">Additive slot</span>
+          <div class="cs" style="background: #1A1614; border: 1px dashed #4C443C; padding: 10px; display: flex; align-items: center; gap: 9px;">
+            <svg width="19" height="19" viewBox="0 0 22 22" fill="none" stroke="#5FA082" stroke-width="1.6"><path d="M9 3h4v5l4 8a2 2 0 01-2 3H7a2 2 0 01-2-3l4-8z"></path></svg>
+            <span style="color: #A79C8C; font-size: 12px; flex-grow: 1;">Luck Potion</span>
+            <span class="num" style="color: #5FA082; font-size: 12px;">x3</span>
+          </div>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 8px; align-items: center;">
+          <span class="lbl" style="color: #A79C8C; font-size: 10px; align-self: flex-start;">Chamber</span>
+
+          <div style="position: relative; width: 100%; flex-grow: 1; background: radial-gradient(70% 70% at 50% 62%, #4A2A16 0%, #1A1512 70%); border: 1px solid #3C352F; overflow: hidden;">
+            <div style="position: absolute; left: 0; right: 0; bottom: 0; height: 46%; background: linear-gradient(rgba(224,122,59,0), rgba(178,76,24,0.33));"></div>
+            <div style="position: absolute; left: 50%; top: 50%; width: 168px; height: 168px; transform: translate(-50%, -50%); border: 1px solid #5A4436; border-radius: 50%;"></div>
+            <div style="position: absolute; left: 50%; top: 50%; width: 132px; height: 132px; transform: translate(-50%, -50%); border: 2px solid #E07A3B; border-right-color: #3C352F; border-bottom-color: #3C352F; border-radius: 50%;"></div>
+            <div style="position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; gap: 4px;">
+              <svg width="64" height="64" viewBox="0 0 44 44" fill="none" stroke="#EDE7DC" stroke-width="1.5" stroke-linejoin="round" opacity="0.85"><path d="M5 24h22l10-6-10-6H5z"></path><path d="M11 24v7"></path><path d="M27 18h9"></path></svg>
+              <span class="lbl" style="color: #E07A3B; font-size: 10px;">Rolling</span>
+            </div>
+          </div>
+
+          <div style="width: 100%; display: flex; gap: 4px;">
+            <div style="flex-grow: 42; height: 6px; background: #6E6A64;"></div>
+            <div style="flex-grow: 30; height: 6px; background: #6EBE6E;"></div>
+            <div style="flex-grow: 18; height: 6px; background: #5A96DC;"></div>
+            <div style="flex-grow: 7; height: 6px; background: #AA64DC;"></div>
+            <div style="flex-grow: 3; height: 6px; background: #E6AF3C;"></div>
+          </div>
+          <div style="width: 100%; display: flex; justify-content: space-between;">
+            <span class="lbl" style="color: #A79C8C; font-size: 9px;">Odds</span>
+            <span class="num" style="color: #A79C8C; font-size: 11px;">42 / 30 / 18 / 7 / 3</span>
+          </div>
+
+          <div style="width: 100%; display: flex; align-items: center; gap: 8px;">
+            <span class="lbl" style="color: #A79C8C; font-size: 9px;">Heat</span>
+            <div style="flex-grow: 1; display: flex; gap: 2px;">
+              <div style="flex-grow: 11; height: 8px; background: #E07A3B;"></div>
+              <div style="flex-grow: 4; height: 8px; background: #2A2521;"></div>
+            </div>
+            <span class="num" style="color: #EDE7DC; font-size: 11px;">11 / 15</span>
+          </div>
+          <span style="color: #A79C8C; font-size: 11px; align-self: flex-start;">Rare or better guaranteed at full heat.</span>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <span class="lbl" style="color: #A79C8C; font-size: 10px;">Output tray</span>
+
+          <div class="cs" style="background: #1C1815; border: 1px solid #5A96DC; padding: 10px; display: flex; flex-direction: column; gap: 7px;">
+            <div style="display: flex; align-items: center; gap: 7px;">
+              <span class="lbl" style="color: #16120F; background: #5A96DC; font-size: 9px; padding: 2px 6px;">Rare</span>
+              <span class="num" style="color: #A79C8C; font-size: 10px;">t3</span>
+            </div>
+            <span class="lbl" style="color: #EDE7DC; font-size: 12px;">Longshot Rifle</span>
+            <div style="height: 1px; background: #2A2521;"></div>
+            <div style="display: flex; align-items: baseline; gap: 6px;">
+              <span style="color: #E07A3B; font-size: 12px; flex-grow: 1;">Sharpened</span>
+              <span class="num" style="color: #EDE7DC; font-size: 12px;">+22% dmg</span>
+            </div>
+            <div style="display: flex; align-items: baseline; gap: 6px;">
+              <span style="color: #E07A3B; font-size: 12px; flex-grow: 1;">Lightweight</span>
+              <span class="num" style="color: #EDE7DC; font-size: 12px;">+14% rate</span>
+            </div>
+          </div>
+
+          <div class="cs" style="background: #5FA082; padding: 11px; text-align: center;">
+            <span class="lbl" style="color: #16120F; font-size: 11px;">Collect</span>
+          </div>
+
+          <div style="flex-grow: 1;"></div>
+
+          <div class="cs" style="background: linear-gradient(#E07A3B, #B24C18); padding: 15px; text-align: center; box-shadow: 0 3px 0 #7A3410;">
+            <span class="lbl" style="color: #16120F; font-size: 15px;">Forge</span>
+          </div>
+          <span class="num" style="color: #A79C8C; font-size: 10px; text-align: center;">burns 1 potion</span>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+      <div class="note lead">
+        <span class="kicker">A &mdash; Crucible</span>
+        <span class="size grows">760&times;520 &mdash; panel must grow</span>
+        <h4>What it is</h4>
+        <p>A machine you feed. Left is an input bay showing the cost as loaded material, centre is a
+        chamber that visibly runs, right is an output tray you collect from. Pity becomes
+        <em>heat</em> on the machine body; the Luck Potion becomes a physical additive you slot in.</p>
+        <h4>Why</h4>
+        <p>It makes the Forge a place rather than a list, and it unifies both tabs &mdash; Smelting is
+        the same machine in a different mode.</p>
+        <h4>Tradeoff</h4>
+        <p>Three columns at 760px leaves each one narrow. The output tray also implies a roll result
+        that persists until collected &mdash; a server change, since ForgeWeapon currently writes the
+        instance straight to the profile. Not just a re-skin.</p>
+      </div>
+    </div>
+
+    <div class="opt">
+      <div class="stage">
+
+<div style="width: 680px; height: 464px; background: radial-gradient(120% 100% at 50% 30%, #241F1B 0%, #14110F 74%); display: flex; align-items: center; justify-content: center;">
+
+  <div class="cut" style="width: 640px; height: 424px; background: linear-gradient(#4C443C, #14110F); padding: 2px;">
+    <div class="cutin" style="width: 100%; height: 100%; background: #16120F; display: flex; flex-direction: column;">
+
+      <div style="height: 4px; background: #E07A3B;"></div>
+
+      <div style="height: 40px; display: flex; align-items: center; gap: 10px; padding: 0 13px; background: #1C1815; border-bottom: 1px solid #3C352F;">
+        <svg width="18" height="18" viewBox="0 0 22 22" fill="none" stroke="#E07A3B" stroke-width="1.7" stroke-linejoin="round"><path d="M4 15c0-4 3-5 3-9 2 2 2 3 2 4 1-1 2-3 1-6 3 2 5 6 5 11"></path><path d="M4 15h11l2 4H4z"></path></svg>
+        <span class="lbl" style="color: #EDE7DC; font-size: 14px; flex-grow: 1;">Forge</span>
+        <span class="lbl" style="color: #A79C8C; font-size: 10px;">Tempered</span>
+        <span class="num" style="color: #5FA082; font-size: 12px;">+35</span>
+        <svg width="15" height="15" viewBox="0 0 16 16" stroke="#A79C8C" stroke-width="1.8" fill="none"><path d="M3 3l10 10M13 3L3 13"></path></svg>
+      </div>
+
+      <div style="display: flex; gap: 6px; padding: 7px 11px 0;">
+        <div class="cs" style="background: #E07A3B; padding: 8px 18px;"><span class="lbl" style="color: #16120F; font-size: 10px;">Weapons</span></div>
+        <div class="cs" style="background: #221D1A; padding: 8px 18px;"><span class="lbl" style="color: #A79C8C; font-size: 10px;">Smelting</span></div>
+      </div>
+
+      <div style="flex-grow: 1; display: grid; grid-template-columns: minmax(0, 1fr) 214px; gap: 10px; padding: 9px 11px 11px;">
+
+        <div style="display: flex; flex-direction: column; gap: 5px;">
+          <div style="display: flex; justify-content: space-between; align-items: baseline;">
+            <span class="lbl" style="color: #A79C8C; font-size: 10px;">Roll table</span>
+            <span class="num" style="color: #A79C8C; font-size: 10px;">snipers &middot; t3+</span>
+          </div>
+
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="lbl" style="color: #6E6A64; font-size: 10px; width: 62px;">Common</span>
+            <div style="flex-grow: 1; height: 13px; background: #1C1815;"><div style="width: 42%; height: 100%; background: #6E6A64;"></div></div>
+            <span class="num" style="color: #A79C8C; font-size: 11px; width: 30px; text-align: right;">42%</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="lbl" style="color: #6EBE6E; font-size: 10px; width: 62px;">Uncommon</span>
+            <div style="flex-grow: 1; height: 13px; background: #1C1815;"><div style="width: 30%; height: 100%; background: #6EBE6E;"></div></div>
+            <span class="num" style="color: #A79C8C; font-size: 11px; width: 30px; text-align: right;">30%</span>
+          </div>
+
+          <div style="display: flex; align-items: center; gap: 8px; padding: 3px 0; border-top: 1px dashed #E07A3B; border-bottom: 1px dashed #E07A3B;">
+            <span class="lbl" style="color: #5A96DC; font-size: 10px; width: 62px;">Rare</span>
+            <div style="flex-grow: 1; height: 13px; background: #1C1815;"><div style="width: 18%; height: 100%; background: #5A96DC;"></div></div>
+            <span class="num" style="color: #A79C8C; font-size: 11px; width: 30px; text-align: right;">18%</span>
+          </div>
+
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="lbl" style="color: #AA64DC; font-size: 10px; width: 62px;">Epic</span>
+            <div style="flex-grow: 1; height: 13px; background: #1C1815;"><div style="width: 7%; height: 100%; background: #AA64DC;"></div></div>
+            <span class="num" style="color: #A79C8C; font-size: 11px; width: 30px; text-align: right;">7%</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="lbl" style="color: #E6AF3C; font-size: 10px; width: 62px;">Legendary</span>
+            <div style="flex-grow: 1; height: 13px; background: #1C1815;"><div style="width: 3%; height: 100%; background: #E6AF3C;"></div></div>
+            <span class="num" style="color: #A79C8C; font-size: 11px; width: 30px; text-align: right;">3%</span>
+          </div>
+
+          <span style="color: #E07A3B; font-size: 10px;">Pity floor sits here &mdash; 4 rolls away.</span>
+
+          <div style="height: 1px; background: #2A2521; margin: 3px 0;"></div>
+
+          <span class="lbl" style="color: #A79C8C; font-size: 10px;">Last five</span>
+          <div style="display: flex; gap: 5px;">
+            <div class="cs" style="width: 34px; height: 34px; background: #1C1815; border: 1px solid #5A96DC; display: flex; align-items: center; justify-content: center;"><span class="lbl" style="color: #5A96DC; font-size: 12px;">R</span></div>
+            <div class="cs" style="width: 34px; height: 34px; background: #1C1815; border: 1px solid #3C352F; display: flex; align-items: center; justify-content: center;"><span class="lbl" style="color: #6E6A64; font-size: 12px;">C</span></div>
+            <div class="cs" style="width: 34px; height: 34px; background: #1C1815; border: 1px solid #3C352F; display: flex; align-items: center; justify-content: center;"><span class="lbl" style="color: #6EBE6E; font-size: 12px;">U</span></div>
+            <div class="cs" style="width: 34px; height: 34px; background: #1C1815; border: 1px solid #3C352F; display: flex; align-items: center; justify-content: center;"><span class="lbl" style="color: #6E6A64; font-size: 12px;">C</span></div>
+            <div class="cs" style="width: 34px; height: 34px; background: #1C1815; border: 1px solid #3C352F; display: flex; align-items: center; justify-content: center;"><span class="lbl" style="color: #6E6A64; font-size: 12px;">C</span></div>
+          </div>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 7px;">
+          <div class="cs" style="background: #28231F; border: 1px solid #4C443C; padding: 9px 10px; display: flex; align-items: center; gap: 8px;">
+            <svg width="17" height="17" viewBox="0 0 22 22" fill="none" stroke="#E07A3B" stroke-width="1.6"><path d="M3 13h12l4-3-4-3H3z"></path><path d="M6 13v4"></path></svg>
+            <span class="lbl" style="color: #EDE7DC; font-size: 10px; flex-grow: 1;">Snipers</span>
+            <svg width="11" height="11" viewBox="0 0 12 12" stroke="#A79C8C" stroke-width="1.8" fill="none"><path d="M2 4l4 4 4-4"></path></svg>
+          </div>
+
+          <div class="cs" style="background: #1C1815; border: 1px solid #3C352F; padding: 9px 10px; display: flex; flex-direction: column; gap: 6px;">
+            <div style="display: flex; align-items: baseline; gap: 6px;">
+              <span style="color: #A79C8C; font-size: 12px; flex-grow: 1;">Scrap</span>
+              <span class="num" style="color: #EDE7DC; font-size: 12px;">250</span>
+            </div>
+            <div style="display: flex; align-items: baseline; gap: 6px;">
+              <span style="color: #A79C8C; font-size: 12px; flex-grow: 1;">Steel Ingot</span>
+              <span class="num" style="color: #EDE7DC; font-size: 12px;">4</span>
+            </div>
+            <div style="display: flex; align-items: baseline; gap: 6px;">
+              <span style="color: #BE5A4B; font-size: 12px; flex-grow: 1;">Copper Coil</span>
+              <span class="num" style="color: #BE5A4B; font-size: 12px;">1 / 2</span>
+            </div>
+          </div>
+
+          <div class="cs" style="background: #1A1614; border: 1px solid #5FA082; padding: 8px 10px; display: flex; align-items: center; gap: 8px;">
+            <svg width="16" height="16" viewBox="0 0 22 22" fill="none" stroke="#5FA082" stroke-width="1.6"><path d="M9 3h4v5l4 8a2 2 0 01-2 3H7a2 2 0 01-2-3l4-8z"></path></svg>
+            <span style="color: #EDE7DC; font-size: 11px; flex-grow: 1;">Use potion</span>
+            <div style="width: 26px; height: 14px; background: #5FA082; display: flex; align-items: center; justify-content: flex-end; padding: 2px;"><div style="width: 10px; height: 10px; background: #16120F;"></div></div>
+          </div>
+
+          <div style="flex-grow: 1;"></div>
+
+          <div class="cs" style="background: linear-gradient(#E07A3B, #B24C18); padding: 18px; text-align: center; box-shadow: 0 3px 0 #7A3410;">
+            <span class="lbl" style="color: #16120F; font-size: 17px;">Pull</span>
+          </div>
+          <span class="num" style="color: #A79C8C; font-size: 10px; text-align: center;">11 / 15 to pity</span>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+      <div class="note">
+        <span class="kicker">B &mdash; Roll Table</span>
+        <span class="size fits">640&times;424 &mdash; fits today</span>
+        <h4>What it is</h4>
+        <p>The Forge as what it mechanically is: a weighted roll. The odds table is the screen, the
+        pity floor is a line drawn across it, and the last five results sit underneath as a streak you
+        can read.</p>
+        <h4>Why</h4>
+        <p>Honest about the system, and it makes Forge tier and Luck Potion legible &mdash; buy either
+        and you watch the bars move. Cheapest of the three, and the only Forge direction needing no
+        resize.</p>
+        <h4>Tradeoff</h4>
+        <p>It is a stats screen, not a machine. It answers your ore-in-collect-out steer with a no.</p>
+      </div>
+    </div>
+
+    <div class="opt">
+      <div class="stage">
+
+<div style="width: 800px; height: 560px; background: radial-gradient(120% 100% at 50% 30%, #241F1B 0%, #14110F 74%); display: flex; align-items: center; justify-content: center;">
+
+  <div class="cut" style="width: 760px; height: 520px; background: linear-gradient(#4C443C, #14110F); padding: 2px;">
+    <div class="cutin" style="width: 100%; height: 100%; background: #16120F; display: flex; flex-direction: column;">
+
+      <div style="height: 4px; background: #E07A3B;"></div>
+
+      <div style="height: 44px; display: flex; align-items: center; gap: 12px; padding: 0 14px; background: #1C1815; border-bottom: 1px solid #3C352F;">
+        <svg width="20" height="20" viewBox="0 0 22 22" fill="none" stroke="#E07A3B" stroke-width="1.7"><path d="M3 5h16v12H3z"></path><path d="M3 9h16M8 9v8"></path></svg>
+        <span class="lbl" style="color: #EDE7DC; font-size: 15px; flex-grow: 1;">Forge &mdash; schematic bench</span>
+        <span class="num" style="color: #A79C8C; font-size: 11px;">sheet 03 / snipers</span>
+        <svg width="16" height="16" viewBox="0 0 16 16" stroke="#A79C8C" stroke-width="1.8" fill="none"><path d="M3 3l10 10M13 3L3 13"></path></svg>
+      </div>
+
+      <div style="flex-grow: 1; display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 0;">
+
+        <div style="border-right: 1px solid #3C352F; background: #1A1614; display: flex; flex-direction: column; padding: 10px 0;">
+          <span class="lbl" style="color: #A79C8C; font-size: 9px; padding: 0 12px 8px;">Families</span>
+
+          <div style="border-left: 3px solid #E07A3B; background: #221D1A; padding: 9px 12px; display: flex; align-items: center; gap: 8px;">
+            <svg width="16" height="16" viewBox="0 0 22 22" fill="none" stroke="#E07A3B" stroke-width="1.6"><path d="M3 13h12l4-3-4-3H3z"></path><path d="M6 13v4"></path></svg>
+            <span class="lbl" style="color: #EDE7DC; font-size: 10px;">Snipers</span>
+          </div>
+          <div style="border-left: 3px solid transparent; padding: 9px 12px; display: flex; align-items: center; gap: 8px;">
+            <svg width="16" height="16" viewBox="0 0 22 22" fill="none" stroke="#A79C8C" stroke-width="1.6"><path d="M4 12h9l5 4"></path><path d="M4 12l3-4h6"></path></svg>
+            <span class="lbl" style="color: #A79C8C; font-size: 10px;">Salvage</span>
+          </div>
+          <div style="border-left: 3px solid transparent; padding: 9px 12px; display: flex; align-items: center; gap: 8px;">
+            <svg width="16" height="16" viewBox="0 0 22 22" fill="none" stroke="#A79C8C" stroke-width="1.6"><path d="M5 14c3-1 4-4 3-7 3 2 5 5 4 9"></path></svg>
+            <span class="lbl" style="color: #A79C8C; font-size: 10px;">Flame</span>
+          </div>
+          <div style="border-left: 3px solid transparent; padding: 9px 12px; display: flex; align-items: center; gap: 8px;">
+            <svg width="16" height="16" viewBox="0 0 22 22" fill="none" stroke="#A79C8C" stroke-width="1.6"><path d="M5 4c6 2 10 7 12 14"></path><path d="M5 4l12 14"></path></svg>
+            <span class="lbl" style="color: #A79C8C; font-size: 10px;">Bows</span>
+          </div>
+          <div style="border-left: 3px solid transparent; padding: 9px 12px; display: flex; align-items: center; gap: 8px;">
+            <svg width="16" height="16" viewBox="0 0 22 22" fill="none" stroke="#A79C8C" stroke-width="1.6"><circle cx="11" cy="12" r="5"></circle><path d="M11 4v3"></path></svg>
+            <span class="lbl" style="color: #A79C8C; font-size: 10px;">Grenades</span>
+          </div>
+          <div style="border-left: 3px solid transparent; padding: 9px 12px; display: flex; align-items: center; gap: 8px;">
+            <svg width="16" height="16" viewBox="0 0 22 22" fill="none" stroke="#A79C8C" stroke-width="1.6"><path d="M4 9h12v6H4z"></path><path d="M16 12h3"></path></svg>
+            <span class="lbl" style="color: #A79C8C; font-size: 10px;">Miniguns</span>
+          </div>
+
+          <div style="flex-grow: 1;"></div>
+
+          <div style="padding: 0 12px;">
+            <div style="height: 1px; background: #2A2521; margin-bottom: 9px;"></div>
+            <span class="lbl" style="color: #A79C8C; font-size: 9px;">Bench</span>
+            <div style="display: flex; align-items: baseline; gap: 5px; margin-top: 5px;">
+              <span style="color: #EDE7DC; font-size: 11px; flex-grow: 1;">Tempered</span>
+              <span class="num" style="color: #5FA082; font-size: 11px;">+35</span>
+            </div>
+            <div style="display: flex; align-items: baseline; gap: 5px; margin-top: 3px;">
+              <span style="color: #A79C8C; font-size: 11px; flex-grow: 1;">Pity</span>
+              <span class="num" style="color: #E07A3B; font-size: 11px;">11 / 15</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid" style="position: relative; background-color: #191512; overflow: hidden;">
+
+          <div style="position: absolute; left: 22px; top: 18px; display: flex; align-items: center; gap: 8px;">
+            <span class="lbl" style="color: #16120F; background: #5A96DC; font-size: 9px; padding: 3px 7px;">Rare</span>
+            <span class="lbl" style="color: #EDE7DC; font-size: 15px;">Longshot Rifle</span>
+          </div>
+
+          <svg width="470" height="200" viewBox="0 0 470 200" fill="none" style="position: absolute; left: 100px; top: 118px;">
+            <path d="M20 96h250l70-26v26h60" stroke="#EDE7DC" stroke-width="2" stroke-linejoin="round"></path>
+            <path d="M20 96v26h48l14-26" stroke="#EDE7DC" stroke-width="2" stroke-linejoin="round"></path>
+            <path d="M400 96h44" stroke="#EDE7DC" stroke-width="2"></path>
+            <rect x="176" y="60" width="70" height="20" stroke="#E07A3B" stroke-width="2"></rect>
+            <path d="M196 60V44M226 60V44" stroke="#E07A3B" stroke-width="2"></path>
+            <circle cx="120" cy="96" r="12" stroke="#5A96DC" stroke-width="2"></circle>
+            <path d="M120 84V60" stroke="#5A96DC" stroke-width="1" stroke-dasharray="4 3"></path>
+            <path d="M211 44V22" stroke="#E07A3B" stroke-width="1" stroke-dasharray="4 3"></path>
+            <path d="M420 96v34" stroke="#5FA082" stroke-width="1" stroke-dasharray="4 3"></path>
+          </svg>
+
+          <div style="position: absolute; left: 158px; top: 148px; display: flex; flex-direction: column; gap: 1px;">
+            <span class="lbl" style="color: #5A96DC; font-size: 9px;">Sharpened</span>
+            <span class="num" style="color: #EDE7DC; font-size: 12px;">+22% dmg</span>
+          </div>
+
+          <div style="position: absolute; left: 262px; top: 108px; display: flex; flex-direction: column; gap: 1px;">
+            <span class="lbl" style="color: #E07A3B; font-size: 9px;">Lightweight</span>
+            <span class="num" style="color: #EDE7DC; font-size: 12px;">+14% rate</span>
+          </div>
+
+          <div style="position: absolute; left: 478px; top: 250px; display: flex; flex-direction: column; gap: 1px;">
+            <span class="lbl" style="color: #5FA082; font-size: 9px;">Base tier</span>
+            <span class="num" style="color: #A79C8C; font-size: 12px;">t3</span>
+          </div>
+
+          <div style="position: absolute; left: 22px; right: 22px; bottom: 16px; display: flex; align-items: flex-end; gap: 14px;">
+            <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 6px;">
+              <span class="lbl" style="color: #A79C8C; font-size: 9px;">Materials to stamp a new sheet</span>
+              <div style="display: flex; gap: 14px;">
+                <span class="num" style="color: #EDE7DC; font-size: 12px;">250 scrap</span>
+                <span class="num" style="color: #EDE7DC; font-size: 12px;">4 steel ingot</span>
+                <span class="num" style="color: #BE5A4B; font-size: 12px;">1 / 2 copper coil</span>
+              </div>
+            </div>
+            <div class="cs" style="background: #28231F; border: 1px solid #4C443C; padding: 11px 16px;">
+              <span class="lbl" style="color: #A79C8C; font-size: 11px;">+ Potion</span>
+            </div>
+            <div class="cs" style="background: linear-gradient(#E07A3B, #B24C18); padding: 12px 30px; box-shadow: 0 3px 0 #7A3410;">
+              <span class="lbl" style="color: #16120F; font-size: 13px;">Stamp</span>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+      <div class="note">
+        <span class="kicker">C &mdash; Schematic Bench</span>
+        <span class="size grows">760&times;520 &mdash; panel must grow</span>
+        <h4>What it is</h4>
+        <p>The weapon drawn as a technical schematic on grid paper, with the rolled affixes as
+        annotation callouts pointing at the part they modify. Families are a left rail; forging is
+        &ldquo;stamping a new sheet&rdquo;.</p>
+        <h4>Why</h4>
+        <p>The most distinctive of the three, and it gives affixes somewhere meaningful to live. Scales
+        cleanly &mdash; a Legendary with four affixes gets four callouts, not a longer list.</p>
+        <h4>Tradeoff</h4>
+        <p>The most art-dependent. Six weapon families each need their own line drawing or the
+        metaphor collapses into a box with labels.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <div class="sec-head">
+      <h2>Smelting</h2>
+      <span class="tag">Forge&rsquo;s second tab &middot; two directions</span>
+    </div>
+    <p>
+      Both directions exist to surface something the current list hides completely:
+      <strong>RefinedOreConfig&rsquo;s batch time is logarithmic</strong>, so a bigger batch is always
+      better per ore. Nothing on screen says so today.
+    </p>
+
+    <div class="opt">
+      <div class="stage">
+
+<div style="width: 800px; height: 510px; background: radial-gradient(120% 100% at 50% 30%, #241F1B 0%, #14110F 74%); display: flex; align-items: center; justify-content: center;">
+
+  <div class="cut" style="width: 760px; height: 470px; background: linear-gradient(#4C443C, #14110F); padding: 2px;">
+    <div class="cutin" style="width: 100%; height: 100%; background: #16120F; display: flex; flex-direction: column;">
+
+      <div style="height: 4px; background: #E07A3B;"></div>
+
+      <div style="height: 44px; display: flex; align-items: center; gap: 12px; padding: 0 14px; background: #1C1815; border-bottom: 1px solid #3C352F;">
+        <svg width="20" height="20" viewBox="0 0 22 22" fill="none" stroke="#E07A3B" stroke-width="1.7"><path d="M4 16V9l7-4 7 4v7z"></path><path d="M9 16v-4h4v4"></path></svg>
+        <span class="lbl" style="color: #EDE7DC; font-size: 15px; flex-grow: 1;">Forge</span>
+        <svg width="16" height="16" viewBox="0 0 16 16" stroke="#A79C8C" stroke-width="1.8" fill="none"><path d="M3 3l10 10M13 3L3 13"></path></svg>
+      </div>
+
+      <div style="display: flex; gap: 6px; padding: 8px 12px 0;">
+        <div class="cs" style="background: #221D1A; padding: 9px 20px;"><span class="lbl" style="color: #A79C8C; font-size: 11px;">Weapons</span></div>
+        <div class="cs" style="background: #E07A3B; padding: 9px 20px;"><span class="lbl" style="color: #16120F; font-size: 11px;">Smelting</span></div>
+      </div>
+
+      <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 10px; padding: 10px 12px 12px;">
+
+        <span class="lbl" style="color: #A79C8C; font-size: 10px;">Hoppers &mdash; pick what to melt</span>
+
+        <div style="display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 7px;">
+
+          <div class="cs" style="background: #28231F; border: 1px solid #E07A3B; padding: 9px; display: flex; flex-direction: column; gap: 5px;">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="#E07A3B" stroke-width="1.6"><path d="M4 7l5-3 7 3-2 8-8 1z"></path></svg>
+            <span class="lbl" style="color: #EDE7DC; font-size: 9px;">Scrap Iron</span>
+            <span class="num" style="color: #EDE7DC; font-size: 15px;">412</span>
+            <span class="num" style="color: #A79C8C; font-size: 9px;">3 : 1</span>
+          </div>
+
+          <div class="cs" style="background: #1C1815; border: 1px solid #3C352F; padding: 9px; display: flex; flex-direction: column; gap: 5px;">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="#A79C8C" stroke-width="1.6"><path d="M5 6h10M5 10h10M5 14h10"></path></svg>
+            <span class="lbl" style="color: #A79C8C; font-size: 9px;">Copper Wire</span>
+            <span class="num" style="color: #EDE7DC; font-size: 15px;">188</span>
+            <span class="num" style="color: #A79C8C; font-size: 9px;">3 : 1</span>
+          </div>
+
+          <div class="cs" style="background: #1C1815; border: 1px solid #3C352F; padding: 9px; display: flex; flex-direction: column; gap: 5px;">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="#A79C8C" stroke-width="1.6"><path d="M4 6h12v8H4z"></path><path d="M4 10h12"></path></svg>
+            <span class="lbl" style="color: #A79C8C; font-size: 9px;">Steel Plating</span>
+            <span class="num" style="color: #EDE7DC; font-size: 15px;">64</span>
+            <span class="num" style="color: #A79C8C; font-size: 9px;">2 : 1</span>
+          </div>
+
+          <div class="cs" style="background: #1C1815; border: 1px solid #3C352F; padding: 9px; display: flex; flex-direction: column; gap: 5px;">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="#E6AF3C" stroke-width="1.6"><path d="M6 5h8l2 5-6 5-6-5z"></path></svg>
+            <span class="lbl" style="color: #A79C8C; font-size: 9px;">Gold Contacts</span>
+            <span class="num" style="color: #EDE7DC; font-size: 15px;">21</span>
+            <span class="num" style="color: #A79C8C; font-size: 9px;">2 : 1</span>
+          </div>
+
+          <div class="cs" style="background: #1A1614; border: 1px solid #2A2521; padding: 9px; display: flex; flex-direction: column; gap: 5px;">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="#4C443C" stroke-width="1.6"><path d="M10 3l6 4v6l-6 4-6-4V7z"></path></svg>
+            <span class="lbl" style="color: #4C443C; font-size: 9px;">Voidium</span>
+            <span class="num" style="color: #4C443C; font-size: 15px;">0</span>
+            <span class="num" style="color: #4C443C; font-size: 9px;">1 : 1</span>
+          </div>
+
+        </div>
+
+        <div class="cs" style="flex-grow: 1; background: linear-gradient(180deg, #1C1815 0%, #241B14 100%); border: 1px solid #3C352F; padding: 14px 16px; display: flex; flex-direction: column; gap: 11px;">
+
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <span class="lbl" style="color: #E07A3B; font-size: 11px;">Melting</span>
+            <span style="color: #EDE7DC; font-size: 14px; flex-grow: 1;">90 Scrap Iron &rarr; 30 Steel Ingot</span>
+            <span class="num" style="color: #EDE7DC; font-size: 19px;">1 : 12</span>
+          </div>
+
+          <div style="position: relative; height: 26px; background: #14110F; border: 1px solid #2A2521; overflow: hidden;">
+            <div style="width: 62%; height: 100%; background: linear-gradient(90deg, #B24C18, #E07A3B);"></div>
+            <div style="position: absolute; left: 62%; top: 0; width: 2px; height: 100%; background: #EDE7DC;"></div>
+          </div>
+
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <svg width="17" height="17" viewBox="0 0 20 20" fill="none" stroke="#A79C8C" stroke-width="1.6"><circle cx="10" cy="10" r="7"></circle><path d="M10 6v4l3 2"></path></svg>
+            <span style="color: #A79C8C; font-size: 12px; flex-grow: 1;">Batch takes 2:08 &mdash; a 30-ore batch would take 1:42 for a third of the output.</span>
+          </div>
+
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <div class="cs" style="background: #1A1614; border: 1px dashed #4C443C; padding: 10px 14px; display: flex; align-items: center; gap: 9px; flex-grow: 1;">
+              <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="#4C443C" stroke-width="1.6"><path d="M3 12l3-4h11l-3 4z"></path><path d="M3 12v3h11v-3"></path></svg>
+              <span style="color: #A79C8C; font-size: 12px;">Output tray fills when the pour finishes</span>
+            </div>
+            <div class="cs" style="background: #28231F; border: 1px solid #4C443C; padding: 11px 18px;">
+              <span class="lbl" style="color: #A79C8C; font-size: 11px;">Cancel</span>
+            </div>
+            <div class="cs" style="background: #2A2A28; padding: 11px 26px;">
+              <span class="lbl" style="color: #6E6A64; font-size: 11px;">Collect</span>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+      <div class="note">
+        <span class="kicker">A &mdash; Pour Line</span>
+        <span class="size grows">760&times;470 &mdash; panel must grow</span>
+        <h4>What it is</h4>
+        <p>Hoppers across the top &mdash; all five raw ores with counts and refine ratios &mdash;
+        feeding one visible pour. The batch bar is the process; the tray below fills when it lands.</p>
+        <h4>Why</h4>
+        <p>Choice and state on one screen with no navigation, and it is the direction that pairs with
+        Forge A, being the same machine idea.</p>
+        <h4>Tradeoff</h4>
+        <p>Only one batch is visible. If smelting ever runs two jobs, this layout has nowhere to put
+        the second.</p>
+      </div>
+    </div>
+
+    <div class="opt">
+      <div class="stage">
+
+<div style="width: 680px; height: 464px; background: radial-gradient(120% 100% at 50% 30%, #241F1B 0%, #14110F 74%); display: flex; align-items: center; justify-content: center;">
+
+  <div class="cut" style="width: 640px; height: 424px; background: linear-gradient(#4C443C, #14110F); padding: 2px;">
+    <div class="cutin" style="width: 100%; height: 100%; background: #16120F; display: flex; flex-direction: column;">
+
+      <div style="height: 4px; background: #E07A3B;"></div>
+
+      <div style="height: 40px; display: flex; align-items: center; gap: 10px; padding: 0 13px; background: #1C1815; border-bottom: 1px solid #3C352F;">
+        <svg width="18" height="18" viewBox="0 0 22 22" fill="none" stroke="#E07A3B" stroke-width="1.7"><path d="M4 16V9l7-4 7 4v7z"></path><path d="M9 16v-4h4v4"></path></svg>
+        <span class="lbl" style="color: #EDE7DC; font-size: 14px; flex-grow: 1;">Forge</span>
+        <svg width="15" height="15" viewBox="0 0 16 16" stroke="#A79C8C" stroke-width="1.8" fill="none"><path d="M3 3l10 10M13 3L3 13"></path></svg>
+      </div>
+
+      <div style="display: flex; gap: 6px; padding: 7px 11px 0;">
+        <div class="cs" style="background: #221D1A; padding: 8px 18px;"><span class="lbl" style="color: #A79C8C; font-size: 10px;">Weapons</span></div>
+        <div class="cs" style="background: #E07A3B; padding: 8px 18px;"><span class="lbl" style="color: #16120F; font-size: 10px;">Smelting</span></div>
+      </div>
+
+      <div style="flex-grow: 1; display: grid; grid-template-columns: 176px minmax(0, 1fr); gap: 10px; padding: 9px 11px 11px;">
+
+        <div style="display: flex; flex-direction: column; gap: 5px;">
+          <span class="lbl" style="color: #A79C8C; font-size: 10px;">Ore</span>
+
+          <div class="cs" style="background: #28231F; border-left: 3px solid #E07A3B; padding: 8px 9px; display: flex; align-items: center; gap: 8px;">
+            <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="#E07A3B" stroke-width="1.6"><path d="M4 7l5-3 7 3-2 8-8 1z"></path></svg>
+            <span style="color: #EDE7DC; font-size: 12px; flex-grow: 1;">Scrap Iron</span>
+            <span class="num" style="color: #EDE7DC; font-size: 12px;">412</span>
+          </div>
+          <div class="cs" style="background: #1C1815; border-left: 3px solid transparent; padding: 8px 9px; display: flex; align-items: center; gap: 8px;">
+            <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="#A79C8C" stroke-width="1.6"><path d="M5 6h10M5 10h10M5 14h10"></path></svg>
+            <span style="color: #A79C8C; font-size: 12px; flex-grow: 1;">Copper Wire</span>
+            <span class="num" style="color: #A79C8C; font-size: 12px;">188</span>
+          </div>
+          <div class="cs" style="background: #1C1815; border-left: 3px solid transparent; padding: 8px 9px; display: flex; align-items: center; gap: 8px;">
+            <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="#A79C8C" stroke-width="1.6"><path d="M4 6h12v8H4z"></path><path d="M4 10h12"></path></svg>
+            <span style="color: #A79C8C; font-size: 12px; flex-grow: 1;">Steel Plating</span>
+            <span class="num" style="color: #A79C8C; font-size: 12px;">64</span>
+          </div>
+          <div class="cs" style="background: #1C1815; border-left: 3px solid transparent; padding: 8px 9px; display: flex; align-items: center; gap: 8px;">
+            <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="#E6AF3C" stroke-width="1.6"><path d="M6 5h8l2 5-6 5-6-5z"></path></svg>
+            <span style="color: #A79C8C; font-size: 12px; flex-grow: 1;">Gold Contacts</span>
+            <span class="num" style="color: #A79C8C; font-size: 12px;">21</span>
+          </div>
+          <div class="cs" style="background: #1A1614; border-left: 3px solid transparent; padding: 8px 9px; display: flex; align-items: center; gap: 8px;">
+            <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="#4C443C" stroke-width="1.6"><path d="M10 3l6 4v6l-6 4-6-4V7z"></path></svg>
+            <span style="color: #4C443C; font-size: 12px; flex-grow: 1;">Voidium</span>
+            <span class="num" style="color: #4C443C; font-size: 12px;">0</span>
+          </div>
+
+          <div style="flex-grow: 1;"></div>
+
+          <div style="height: 1px; background: #2A2521;"></div>
+          <div style="display: flex; align-items: baseline; gap: 6px;">
+            <span class="lbl" style="color: #A79C8C; font-size: 9px; flex-grow: 1;">Per ore</span>
+            <span class="num" style="color: #5FA082; font-size: 12px;">1.4s</span>
+          </div>
+          <span style="color: #A79C8C; font-size: 10px;">Was 3.4s at a 30-ore batch.</span>
+        </div>
+
+        <div class="cs" style="background: #1A1614; border: 1px solid #3C352F; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 12px;">
+
+          <svg width="150" height="150" viewBox="0 0 150 150" fill="none">
+            <circle cx="75" cy="75" r="62" stroke="#2A2521" stroke-width="12"></circle>
+            <circle cx="75" cy="75" r="62" stroke="#E07A3B" stroke-width="12" stroke-linecap="butt" stroke-dasharray="389.6" stroke-dashoffset="148" transform="rotate(-90 75 75)"></circle>
+            <circle cx="75" cy="75" r="46" stroke="#2A2521" stroke-width="1"></circle>
+            <text x="75" y="70" text-anchor="middle" fill="#EDE7DC" font-family="IBM Plex Mono, monospace" font-weight="600" font-size="30">2:08</text>
+            <text x="75" y="90" text-anchor="middle" fill="#A79C8C" font-family="Montserrat, sans-serif" font-weight="800" font-size="10" letter-spacing="1.4">BATCH TIME</text>
+          </svg>
+
+          <div style="width: 100%; display: flex; align-items: baseline; gap: 8px;">
+            <span class="num" style="color: #E07A3B; font-size: 20px;">90</span>
+            <span style="color: #A79C8C; font-size: 12px; flex-grow: 1;">Scrap Iron in</span>
+            <span class="num" style="color: #5FA082; font-size: 20px;">30</span>
+            <span style="color: #A79C8C; font-size: 12px;">ingots out</span>
+          </div>
+
+          <div style="width: 100%; position: relative; height: 18px;">
+            <div style="position: absolute; left: 0; right: 0; top: 7px; height: 4px; background: #2A2521;"></div>
+            <div style="position: absolute; left: 0; width: 22%; top: 7px; height: 4px; background: #E07A3B;"></div>
+            <div style="position: absolute; left: 22%; top: 0; width: 6px; height: 18px; background: #EDE7DC; transform: translateX(-3px);"></div>
+          </div>
+
+          <div style="width: 100%; display: flex; justify-content: space-between;">
+            <span class="num" style="color: #A79C8C; font-size: 10px;">3</span>
+            <span class="num" style="color: #A79C8C; font-size: 10px;">90</span>
+            <span class="num" style="color: #A79C8C; font-size: 10px;">210</span>
+            <span class="num" style="color: #A79C8C; font-size: 10px;">412 all</span>
+          </div>
+
+          <div class="cs" style="width: 100%; background: linear-gradient(#E07A3B, #B24C18); padding: 13px; text-align: center; box-shadow: 0 3px 0 #7A3410;">
+            <span class="lbl" style="color: #16120F; font-size: 13px;">Start pour</span>
+          </div>
+
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+      <div class="note">
+        <span class="kicker">B &mdash; Batch Dial</span>
+        <span class="size fits">640&times;424 &mdash; fits today</span>
+        <h4>What it is</h4>
+        <p>Built around the only decision that matters: how much to melt at once. The dial reads batch
+        time, the slider sets quantity, and the per-ore figure underneath makes the curve visible
+        &mdash; 3.4s per ore at 30, 1.4s at 90.</p>
+        <h4>Why</h4>
+        <p>Teaches the mechanic outright, and fits the panel as-is.</p>
+        <h4>Tradeoff</h4>
+        <p>Less atmosphere than the pour line, and the dial is a bigger custom widget than it looks
+        &mdash; an arc animating against a server-authoritative finish time.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <div class="sec-head">
+      <h2>Welding Station</h2>
+      <span class="tag">Robots / Mods / Turrets / Drones &middot; two directions</span>
+    </div>
+    <p>
+      Welding is about attaching mods to a machine, so the axis here is
+      <strong>one rig in depth</strong> versus <strong>every rig at a glance</strong>.
+    </p>
+
+    <div class="opt">
+      <div class="stage">
+
+<div style="width: 800px; height: 560px; background: radial-gradient(120% 100% at 50% 30%, #241F1B 0%, #14110F 74%); display: flex; align-items: center; justify-content: center;">
+
+  <div class="cut" style="width: 760px; height: 520px; background: linear-gradient(#4C443C, #14110F); padding: 2px;">
+    <div class="cutin" style="width: 100%; height: 100%; background: #16120F; display: flex; flex-direction: column;">
+
+      <div style="height: 4px; background: #E07A3B;"></div>
+
+      <div style="height: 44px; display: flex; align-items: center; gap: 12px; padding: 0 14px; background: #1C1815; border-bottom: 1px solid #3C352F;">
+        <svg width="20" height="20" viewBox="0 0 22 22" fill="none" stroke="#E07A3B" stroke-width="1.7"><path d="M5 17l7-7"></path><path d="M12 10l4-4 3 3-4 4z"></path><path d="M4 18l3-1 1-3"></path></svg>
+        <span class="lbl" style="color: #EDE7DC; font-size: 15px; flex-grow: 1;">Welding Station</span>
+        <span class="lbl" style="color: #A79C8C; font-size: 10px;">Deployed</span>
+        <span class="num" style="color: #5FA082; font-size: 13px;">2 / 3</span>
+        <svg width="16" height="16" viewBox="0 0 16 16" stroke="#A79C8C" stroke-width="1.8" fill="none"><path d="M3 3l10 10M13 3L3 13"></path></svg>
+      </div>
+
+      <div style="display: flex; gap: 6px; padding: 8px 12px 0;">
+        <div class="cs" style="background: #E07A3B; padding: 9px 18px;"><span class="lbl" style="color: #16120F; font-size: 11px;">Robots</span></div>
+        <div class="cs" style="background: #221D1A; padding: 9px 18px;"><span class="lbl" style="color: #A79C8C; font-size: 11px;">Mods</span></div>
+        <div class="cs" style="background: #221D1A; padding: 9px 18px;"><span class="lbl" style="color: #A79C8C; font-size: 11px;">Turrets</span></div>
+        <div class="cs" style="background: #221D1A; padding: 9px 18px;"><span class="lbl" style="color: #A79C8C; font-size: 11px;">Drones</span></div>
+      </div>
+
+      <div style="flex-grow: 1; display: grid; grid-template-columns: 186px minmax(0, 1fr); gap: 10px; padding: 10px 12px 12px;">
+
+        <div style="display: flex; flex-direction: column; gap: 6px;">
+          <span class="lbl" style="color: #A79C8C; font-size: 10px;">Built</span>
+
+          <div class="cs" style="background: #28231F; border-left: 3px solid #E07A3B; padding: 9px 10px; display: flex; flex-direction: column; gap: 4px;">
+            <div style="display: flex; align-items: baseline; gap: 6px;">
+              <span class="lbl" style="color: #EDE7DC; font-size: 10px; flex-grow: 1;">Iron Guardian</span>
+              <span class="num" style="color: #A79C8C; font-size: 10px;">t3</span>
+            </div>
+            <div style="display: flex; gap: 3px;">
+              <div style="width: 15px; height: 4px; background: #E07A3B;"></div>
+              <div style="width: 15px; height: 4px; background: #E07A3B;"></div>
+              <div style="width: 15px; height: 4px; background: #3C352F;"></div>
+            </div>
+          </div>
+
+          <div class="cs" style="background: #1C1815; border-left: 3px solid transparent; padding: 9px 10px; display: flex; flex-direction: column; gap: 4px;">
+            <div style="display: flex; align-items: baseline; gap: 6px;">
+              <span class="lbl" style="color: #A79C8C; font-size: 10px; flex-grow: 1;">Sentry Drone</span>
+              <span class="num" style="color: #A79C8C; font-size: 10px;">t2</span>
+            </div>
+            <div style="display: flex; gap: 3px;">
+              <div style="width: 15px; height: 4px; background: #E07A3B;"></div>
+              <div style="width: 15px; height: 4px; background: #3C352F;"></div>
+              <div style="width: 15px; height: 4px; background: #3C352F;"></div>
+            </div>
+          </div>
+
+          <div class="cs" style="background: #1C1815; border-left: 3px solid transparent; padding: 9px 10px; display: flex; flex-direction: column; gap: 4px;">
+            <div style="display: flex; align-items: baseline; gap: 6px;">
+              <span class="lbl" style="color: #A79C8C; font-size: 10px; flex-grow: 1;">Scrapbot</span>
+              <span class="num" style="color: #A79C8C; font-size: 10px;">t1</span>
+            </div>
+            <div style="display: flex; gap: 3px;">
+              <div style="width: 15px; height: 4px; background: #3C352F;"></div>
+              <div style="width: 15px; height: 4px; background: #3C352F;"></div>
+              <div style="width: 15px; height: 4px; background: #3C352F;"></div>
+            </div>
+          </div>
+
+          <div style="height: 1px; background: #2A2521; margin: 4px 0;"></div>
+          <span class="lbl" style="color: #A79C8C; font-size: 10px;">Not built</span>
+
+          <div class="cs" style="background: #1A1614; border: 1px dashed #3C352F; padding: 9px 10px; display: flex; flex-direction: column; gap: 4px;">
+            <span class="lbl" style="color: #A79C8C; font-size: 10px;">Arc Turret</span>
+            <span class="num" style="color: #A79C8C; font-size: 10px;">25 gold contacts &middot; 45 steel plating</span>
+          </div>
+
+          <div style="flex-grow: 1;"></div>
+
+          <div class="cs" style="background: #28231F; border: 1px solid #4C443C; padding: 10px; text-align: center;">
+            <span class="lbl" style="color: #A79C8C; font-size: 10px;">Build Arc Turret</span>
+          </div>
+        </div>
+
+        <div class="cs" style="position: relative; background: #191512; border: 1px solid #3C352F; overflow: hidden;">
+
+          <div style="position: absolute; left: 16px; top: 14px; display: flex; align-items: baseline; gap: 9px;">
+            <span class="lbl" style="color: #EDE7DC; font-size: 14px;">Iron Guardian</span>
+            <span class="num" style="color: #5FA082; font-size: 11px;">deployed</span>
+          </div>
+
+          <svg width="180" height="230" viewBox="0 0 180 230" fill="none" style="position: absolute; left: 50%; top: 74px; transform: translateX(-50%);">
+            <path d="M56 34h68v46H56z" stroke="#EDE7DC" stroke-width="2"></path>
+            <path d="M74 52h10M96 52h10" stroke="#5FA082" stroke-width="3"></path>
+            <path d="M48 84h84v72H48z" stroke="#EDE7DC" stroke-width="2"></path>
+            <path d="M30 96h18v44H30zM132 96h18v44h-18z" stroke="#EDE7DC" stroke-width="2"></path>
+            <path d="M62 156v42h16v-42M102 156v42h16v-42" stroke="#EDE7DC" stroke-width="2"></path>
+            <circle cx="90" cy="110" r="13" stroke="#E07A3B" stroke-width="2"></circle>
+            <circle cx="39" cy="118" r="9" stroke="#E07A3B" stroke-width="2"></circle>
+            <circle cx="141" cy="118" r="9" stroke="#4C443C" stroke-width="2" stroke-dasharray="3 3"></circle>
+          </svg>
+
+          <svg width="516" height="230" viewBox="0 0 516 230" fill="none" style="position: absolute; left: 0; top: 74px;">
+            <path d="M126 118h-40" stroke="#E07A3B" stroke-width="1" stroke-dasharray="4 3"></path>
+            <path d="M270 110h58" stroke="#E07A3B" stroke-width="1" stroke-dasharray="4 3"></path>
+            <path d="M330 118h58" stroke="#4C443C" stroke-width="1" stroke-dasharray="4 3"></path>
+          </svg>
+
+          <div class="cs" style="position: absolute; left: 16px; top: 168px; width: 118px; background: #221D1A; border: 1px solid #E07A3B; padding: 8px 9px; display: flex; flex-direction: column; gap: 3px;">
+            <span class="lbl" style="color: #E07A3B; font-size: 9px;">Slot 1</span>
+            <span style="color: #EDE7DC; font-size: 12px;">Heavy Rounds</span>
+            <span class="num" style="color: #A79C8C; font-size: 10px;">+18% dmg</span>
+          </div>
+
+          <div class="cs" style="position: absolute; right: 16px; top: 152px; width: 118px; background: #221D1A; border: 1px solid #E07A3B; padding: 8px 9px; display: flex; flex-direction: column; gap: 3px;">
+            <span class="lbl" style="color: #E07A3B; font-size: 9px;">Slot 2</span>
+            <span style="color: #EDE7DC; font-size: 12px;">Reinf. Plating</span>
+            <span class="num" style="color: #A79C8C; font-size: 10px;">+25% hp</span>
+          </div>
+
+          <div class="cs" style="position: absolute; right: 16px; top: 226px; width: 118px; background: #1A1614; border: 1px dashed #4C443C; padding: 8px 9px; display: flex; flex-direction: column; gap: 3px;">
+            <span class="lbl" style="color: #A79C8C; font-size: 9px;">Slot 3</span>
+            <span style="color: #A79C8C; font-size: 12px;">Empty</span>
+            <span class="num" style="color: #5FA082; font-size: 10px;">unlock 40 cores</span>
+          </div>
+
+          <div style="position: absolute; left: 16px; right: 16px; bottom: 14px; display: flex; align-items: center; gap: 10px;">
+            <div style="display: flex; flex-direction: column; gap: 2px; flex-grow: 1;">
+              <span class="lbl" style="color: #A79C8C; font-size: 9px;">With mods</span>
+              <span class="num" style="color: #EDE7DC; font-size: 15px;">142 dmg &middot; 1,250 hp</span>
+            </div>
+            <div class="cs" style="background: #28231F; border: 1px solid #4C443C; padding: 11px 18px;">
+              <span class="lbl" style="color: #A79C8C; font-size: 11px;">Recall</span>
+            </div>
+            <div class="cs" style="background: linear-gradient(#E07A3B, #B24C18); padding: 11px 24px; box-shadow: 0 3px 0 #7A3410;">
+              <span class="lbl" style="color: #16120F; font-size: 12px;">Fit mod</span>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+      <div class="note">
+        <span class="kicker">A &mdash; Rig Diagram</span>
+        <span class="size grows">760&times;520 &mdash; panel must grow</span>
+        <h4>What it is</h4>
+        <p>The robot drawn centre-stage with its three mod slots as hardpoints on leader lines, so
+        &ldquo;this mod goes here&rdquo; is spatial rather than a list position.</p>
+        <h4>Why</h4>
+        <p>The only direction whose screen actually says what welding is. An empty third slot reads as
+        a hole in the rig &mdash; a far better prompt than a greyed-out row.</p>
+        <h4>Tradeoff</h4>
+        <p>Needs a silhouette per robot, and shows one at a time; comparing two loadouts means clicking
+        back and forth.</p>
+      </div>
+    </div>
+
+    <div class="opt">
+      <div class="stage">
+
+<div style="width: 680px; height: 464px; background: radial-gradient(120% 100% at 50% 30%, #241F1B 0%, #14110F 74%); display: flex; align-items: center; justify-content: center;">
+
+  <div class="cut" style="width: 640px; height: 424px; background: linear-gradient(#4C443C, #14110F); padding: 2px;">
+    <div class="cutin" style="width: 100%; height: 100%; background: #16120F; display: flex; flex-direction: column;">
+
+      <div style="height: 4px; background: #E07A3B;"></div>
+
+      <div style="height: 40px; display: flex; align-items: center; gap: 10px; padding: 0 13px; background: #1C1815; border-bottom: 1px solid #3C352F;">
+        <svg width="18" height="18" viewBox="0 0 22 22" fill="none" stroke="#E07A3B" stroke-width="1.7"><path d="M5 17l7-7"></path><path d="M12 10l4-4 3 3-4 4z"></path><path d="M4 18l3-1 1-3"></path></svg>
+        <span class="lbl" style="color: #EDE7DC; font-size: 14px; flex-grow: 1;">Welding Station</span>
+        <span class="num" style="color: #5FA082; font-size: 12px;">2 / 3 out</span>
+        <svg width="15" height="15" viewBox="0 0 16 16" stroke="#A79C8C" stroke-width="1.8" fill="none"><path d="M3 3l10 10M13 3L3 13"></path></svg>
+      </div>
+
+      <div style="display: flex; gap: 5px; padding: 7px 11px 0;">
+        <div class="cs" style="background: #E07A3B; padding: 8px 15px;"><span class="lbl" style="color: #16120F; font-size: 10px;">Robots</span></div>
+        <div class="cs" style="background: #221D1A; padding: 8px 15px;"><span class="lbl" style="color: #A79C8C; font-size: 10px;">Mods</span></div>
+        <div class="cs" style="background: #221D1A; padding: 8px 15px;"><span class="lbl" style="color: #A79C8C; font-size: 10px;">Turrets</span></div>
+        <div class="cs" style="background: #221D1A; padding: 8px 15px;"><span class="lbl" style="color: #A79C8C; font-size: 10px;">Drones</span></div>
+      </div>
+
+      <div style="flex-grow: 1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); gap: 9px; padding: 9px 11px 11px;">
+
+        <div class="cs" style="background: #1C1815; border: 1px solid #E07A3B; padding: 10px; display: flex; flex-direction: column; gap: 7px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#EDE7DC" stroke-width="1.6"><path d="M7 4h10v6H7z"></path><path d="M5 10h14v9H5z"></path><path d="M10 7h1M13 7h1"></path></svg>
+            <span class="lbl" style="color: #EDE7DC; font-size: 11px; flex-grow: 1;">Iron Guardian</span>
+            <span class="num" style="color: #A79C8C; font-size: 10px;">t3</span>
+          </div>
+          <div style="display: flex; gap: 4px;">
+            <div class="cs" style="flex-grow: 1; background: #221D1A; border: 1px solid #E07A3B; padding: 5px 6px;"><span style="color: #EDE7DC; font-size: 10px;">Heavy Rnds</span></div>
+            <div class="cs" style="flex-grow: 1; background: #221D1A; border: 1px solid #E07A3B; padding: 5px 6px;"><span style="color: #EDE7DC; font-size: 10px;">Plating</span></div>
+            <div class="cs" style="width: 34px; background: #1A1614; border: 1px dashed #4C443C; display: flex; align-items: center; justify-content: center;"><span style="color: #4C443C; font-size: 13px;">+</span></div>
+          </div>
+          <div style="display: flex; align-items: baseline; gap: 6px;">
+            <span class="num" style="color: #EDE7DC; font-size: 12px; flex-grow: 1;">142 dmg &middot; 1,250 hp</span>
+          </div>
+          <div style="flex-grow: 1;"></div>
+          <div class="cs" style="background: #5FA082; padding: 8px; text-align: center;">
+            <span class="lbl" style="color: #16120F; font-size: 10px;">Deployed &mdash; recall</span>
+          </div>
+        </div>
+
+        <div class="cs" style="background: #1C1815; border: 1px solid #3C352F; padding: 10px; display: flex; flex-direction: column; gap: 7px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#A79C8C" stroke-width="1.6"><circle cx="12" cy="11" r="5"></circle><path d="M4 7l4 2M20 7l-4 2M12 16v4"></path></svg>
+            <span class="lbl" style="color: #EDE7DC; font-size: 11px; flex-grow: 1;">Sentry Drone</span>
+            <span class="num" style="color: #A79C8C; font-size: 10px;">t2</span>
+          </div>
+          <div style="display: flex; gap: 4px;">
+            <div class="cs" style="flex-grow: 1; background: #221D1A; border: 1px solid #E07A3B; padding: 5px 6px;"><span style="color: #EDE7DC; font-size: 10px;">Speed Coil</span></div>
+            <div class="cs" style="width: 34px; background: #1A1614; border: 1px dashed #4C443C; display: flex; align-items: center; justify-content: center;"><span style="color: #4C443C; font-size: 13px;">+</span></div>
+            <div class="cs" style="width: 34px; background: #1A1614; border: 1px dashed #4C443C; display: flex; align-items: center; justify-content: center;"><span style="color: #4C443C; font-size: 13px;">+</span></div>
+          </div>
+          <span class="num" style="color: #EDE7DC; font-size: 12px;">88 dmg &middot; 640 hp</span>
+          <div style="flex-grow: 1;"></div>
+          <div class="cs" style="background: #5FA082; padding: 8px; text-align: center;">
+            <span class="lbl" style="color: #16120F; font-size: 10px;">Deployed &mdash; recall</span>
+          </div>
+        </div>
+
+        <div class="cs" style="background: #1C1815; border: 1px solid #3C352F; padding: 10px; display: flex; flex-direction: column; gap: 7px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#A79C8C" stroke-width="1.6"><path d="M8 5h8v5H8z"></path><path d="M6 10h12v8H6z"></path></svg>
+            <span class="lbl" style="color: #EDE7DC; font-size: 11px; flex-grow: 1;">Scrapbot</span>
+            <span class="num" style="color: #A79C8C; font-size: 10px;">t1</span>
+          </div>
+          <div style="display: flex; gap: 4px;">
+            <div class="cs" style="width: 34px; background: #1A1614; border: 1px dashed #4C443C; display: flex; align-items: center; justify-content: center; padding: 5px 0;"><span style="color: #4C443C; font-size: 13px;">+</span></div>
+            <div class="cs" style="width: 34px; background: #1A1614; border: 1px dashed #4C443C; display: flex; align-items: center; justify-content: center;"><span style="color: #4C443C; font-size: 13px;">+</span></div>
+            <div class="cs" style="width: 34px; background: #1A1614; border: 1px dashed #4C443C; display: flex; align-items: center; justify-content: center;"><span style="color: #4C443C; font-size: 13px;">+</span></div>
+          </div>
+          <span class="num" style="color: #EDE7DC; font-size: 12px;">40 dmg &middot; 300 hp</span>
+          <div style="flex-grow: 1;"></div>
+          <div class="cs" style="background: #28231F; border: 1px solid #4C443C; padding: 8px; text-align: center;">
+            <span class="lbl" style="color: #A79C8C; font-size: 10px;">Deploy</span>
+          </div>
+        </div>
+
+        <div class="cs" style="background: #1A1614; border: 1px dashed #3C352F; padding: 10px; display: flex; flex-direction: column; gap: 7px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#4C443C" stroke-width="1.6"><path d="M12 6v12M6 12h12"></path></svg>
+            <span class="lbl" style="color: #A79C8C; font-size: 11px; flex-grow: 1;">Arc Turret</span>
+            <span class="num" style="color: #A79C8C; font-size: 10px;">t4</span>
+          </div>
+          <span style="color: #A79C8C; font-size: 11px;">Not built yet.</span>
+          <span class="num" style="color: #BE5A4B; font-size: 11px;">25 gold contacts<br>45 steel plating</span>
+          <div style="flex-grow: 1;"></div>
+          <div class="cs" style="background: linear-gradient(#E07A3B, #B24C18); padding: 8px; text-align: center; box-shadow: 0 2px 0 #7A3410;">
+            <span class="lbl" style="color: #16120F; font-size: 10px;">Build</span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+      <div class="note">
+        <span class="kicker">B &mdash; Loadout Cards</span>
+        <span class="size fits">640&times;424 &mdash; fits today</span>
+        <h4>What it is</h4>
+        <p>One card per robot, slots inline as chips, deploy state on the card&rsquo;s own button.
+        Unbuilt robots are dashed cards showing their cost.</p>
+        <h4>Why</h4>
+        <p>Every robot and every fitted mod visible at once &mdash; what you want when deciding what to
+        send out against a wave.</p>
+        <h4>Tradeoff</h4>
+        <p>It is a grid of rows in nicer clothes: the closest of all eight to what exists today, and
+        the least distinct from the other stations.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <div class="sec-head">
+      <h2>Workbench</h2>
+      <span class="tag">Tools / Auto-Miner / Suit / Base &middot; two directions</span>
+    </div>
+    <p>
+      The axis here is <strong>overview versus detail</strong>, and it is really a question about the
+      tabs: A deletes them, B keeps them and makes each one earn its click.
+    </p>
+
+    <div class="opt">
+      <div class="stage">
+
+<div style="width: 680px; height: 464px; background: radial-gradient(120% 100% at 50% 30%, #241F1B 0%, #14110F 74%); display: flex; align-items: center; justify-content: center;">
+
+  <div class="cut" style="width: 640px; height: 424px; background: linear-gradient(#4C443C, #14110F); padding: 2px;">
+    <div class="cutin" style="width: 100%; height: 100%; background: #16120F; display: flex; flex-direction: column;">
+
+      <div style="height: 4px; background: #E07A3B;"></div>
+
+      <div style="height: 40px; display: flex; align-items: center; gap: 10px; padding: 0 13px; background: #1C1815; border-bottom: 1px solid #3C352F;">
+        <svg width="18" height="18" viewBox="0 0 22 22" fill="none" stroke="#E07A3B" stroke-width="1.7"><path d="M3 17h16"></path><path d="M6 17V9h4v8M13 17V5h4v12"></path></svg>
+        <span class="lbl" style="color: #EDE7DC; font-size: 14px; flex-grow: 1;">Workbench</span>
+        <span class="num" style="color: #A79C8C; font-size: 11px;">4 tracks</span>
+        <svg width="15" height="15" viewBox="0 0 16 16" stroke="#A79C8C" stroke-width="1.8" fill="none"><path d="M3 3l10 10M13 3L3 13"></path></svg>
+      </div>
+
+      <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 9px; padding: 11px 13px 12px;">
+
+        <div class="cs" style="background: #1C1815; border: 1px solid #E07A3B; padding: 10px 12px; display: flex; flex-direction: column; gap: 7px;">
+          <div style="display: flex; align-items: baseline; gap: 8px;">
+            <span class="lbl" style="color: #E07A3B; font-size: 10px;">Tool</span>
+            <span style="color: #EDE7DC; font-size: 13px; flex-grow: 1;">Laser Cutter &rarr; Plasma Drill</span>
+            <span class="num" style="color: #A79C8C; font-size: 11px;">0.5s &rarr; 0.3s swing</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 0;">
+            <div class="dot on"></div><div class="rail on"></div>
+            <div class="dot on"></div><div class="rail on"></div>
+            <div class="dot now"></div><div class="rail"></div>
+            <div class="dot"></div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span class="num" style="color: #EDE7DC; font-size: 11px; flex-grow: 1;">60 steel plating &middot; 20 gold contacts &middot; 12 steel ingot</span>
+            <div class="cs" style="background: linear-gradient(#E07A3B, #B24C18); padding: 7px 18px; box-shadow: 0 2px 0 #7A3410;">
+              <span class="lbl" style="color: #16120F; font-size: 10px;">Upgrade</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="cs" style="background: #1C1815; border: 1px solid #3C352F; padding: 10px 12px; display: flex; flex-direction: column; gap: 7px;">
+          <div style="display: flex; align-items: baseline; gap: 8px;">
+            <span class="lbl" style="color: #A79C8C; font-size: 10px;">Suit</span>
+            <span style="color: #EDE7DC; font-size: 13px; flex-grow: 1;">Thermal Liner &rarr; Rebreather Rig</span>
+            <span class="num" style="color: #A79C8C; font-size: 11px;">+ toxic air &minus;1</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 0;">
+            <div class="dot on"></div><div class="rail on"></div>
+            <div class="dot now"></div><div class="rail"></div>
+            <div class="dot"></div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span class="num" style="color: #BE5A4B; font-size: 11px; flex-grow: 1;">50 steel plating &middot; 25 / 21 gold contacts</span>
+            <div class="cs" style="background: #2A2A28; padding: 7px 18px;">
+              <span class="lbl" style="color: #6E6A64; font-size: 10px;">Short 4</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="cs" style="background: #1C1815; border: 1px solid #3C352F; padding: 10px 12px; display: flex; flex-direction: column; gap: 7px;">
+          <div style="display: flex; align-items: baseline; gap: 8px;">
+            <span class="lbl" style="color: #A79C8C; font-size: 10px;">Auto-miner</span>
+            <span style="color: #EDE7DC; font-size: 13px; flex-grow: 1;">Level 4 &rarr; 5</span>
+            <span class="num" style="color: #A79C8C; font-size: 11px;">18 &rarr; 24 ore / min</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 0;">
+            <div class="dot on"></div><div class="rail on"></div>
+            <div class="dot on"></div><div class="rail on"></div>
+            <div class="dot on"></div><div class="rail on"></div>
+            <div class="dot now"></div><div class="rail"></div>
+            <div class="dot"></div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span class="num" style="color: #EDE7DC; font-size: 11px; flex-grow: 1;">900 scrap &middot; 30 copper coil</span>
+            <div class="cs" style="background: #28231F; border: 1px solid #4C443C; padding: 7px 18px;">
+              <span class="lbl" style="color: #A79C8C; font-size: 10px;">Upgrade</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="cs" style="background: #1C1815; border: 1px solid #3C352F; padding: 10px 12px; display: flex; flex-direction: column; gap: 7px;">
+          <div style="display: flex; align-items: baseline; gap: 8px;">
+            <span class="lbl" style="color: #A79C8C; font-size: 10px;">Base</span>
+            <span style="color: #EDE7DC; font-size: 13px; flex-grow: 1;">Tier 2 &rarr; 3</span>
+            <span class="num" style="color: #A79C8C; font-size: 11px;">+1 turret slot</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 0;">
+            <div class="dot on"></div><div class="rail on"></div>
+            <div class="dot now"></div><div class="rail"></div>
+            <div class="dot"></div><div class="rail"></div>
+            <div class="dot"></div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span class="num" style="color: #EDE7DC; font-size: 11px; flex-grow: 1;">2,400 scrap &middot; 18 hardened plate</span>
+            <div class="cs" style="background: #28231F; border: 1px solid #4C443C; padding: 7px 18px;">
+              <span class="lbl" style="color: #A79C8C; font-size: 10px;">Upgrade</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+      <div class="note">
+        <span class="kicker">A &mdash; Progression Rails</span>
+        <span class="size fits">640&times;424 &mdash; fits today</span>
+        <h4>What it is</h4>
+        <p>No tabs. All four tracks are rails with your position marked, the next step named, and the
+        cost underneath. Affordable steps get the accent button; unaffordable ones say what you are
+        short.</p>
+        <h4>Why</h4>
+        <p>The Workbench is one question &mdash; how upgraded am I &mdash; and tabs hide three quarters
+        of the answer behind clicks. Seeing all four costs together is also how you decide what to mine
+        next.</p>
+        <h4>Tradeoff</h4>
+        <p>Dropping tabs means <span class="num">StationConfig.Types.Crafting.Tabs</span> stops
+        describing this station, and the Base tab&rsquo;s turret placement has nowhere to go.</p>
+      </div>
+    </div>
+
+    <div class="opt">
+      <div class="stage">
+
+<div style="width: 680px; height: 464px; background: radial-gradient(120% 100% at 50% 30%, #241F1B 0%, #14110F 74%); display: flex; align-items: center; justify-content: center;">
+
+  <div class="cut" style="width: 640px; height: 424px; background: linear-gradient(#4C443C, #14110F); padding: 2px;">
+    <div class="cutin" style="width: 100%; height: 100%; background: #16120F; display: flex; flex-direction: column;">
+
+      <div style="height: 4px; background: #E07A3B;"></div>
+
+      <div style="height: 40px; display: flex; align-items: center; gap: 10px; padding: 0 13px; background: #1C1815; border-bottom: 1px solid #3C352F;">
+        <svg width="18" height="18" viewBox="0 0 22 22" fill="none" stroke="#E07A3B" stroke-width="1.7"><path d="M3 17h16"></path><path d="M6 17V9h4v8M13 17V5h4v12"></path></svg>
+        <span class="lbl" style="color: #EDE7DC; font-size: 14px; flex-grow: 1;">Workbench</span>
+        <svg width="15" height="15" viewBox="0 0 16 16" stroke="#A79C8C" stroke-width="1.8" fill="none"><path d="M3 3l10 10M13 3L3 13"></path></svg>
+      </div>
+
+      <div style="display: flex; gap: 5px; padding: 7px 11px 0;">
+        <div class="cs" style="background: #E07A3B; padding: 8px 15px;"><span class="lbl" style="color: #16120F; font-size: 10px;">Tools</span></div>
+        <div class="cs" style="background: #221D1A; padding: 8px 15px;"><span class="lbl" style="color: #A79C8C; font-size: 10px;">Auto-Miner</span></div>
+        <div class="cs" style="background: #221D1A; padding: 8px 15px;"><span class="lbl" style="color: #A79C8C; font-size: 10px;">Suit</span></div>
+        <div class="cs" style="background: #221D1A; padding: 8px 15px;"><span class="lbl" style="color: #A79C8C; font-size: 10px;">Base</span></div>
+      </div>
+
+      <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 9px; padding: 9px 11px 11px;">
+
+        <div class="cs" style="background: linear-gradient(90deg, #241B14, #1A1614); border: 1px solid #3C352F; padding: 12px 14px; display: flex; align-items: center; gap: 14px;">
+          <svg width="52" height="52" viewBox="0 0 52 52" fill="none" stroke="#E07A3B" stroke-width="2" stroke-linejoin="round"><path d="M10 40l16-16"></path><path d="M26 24l6-10 12 4-4 12z"></path><path d="M8 42l3-1 1-3"></path></svg>
+          <div style="display: flex; flex-direction: column; gap: 3px; flex-grow: 1;">
+            <span class="lbl" style="color: #A79C8C; font-size: 9px;">Tier 3 of 4 &mdash; equipped</span>
+            <span class="lbl" style="color: #EDE7DC; font-size: 18px;">Laser Cutter</span>
+          </div>
+          <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px;">
+            <span class="num" style="color: #EDE7DC; font-size: 17px;">0.5s</span>
+            <span class="lbl" style="color: #A79C8C; font-size: 9px;">swing</span>
+          </div>
+          <div style="width: 1px; height: 34px; background: #3C352F;"></div>
+          <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px;">
+            <span class="num" style="color: #EDE7DC; font-size: 17px;">2.25x</span>
+            <span class="lbl" style="color: #A79C8C; font-size: 9px;">yield</span>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px;">
+          <div class="cs" style="background: #1C1815; border: 1px solid #3C352F; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px;">
+            <span class="lbl" style="color: #A79C8C; font-size: 9px;">Unlocks at tier 4</span>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="#AA64DC" stroke-width="1.6"><path d="M10 3l6 4v6l-6 4-6-4V7z"></path></svg>
+              <span style="color: #EDE7DC; font-size: 12px;">Voidium Shard</span>
+            </div>
+            <span style="color: #A79C8C; font-size: 11px;">The only ore your current cutter cannot break.</span>
+          </div>
+
+          <div class="cs" style="background: #1C1815; border: 1px solid #3C352F; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px;">
+            <span class="lbl" style="color: #A79C8C; font-size: 9px;">Fitted mods</span>
+            <div style="display: flex; gap: 4px;">
+              <div class="cs" style="flex-grow: 1; background: #221D1A; border: 1px solid #E07A3B; padding: 5px 7px;"><span style="color: #EDE7DC; font-size: 10px;">Wide Bore</span></div>
+              <div class="cs" style="width: 30px; background: #1A1614; border: 1px dashed #4C443C; display: flex; align-items: center; justify-content: center;"><span style="color: #4C443C; font-size: 12px;">+</span></div>
+            </div>
+            <span class="num" style="color: #5FA082; font-size: 11px;">+12% yield in shafts</span>
+          </div>
+        </div>
+
+        <div class="cs" style="flex-grow: 1; background: #1C1815; border: 1px solid #E07A3B; padding: 11px 13px; display: flex; align-items: center; gap: 16px;">
+          <div style="display: flex; flex-direction: column; gap: 4px; flex-grow: 1;">
+            <span class="lbl" style="color: #E07A3B; font-size: 10px;">Next &mdash; Plasma Drill</span>
+            <div style="display: flex; align-items: baseline; gap: 10px;">
+              <span class="num" style="color: #A79C8C; font-size: 13px;">0.5s</span>
+              <svg width="14" height="10" viewBox="0 0 14 10" fill="none" stroke="#5FA082" stroke-width="2"><path d="M1 5h11M8 1l4 4-4 4"></path></svg>
+              <span class="num" style="color: #5FA082; font-size: 15px;">0.3s</span>
+              <span class="num" style="color: #A79C8C; font-size: 13px; margin-left: 12px;">2.25x</span>
+              <svg width="14" height="10" viewBox="0 0 14 10" fill="none" stroke="#5FA082" stroke-width="2"><path d="M1 5h11M8 1l4 4-4 4"></path></svg>
+              <span class="num" style="color: #5FA082; font-size: 15px;">3.25x</span>
+            </div>
+            <span class="num" style="color: #EDE7DC; font-size: 11px;">60 steel plating &middot; 20 gold contacts &middot; 12 steel ingot</span>
+          </div>
+          <div class="cs" style="background: linear-gradient(#E07A3B, #B24C18); padding: 14px 26px; box-shadow: 0 3px 0 #7A3410;">
+            <span class="lbl" style="color: #16120F; font-size: 13px;">Upgrade</span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+      <div class="note">
+        <span class="kicker">B &mdash; Spec Sheet</span>
+        <span class="size fits">640&times;424 &mdash; fits today</span>
+        <h4>What it is</h4>
+        <p>Tabs stay, but each becomes a page about one thing: the equipped item as a hero with real
+        stats, what it still cannot do, its fitted mods, then an explicit before/after for the next
+        tier.</p>
+        <h4>Why</h4>
+        <p>The before/after row is the piece missing today &mdash; the current list states a cost but
+        never states what you get. Also the only Workbench direction with room for turret placement.</p>
+        <h4>Tradeoff</h4>
+        <p>Four clicks to see four numbers. The overview A gives for free costs navigation here.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <div class="sec-head">
+      <h2>Popups</h2>
+      <span class="tag">Toast, confirm, mod picker, case opening &middot; two directions</span>
+    </div>
+    <p>
+      Included in this round rather than retrofitted, since a popup that does not match its parent is
+      more jarring than one that matches nothing. The axis is whether a popup
+      <strong>belongs to the panel that raised it</strong> or <strong>interrupts everything</strong>.
+    </p>
+
+    <div class="opt">
+      <div class="stage">
+
+<div style="width: 840px; height: 580px; background: radial-gradient(120% 100% at 50% 30%, #241F1B 0%, #14110F 74%); padding: 18px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: auto repeat(2, minmax(0, 1fr)); gap: 14px;">
+
+  <div style="grid-column: span 2; display: flex; align-items: baseline; gap: 12px;">
+    <span class="lbl" style="color: #EDE7DC; font-size: 15px;">Popups A &mdash; docked to the frame</span>
+    <span style="color: #A79C8C; font-size: 12px;">Every popup borrows the open panel&rsquo;s own edges. Nothing floats free, nothing dims the world.</span>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 6px;">
+    <span class="cap">Rejection toast &mdash; hangs off the panel&rsquo;s accent cap</span>
+    <div style="position: relative; flex-grow: 1; background: #191512; border: 1px solid #2A2521;">
+      <div style="position: absolute; left: 14px; right: 14px; top: 26px; bottom: 14px; background: #16120F; border: 1px solid #3C352F;">
+        <div style="height: 3px; background: #E07A3B;"></div>
+        <div style="padding: 9px 11px; display: flex; flex-direction: column; gap: 7px;">
+          <div style="height: 8px; width: 40%; background: #2A2521;"></div>
+          <div style="height: 8px; width: 66%; background: #221D1A;"></div>
+          <div style="height: 8px; width: 54%; background: #221D1A;"></div>
+        </div>
+      </div>
+      <div class="cs" style="position: absolute; left: 30px; top: 12px; display: flex; align-items: center; gap: 9px; background: #2A1D16; border: 1px solid #BE5A4B; border-left-width: 4px; padding: 8px 13px;">
+        <svg width="15" height="15" viewBox="0 0 18 18" fill="none" stroke="#BE5A4B" stroke-width="1.8"><path d="M9 3l7 12H2z"></path><path d="M9 8v3M9 13h.01"></path></svg>
+        <span style="color: #EDE7DC; font-size: 12px;">Tool tier too low for Voidium.</span>
+      </div>
+    </div>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 6px;">
+    <span class="cap">Confirm &mdash; the panel&rsquo;s own footer changes</span>
+    <div style="position: relative; flex-grow: 1; background: #191512; border: 1px solid #2A2521;">
+      <div style="position: absolute; left: 14px; right: 14px; top: 14px; bottom: 14px; background: #16120F; border: 1px solid #3C352F; display: flex; flex-direction: column;">
+        <div style="height: 3px; background: #E07A3B;"></div>
+        <div style="flex-grow: 1; padding: 9px 11px; display: flex; flex-direction: column; gap: 7px; opacity: 0.45;">
+          <div style="height: 8px; width: 40%; background: #2A2521;"></div>
+          <div style="height: 8px; width: 66%; background: #221D1A;"></div>
+          <div style="height: 8px; width: 54%; background: #221D1A;"></div>
+        </div>
+        <div style="background: #221D1A; border-top: 1px solid #BE5A4B; padding: 10px 11px; display: flex; align-items: center; gap: 9px;">
+          <div style="display: flex; flex-direction: column; gap: 2px; flex-grow: 1;">
+            <span class="lbl" style="color: #BE5A4B; font-size: 9px;">Ends the run for everyone</span>
+            <span style="color: #EDE7DC; font-size: 12px;">Recall from expedition?</span>
+          </div>
+          <div class="cs" style="background: #28231F; border: 1px solid #4C443C; padding: 7px 12px;"><span class="lbl" style="color: #A79C8C; font-size: 9px;">Stay</span></div>
+          <div class="cs" style="background: #BE5A4B; padding: 7px 12px;"><span class="lbl" style="color: #16120F; font-size: 9px;">Recall</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 6px;">
+    <span class="cap">Mod picker &mdash; drawer off the panel&rsquo;s right edge</span>
+    <div style="position: relative; flex-grow: 1; background: #191512; border: 1px solid #2A2521;">
+      <div style="position: absolute; left: 14px; right: 120px; top: 14px; bottom: 14px; background: #16120F; border: 1px solid #3C352F;">
+        <div style="height: 3px; background: #E07A3B;"></div>
+        <div style="padding: 9px 11px; display: flex; flex-direction: column; gap: 7px; opacity: 0.5;">
+          <div style="height: 8px; width: 55%; background: #2A2521;"></div>
+          <div style="height: 8px; width: 70%; background: #221D1A;"></div>
+        </div>
+      </div>
+      <div style="position: absolute; right: 14px; top: 14px; bottom: 14px; width: 112px; background: #1C1815; border: 1px solid #E07A3B; border-left-width: 3px; display: flex; flex-direction: column; gap: 5px; padding: 9px 8px;">
+        <span class="lbl" style="color: #E07A3B; font-size: 9px;">Slot 3</span>
+        <div class="cs" style="background: #221D1A; border: 1px solid #4C443C; padding: 6px 7px;"><span style="color: #EDE7DC; font-size: 10px;">Speed Coil</span></div>
+        <div class="cs" style="background: #221D1A; border: 1px solid #4C443C; padding: 6px 7px;"><span style="color: #EDE7DC; font-size: 10px;">Stabilizer</span></div>
+        <div class="cs" style="background: #221D1A; border: 1px solid #4C443C; padding: 6px 7px;"><span style="color: #EDE7DC; font-size: 10px;">Overclock</span></div>
+        <div style="flex-grow: 1;"></div>
+        <div class="cs" style="background: #28231F; border: 1px solid #4C443C; padding: 6px; text-align: center;"><span class="lbl" style="color: #A79C8C; font-size: 9px;">Close</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 6px;">
+    <span class="cap">Case opening &mdash; the panel body becomes the reveal</span>
+    <div style="position: relative; flex-grow: 1; background: #191512; border: 1px solid #2A2521;">
+      <div style="position: absolute; left: 14px; right: 14px; top: 14px; bottom: 14px; background: #16120F; border: 1px solid #3C352F; display: flex; flex-direction: column;">
+        <div style="height: 3px; background: #E07A3B;"></div>
+        <div style="flex-grow: 1; position: relative; background: radial-gradient(60% 70% at 50% 55%, #2E2216 0%, #16120F 74%); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; overflow: hidden;">
+          <div style="position: absolute; left: 50%; top: 0; bottom: 0; width: 2px; background: #E07A3B; transform: translateX(-1px);"></div>
+          <div style="display: flex; gap: 5px; align-items: center;">
+            <div class="cs" style="width: 34px; height: 44px; background: #1C1815; border: 1px solid #3C352F;"></div>
+            <div class="cs" style="width: 34px; height: 44px; background: #1C1815; border: 1px solid #6EBE6E;"></div>
+            <div class="cs" style="width: 46px; height: 56px; background: #221D1A; border: 2px solid #E6AF3C;"></div>
+            <div class="cs" style="width: 34px; height: 44px; background: #1C1815; border: 1px solid #3C352F;"></div>
+            <div class="cs" style="width: 34px; height: 44px; background: #1C1815; border: 1px solid #5A96DC;"></div>
+          </div>
+          <span class="lbl" style="color: #E6AF3C; font-size: 11px;">Legendary</span>
+          <span style="color: #EDE7DC; font-size: 12px;">Overclocked Core</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</div>
+      <div class="note">
+        <span class="kicker">A &mdash; Docked</span>
+        <h4>What it is</h4>
+        <p>Every popup borrows the open panel&rsquo;s edges: the toast hangs off its accent cap, a
+        confirmation replaces the footer, the mod picker slides out of the right edge, a case opens
+        inside the panel body.</p>
+        <h4>Why</h4>
+        <p>Nothing floats unattached, so a popup always tells you which menu raised it &mdash; and it
+        inherits whichever menu direction wins instead of being a fifth style.</p>
+        <h4>Tradeoff</h4>
+        <p>Each parent panel has to reserve the space, and a popup raised from the world rather than a
+        menu has no frame to dock to.</p>
+      </div>
+    </div>
+
+    <div class="opt">
+      <div class="stage">
+
+<div style="width: 840px; height: 580px; background: radial-gradient(120% 100% at 50% 30%, #241F1B 0%, #14110F 74%); padding: 18px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: auto repeat(2, minmax(0, 1fr)); gap: 14px;">
+
+  <div style="grid-column: span 2; display: flex; align-items: baseline; gap: 12px;">
+    <span class="lbl" style="color: #EDE7DC; font-size: 15px;">Popups B &mdash; lifted slabs</span>
+    <span style="color: #A79C8C; font-size: 12px;">Each popup is its own plate on a scrim, with a shadow and the accent cap. Interrupts on purpose.</span>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 6px;">
+    <span class="cap">Rejection toast &mdash; floats above everything</span>
+    <div style="position: relative; flex-grow: 1; background: #191512; border: 1px solid #2A2521;">
+      <div style="position: absolute; left: 14px; right: 14px; top: 14px; bottom: 14px; background: #16120F; border: 1px solid #3C352F;">
+        <div style="height: 3px; background: #E07A3B;"></div>
+        <div style="padding: 9px 11px; display: flex; flex-direction: column; gap: 7px;">
+          <div style="height: 8px; width: 40%; background: #2A2521;"></div>
+          <div style="height: 8px; width: 66%; background: #221D1A;"></div>
+          <div style="height: 8px; width: 54%; background: #221D1A;"></div>
+        </div>
+      </div>
+      <div class="cs" style="position: absolute; left: 50%; top: 34px; transform: translateX(-50%); background: #1C1815; border: 1px solid #BE5A4B; box-shadow: 0 6px 14px rgba(0,0,0,0.6); display: flex; flex-direction: column;">
+        <div style="height: 3px; background: #BE5A4B;"></div>
+        <div style="display: flex; align-items: center; gap: 9px; padding: 9px 14px;">
+          <svg width="15" height="15" viewBox="0 0 18 18" fill="none" stroke="#BE5A4B" stroke-width="1.8"><path d="M9 3l7 12H2z"></path><path d="M9 8v3M9 13h.01"></path></svg>
+          <span style="color: #EDE7DC; font-size: 12px;">Tool tier too low for Voidium.</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 6px;">
+    <span class="cap">Confirm &mdash; centred slab, world dimmed</span>
+    <div style="position: relative; flex-grow: 1; background: #191512; border: 1px solid #2A2521;">
+      <div style="position: absolute; left: 14px; right: 14px; top: 14px; bottom: 14px; background: #16120F; border: 1px solid #3C352F;">
+        <div style="height: 3px; background: #E07A3B;"></div>
+        <div style="padding: 9px 11px; display: flex; flex-direction: column; gap: 7px;">
+          <div style="height: 8px; width: 40%; background: #2A2521;"></div>
+          <div style="height: 8px; width: 66%; background: #221D1A;"></div>
+        </div>
+      </div>
+      <div style="position: absolute; inset: 0; background: rgba(10,8,7,0.66);"></div>
+      <div class="cs" style="position: absolute; left: 50%; top: 50%; width: 216px; transform: translate(-50%, -50%); background: #1C1815; border: 1px solid #4C443C; box-shadow: 0 8px 20px rgba(0,0,0,0.7);">
+        <div style="height: 3px; background: #BE5A4B;"></div>
+        <div style="padding: 12px 13px; display: flex; flex-direction: column; gap: 9px;">
+          <span class="lbl" style="color: #EDE7DC; font-size: 11px;">Recall from expedition?</span>
+          <span style="color: #A79C8C; font-size: 11px;">This ends the run for every player on the queue, not just you.</span>
+          <div style="display: flex; gap: 6px;">
+            <div class="cs" style="flex-grow: 1; background: #28231F; border: 1px solid #4C443C; padding: 8px; text-align: center;"><span class="lbl" style="color: #A79C8C; font-size: 9px;">Stay</span></div>
+            <div class="cs" style="flex-grow: 1; background: #BE5A4B; padding: 8px; text-align: center;"><span class="lbl" style="color: #16120F; font-size: 9px;">Recall</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 6px;">
+    <span class="cap">Mod picker &mdash; slab with its own grid</span>
+    <div style="position: relative; flex-grow: 1; background: #191512; border: 1px solid #2A2521;">
+      <div style="position: absolute; left: 14px; right: 14px; top: 14px; bottom: 14px; background: #16120F; border: 1px solid #3C352F;">
+        <div style="height: 3px; background: #E07A3B;"></div>
+      </div>
+      <div style="position: absolute; inset: 0; background: rgba(10,8,7,0.66);"></div>
+      <div class="cs" style="position: absolute; left: 50%; top: 50%; width: 236px; transform: translate(-50%, -50%); background: #1C1815; border: 1px solid #4C443C; box-shadow: 0 8px 20px rgba(0,0,0,0.7);">
+        <div style="height: 3px; background: #E07A3B;"></div>
+        <div style="padding: 11px 12px; display: flex; flex-direction: column; gap: 8px;">
+          <div style="display: flex; align-items: baseline; gap: 8px;">
+            <span class="lbl" style="color: #EDE7DC; font-size: 11px; flex-grow: 1;">Fit a mod</span>
+            <span class="num" style="color: #A79C8C; font-size: 10px;">slot 3</span>
+          </div>
+          <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px;">
+            <div class="cs" style="background: #221D1A; border: 1px solid #4C443C; padding: 8px 4px; text-align: center;"><span style="color: #EDE7DC; font-size: 9px;">Speed Coil</span></div>
+            <div class="cs" style="background: #221D1A; border: 1px solid #E07A3B; padding: 8px 4px; text-align: center;"><span style="color: #EDE7DC; font-size: 9px;">Stabilizer</span></div>
+            <div class="cs" style="background: #221D1A; border: 1px solid #4C443C; padding: 8px 4px; text-align: center;"><span style="color: #EDE7DC; font-size: 9px;">Overclock</span></div>
+          </div>
+          <div class="cs" style="background: linear-gradient(#E07A3B, #B24C18); padding: 8px; text-align: center;"><span class="lbl" style="color: #16120F; font-size: 10px;">Fit</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 6px;">
+    <span class="cap">Case opening &mdash; full takeover</span>
+    <div style="position: relative; flex-grow: 1; background: radial-gradient(60% 70% at 50% 50%, #33260F 0%, #14110F 76%); border: 1px solid #2A2521; overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px;">
+      <div style="position: absolute; left: 50%; top: 50%; width: 300px; height: 300px; transform: translate(-50%, -50%) rotate(45deg); border: 1px solid #4A3A1A;"></div>
+      <div class="cs" style="width: 74px; height: 92px; background: #221D1A; border: 2px solid #E6AF3C; box-shadow: 0 0 26px rgba(230,175,60,0.35); display: flex; align-items: center; justify-content: center;">
+        <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#E6AF3C" stroke-width="1.6"><path d="M12 3l7 4v10l-7 4-7-4V7z"></path><path d="M12 10v7"></path></svg>
+      </div>
+      <span class="lbl" style="color: #E6AF3C; font-size: 13px;">Legendary</span>
+      <span style="color: #EDE7DC; font-size: 13px;">Overclocked Core</span>
+      <div class="cs" style="background: #28231F; border: 1px solid #4C443C; padding: 8px 22px; margin-top: 3px;"><span class="lbl" style="color: #A79C8C; font-size: 10px;">Claim</span></div>
+    </div>
+  </div>
+
+</div>
+</div>
+      <div class="note">
+        <span class="kicker">B &mdash; Lifted Slabs</span>
+        <h4>What it is</h4>
+        <p>Each popup is its own plate on a scrim, with a shadow and its own accent cap &mdash; red for
+        a destructive confirm, orange for a choice, gold for a reveal.</p>
+        <h4>Why</h4>
+        <p>Unmissable and consistent regardless of what raised it. The case opening in particular wants
+        a full takeover.</p>
+        <h4>Tradeoff</h4>
+        <p>The scrim interrupts. Right for a confirm, wrong for a rejection toast firing mid-wave
+        &mdash; so realistically the toast wants A&rsquo;s treatment even if everything else takes
+        B&rsquo;s.</p>
+      </div>
+    </div>
+  </section>
+
+  <div class="ask">
+    <h2>What I need from you to converge</h2>
+    <ol>
+      <li><strong>Forge: A, B or C.</strong> This is the one real fork. A is the literal reading of
+      your steer and costs a server change; B is cheap and fits today; C is the most distinctive and
+      costs six line drawings.</li>
+      <li><strong>Is the panel allowed to grow past 640&times;424?</strong> Four of the ten directions
+      need it. If the answer is no, the set collapses to B / Batch Dial / Loadout Cards / either
+      Workbench &mdash; a coherent but much tamer round.</li>
+      <li><strong>Workbench: keep the tabs or not.</strong> Rails deletes them, which contradicts
+      StationConfig as written. Worth deciding before either gets built.</li>
+      <li><strong>Popups: one treatment or a split.</strong> My recommendation is the split &mdash;
+      docked toast, lifted everything else &mdash; but that is two mechanisms to maintain instead of
+      one.</li>
+    </ol>
+  </div>
+
+</div>
