@@ -24,6 +24,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 
 local RaidEnergyConfig = require(ReplicatedStorage.Shared.RaidEnergyConfig)
+local UiIconConfig = require(ReplicatedStorage.Shared.UiIconConfig)
 local Wallet = require(ReplicatedStorage.Shared.Wallet)
 
 local LocalPlayer = Players.LocalPlayer
@@ -258,7 +259,15 @@ end
 -- Same lookup, against ReplicatedStorage.UiIcons instead of ItemIcons — for chrome/buttons/panel
 -- glyphs rather than inventory items, so the two sets can be populated and organized independently
 -- in Studio without one folder's naming colliding with the other's.
+-- UiIconConfig first, the UiIcons folder second. The config is the intended home for the HUD's own
+-- chrome (it is Rojo-synced, diffable, and survives losing the place file); the folder stays
+-- supported so the ItemIcons convention still works for anyone who prefers building icons in
+-- Studio, and so a value set in either place is honoured rather than one silently winning.
 function HudKit.getUiIcon(key: string): string?
+	local configured = UiIconConfig.Get(key)
+	if configured then
+		return configured
+	end
 	local _, image = resolveIcon(UiIcons, key)
 	return image
 end
@@ -276,6 +285,17 @@ end
 -- rule that missing art must never break the loop, a caller must be able to treat that as "render
 -- the fallback" rather than a special case to check for separately.
 function HudKit.applyIcon(imageLabel: ImageLabel, key: string, folderName: string?): boolean
+	-- Config first, same order as getUiIcon. A configured icon carries no template instance, so
+	-- there are no rect properties to copy — that only applies to the folder path, where the
+	-- template is a real ImageLabel that can be pointed at a slice of a sprite atlas.
+	if not folderName then
+		local configured = UiIconConfig.Get(key)
+		if configured then
+			imageLabel.Image = configured
+			return true
+		end
+	end
+
 	local folder = if folderName then ReplicatedStorage:FindFirstChild(folderName) else UiIcons
 	local inst, image = resolveIcon(folder, key)
 	if not inst or not image then
