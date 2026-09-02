@@ -1981,3 +1981,67 @@ restatement of anything already documented.
   Model, with `StationType` set to exactly `"BlackMarket"` and `"Hacker"` respectively, or neither is
   reachable in-game. (4) `ReplicatedStorage.BaseTemplates` still only has `BaseTier1`; Research tiers
   2-6 all fall back to the placeholder floor until `BaseTier2`..`BaseTier6` Models exist.
+
+## HUD phase 3 — stylised menus (PLANNED)
+
+The chrome overhaul is done: every panel and button is on HudKit's angular frame, tokens, icons and
+hover/press. What is NOT done is the *content* of the crafting menus, which are still lists of rows.
+This section is the plan for that, plus two smaller corrections. Nothing here is built yet.
+
+### A. Recall — small, do first
+
+Two changes, both trivial in isolation, but the first has a consequence worth deciding before it is
+built:
+
+1. **Always visible**, not gated on being in a mine shaft. It currently appears only on `DepthUpdate`.
+2. **Wrong colour.** It is `danger` (red). It should follow the palette like every other action —
+   `secondary`.
+
+**The consequence:** Recall and Return to Base currently SHARE the right-hand column, because they
+were effectively mutually exclusive (see the shared-slot comment in `MainHud.client.lua`). A
+permanently-visible Recall ends that. Return to Base then needs its own home, and the row becomes
+four items again — which is what broke the centring on Start Defense in the first place. Options:
+
+- A fourth slot mirrored on the left, keeping the row symmetric (Inventory + one more on the left,
+  Defense centre, Recall + Return to Base on the right).
+- Return to Base moves out of the row entirely, the way Test Mode did.
+- Return to Base only appears when the player is actually ON the expedition rather than whenever the
+  shared server-wide queue is active — which is arguably the real fix, since `CurrentSlotId` is a
+  server-wide attribute and the button currently shows for players who have nothing to do with it.
+
+**Also unresolved:** what Recall does when the player is not in a mine. `RecallFromMine` must reject
+that safely; confirm before making the button permanent, or it becomes a button that appears to do
+nothing — the exact failure mode this project keeps paying for.
+
+### B. Raid map — light touch only
+
+`RaidClient.client.lua` still has its own ScreenGui, its own `COLOR`/`new`/`corner` helpers, and no
+HudKit styling except the Start Raid button. The map circles and node panels look nothing like the
+rest of the HUD. A full migration is NOT wanted yet — the raid system is getting its own overhaul
+later. Interim: apply the plate/panelframe treatment and the tokens to the node panels and the
+Scraps Collected readout so it stops looking like a different game, and leave the map graph alone.
+
+### C. Crafting menus — the real work
+
+The Workbench, Forge, Welding Station and Smelting tabs are all the same shape: a tab row and a list
+of `makeRow` entries. That is legible but characterless, and it is the same screen four times.
+
+**The brief: each menu gets its own identity.** They should not look like one another. The Forge is
+not a list — it is a machine you feed. A concrete example from the user, worth designing around:
+
+> the forge could have a slot where you put unprocessed ore in, it processes it, and you pick it up
+
+So: input slots, a visible process/progress state, an output you collect. The same thinking applies
+to the others — Welding is about attaching mods to a weapon, so it wants the weapon and its slots on
+screen, not a list of mod names.
+
+**Process, matching the one that worked for the HUD:** design first, in an artifact, showing 2-3
+distinct directions PER MENU rather than one house style applied four times. Pick or hybridise, then
+build. Do not start implementing before the direction is chosen — the HUD overhaul went well
+precisely because the look was settled on a page first.
+
+### D. Popups
+
+The toast, ModPicker, the ultimate picker and the case-opening flow never got the chrome pass. They
+should be included in the design round above rather than retrofitted afterwards, since a popup that
+does not match its parent menu is more jarring than one that matches nothing.
