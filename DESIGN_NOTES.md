@@ -2132,11 +2132,34 @@ gets re-proportioned up to 760x520 rather than the panel shrinking under it.
   every number the Spec Sheet shows already exists in config.
 - **Forge A's output tray is the ONE real server question.** `ForgeService.ForgeWeapon` inserts the
   instance straight into `profile.Weapons` and returns it — there is no uncollected state. Either
-  (a) add a `ForgeOutput` profile field plus a collect remote (touches `DataService.defaultProfile` +
-  backfill and `ForgeService`), so the tray survives a relog, or (b) treat the tray as presentation
-  of a roll that has already banked, which costs nothing server-side and cannot lose a weapon. (b) is
-  the recommendation; the risk is only that a player closes the menu without clicking Collect and
-  wonders where it went, which is fixed by never gating anything on the click.
+  (a) add a `ForgeOutput` profile field plus a collect remote, so the tray survives a relog, or
+  (b) treat the tray as presentation of a roll that has already banked, which costs nothing
+  server-side and cannot lose a weapon.
+
+  **DECIDED: (a), real state.** Not for efficiency — for the pile. Players reroll the same weapon
+  repeatedly chasing a good one, and if every roll lands in the inventory they drown in junk they
+  then have to sort. The tray is what lets a roll be REFUSED. Note `ForgeOutput` follows the
+  `SmeltJob`/`DecodeJob` convention exactly: a nil-able table, deliberately absent from
+  `defaultProfile` (so nil already reads as "nothing pending" and no backfill is needed), always
+  broadcast as `ForgeOutput or false`. That makes this a well-trodden shape, not a risky new field.
+
+  Rules, all re-checked server-side:
+
+  - The tray holds one pending weapon, with **Collect** and **Trash** side by side. Trash deletes it.
+  - **No refund on trash, deliberately.** You paid for the roll, not for the gun. It also makes the
+    player weigh keeping a mediocre gun against going and buying upgrades first, which is the
+    intended pressure. Any refund would have to stay strictly under cost or forge-then-scrap becomes
+    a farm loop.
+  - **Rolling with the tray occupied overwrites it** — EXCEPT when the pending weapon is Epic or
+    better, which raises a confirmation first. The threshold belongs in `ForgeConfig` (a
+    `DiscardConfirmMinRarity = "Epic"` key) compared through the existing `ForgeConfig.RarityOrder`
+    and `ForgeService`'s `rarityIndex` helper — never a hardcoded rarity name.
+  - The confirm is client UX, so the SERVER still gates it: `ForgeWeapon` rejects a roll that would
+    discard a pending Epic-or-better output unless the call carries an explicit confirm flag. A
+    client that lies can then only hurt itself — same reasoning as the Recall remote's re-checks.
+
+  Rejected: blocking the roll outright while the tray is occupied. It taxes the common case (junk
+  roll, instant reroll) to guard the rare one, and the confirm already guards the rare one.
 
 **Art needed before Welding A can look like the mockup:** one line-drawing silhouette per robot
 (Scrapbot, Sentry Drone, Iron Guardian, Arc Turret). All 22 existing `UiIconConfig.Icons` keys are

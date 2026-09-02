@@ -1485,4 +1485,251 @@ function HudKit.segmentBar(parent: Instance, segments: number): { Frame }
 	return cells
 end
 
+----------------------------------------------------------------------
+-- Modal — the shared popup plate
+----------------------------------------------------------------------
+-- HUD phase 3, section D ("Popups B — lifted slabs"): every popup is its own plate on a scrim, with
+-- a shadow and an accent cap coloured by what KIND of popup it is. Built here rather than in each
+-- caller for the same reason HudKit.button exists: the toast, the mod picker, the ultimate picker
+-- and the case-opening flow had four separate hand-rolled treatments, and the moment one of them
+-- gained a behaviour (input blocking, say) the other three silently didn't.
+--
+-- WHY ITS OWN ScreenGui. HudKit.screenGui and MainHud's walletGui are BOTH DisplayOrder 0, and
+-- ordering between two ScreenGuis at the same DisplayOrder is not defined by tree order the way
+-- sibling frames inside one GUI are. A scrim parented to either one would cover the HUD but leave
+-- the other GUI's contents punched through it — the wallet strip floating on top of a dimmed screen.
+-- A third ScreenGui at a higher DisplayOrder is the only arrangement that reliably covers both.
+-- Created lazily so a session that never raises a popup never builds it.
+local modalGui: ScreenGui? = nil
+
+local MODAL_DISPLAY_ORDER = 10 -- above HudKit.screenGui and walletGui, both of which are 0
+-- Must match the bar HudKit.accentCap actually builds (its Size's Y offset). Duplicated as a named
+-- constant rather than read off the returned Frame because the content column is positioned before
+-- a layout pass has run, when AbsoluteSize is still zero.
+local MODAL_CAP_HEIGHT = 4
+local MODAL_SCRIM_TRANSPARENCY = 0.35
+local MODAL_WIDTH_DEFAULT = 320
+local MODAL_RISE = 10 -- px the plate travels upward as it fades in; a lift, not a slide
+local MODAL_TWEEN = TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+
+-- Cap colour per kind. `reveal` deliberately resolves to Accent rather than a gold of its own: a
+-- reveal's cap is meant to be the RARITY's colour (ModConfig.Rarities[x].Color), which only the
+-- caller knows, so it passes `capColor`. Accent is the coherent fallback for a caller that forgets,
+-- rather than a missing colour or a new palette token invented for one popup.
+local MODAL_KIND_CAP = {
+	choice = COLOR.Accent,
+	danger = COLOR.Bad,
+	reveal = COLOR.Accent,
+}
+
+export type HudModalAction = {
+	text: string,
+	variant: string?, -- passed straight to HudKit.button; defaults to "secondary" there
+	onClick: (() -> ())?,
+	-- Actions close the modal after running, because that is what pressing a button on a modal
+	-- means. `keepOpen` is for the exception — an action that mutates the modal's own contents
+	-- (re-rolling a preview, toggling an option) rather than answering it.
+	keepOpen: boolean?,
+}
+
+export type HudModalOptions = {
+	title: string,
+	body: string?,
+	kind: string?, -- "choice" | "danger" | "reveal"; defaults to "choice"
+	capColor: Color3?, -- overrides the kind's cap colour (see MODAL_KIND_CAP)
+	width: number?,
+	actions: { HudModalAction }?,
+	-- Clicking the scrim dismisses. Defaults to FALSE: a modal is raised to make someone answer
+	-- something, and the popups this was built for (discard an Epic roll, end an expedition for
+	-- everyone) are exactly the ones where a stray click outside must not count as an answer.
+	dismissOnScrim: boolean?,
+	onClose: (() -> ())?,
+}
+
+-- Returns a handle: `close()` tears the modal down (safe to call twice, and safe to call from
+-- inside an action's own onClick). `content` is the padded column holding the title, body and
+-- action row — parent into it to add a row of your own between them, using LayoutOrder 1/2/3 as the
+-- reference points. `surface` is the whole plate surface, cap included, for a caller that needs to
+-- draw outside that column: the case-opening reveal animates its own contents across the full plate
+-- rather than being forced through the title/body/actions shape.
+function HudKit.modal(opts: HudModalOptions)
+	if not modalGui then
+		modalGui = HudKit.new("ScreenGui", {
+			Name = "SalvageModals",
+			DisplayOrder = MODAL_DISPLAY_ORDER,
+			IgnoreGuiInset = true, -- the scrim has to reach the very top of the screen, under
+				-- Roblox's own top bar, or a dimmed screen shows an undimmed strip along the top
+			ResetOnSpawn = false,
+			ZIndexBehavior = Enum.ZIndexBehavior.Sibling, -- matches the other two GUIs, same
+				-- reasoning: sibling sub-trees would otherwise fight over z-order in an undefined way
+			Parent = LocalPlayer:WaitForChild("PlayerGui"),
+		})
+	end
+
+	-- A TextButton, not a Frame: it both swallows clicks aimed at the HUD underneath (which is the
+	-- whole point of a scrim) and gives dismissOnScrim somewhere to hang without a second instance.
+	-- AutoButtonColor off so it never flashes lighter under the cursor — it is a backdrop, not a
+	-- control, even when it happens to be clickable.
+	local scrim = HudKit.new("TextButton", {
+		AutoButtonColor = false,
+		BackgroundColor3 = HudKit.darken(COLOR.Panel, 0.55),
+		BackgroundTransparency = 1, -- tweened to MODAL_SCRIM_TRANSPARENCY on open
+		BorderSizePixel = 0,
+		Size = UDim2.fromScale(1, 1),
+		Text = "",
+		Parent = modalGui,
+	})
+
+	local surface, shell = HudKit.plate({
+		Name = "Modal",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.new(0.5, 0, 0.5, MODAL_RISE), -- tweened up to centre on open
+		Size = UDim2.fromOffset(opts.width or MODAL_WIDTH_DEFAULT, 0),
+		automaticSize = true, -- height follows the content; see plate()'s own comment for why this
+			-- has to be opt-in rather than the default
+		Parent = modalGui,
+	})
+
+	-- The cap IS the modal's kind signal, so it has to be the thing you see. Deliberately NOT paired
+	-- with HudKit.panelHeader: the header is also positioned at Y=0, and under ZIndexBehavior.Sibling
+	-- a tie is broken by tree order, so a header built after the cap covers it completely — an
+	-- invisible cap with nothing in Output to explain it. The header would fight it on colour too
+	-- (its accent tick is hardcoded COLOR.Accent, so a `danger` modal would show a red cap beside an
+	-- orange tick). The design's slabs have no header bar anyway: cap, title, body, actions.
+	HudKit.accentCap(surface, opts.capColor or MODAL_KIND_CAP[opts.kind or "choice"] or COLOR.Accent)
+
+	local closed = false
+	local close
+	close = function()
+		if closed then
+			return
+		end
+		closed = true
+
+		-- Tween out, then destroy. Both tweens are started before the wait so they run together
+		-- rather than in sequence, and the instances are destroyed rather than hidden so a modal
+		-- raised a hundred times over a session doesn't leave a hundred plates parked off-screen.
+		TweenService:Create(scrim, MODAL_TWEEN, { BackgroundTransparency = 1 }):Play()
+		TweenService:Create(shell, MODAL_TWEEN, {
+			Position = UDim2.new(0.5, 0, 0.5, MODAL_RISE),
+		}):Play()
+
+		task.delay(MODAL_TWEEN.Time, function()
+			scrim:Destroy()
+			shell:Destroy()
+		end)
+
+		if opts.onClose then
+			opts.onClose()
+		end
+	end
+
+	if opts.dismissOnScrim then
+		scrim.Activated:Connect(close)
+	end
+
+	-- Content column, starting below the cap. Offset-only sizes throughout, deliberately: the
+	-- surface is AutomaticSize'd (see plate()'s comment), and a scale-height child inside an
+	-- AutomaticSize parent is the circular case that makes AutomaticSize silently no-op.
+	local content = HudKit.new("Frame", {
+		AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(0, MODAL_CAP_HEIGHT),
+		Size = UDim2.new(1, 0, 0, 0),
+		Parent = surface,
+	}, {
+		HudKit.new("UIListLayout", {
+			Padding = UDim.new(0, HudKit.SPACE.M),
+			SortOrder = Enum.SortOrder.LayoutOrder,
+		}),
+		HudKit.new("UIPadding", {
+			PaddingTop = UDim.new(0, HudKit.SPACE.M),
+			PaddingBottom = UDim.new(0, HudKit.SPACE.M),
+			PaddingLeft = UDim.new(0, HudKit.SPACE.M),
+			PaddingRight = UDim.new(0, HudKit.SPACE.M),
+		}),
+	})
+
+	HudKit.new("TextLabel", {
+		AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundTransparency = 1,
+		Font = HudKit.FONT.Display,
+		LayoutOrder = 1,
+		Size = UDim2.new(1, 0, 0, 0),
+		Text = opts.title,
+		TextColor3 = COLOR.Text,
+		TextSize = HudKit.TEXTSIZE.Title,
+		TextWrapped = true,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Parent = content,
+	})
+
+	if opts.body then
+		HudKit.new("TextLabel", {
+			AutomaticSize = Enum.AutomaticSize.Y,
+			BackgroundTransparency = 1,
+			Font = HudKit.FONT.Body,
+			LayoutOrder = 2,
+			Size = UDim2.new(1, 0, 0, 0),
+			Text = opts.body,
+			TextColor3 = COLOR.Muted,
+			TextSize = HudKit.TEXTSIZE.Body,
+			TextWrapped = true,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			Parent = content,
+		})
+	end
+
+	if opts.actions and #opts.actions > 0 then
+		local row = HudKit.new("Frame", {
+			BackgroundTransparency = 1,
+			LayoutOrder = 3,
+			Size = UDim2.new(1, 0, 0, BUTTON_MIN_SLICE_SIZE),
+			Parent = content,
+		}, {
+			HudKit.new("UIListLayout", {
+				FillDirection = Enum.FillDirection.Horizontal,
+				HorizontalAlignment = Enum.HorizontalAlignment.Right,
+				Padding = UDim.new(0, HudKit.SPACE.S),
+				SortOrder = Enum.SortOrder.LayoutOrder,
+				VerticalAlignment = Enum.VerticalAlignment.Center,
+			}),
+		})
+
+		-- Even widths rather than shrink-to-text: two actions on a modal are a PAIR of answers to
+		-- one question, and a wide "Collect" beside a narrow "Trash" reads as a recommendation the
+		-- design isn't making. The gaps come out of the row, so N buttons still fill it exactly.
+		local count = #opts.actions
+		local gaps = HudKit.SPACE.S * (count - 1)
+
+		for index, action in ipairs(opts.actions) do
+			HudKit.button({
+				text = action.text,
+				variant = action.variant,
+				layoutOrder = index,
+				size = UDim2.new(1 / count, -gaps / count, 1, 0),
+				parent = row,
+				onClick = function()
+					-- Run the caller's handler BEFORE closing: a handler that reads the modal's own
+					-- contents (which button was picked, what the surface currently shows) would
+					-- otherwise be reading instances this same click has already destroyed.
+					if action.onClick then
+						action.onClick()
+					end
+					if not action.keepOpen then
+						close()
+					end
+				end,
+			})
+		end
+	end
+
+	TweenService:Create(scrim, MODAL_TWEEN, {
+		BackgroundTransparency = MODAL_SCRIM_TRANSPARENCY,
+	}):Play()
+	TweenService:Create(shell, MODAL_TWEEN, { Position = UDim2.fromScale(0.5, 0.5) }):Play()
+
+	return { close = close, surface = surface, shell = shell, content = content }
+end
+
 return HudKit
