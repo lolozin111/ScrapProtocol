@@ -2182,7 +2182,44 @@ output-tray decision above). Popups B underpins all four, so its plate/scrim/cap
 building as a shared HudKit helper before the first menu that raises one.
 
 **Progress (2026-09-02).** Done AND verified in Studio by the user: `HudKit.modal` (the Popups B
-plate), per-station panel sizing, Smelting B, and Workbench B. Not started: Welding A, Forge A.
+plate), per-station panel sizing, Smelting B, and Workbench B. Built but NOT yet verified in Studio:
+Welding A. Not started: Forge A.
+
+**Welding A, as built (`StarterPlayerScripts/WeldingPanel.lua`).** The Robots tab only — Mods,
+Turrets and Drones keep their existing row lists; the design round only ever redrew Robots. Four
+things came out of it that the Forge build should reuse or knows about:
+
+- `HudKit.dashedLine` / `HudKit.dashedBox` — a dashed rule and a dashed border, built out of short
+  Frames for the same reason `HudKit.ring` is built out of rotated ones: Roblox has no dash pattern
+  and this project has no tiling asset. `dashedBox` takes a `cornerInset` so a dashed border drawn
+  around a rounded frame does not poke past the curve. Both take PIXEL lengths, not UDim2s — a
+  Scale-sized parent cannot say how long its own edge is at build time.
+- `ModConfig.ApplyMods` — the mod multiplier loop MOVED out of `CombatMath.lua` (ServerScriptService,
+  so the HUD cannot require it) into the shared config, and `CombatMath`'s `applyMods` is now a
+  one-line delegate. The rig footer prints mod-adjusted `dmg × rate · hp`, and the alternative was a
+  second copy of the math on the client. Same reasoning as `Shared/Wallet.lua`.
+- `CraftingRecipes.MaxDeployedRobots(profile)` — base slots plus the ExtraRobotSlot pass, shared for
+  the same reason: the header's "DEPLOYED 2 / 3" denominator and the one `DeployRobot` enforces are
+  now the same function.
+- The old `makeEquipmentRow` / `makeRobotRow` / `MOD_SLOT_WIDTH` are DELETED from
+  `MainHud.client.lua`, and `renderCraftList` no longer has a fall-through branch — an unrecognised
+  tab name now warns instead of rendering nothing.
+
+**Where the build deviates from the mockup, and why.** Three, all deliberate:
+
+- **"Unlock 40 cores" on the empty slot is gone**, replaced by "click to fit". This is the corrected
+  fact from the list above — slots are never locked.
+- **The rig silhouettes are drawn, not loaded.** The art called for below still does not exist, so
+  each robot gets a line-drawing chassis assembled from stroked Frames (`WeldingPanel`'s `RIGS`
+  table, one shape list per robot, plus a `GENERIC_RIG` fallback). The `rig_<robotKey>` keys are in
+  `UiIconConfig.Icons` at `0`; filling one in swaps that robot to the image with no code change.
+  This is the project's missing-art rule applied properly, not a placeholder to replace later — but
+  a real silhouette would still look better than four box-and-rectangle rigs.
+- **Leader lines bend.** The mockup drew three straight dashed stubs that do not actually reach
+  their cards (its own SVG has line 1 pointing the wrong way). Built as elbows — out from the
+  hardpoint, along to the card's mid-height, in to its edge — collapsing to one straight run when
+  the hardpoint already sits at the card's height. Straight-only would have forced the three cards
+  to sit at the three hardpoint heights, which no rig can satisfy without two cards overlapping.
 
 The ten mockups live at https://claude.ai/code/artifact/11c89954-fefe-4302-bae9-fe6186f12ed1 —
 open that before building either remaining menu, since the whole point of the design round was that

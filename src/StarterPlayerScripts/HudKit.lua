@@ -1569,6 +1569,127 @@ function HudKit.ring(parent: Instance, opts: HudRingOptions)
 end
 
 ----------------------------------------------------------------------
+-- Dashed rules and dashed boxes
+----------------------------------------------------------------------
+-- A dashed line is how the design mockups say "this is a leader line, not structure" (the Welding
+-- Station's rig diagram runs one from each hardpoint out to its mod slot card) and "this slot is
+-- empty / this thing is not built yet" (a dashed outline instead of a solid one).
+--
+-- WHY IT IS BUILT OUT OF FRAMES. Roblox has no dash pattern: UIStroke draws one solid rule and a
+-- Frame draws one solid bar. The two ways to fake it are a tiled image (this project has no such
+-- asset, and inventing one would put the whole treatment behind art that does not exist) or a run
+-- of short bars, which is what this is — the same reasoning, and the same shape of answer, as
+-- HudKit.ring's 90 rotated Frames. Cheap enough to matter: at the default 6/5 period a 128px card
+-- edge is 12 Frames, and the whole rig diagram is under 100.
+--
+-- Both helpers take PIXEL lengths, not UDim2s. A dashed edge has to know its own real length to
+-- decide how many dashes fit, and a Scale-sized parent cannot answer that at build time — it would
+-- silently draw one dash and stop. Callers that need a dashed border therefore size the thing they
+-- are outlining in offsets.
+local DASH_LENGTH = 6
+local DASH_GAP = 5
+local DASH_THICKNESS = 1
+
+export type HudDashOptions = {
+	position: UDim2?,
+	length: number, -- pixels along `axis`
+	axis: string?, -- "X" (default) or "Y"
+	color: Color3?, -- defaults to Line
+	thickness: number?,
+	dash: number?,
+	gap: number?,
+	zIndex: number?,
+}
+
+-- Returns the holder Frame, so a caller can reposition or destroy the whole rule as one thing.
+function HudKit.dashedLine(parent: Instance, opts: HudDashOptions): Frame
+	local horizontal = (opts.axis or "X") ~= "Y"
+	local color = opts.color or COLOR.Line
+	local thickness = opts.thickness or DASH_THICKNESS
+	local dash = math.max(opts.dash or DASH_LENGTH, 1)
+	local gap = math.max(opts.gap or DASH_GAP, 1)
+	local length = math.max(opts.length, 0)
+
+	local holder = HudKit.new("Frame", {
+		BackgroundTransparency = 1,
+		Position = opts.position or UDim2.fromOffset(0, 0),
+		Size = if horizontal then UDim2.fromOffset(length, thickness) else UDim2.fromOffset(thickness, length),
+		ZIndex = opts.zIndex or 1,
+		Parent = parent,
+	})
+
+	local offset = 0
+	while offset < length do
+		-- The last dash is CLIPPED to the remaining length rather than skipped or allowed to overrun:
+		-- a rule that stops short of its endpoint reads as a mis-measured line, and one that overruns
+		-- pokes out past the corner of whatever it is outlining.
+		local run = math.min(dash, length - offset)
+		HudKit.new("Frame", {
+			BackgroundColor3 = color,
+			BorderSizePixel = 0,
+			Position = if horizontal then UDim2.fromOffset(offset, 0) else UDim2.fromOffset(0, offset),
+			Size = if horizontal then UDim2.fromOffset(run, thickness) else UDim2.fromOffset(thickness, run),
+			ZIndex = opts.zIndex or 1,
+			Parent = holder,
+		})
+		offset += dash + gap
+	end
+
+	return holder
+end
+
+-- Four dashed edges around a `width` x `height` pixel box, drawn at the parent's own origin unless
+-- `position` says otherwise. Parent it straight into the frame being outlined (sized in offsets)
+-- and the border lands on that frame's edges.
+export type HudDashBoxOptions = {
+	position: UDim2?,
+	width: number,
+	height: number,
+	color: Color3?,
+	thickness: number?,
+	dash: number?,
+	gap: number?,
+	-- Pixels to pull each edge back from BOTH of its ends, leaving the four corners open. Set it to
+	-- the outlined frame's UICorner radius: a square dashed rule drawn around a rounded rect
+	-- otherwise pokes out past the curve at all four corners, which reads as a rendering fault rather
+	-- than as a border. Zero (the default) is right for a square frame.
+	cornerInset: number?,
+	zIndex: number?,
+}
+
+function HudKit.dashedBox(parent: Instance, opts: HudDashBoxOptions): Frame
+	local thickness = opts.thickness or DASH_THICKNESS
+	local holder = HudKit.new("Frame", {
+		BackgroundTransparency = 1,
+		Position = opts.position or UDim2.fromOffset(0, 0),
+		Size = UDim2.fromOffset(opts.width, opts.height),
+		ZIndex = opts.zIndex or 1,
+		Parent = parent,
+	})
+
+	local function edge(x: number, y: number, length: number, axis: string)
+		HudKit.dashedLine(holder, {
+			position = UDim2.fromOffset(x, y),
+			length = length,
+			axis = axis,
+			color = opts.color,
+			thickness = thickness,
+			dash = opts.dash,
+			gap = opts.gap,
+			zIndex = opts.zIndex,
+		})
+	end
+
+	local inset = opts.cornerInset or 0
+	edge(inset, 0, opts.width - inset * 2, "X")
+	edge(inset, opts.height - thickness, opts.width - inset * 2, "X")
+	edge(0, inset, opts.height - inset * 2, "Y")
+	edge(opts.width - thickness, inset, opts.height - inset * 2, "Y")
+
+	return holder
+end
+
+----------------------------------------------------------------------
 -- Modal — the shared popup plate
 ----------------------------------------------------------------------
 -- HUD phase 3, section D ("Popups B — lifted slabs"): every popup is its own plate on a scrim, with

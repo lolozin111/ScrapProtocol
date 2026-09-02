@@ -76,6 +76,12 @@ locally several times and the copies drifted:
   between `MiningService` and `MineShaftService` with a comment warning about the drift.
 - `Shared/Wallet.lua` — where a cost key lives on a profile, how much you have, what it's called.
   Shared (not server-only) so the HUD can't disagree with what the server will charge.
+- `ModConfig.ApplyMods(fireRate, damage, hp, itemKey, profile)` and
+  `CraftingRecipes.MaxDeployedRobots(profile)` — same idea, same reason. Both used to live inside
+  server-only modules (`CombatMath.lua`'s local `applyMods`, `CraftingService`'s inline slot math)
+  until the Welding Station's rig diagram needed the same numbers on the client, at which point the
+  choice was one shared function or two implementations that drift. `CombatMath.applyMods` is now a
+  one-line delegate. Anything the HUD has to AGREE with the server about belongs in `Shared/`.
 
 **`StarterPlayerScripts/HudKit.lua` is the client-side equivalent** — the shared foundation every
 HUD panel is built out of, not just the palette (`HudKit.COLOR`) it started as. It now also carries
@@ -90,7 +96,11 @@ palette retune propagates to every button automatically instead of needing a mat
 somewhere else. New UI should reach for `HudKit.button` and the token tables instead of hand-rolling
 another one-off `TextButton`, for the same reason as the server-side list above: every hand-rolled
 button is a copy that can drift from the others. (`makeRow`'s inline button and other existing
-hand-built `TextButton`s are untouched — this is additive, not a required migration.) HudKit also
+hand-built `TextButton`s are untouched — this is additive, not a required migration.) It also carries three drawing primitives for shapes Roblox has no
+element for — `HudKit.ring` (a progress arc, 90 rotated Frames), `HudKit.dashedLine` and
+`HudKit.dashedBox` (dashed rules and borders, short Frames in a run) — each built the same way and
+for the same reason: there is no arc primitive and no dash pattern, and inventing an asset would put
+the treatment behind art that doesn't exist. HudKit also
 gained `getUiIcon`/`applyIcon`, resolving against a new `ReplicatedStorage.UiIcons` folder through
 the same `resolveIcon` lookup the pre-existing `getItemIcon` uses (chrome/button glyphs vs.
 inventory item art, kept as separate folders so their naming can't collide); `applyIcon` also copies
@@ -159,7 +169,11 @@ trick (bundling related UI elements into one table — `inv`, `research`, `turre
 `pity` — instead of one local per frame) bought back registers for a while, but the file kept
 growing anyway, so four of those five groups have since been lifted into their own ModuleScripts
 beside `HudKit.lua` and `ModPicker.lua`: `ShopPanel.lua`, `TurretPanel.lua`, `ResearchPanel.lua`, and
-`InventoryPanel.lua`. `MainHud.client.lua` went from 4121 lines / ~164 top-level locals to 3121
+`InventoryPanel.lua`. `WeldingPanel.lua` joined them later for a different reason — not a grouped
+table but a whole TAB (the Welding Station's Robots tab), extracted as it was rewritten, so the
+rewrite landed ~700 lines in a new file instead of in this one. That is the pattern to follow for
+the remaining phase-3 menus: a tab that grows past a screenful moves out as it's redone, not after.
+`MainHud.client.lua` went from 4121 lines / ~164 top-level locals to 3121
 lines / ~151 — a smaller drop than the four extractions suggest, because the grouped-table trick had
 already banked most of the register savings; each extraction only nets back one local (`require`)
 minus however many aliases MainHud still needs for functions the extracted module exposes back to

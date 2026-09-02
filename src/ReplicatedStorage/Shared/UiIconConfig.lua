@@ -55,6 +55,19 @@ UiIconConfig.Icons = {
 	materials = 137045467867215,
 	materials_hover = 137045467867215,
 
+	-- Robot rig silhouettes for the Welding Station's rig diagram — one line drawing per robot, in
+	-- the same 180x230 proportion the design mockup used. NONE of these are uploaded yet, and that is
+	-- not a blocker: MainHud draws each rig out of Frames (an outline chassis, per robot) and only
+	-- swaps in the image once its ID lands here, so the tab is complete-looking either way. Same
+	-- "missing art never breaks the loop" rule as everything else in this table.
+	rig_Scrapbot = 0,
+	rig_SentryDrone = 0,
+	rig_IronGuardian = 0,
+	rig_ArcTurret = 0,
+	-- Drawn for a robot key with no rig_<key> entry at all (a Tier 5 added to CraftingRecipes before
+	-- its art exists). Also unset, which just falls through to the drawn generic chassis.
+	rig_generic = 0,
+
 	-- The 9-sliced panel shape: square top-left and bottom-right, 45-degree cut top-right and
 	-- bottom-left. White, tinted per element at runtime, so this one asset is every angular panel,
 	-- button and tile in the HUD. See HudKit.plate for the SliceCenter it is drawn with.

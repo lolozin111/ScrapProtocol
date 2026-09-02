@@ -178,10 +178,9 @@ Remotes.DeployRobot.OnServerInvoke = function(player: Player, robotKey: string)
 		return { Success = false, Reason = "All owned copies of this robot are already deployed" }
 	end
 
-	local maxSlots = CraftingRecipes.BaseMaxDeployedRobots
-	if profile.OwnedGamePasses.ExtraRobotSlot then
-		maxSlots += 1
-	end
+	-- Base + ExtraRobotSlot, resolved by the shared helper so the Welding Station's "deployed 2 / 3"
+	-- readout and this gate can never disagree about the denominator.
+	local maxSlots = CraftingRecipes.MaxDeployedRobots(profile)
 
 	if #profile.DeployedRobots >= maxSlots then
 		return { Success = false, Reason = "No free defense slots" }

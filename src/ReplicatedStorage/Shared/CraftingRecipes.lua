@@ -370,7 +370,23 @@ CraftingRecipes.Robots = {
 }
 
 -- Max robots a single player can have deployed at once (MVP value; +1 per
--- "Extra Robot Slot" game pass purchase — apply that as a per-player override).
+-- "Extra Robot Slot" game pass purchase — see MaxDeployedRobots below, which is what actually
+-- applies that bonus).
 CraftingRecipes.BaseMaxDeployedRobots = 3
+
+-- How many defense slots THIS player has, base plus the ExtraRobotSlot game pass. Shared rather
+-- than left inline in CraftingService's DeployRobot handler because the Welding Station's rig
+-- diagram prints "deployed 2 / 3" in its header, and a HUD that computes the denominator its own
+-- way is a HUD that can tell the player they have a free slot the server will refuse to fill.
+-- Same reasoning as Shared/Wallet.lua: the number the player is shown and the number the server
+-- enforces come out of one function. `profile` is the DataService profile server-side and the
+-- HudKit.profile mirror client-side — both carry OwnedGamePasses, so the same call works on either.
+function CraftingRecipes.MaxDeployedRobots(profile): number
+	local slots = CraftingRecipes.BaseMaxDeployedRobots
+	if profile and profile.OwnedGamePasses and profile.OwnedGamePasses.ExtraRobotSlot then
+		slots += 1
+	end
+	return slots
+end
 
 return CraftingRecipes

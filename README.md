@@ -162,14 +162,19 @@ no manual copy-pasting scripts into Studio.
   actions now also require standing near a particular physical prop, not just anywhere in the
   plot. Tag a Part or Model `Station` (`StationConfig.Tag`) and give it a child `StringValue`
   named `StationType` set to one of three keys: `Crafting` (a **Workbench** prop — gates Tools,
-  Auto-Miner, and Suit upgrades), `Welding` (a **Welding Station** prop — gates Robots and Mods),
+  Auto-Miner, and Suit upgrades), `Welding` (a **Welding Station** prop — gates Robots, Mods,
+  Turrets, and Drones),
   or `Forge` (gates Weapons and Smelting — every weapon in the game is rolled here now, see "Forge"
   below, and raw ore gets refined here too, see "Ore Smelting" below).
   There's no standalone "Workbench" button anymore — clicking a `Crafting`/`Welding`/`Forge`
   station in-world is the ONLY way to open the menu, and it opens scoped to just that station's own
   tabs (`StationConfig.Types[type].Tabs`) rather than every tab: a `Welding` station's menu only
-  ever shows Robots/Mods, a `Forge` station's only ever shows Weapons, a `Crafting` station's only
-  ever shows Tools/Auto-Miner/Suit. On top
+  ever shows Robots/Mods/Turrets/Drones, a `Forge` station's only ever shows Weapons/Smelting, a
+  `Crafting` station's only ever shows Tools/Auto-Miner/Suit/Base. The plate is also SIZED per
+  station (`StationConfig.PanelSize`, defaulting to `StationConfig.DefaultPanelSize`) — the Forge
+  and Welding Station open at 760x520 because their redesigned tabs need the room, the Workbench
+  stays at 640x424. Per station, not per tab, so the panel never resizes under you while you switch
+  tabs inside one station. On top
   of that, the actual craft/upgrade/deploy/equip action still gets rejected server-side too
   (`StationService.IsPlayerNearStation`, `StationConfig.InteractDistance` = 12 studs) if you try
   it while not near the right station, with a clear "You need to be at your Workbench/Welding
@@ -264,14 +269,34 @@ no manual copy-pasting scripts into Studio.
   (same signature) pulls one matching instance back off defense duty. `DeployRobot` caps at how
   many of that key you actually own, not just "own at least one," so the same single owned robot
   can't be deployed into every free slot at once.
+- **Welding Station → Robots (the rig diagram)** — `WeldingPanel.lua`. Not a list: the selected
+  robot is drawn centre-stage as a line-drawing chassis, its three `ModConfig.SlotsPerItem` mod
+  slots are hardpoints ON that chassis, and each one runs a dashed leader line out to a card naming
+  what is fitted there (or "Empty · click to fit" — slots are never locked, they just start empty).
+  Clicking a card opens the same mod picker the Inventory panel uses. A left rail lists every robot
+  split into **BUILT** (best tier first, with three pips showing which slots are filled) and **NOT
+  BUILT** (cheapest first, dashed, with its cost); clicking a row selects it, and one **Build**
+  button at the foot of the rail builds the selected unbuilt robot, or the cheapest one if a built
+  robot is selected. The footer prints the robot's mod-adjusted `dmg × rate · hp`, tinting only the
+  values a fitted mod actually moved, next to **Deploy**/**Recall** and **Fit mod**. The panel
+  header carries a station-wide **DEPLOYED n / m** readout (`CraftingRecipes.MaxDeployedRobots`,
+  which is also what `DeployRobot` enforces, so the two can't disagree).
+
+  The chassis art is DRAWN, out of stroked Frames — one shape list per robot in `WeldingPanel`'s
+  `RIGS` table, plus a `GENERIC_RIG` for any robot with no entry. Adding `rig_<robotKey>` to
+  `UiIconConfig.Icons` (the keys are already there, set to `0`) swaps in a real silhouette image
+  instead, and the drawn chassis becomes the fallback — same "missing art never breaks the loop"
+  rule as everything else.
 - **Weapon/robot mods** — Welding Station → Mods tab (or the Inventory panel's Mods tab) to craft
   permanent mod unlocks (`ModConfig.lua`, 3 slots per weapon/robot type — see `DESIGN_NOTES.md`'s
   "Base" section for the full design and why mods apply per item type rather than per robot/weapon
   instance). For a Forged weapon, mod slots key off its `WeaponKey` (type), not its unique instance
   Id — equipping a mod on "Pipe Pistol" affects every Pipe Pistol instance you own at once, same
-  simplified design robots always had. Owned weapon/robot rows grow 3 slot buttons — click one to
-  open a picker popup listing every mod you currently own (each tagged with its rarity —
-  everything's `Common` for now, see `ModConfig.Rarities`) plus a "None" option to clear the slot.
+  simplified design robots always had. The three slots are shown as hardpoints on the robot itself
+  in the Welding Station's rig diagram (see "Welding Station → Robots" below) and as slot buttons in
+  the Inventory panel's detail view — clicking either opens the same picker popup, listing every mod
+  you currently own (each tagged with its rarity — everything's `Common` for now, see
+  `ModConfig.Rarities`) plus a "None" option to clear the slot.
   Equip via the `EquipMod` RemoteFunction (`tree, itemKey, slotIndex, modKey`) — gated to the Forge
   for the Weapons tree, the Welding Station for Robots. `CombatMath.GetEffectiveWeaponStats`/
   `GetEffectiveStats` applies whatever's equipped when computing DPS.
@@ -589,8 +614,16 @@ to end:
    general Workbench button anymore, so this is the only way in), landing on **Tools**, and
    hovering the station should show its outline highlight. Close it with the **X** in the top
    corner, then click your `Welding` Station instead — the menu should reopen titled **Welding
-   Station**, this time showing only Robots/Mods, landing on **Robots**. Craft a Scrapbot from
-   there — it should succeed. Now walk away from the station (but stay inside your plot) and try
+   Station**, visibly WIDER and taller than the Workbench was (760x520 vs 640x424, per
+   `StationConfig.PanelSize`), showing only Robots/Mods/Turrets/Drones and landing on **Robots**.
+   The header should carry a **DEPLOYED 0 / 3** readout to the left of its **X**. The Robots tab is
+   the rig diagram, not a list: a left rail with a **NOT BUILT** heading and all four robots under
+   it (dashed rows, cheapest first, each showing its cost), and the selected one drawn as a dim
+   line-drawing chassis on the right with three dashed **SLOT** cards on leader lines reading
+   "Empty · needs building". Click **Build Scrapbot** at the foot of the rail — it should succeed,
+   the Scrapbot should jump up under a new **BUILT** heading with three empty pips, and its chassis
+   should light up (white outline, green optics) with the slot cards now reading "click to fit".
+   Now walk away from the station (but stay inside your plot) and try
    crafting again from the same still-open menu — it should fail with a "You need to be at your
    Welding Station to do that" warning in Output. Walk back next to it and confirm it works again.
    Then walk well outside your `Plot` Part's footprint entirely and try once more — this time it
@@ -620,8 +653,10 @@ to end:
    Forge is open, confirm the bottom **Inventory**/**Start Defense** row is gone (it would
    otherwise sit under/behind the docked Pity bar and Potion button on shorter windows). Close the
    Forge with the **X** and confirm the Pity bar and Potion button disappear immediately AND the
-   Inventory/Start Defense row comes right back. Then click your Scrapbot's row (while near the
-   Welding Station) to **Deploy** it.
+   Inventory/Start Defense row comes right back. Then go back to the **Welding Station → Robots**,
+   select the Scrapbot in the left rail, and press **Deploy** in the rig diagram's footer — the
+   header readout should tick to **DEPLOYED 1 / 3**, the status beside the robot's name should
+   change from "in storage" to "deployed ×1", and the button itself should flip to **Recall**.
 7. While still at the **Forge**, click its **Smelting** tab — a square panel should appear showing
    a centered clickable icon (plain "Select\nOre" placeholder text until you add an icon) and the
    prompt "Select Ore to Smelt". Click it — a popup should open titled **Select Ore**, showing a
@@ -736,16 +771,19 @@ to end:
     Scrap Iron + Copper Wire). Once built, the row switches to showing the passive rate (e.g.
     `+3 Scrap Iron every 60s`); wait a tick or two and confirm your Scrap Iron count ticks up on
     its own, whether or not you're actively mining.
-13. Open **Workbench → Mods** (near your `Welding` Station) and craft a mod (e.g. Speed Coil,
-    costs Copper Wire). Forge a Pipe Pistol at the **Forge** if you haven't already, and confirm
-    its row further down the Forge's Weapons tab now shows 3 slot buttons underneath. Click a
-    slot — a **popup should open** listing every mod you currently own (each prefixed with its
-    rarity, e.g. `[Common] Speed Coil`) plus a "None" option. Click Speed Coil — the popup closes
-    and the slot button should now read "Speed Coil". Open that same slot again and confirm it
-    shows "Selected" next to Speed Coil. Craft a second, different mod and equip it into a
-    different slot; then try equipping that same mod into a third slot on the same weapon and
-    confirm it's rejected (check the Output window for the warning). Deploy a robot and equip a
-    mod on it the same way (near the Welding Station this time, not the Forge).
+13. Open **Welding Station → Mods** and craft a mod (e.g. Speed Coil, costs Copper Wire). Switch
+    back to the **Robots** tab and click the **SLOT 1** card on your Scrapbot's rig — a **popup
+    should open** listing every mod you currently own (each prefixed with its rarity, e.g.
+    `[Common] Speed Coil`) plus a "None" option. Click Speed Coil — the popup closes, the card
+    should now read "Speed Coil" with its effect underneath (`-15% dmg · +25% rate`), its border
+    should switch from dashed to a solid accent outline, that hardpoint on the chassis should fill
+    in, the rail row's first pip should light, and the footer eyebrow should change from **BASE
+    STATS** to **WITH MODS** with the changed values tinted orange. Open that same slot again and
+    confirm it shows "Selected" next to Speed Coil. Craft a second, different mod and fit it into
+    another slot; then try fitting that same mod into a third slot on the same robot and confirm
+    it's rejected (check the Output window for the warning). Mods are per robot TYPE, so if you own
+    two Scrapbots both are affected at once. Equipping a mod on a WEAPON works the same way, but
+    from the Inventory panel's detail view (see step 14) — the Forge's Weapons tab is craft-only.
 14. Click **Inventory** in the bottom action row (`InventoryPanel.lua`, its own ModuleScript now —
     if nothing opens at all, that's the compile/require-error failure mode described at the top of
     this section, not this panel specifically) — it should open from anywhere, not just near a

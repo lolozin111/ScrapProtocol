@@ -95,4 +95,38 @@ ModConfig.Mods = {
 	},
 }
 
+-- Multiplies a base FireRate/BaseDamage/HP triple by whatever mods currently sit in
+-- profile.EquippedMods[itemKey] (a {[slotIndex] = modKey} table, may be nil or sparse). A mod that
+-- doesn't touch a given stat simply has no multiplier field for it — treated as 1x/no-op here
+-- rather than needing special-casing per mod. `hp` may be nil (weapons have none); it stays nil.
+--
+-- WHY THIS LIVES IN THE CONFIG rather than in CombatMath.lua, where it used to be the only copy:
+-- CombatMath is a ServerScriptService module, so the HUD physically cannot require it. The Welding
+-- Station's rig diagram shows the player their robot's mod-adjusted damage/HP, and the ONLY ways to
+-- get that number client-side are a second implementation of this loop or a round trip. A second
+-- implementation is the thing that drifts — the same reasoning that put cost resolution in
+-- Shared/Wallet.lua so the HUD can't disagree with what the server will charge. CombatMath's
+-- applyMods now delegates here, so there is still exactly one copy of the math.
+function ModConfig.ApplyMods(fireRate: number, baseDamage: number, hp: number?, itemKey: string, profile): (number, number, number?)
+	local equipped = profile.EquippedMods and profile.EquippedMods[itemKey]
+	if not equipped then
+		return fireRate, baseDamage, hp
+	end
+	for _, modKey in pairs(equipped) do
+		local mod = modKey and ModConfig.Mods[modKey]
+		if mod then
+			if mod.FireRateMultiplier then
+				fireRate *= mod.FireRateMultiplier
+			end
+			if mod.DamageMultiplier then
+				baseDamage *= mod.DamageMultiplier
+			end
+			if hp and mod.HPMultiplier then
+				hp *= mod.HPMultiplier
+			end
+		end
+	end
+	return fireRate, baseDamage, hp
+end
+
 return ModConfig

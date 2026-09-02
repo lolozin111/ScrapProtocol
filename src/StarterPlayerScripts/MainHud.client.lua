@@ -55,6 +55,7 @@ local ShopPanel = require(script.Parent.ShopPanel)
 local TurretPanel = require(script.Parent.TurretPanel)
 local ResearchPanel = require(script.Parent.ResearchPanel)
 local InventoryPanel = require(script.Parent.InventoryPanel)
+local WeldingPanel = require(script.Parent.WeldingPanel)
 
 
 local runActive = false
@@ -392,9 +393,13 @@ local craftClose
 -- reassigns this same label's Text per station, uppercased there too — StationConfig's
 -- DisplayName strings ("Workbench", "Forge", ...) are short authored config chrome, not
 -- player/server-generated content, so they get the same treatment as everything else here.
-local craftTitleLabel = Hud.panelHeader(craftSurface, "WORKBENCH", function()
+-- The header FRAME is kept, not just its title label: the Welding Station's Robots tab parks its
+-- "DEPLOYED 2 / 3" readout in this bar (a station-wide fact, so it belongs in the chrome rather than
+-- inside the tab body), and WeldingPanel needs somewhere to parent it. Nothing else writes to it.
+local craftHeader = Hud.panelHeader(craftSurface, "WORKBENCH", function()
 	craftClose()
-end):FindFirstChildOfClass("TextLabel")
+end)
+local craftTitleLabel = craftHeader:FindFirstChildOfClass("TextLabel")
 
 -- Tab row height is 40, not a free choice — see the vertical-stack comment above craftFrame for
 -- why (BUTTON_MIN_SLICE_SIZE's physical floor). Position Y (56) is header (48) + Hud.SPACE.S (8).
@@ -1003,11 +1008,11 @@ local function renderSuitRow()
 end
 
 ----------------------------------------------------------------------
--- Mods tab + per-item mod slots — see ModConfig.lua's header comment for the design
--- (3 slots per weapon/robot TYPE, applied multiplicatively via CombatMath.GetEffectiveStats).
+-- Mods tab — CRAFTING mods. Fitting one into a slot is elsewhere now: the Welding Station's rig
+-- diagram (WeldingPanel.lua) and the Inventory panel's detail view both raise the shared ModPicker.
+-- See ModConfig.lua's header for the design (3 slots per weapon/robot TYPE, applied
+-- multiplicatively via ModConfig.ApplyMods, which CombatMath.GetEffectiveStats also calls).
 ----------------------------------------------------------------------
-
-local MOD_SLOT_WIDTH = 96
 
 local function renderModsRow()
 	local keys = {}
@@ -1038,94 +1043,15 @@ end
 
 
 ----------------------------------------------------------------------
--- Turret slot panel — opened by clicking a turret slot out in the world (the blue pad for an
--- empty one, or the turret itself for an occupied one), NOT from a tab in the Workbench. See
--- TurretPanel.lua's header for the "why the world, not a tab" rationale.
+-- Shared item helpers — small readouts several tabs and panels need. (The "Turret slot panel"
+-- banner that used to head this section went with the last of its code: the panel itself moved to
+-- TurretPanel.lua a while back, and makeEquipmentRow — the only thing still sitting under the
+-- orphaned heading — has now moved to WeldingPanel.lua.)
 ----------------------------------------------------------------------
-
--- Taller than makeRow's fixed 52px — same title/subtitle/button layout up top, plus a row of
--- ModConfig.SlotsPerItem slot buttons underneath for owned weapons/robots. Clicking a slot opens
--- the mod picker popup (see openModPicker above) instead of cycling in place.
-local function makeEquipmentRow(tree: string, itemKey: string, titleText: string, statsText: string, buttonText: string, onClick)
-	local row = Hud.new("Frame", {
-		BackgroundColor3 = Hud.COLOR.PanelLight,
-		Size = UDim2.new(1, 0, 0, 90),
-	}, { Hud.corner(6) })
-
-	Hud.new("TextLabel", {
-		BackgroundTransparency = 1,
-		Position = UDim2.new(0, 10, 0, 4),
-		Size = UDim2.new(1, -110, 0, 20),
-		Font = Enum.Font.SourceSansBold,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		TextColor3 = Hud.COLOR.Text,
-		TextSize = 16,
-		Text = titleText,
-		Parent = row,
-	})
-
-	Hud.new("TextLabel", {
-		BackgroundTransparency = 1,
-		Position = UDim2.new(0, 10, 0, 24),
-		Size = UDim2.new(1, -110, 0, 20),
-		Font = Enum.Font.Code,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		TextColor3 = Hud.COLOR.Muted,
-		TextSize = 13,
-		Text = statsText,
-		Parent = row,
-	})
-
-	-- Always Accent-filled regardless of state (only the TEXT changes between Equip/Deploy/
-	-- Undeploy) — a clean, honest fit for the primary variant.
-	Hud.button({
-		variant = "primary",
-		text = buttonText,
-		position = UDim2.new(1, -96, 0, 4),
-		size = UDim2.new(0, 86, 0, 32),
-		parent = row,
-		onClick = onClick,
-	})
-
-	local slotRow = Hud.new("Frame", {
-		BackgroundTransparency = 1,
-		Position = UDim2.new(0, 10, 0, 50),
-		Size = UDim2.new(1, -20, 0, 32),
-		Parent = row,
-	}, { Hud.new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 6) }) })
-
-	-- Its fill (AccentDark vs. Panel) is a THIRD state — which mod is equipped in this slot, not
-	-- "is this button primary/secondary/danger" — so it doesn't map onto any of the three fixed
-	-- variants. `fill` sets that arbitrary rest color at build time (hover/press still get derived
-	-- from it, same as a named variant), which is exactly the gap that used to force this button to
-	-- be hand-rolled with no hover/press feedback at all. The whole row is rebuilt fresh on every
-	-- render (never recolored in place), so a build-time fill is enough here — no
-	-- Hud.setButtonFill call needed.
-	for slotIndex = 1, ModConfig.SlotsPerItem do
-		local equippedKey = ModPicker.equippedModKeyForSlot(itemKey, slotIndex)
-		local mod = equippedKey and ModConfig.Mods[equippedKey]
-		local slotButton = Hud.button({
-			fill = mod and Hud.COLOR.AccentDark or Hud.COLOR.Panel,
-			text = mod and mod.DisplayName or ("Slot %d: Empty"):format(slotIndex),
-			size = UDim2.new(0, MOD_SLOT_WIDTH, 1, 0),
-			parent = slotRow,
-			onClick = function()
-				ModPicker.openModPicker(tree, itemKey, slotIndex)
-			end,
-		})
-		-- HudButtonOptions has no knobs for these, and an equipped mod's DisplayName can run long
-		-- enough at this slot width to need wrapping — matches the original hand-rolled button.
-		slotButton.Font = Enum.Font.Code
-		slotButton.TextSize = 12
-		slotButton.TextWrapped = true
-	end
-
-	return row
-end
 
 -- How many currently-deployed instances of a given robotKey there are (DeployedRobots can hold
 -- the same key more than once — a player owning 3 Sentry Bots can deploy all 3). Shared by
--- makeRobotRow below and the Inventory panel's Robots tab.
+-- WeldingPanel's rig footer and the Inventory panel's Robots tab.
 local function deployedCountForRobot(key: string): number
 	local count = 0
 	for _, deployedKey in ipairs(Hud.profile.DeployedRobots or {}) do
@@ -1151,37 +1077,24 @@ local function affixSummary(affixes)
 	return table.concat(parts, ", ")
 end
 
--- One owned robot's row. The Forge's Weapons tab has no equivalent anymore (it's craft-only now —
--- see the Forge tab section below); owning/equipping a Forged weapon instance is Inventory-only.
--- The button here toggles Deploy/Undeploy instead of always being "Deploy": once every owned copy
--- is on defense duty there's nothing left to deploy, so the only sensible action left is pulling
--- one back off (UndeployRobot, see CraftingService.lua) — a single button can express that
--- unambiguously without needing two.
-local function makeRobotRow(key: string)
-	local recipe = CraftingRecipes.Robots[key]
-	local owned = Hud.profile.CraftedRobots[key] or 0
-	local deployed = deployedCountForRobot(key)
-	local canDeployMore = deployed < owned
-	return makeEquipmentRow(
-		"Robots", key,
-		("T%d  %s (owned %d, deployed %d)"):format(recipe.Tier, recipe.DisplayName, owned, deployed),
-		("Base: %.1f dmg x %.1f/s · %d HP"):format(recipe.BaseDamage, recipe.FireRate, recipe.HP),
-		canDeployMore and "Deploy" or "Undeploy",
-		function()
-			if canDeployMore then
-				local result = Remotes.DeployRobot:InvokeServer(key)
-				if not result.Success then
-					Hud.showFailure("Deploy failed", result.Reason)
-				end
-			else
-				local result = Remotes.UndeployRobot:InvokeServer(key)
-				if not result.Success then
-					Hud.showFailure("Undeploy failed", result.Reason)
-				end
-			end
-		end
-	)
-end
+-- The Welding Station's Robots tab. Everything that used to be here — makeEquipmentRow (the 90px
+-- title/stats/button row with three mod-slot buttons stapled underneath) and makeRobotRow, plus the
+-- MOD_SLOT_WIDTH those slot buttons were sized with — moved into WeldingPanel.lua and became the
+-- Rig Diagram (HUD phase 3, design round section C). See that file's header for what changed and
+-- why; nothing else in this file used any of the three.
+--
+-- Constructed HERE rather than up with the other panels because it needs deployedCountForRobot,
+-- declared just above. `refresh` is wrapped in a closure rather than passed directly because
+-- renderCraftList is forward-declared and still nil at this point in the chunk — a closure captures
+-- the upvalue and sees the real function once it is assigned further down.
+local weldingPanel = WeldingPanel.new({
+	listFrame = listFrame,
+	craftHeader = craftHeader,
+	deployedCountForRobot = deployedCountForRobot,
+	refresh = function()
+		renderCraftList()
+	end,
+})
 
 ----------------------------------------------------------------------
 -- Forge tab — replaces the old flat "craft one of each weapon type" list. Every weapon in the
@@ -1883,7 +1796,15 @@ renderCraftList = function()
 		end
 	end
 
-	if currentTab == "Auto-Miner" then
+	-- The Welding tab's deploy readout lives in the panel HEADER, which the sweep above deliberately
+	-- doesn't touch (it only clears listFrame). Hidden here and shown again by the panel's own render,
+	-- so it can never sit there over the Mods or Turrets tab still claiming a deploy count.
+	weldingPanel.hideReadout()
+
+	if currentTab == "Robots" then
+		weldingPanel.render()
+		return
+	elseif currentTab == "Auto-Miner" then
 		renderAutoMinerRow()
 		return
 	elseif currentTab == "Tools" then
@@ -1923,37 +1844,10 @@ renderCraftList = function()
 		return
 	end
 
-	-- Only Robots ever reaches here now — Weapons moved to the Forge above.
-	local recipes = CraftingRecipes.Robots
-
-	-- Sort by tier so the list reads as a progression, not a random bag.
-	local keys = {}
-	for key in pairs(recipes) do
-		table.insert(keys, key)
-	end
-	table.sort(keys, function(a, b)
-		return recipes[a].Tier < recipes[b].Tier
-	end)
-
-	for _, key in ipairs(keys) do
-		local recipe = recipes[key]
-		local ownedCount = Hud.profile.CraftedRobots[key] or 0
-		if ownedCount > 0 then
-			makeRobotRow(key).Parent = listFrame
-		else
-			Hud.makeRow(
-				("T%d  %s"):format(recipe.Tier, recipe.DisplayName),
-				Hud.costString(recipe.Cost),
-				"Craft",
-				function()
-					local result = Remotes.CraftItem:InvokeServer("Robots", key)
-					if not result.Success then
-						Hud.showFailure("Craft failed", result.Reason)
-					end
-				end
-			).Parent = listFrame
-		end
-	end
+	-- Nothing falls through anymore: every tab any station declares has a branch above. A tab name
+	-- that reaches here is a StationConfig entry with no renderer, which used to present as an empty
+	-- panel and nothing in Output — the exact silent failure this project keeps getting bitten by.
+	warn(("[MainHud] no renderer for craft tab %q"):format(tostring(currentTab)))
 end
 
 -- Keyed by tab NAME, not creation order/index — rebuildTabs destroys and recreates these every

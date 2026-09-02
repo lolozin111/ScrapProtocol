@@ -20,30 +20,13 @@ local function getRecipe(tree: string, key: string)
 end
 
 -- Multiplies a base recipe's FireRate/BaseDamage/HP by whatever mods currently sit in
--- profile.EquippedMods[itemKey] (a {[slotIndex]=modKey} table, may be nil or sparse). A mod that
--- doesn't touch a given stat simply has no multiplier field for it (see ModConfig.lua) — treated
--- as 1x/no-op here rather than needing special-casing per mod.
-local function applyMods(fireRate: number, baseDamage: number, hp: number?, itemKey: string, profile)
-	local equipped = profile.EquippedMods and profile.EquippedMods[itemKey]
-	if not equipped then
-		return fireRate, baseDamage, hp
-	end
-	for _, modKey in pairs(equipped) do
-		local mod = modKey and ModConfig.Mods[modKey]
-		if mod then
-			if mod.FireRateMultiplier then
-				fireRate *= mod.FireRateMultiplier
-			end
-			if mod.DamageMultiplier then
-				baseDamage *= mod.DamageMultiplier
-			end
-			if hp and mod.HPMultiplier then
-				hp *= mod.HPMultiplier
-			end
-		end
-	end
-	return fireRate, baseDamage, hp
-end
+-- profile.EquippedMods[itemKey]. The loop itself MOVED to ModConfig.ApplyMods (Shared) and this is
+-- now a one-line delegate: the Welding Station's rig diagram needs the same mod-adjusted numbers
+-- client-side, and this module lives in ServerScriptService where the HUD cannot reach it. See
+-- ModConfig.ApplyMods's own comment for why a second copy was the wrong answer. Kept as a local
+-- alias rather than inlining ModConfig.ApplyMods at both call sites below, so the name every
+-- reader of this file already knows still resolves here.
+local applyMods = ModConfig.ApplyMods
 
 -- Returns the fully mod-adjusted stats for one weapon/robot recipe, given a player's profile.
 -- Used both by the HUD (to show live numbers) and internally by GetPlayerCombatDPS below.
