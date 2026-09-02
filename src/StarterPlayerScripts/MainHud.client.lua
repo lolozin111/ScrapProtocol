@@ -78,10 +78,15 @@ local runActive = false
 -- remembered to recompute the magic number. Hud.plate's automaticSize option breaks that
 -- circularity on the shell/surface pair; currencyList below has to do the equivalent for itself
 -- to actually benefit from it (see its own comment).
+-- Widened from the old 220 (a 3-line vertical stack) to fit one horizontal row of three
+-- icon+label+value groups plus dividers — see currencyList below. Picked by hand-summing group
+-- widths (icon 18 + gaps + "Scrap"/"Cores"/"Energy" labels + fixed-width values); pad generously
+-- rather than exactly, since a too-narrow surface clips silently (Frames don't clip children by
+-- default) instead of erroring.
 local currencyFrame = Hud.plate({
 	Name = "Currency",
 	Position = UDim2.new(0, 16, 0, 16),
-	Size = UDim2.new(0, 220, 0, 0), -- Y is a placeholder; automaticSize below drives the real height
+	Size = UDim2.new(0, 400, 0, 0), -- Y is a placeholder; automaticSize below drives the real height
 	automaticSize = true,
 	Parent = Hud.screenGui,
 })
@@ -98,6 +103,9 @@ Hud.accentCap(currencyFrame) -- full-width, parented straight onto the surface (
 -- still-being-computed automatic height, and AutomaticSize.Y then grows this frame to fit its
 -- UIListLayout'd rows. A Scale-based Y here (the old `1, -4`) would be circular against
 -- currencyFrame's own AutomaticSize.Y and quietly collapse instead of erroring.
+--
+-- Now a single horizontal row (direction C / the "Forged Rig" hybrid) instead of three stacked
+-- lines — FillDirection/VerticalAlignment replace the old vertical Padding-only layout.
 local currencyList = Hud.new("Frame", {
 	BackgroundTransparency = 1,
 	Position = UDim2.fromOffset(0, 4),
@@ -105,29 +113,117 @@ local currencyList = Hud.new("Frame", {
 	AutomaticSize = Enum.AutomaticSize.Y,
 	Parent = currencyFrame,
 }, {
-	Hud.new("UIListLayout", { Padding = UDim.new(0, 2) }),
+	Hud.new("UIListLayout", {
+		FillDirection = Enum.FillDirection.Horizontal,
+		VerticalAlignment = Enum.VerticalAlignment.Center,
+		Padding = UDim.new(0, 10),
+	}),
 	Hud.new("UIPadding", {
 		PaddingTop = UDim.new(0, 8), PaddingBottom = UDim.new(0, 8),
 		PaddingLeft = UDim.new(0, 12), PaddingRight = UDim.new(0, 12),
 	}),
 })
 
-local function makeStatLabel(color)
-	return Hud.new("TextLabel", {
+-- Icon slot + short muted label shared by every group. Icons don't exist yet — Hud.applyIcon
+-- returns false when ReplicatedStorage.UiIcons has no "scrap"/"cores"/"energy" entry, and this
+-- project's rule is that missing art degrades to a fallback rather than ever breaking or rendering
+-- an empty square: the ImageLabel is hidden and the muted label alone carries the meaning. Wired
+-- ahead of the art existing on purpose — once the user drops real icons into UiIcons under these
+-- keys, they light up with no further code change.
+--
+-- Group's own height is a fixed offset (24), never a Scale, for the same circularity reason
+-- currencyFrame/currencyList call out above: currencyList AutomaticSizes its Y from this row's
+-- height, so this row's height can't in turn depend on currencyList's.
+local function makeCurrencyGroupShell(iconKey: string, labelText: string): Frame
+	local group = Hud.new("Frame", {
 		BackgroundTransparency = 1,
-		Size = UDim2.new(1, 0, 0, 18),
-		Font = Enum.Font.Code,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		TextColor3 = color,
-		TextSize = 15,
-		Text = "",
+		AutomaticSize = Enum.AutomaticSize.X,
+		Size = UDim2.new(0, 0, 0, 24),
+		Parent = currencyList,
+	}, {
+		Hud.new("UIListLayout", {
+			FillDirection = Enum.FillDirection.Horizontal,
+			VerticalAlignment = Enum.VerticalAlignment.Center,
+			Padding = UDim.new(0, 5),
+		}),
+	})
+
+	local icon = Hud.new("ImageLabel", {
+		BackgroundTransparency = 1,
+		Size = UDim2.fromOffset(18, 18),
+		Parent = group,
+	})
+	if not Hud.applyIcon(icon, iconKey) then
+		icon.Visible = false
+	end
+
+	Hud.new("TextLabel", {
+		BackgroundTransparency = 1,
+		AutomaticSize = Enum.AutomaticSize.X,
+		Size = UDim2.new(0, 0, 0, 18),
+		Font = Hud.FONT.Body,
+		TextColor3 = Hud.COLOR.Muted,
+		TextSize = 12,
+		Text = labelText,
+		Parent = group,
+	})
+
+	return group
+end
+
+-- 1px vertical rules between groups, in Hud.COLOR.Line — offset-sized for the same
+-- non-Scale-under-AutomaticSize reason as the group shells above.
+local function makeCurrencyDivider()
+	Hud.new("Frame", {
+		BackgroundColor3 = Hud.COLOR.Line,
+		BorderSizePixel = 0,
+		Size = UDim2.new(0, 1, 0, 18),
 		Parent = currencyList,
 	})
 end
 
-local scrapLabel = makeStatLabel(Hud.COLOR.Accent)
-local coresLabel = makeStatLabel(Hud.COLOR.Good)
-local energyLabel = makeStatLabel(Hud.COLOR.Good)
+-- Fixed-width, right-aligned, Hud.FONT.Mono: Scrap/Cores change constantly during play, and a
+-- left-aligned or AutomaticSize-width value would jitter sideways every time a digit is added or
+-- dropped. A fixed box with right alignment keeps the ones-digit anchored in place; the number
+-- grows leftward into its own reserved space instead of shoving the divider/next group over.
+local function makeCurrencyValue(parent: Frame, color: Color3, width: number): TextLabel
+	return Hud.new("TextLabel", {
+		BackgroundTransparency = 1,
+		Size = UDim2.new(0, width, 0, 18),
+		Font = Hud.FONT.Mono,
+		TextXAlignment = Enum.TextXAlignment.Right,
+		TextColor3 = color,
+		TextSize = 15,
+		Text = "",
+		Parent = parent,
+	})
+end
+
+-- Grouped into one table (rather than one local per label) to stay under Luau's 200-local cap —
+-- see this file's header note on that budget. refreshCurrency below addresses these by field name.
+local currencyStrip = {}
+currencyStrip.scrap = makeCurrencyValue(makeCurrencyGroupShell("scrap", "Scrap"), Hud.COLOR.Accent, 56)
+makeCurrencyDivider()
+currencyStrip.cores = makeCurrencyValue(makeCurrencyGroupShell("cores", "Cores"), Hud.COLOR.Good, 56)
+makeCurrencyDivider()
+
+-- Energy gets a second, Muted "/max" segment instead of one combined string — RichText would also
+-- get two colors in one label, but needs a Color3->hex helper this project doesn't have yet, and
+-- MaxEnergy is a session constant (never changes at runtime), so this segment is set once here and
+-- never touched by refreshCurrency — only the current-energy segment needs the anti-jitter
+-- fixed-width treatment makeCurrencyValue gives it.
+local energyGroup = makeCurrencyGroupShell("energy", "Energy")
+currencyStrip.energyCurrent = makeCurrencyValue(energyGroup, Hud.COLOR.Text, 26)
+currencyStrip.energyMax = Hud.new("TextLabel", {
+	BackgroundTransparency = 1,
+	AutomaticSize = Enum.AutomaticSize.X,
+	Size = UDim2.new(0, 0, 0, 18),
+	Font = Hud.FONT.Mono,
+	TextColor3 = Hud.COLOR.Muted,
+	TextSize = 15,
+	Text = ("/%d"):format(RaidEnergyConfig.MaxEnergy),
+	Parent = energyGroup,
+})
 
 -- Ore/material counts used to live here too (one label per ore plus a divider), but that made
 -- this corner unreadable fast — it's trimmed down to just the three numbers worth a glance during
@@ -137,12 +233,13 @@ local energyLabel = makeStatLabel(Hud.COLOR.Good)
 local ORE_DISPLAY_ORDER = { "ScrapIron", "CopperWire", "SteelPlating", "GoldContacts" }
 
 local function refreshCurrency()
-	scrapLabel.Text = ("Scrap: %d"):format(Hud.profile.Scrap or 0)
-	coresLabel.Text = ("Cores: %d"):format(Hud.profile.Cores or 0)
+	currencyStrip.scrap.Text = tostring(Hud.profile.Scrap or 0)
+	currencyStrip.cores.Text = tostring(Hud.profile.Cores or 0)
 	-- Energy can briefly read above MaxEnergy right after an Energy Drink (see
 	-- RaidEnergyConfig.OverflowCap) — that's intentional, not a bug, it just drains back down to
 	-- the normal cap as raids are spent rather than being topped up further by passive regen.
-	energyLabel.Text = ("Energy: %d/%d"):format(Hud.profile.Energy or 0, RaidEnergyConfig.MaxEnergy)
+	-- energyMax's "/N" text is set once at construction above, not here — MaxEnergy is constant.
+	currencyStrip.energyCurrent.Text = tostring(Hud.profile.Energy or 0)
 end
 
 ----------------------------------------------------------------------

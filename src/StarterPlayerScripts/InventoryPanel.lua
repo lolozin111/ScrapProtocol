@@ -98,10 +98,15 @@ function InventoryPanel.new(context)
 	-- inv.frame is the plate's SHELL (the outer, positioned frame) so every existing
 	-- `inv.frame.Visible = ...` toggle keeps hiding/showing the whole panel; inv.surface is the
 	-- inset content surface the header/tabs/grid all parent into.
+	-- Docked to the right edge instead of floating center-screen — a 640x400 plate with one line
+	-- of text in the middle of the viewport read as an empty black rectangle dominating the screen.
+	-- Narrower (420, down from 640) and anchored/positioned flush against the right edge,
+	-- vertically centered, so sparse content reads as a compact sidebar instead of barren.
 	inv.surface, inv.frame = Hud.plate({
 		Name = "Inventory",
-		Position = UDim2.new(0.5, -320, 0.5, -200),
-		Size = UDim2.new(0, 640, 0, 400),
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(1, 0, 0.5, 0),
+		Size = UDim2.new(0, 420, 0, 480),
 		Visible = false,
 		Parent = Hud.screenGui,
 	})
@@ -127,7 +132,20 @@ function InventoryPanel.new(context)
 		AutomaticCanvasSize = Enum.AutomaticSize.Y,
 		ScrollBarThickness = 6,
 		Parent = inv.surface,
-	}, { Hud.new("UIGridLayout", { CellSize = UDim2.new(0, TILE_SIZE, 0, TILE_SIZE), CellPadding = UDim2.new(0, Hud.SPACE.S, 0, Hud.SPACE.S) }) })
+	}, {
+		-- Panel narrowed from 640 to 420 to dock against the right edge (see inv.frame below) — the
+		-- old 6-column grid no longer fits. FillDirectionMaxCells pins the column count at 4
+		-- explicitly rather than leaving it to whatever the width happens to divide into (which
+		-- would silently drift back toward 5-6 if the panel's width ever changes again). Horizontal
+		-- CellPadding is widened from Hud.SPACE.S (8) to 24 so four 76px tiles actually fill the
+		-- ~390px-wide list frame instead of leaving a dead gap on the right; vertical padding is
+		-- left at Hud.SPACE.S to keep row spacing exactly as it was.
+		Hud.new("UIGridLayout", {
+			CellSize = UDim2.new(0, TILE_SIZE, 0, TILE_SIZE),
+			CellPadding = UDim2.new(0, 24, 0, Hud.SPACE.S),
+			FillDirectionMaxCells = 4,
+		}),
+	})
 
 	-- Overlays inv.listFrame's area with a plain message when the current tab has nothing to show —
 	-- UIGridLayout forces every child to CellSize, so a full-width "nothing here" message can't be a
@@ -149,16 +167,26 @@ function InventoryPanel.new(context)
 	})
 
 	----------------------------------------------------------------------
-	-- Detail panel — sits just right of the Inventory, populated by clicking a tile. Shared by all
-	-- four tabs; which parts are visible (mod slots, the action button) depends on the category.
+	-- Detail panel — sits just left of the Inventory (see the docking comment just below), populated
+	-- by clicking a tile. Shared by all four tabs; which parts are visible (mod slots, the action
+	-- button) depends on the category.
 	----------------------------------------------------------------------
 
 	-- inv.detailFrame is the plate's SHELL (the outer, positioned frame) so every existing
 	-- `inv.detailFrame.Visible = ...` toggle keeps working unchanged; inv.detailSurface is the
 	-- inset content surface the header and every detail element parent into.
+	-- The main panel now docks flush against the right screen edge (see inv.frame above) instead of
+	-- floating center-screen, so "just right of it" would render off-screen entirely — this got
+	-- flipped to sit just LEFT of it instead. Anchored the same way (right edge, vertical center) so
+	-- it tracks the main panel's edge with one offset rather than duplicating its absolute position:
+	-- the main panel's left edge sits at screen-right minus its own 420 width, and this frame's own
+	-- right edge sits Hud.SPACE.M further left than that, i.e. at -(420 + Hud.SPACE.M) from the
+	-- screen edge. Size (260x400) is unchanged, and sharing the same vertical anchor/position keeps
+	-- it vertically centered on the same line as the main panel above.
 	inv.detailSurface, inv.detailFrame = Hud.plate({
 		Name = "InventoryDetail",
-		Position = UDim2.new(0.5, 330, 0.5, -200),
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(1, -(420 + Hud.SPACE.M), 0.5, 0),
 		Size = UDim2.new(0, 260, 0, 400),
 		Visible = false,
 		Parent = Hud.screenGui,

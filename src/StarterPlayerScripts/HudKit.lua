@@ -558,9 +558,11 @@ end
 -- five copies of Frame+UIGradient+Frame drifting apart the way makeRow's inline button already has
 -- from HudKit.button.
 
-local PLATE_GRADIENT_LIGHTEN = 0.35 -- top edge: COLOR.Line lightened, reads as a lit bevel
+local PLATE_GRADIENT_LIGHTEN = 0.62 -- top edge: COLOR.Line lightened. Pushed well up from 0.35
+-- after a Studio screenshot: at 2-3px against a bright outdoor scene, a mid-grey bevel is
+-- technically correct and visually invisible. The bevel only earns its cost if it reads in game.
 local PLATE_GRADIENT_DARKEN = 0.85 -- bottom edge: COLOR.Line darkened toward near-black
-local PLATE_SURFACE_INSET = 2 -- pixels of shell visible as a border once the surface sits on top
+local PLATE_SURFACE_INSET = 3 -- pixels of shell visible as a border once the surface sits on top.
 
 -- Returns (surface, shell) in that order: surface is what a caller almost always wants right away
 -- (to parent content into), shell is only needed afterward to move/resize the whole panel — hence

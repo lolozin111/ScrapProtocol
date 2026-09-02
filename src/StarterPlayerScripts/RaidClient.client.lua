@@ -97,9 +97,14 @@ local screenGui = new("ScreenGui", {
 -- once a raid is active; reappears the moment the raid ends, one way or another.
 ----------------------------------------------------------------------
 
+-- PanelLight, not AccentDark: Start Defense (MainHud's action row) is the one loud accent-filled
+-- action on screen, and two competing orange buttons in opposite corners read as two equally
+-- primary choices. This is the secondary treatment HudKit.button gives its "secondary" variant,
+-- hand-applied — this file deliberately keeps its own undecorated style until the raid loop is
+-- reskinned wholesale (see the header), so it is not worth routing through HudKit for one button.
 local startButton = new("TextButton", {
 	Name = "StartRaidButton",
-	BackgroundColor3 = COLOR.AccentDark,
+	BackgroundColor3 = COLOR.PanelLight,
 	Position = UDim2.new(1, -16, 0, 16),
 	AnchorPoint = Vector2.new(1, 0),
 	Size = UDim2.new(0, 150, 0, 40),
