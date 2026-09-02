@@ -222,7 +222,7 @@ no manual copy-pasting scripts into Studio.
   unlucky run: `ForgeConfig.Pity.Threshold` (15) rolls in a row without landing `Pity.MinRarity`
   (Rare) or better forces the very next roll to at least that rarity — still luck-weighted among
   Rare-and-up, not a flat guarantee of exactly Rare. Shown the same way: a **pity progress bar**
-  (`pityBarFrame`) reading `Forge Pity: N / 15 (Rare+)` with a filling bar, docked right beside the
+  (`pity.barFrame`) reading `Forge Pity: N / 15 (Rare+)` with a filling bar, docked right beside the
   Potion button, filling the rest of the row out to the Forge menu's own right edge. **Both widgets
   are Forge-only** — hidden the rest of the time, and hidden again for the Workbench/Welding
   Station's own menus (`setForgeWidgetsVisible`, toggled from `openStationMenu`/
@@ -303,7 +303,11 @@ no manual copy-pasting scripts into Studio.
   default size/position on it is harmless. **Descriptions** live in code: `CraftingRecipes.lua`'s
   Weapons/Robots entries and `OreConfig.lua`'s Ores entries each have a `Description` field
   (`ModConfig.lua`'s mods already did) — edit those directly to change the flavor text shown in
-  the detail panel.
+  the detail panel. A sibling empty Folder, `ReplicatedStorage.UiIcons`, also exists in
+  `default.project.json` now, resolved through `HudKit.getUiIcon`/`applyIcon` the same way — for
+  chrome/button glyphs rather than inventory items, kept as a separate folder so the two naming
+  schemes can't collide. Nothing currently reads from it (no panel calls `HudKit.button`'s optional
+  `icon` yet), so it's an empty foundation today, not a feature you can click through.
 - **Auto-Miner** — `AutoMinerService.lua` handles a one-time-craftable "Mini Particle
   Accelerator" (Workbench → Auto-Miner tab, cost in `AutoMinerConfig.lua`) that passively grants
   a small amount of Scrap Iron on a timer for every player who's built one, whether they're
@@ -541,7 +545,22 @@ no manual copy-pasting scripts into Studio.
 (Scrap/Cores/Energy only), a Workbench panel (opens only from a physical station), an Inventory
 panel (opens from anywhere — equip/deploy/undeploy your gear, see everything you own including
 raw materials), and a Start Defense button with a live wave/HP bar. It exists so the loop is
-actually visible before any real art or UI design happens. To test end to end:
+actually visible before any real art or UI design happens.
+
+It's no longer one script doing all of that: `MainHud.client.lua` shares a `StarterPlayerScripts`
+folder with `HudKit.lua` (the palette/design-token/instance-builder foundation every panel is built
+from) and four panel ModuleScripts split out of it — `ShopPanel.lua` (Outpost Shop), `TurretPanel.lua`
+(the turret slot popup), `ResearchPanel.lua` (the Research requirements popup), and
+`InventoryPanel.lua` — plus the earlier `ModPicker.lua` (the mod-slot picker). The split exists
+purely to stay under Luau's 200-local-per-function-scope compile ceiling (see `CLAUDE.md`); it
+changes nothing about what you click or see. Because that ceiling is a *compile*-time limit, not a
+runtime one, breaking it again wouldn't show up as a broken panel — it fails the whole script's
+compile, so nothing prints but "Out of local registers" (or a `require` error, if a panel module
+itself fails to compile) and the HUD doesn't appear **at all**. So: **the first thing to check in
+Studio, before troubleshooting any single panel below, is that the HUD renders at all** — the bottom
+currency readout and the Inventory/Start Defense buttons. If none of it is there, look in Output for
+a compile/require error before assuming the specific feature you were testing is broken. To test end
+to end:
 
 1. Place any Part somewhere in your map (any size — it'll be forced invisible/non-collidable
    automatically) and tag it `Plot` (Studio's Tag Editor, top ribbon under **Model**, or via
@@ -629,7 +648,9 @@ actually visible before any real art or UI design happens. To test end to end:
    a new **Steel Ingot** tile with the refined count. Close the Forge and reopen it on the
    **Smelting** tab again to confirm the panel remembers there's nothing in progress (it should, not
    get stuck showing a stale state).
-8. Open the **Inventory** panel's Weapons tab and click your Pipe Pistol to **Equip** it — you can
+8. Open the **Inventory** panel (built by `InventoryPanel.lua`, its own ModuleScript now — see the
+   note at the top of this section on checking the HUD renders at all first) — its Weapons tab and
+   click your Pipe Pistol to **Equip** it — you can
    do this from anywhere now, not just standing at the Forge (loadout actions dropped their
    plot/station gate; only actual crafting still needs the right station). A real gun Tool should
    appear on your hotbar at the bottom of the screen; select it (click it or press its number key)
@@ -654,7 +675,8 @@ actually visible before any real art or UI design happens. To test end to end:
    `Combat` (give the Combat one a `Tier` NumberValue set to `1`). Left-click the Combat node
    (within 50 studs) to raid it — this spends 1 Energy (top-left readout, starts full at 5/5) —
    the raid panel (bottom-right) shows enemy HP and your own HP draining together. Clear it,
-   then click the Shop node and spend the Scrap/ore you've earned; click the Heal node any time
+   then click the Shop node (its popup is `ShopPanel.lua`, its own ModuleScript now) and spend the
+   Scrap/ore you've earned; click the Heal node any time
    your HP is low. Raid a 6th time with Energy at 0 and you should get a "Not enough Energy"
    warning in Output instead of the raid starting. (If you're testing as the place's owner, raids
    resolve as an instant win with no Energy spent — see "Admin dev shortcuts" above. Add a
@@ -724,7 +746,9 @@ actually visible before any real art or UI design happens. To test end to end:
     different slot; then try equipping that same mod into a third slot on the same weapon and
     confirm it's rejected (check the Output window for the warning). Deploy a robot and equip a
     mod on it the same way (near the Welding Station this time, not the Forge).
-14. Click **Inventory** in the bottom action row — it should open from anywhere, not just near a
+14. Click **Inventory** in the bottom action row (`InventoryPanel.lua`, its own ModuleScript now —
+    if nothing opens at all, that's the compile/require-error failure mode described at the top of
+    this section, not this panel specifically) — it should open from anywhere, not just near a
     station (walk well outside your plot first to confirm this), showing a grid of square tiles
     rather than rows. Since you haven't added anything to `ReplicatedStorage.ItemIcons` yet, every
     tile should show as a plain colored square with the item's name as text instead of a blank
@@ -853,7 +877,9 @@ actually visible before any real art or UI design happens. To test end to end:
     a second should swap, not stack.
 
 21. **The drone.** It needs **Research Tier 3**, so `/setwave 10`, then claim the tier from the
-    Research row (bottom-left). Then **`/givedrone`** and open **Welding Station → Drones**. Before
+    Research row (bottom-left; the requirements popup it opens is `ResearchPanel.lua`, its own
+    ModuleScript now, constructed with the status panel it docks into). Then **`/givedrone`** and
+    open **Welding Station → Drones**. Before
     the tier, that tab should show a "Drone Bay — locked" row naming the tier; after it, four Cores
     with Equip buttons. Slot **Combat** and confirm a neon ball appears over your shoulder, trails
     you with a bit of lag rather than being welded on, and survives a respawn and a raid teleport.

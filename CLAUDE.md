@@ -34,7 +34,8 @@ tree — check it before assuming where something lives or what Remotes exist:
 - Empty asset folders the running game expects content in (also declared in
   `default.project.json`, populated by hand in Studio, not synced from `src/`):
   `ReplicatedStorage.ItemIcons`, `ReplicatedStorage.WeaponTools`, `ReplicatedStorage.BaseTemplates`,
-  `ServerStorage.EnemyModels`, `ServerStorage.RaidRoomModels`, `ServerStorage.TurretModels`.
+  `ReplicatedStorage.UiIcons`, `ServerStorage.EnemyModels`, `ServerStorage.RaidRoomModels`,
+  `ServerStorage.TurretModels`.
 
 ## Core architecture
 
@@ -75,6 +76,28 @@ locally several times and the copies drifted:
   between `MiningService` and `MineShaftService` with a comment warning about the drift.
 - `Shared/Wallet.lua` — where a cost key lives on a profile, how much you have, what it's called.
   Shared (not server-only) so the HUD can't disagree with what the server will charge.
+
+**`StarterPlayerScripts/HudKit.lua` is the client-side equivalent** — the shared foundation every
+HUD panel is built out of, not just the palette (`HudKit.COLOR`) it started as. It now also carries
+`HudKit.FONT`/`TEXTSIZE`/`SPACE`/`RADIUS` token tables (named roles — e.g. `FONT.Display` for
+headings, `TEXTSIZE.Body`, `SPACE.M` — pulled from sizes already scattered across the HUD rather
+than invented fresh, so adopting them is a no-visual-diff change) and `HudKit.button(opts)`, which
+builds a `primary`/`secondary`/`danger`-variant `TextButton` with real hover/press feedback
+(`TweenService`, Cancel-then-Play so mashing or fast mouse-in/out never stacks competing tweens) —
+there was not one `TweenService` call or hover/press state anywhere in the HUD before this. Hover
+and press shades are *derived* from each variant's base color via `HudKit.lighten`/`darken`, so a
+palette retune propagates to every button automatically instead of needing a matching edit
+somewhere else. New UI should reach for `HudKit.button` and the token tables instead of hand-rolling
+another one-off `TextButton`, for the same reason as the server-side list above: every hand-rolled
+button is a copy that can drift from the others. (`makeRow`'s inline button and other existing
+hand-built `TextButton`s are untouched — this is additive, not a required migration.) HudKit also
+gained `getUiIcon`/`applyIcon`, resolving against a new `ReplicatedStorage.UiIcons` folder through
+the same `resolveIcon` lookup the pre-existing `getItemIcon` uses (chrome/button glyphs vs.
+inventory item art, kept as separate folders so their naming can't collide); `applyIcon` also copies
+`ImageRectOffset`/`ImageRectSize` off the template instance, so a future move from separate image
+assets to one sprite atlas needs no code change at any call site — just set the rect on the Studio
+template. All of this is additive: every pre-existing `HudKit` export kept its name, signature, and
+behavior.
 
 **To write profile data on disconnect, connect to `DataService.PlayerSaving`, never to
 `Players.PlayerRemoving`.** `PlayerRemoving` handlers fire in connection order, connections are made
@@ -129,14 +152,44 @@ rejection on screen, and `Main.server.lua` warns at boot about any service modul
 required. (You cannot check the remotes directly — reading `remote.OnServerInvoke` throws, since
 Roblox callbacks are write-only.)
 
-**Luau allows 200 locals per function scope, and `MainHud.client.lua` is close to it.** Exceeding it
-is a *compile* error ("Out of local registers"), so the whole script fails to load and the HUD simply
-never appears — it is not a runtime warning you'll spot in Output. The file currently sits around 163
-by bundling related UI elements into grouped tables (`inv`, `research`, `turretPanel`, `shopUI`,
-`pity`) instead of one local per frame. Adding a panel means adding to a group, or lifting a section
-into its own ModuleScript. When moving code between files, **extract the exact text — never retype
-it**; a hand-retyped UI helper with subtly different sizes/positions looks like a rendering bug, not
-a typo, and costs far more to find than the move saved.
+**Luau allows 200 locals per function scope, and `MainHud.client.lua` used to sit close to it.**
+Exceeding it is a *compile* error ("Out of local registers"), so the whole script fails to load and
+the HUD simply never appears — it is not a runtime warning you'll spot in Output. The grouped-table
+trick (bundling related UI elements into one table — `inv`, `research`, `turretPanel`, `shopUI`,
+`pity` — instead of one local per frame) bought back registers for a while, but the file kept
+growing anyway, so four of those five groups have since been lifted into their own ModuleScripts
+beside `HudKit.lua` and `ModPicker.lua`: `ShopPanel.lua`, `TurretPanel.lua`, `ResearchPanel.lua`, and
+`InventoryPanel.lua`. `MainHud.client.lua` went from 4121 lines / ~164 top-level locals to 3121
+lines / ~151 — a smaller drop than the four extractions suggest, because the grouped-table trick had
+already banked most of the register savings; each extraction only nets back one local (`require`)
+minus however many aliases MainHud still needs for functions the extracted module exposes back to
+it. Don't expect a bigger win from moving `pity` too.
+
+`pity` stayed behind on purpose, not by oversight: `refreshPityBar`/`refreshPotionButton` are
+forward-declared (`local refreshPityBar` / `local refreshPotionButton`, ~line 561-562) and *called*
+from the Forge tab (~line 726-727) before they're assigned their real function bodies (~line 1497
+and ~1547) — a self-reference pattern that only works within one script's compile unit. Move `pity`
+to a module and that forward-declare/assign-later relationship crosses a module boundary, which
+doesn't error, it just silently stops updating the bar (the module's own local never gets rebound to
+MainHud's later assignment). `setForgeWidgetsVisible` is also called from both the Forge and craft
+sections, and `potionButton` itself is a separate top-level local, not a member of the `pity` group
+— extracting `pity` cleanly would mean untangling all three first, which nobody has needed enough to
+do yet.
+
+The precedent for the next panel: `ModPicker.lua`, `ShopPanel.lua`, and `TurretPanel.lua` all
+self-boot their whole UI as top-level code the first time they're `require`d, because they only ever
+parent into `Hud.screenGui` — nothing they build needs to live inside a MainHud-owned instance.
+`ResearchPanel.lua` instead exposes a constructor (`ResearchPanel.new(statusPanel)`) because its
+button has to parent into the always-visible status panel, which stays a MainHud local.
+`InventoryPanel.lua` also exposes a constructor (`InventoryPanel.new(context)`), but for a different
+reason:
+it depends on three helpers that stay behind in MainHud (`deployedCountForRobot`, `affixSummary`,
+`openUltPicker`, shared with the Welding/Forge tabs) plus `ORE_DISPLAY_ORDER`, passed in through
+`context` at construction time rather than duplicated. Match whichever shape fits: self-boot if the
+new panel only ever touches `Hud.screenGui`, a constructor if it needs something that has to stay in
+MainHud. When moving code between files, **extract the exact text — never retype it**; a
+hand-retyped UI helper with subtly different sizes/positions looks like a rendering bug, not a typo,
+and costs far more to find than the move saved.
 
 **Missing art never breaks the loop.** Enemy rigs, gun Tools, base/raid-room models, and item
 icons are all optional — every service that clones one of these falls back to a plain
