@@ -36,6 +36,10 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local PlotConfig = require(ReplicatedStorage.Shared.PlotConfig)
 local ResearchConfig = require(ReplicatedStorage.Shared.ResearchConfig)
 local DataService = require(script.Parent.DataService)
+local PlayerActivityService = require(script.Parent.PlayerActivityService)
+local RateLimiter = require(script.Parent.RateLimiter)
+
+local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 
 local PlotService = {}
 
@@ -183,6 +187,38 @@ for _, player in ipairs(Players:GetPlayers()) do
 	if not playerPlot[player] then
 		assignPlot(player)
 	end
+end
+
+-- ReturnToBase: the Recall button's general path — "get me home from wherever I am".
+--
+-- MOVES the character rather than respawning it, and that is the whole security design here, not a
+-- stylistic choice. RecallFromMine (MineShaftService) uses LoadCharacter, which respawns at FULL
+-- HEALTH — that remote had no validation once, and the free heal on demand made anyone who bound it
+-- to a key effectively unkillable, including mid-raid with damage ticking. Widening THAT remote to
+-- work anywhere would have reopened exactly that hole, so this is a separate remote that PivotTos
+-- the character and never touches health. RecallFromMine keeps its tight mine-only guard untouched.
+--
+-- Refused during any authoritative activity for the same reason: teleporting out of a fight is the
+-- same exploit wearing a different hat. PlayerActivityService is asked rather than inferred, since
+-- it is the one place that knows what a player is actually doing.
+Remotes.ReturnToBase.OnServerInvoke = function(player: Player)
+	if not RateLimiter.Check(player, "ReturnToBase", 1) then
+		return { Success = false, Reason = "You can't do that right now." }
+	end
+
+	local activity = PlayerActivityService.Get(player)
+	if activity then
+		return { Success = false, Reason = "You can't do that right now." }
+	end
+
+	local character = player.Character
+	local plot = PlotService.GetPlayerPlot(player)
+	if not character or not plot then
+		return { Success = false, Reason = "You can't do that right now." }
+	end
+
+	teleportToPlot(character, plot)
+	return { Success = true }
 end
 
 return PlotService

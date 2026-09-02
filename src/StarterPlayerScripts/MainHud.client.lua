@@ -2768,17 +2768,36 @@ end)
 -- top-level children — Inventory / Start Defense / this one — no matter which of the two exit
 -- actions happens to be relevant right now.
 --
--- Only shown while DepthUpdate (fired from MineShaftService's hazard loop) reports the player is
--- at least one level down in the quarry — there's no climb-out mechanic, so once you're a few
--- levels down this is the only way back short of finding a wall to walk into. Respawns at a
--- normal SpawnLocation, full health, same as Return to Base — see RecallFromMine's comment.
+-- ALWAYS visible: Recall means "bring me back to base", wherever the player is, not "climb out of
+-- the mine". It is `secondary` rather than `danger` for the same reason — it is an ordinary
+-- navigation action that follows the palette, not a destructive one.
+--
+-- Two server paths behind one button, because they are genuinely different operations:
+--   * In the mine -> RecallFromMine (MineShaftService), which respawns via LoadCharacter and tears
+--     down mine state. Left exactly as it is; its guard is deliberately tight.
+--   * Anywhere else -> ReturnToBase (PlotService), which PivotTos the character and never touches
+--     health. That distinction is a security boundary, not a style choice: LoadCharacter respawns
+--     at FULL HEALTH, and a heal-on-demand that worked anywhere is precisely the exploit
+--     RecallFromMine's guard exists to close. See that handler's comment.
+-- The server re-checks either way — `inMineShaft` below is a client hint for choosing the path,
+-- and a client hint is never a permission.
+local inMineShaft = false
 mainActions.recallButton, mainActions.recallCaption, mainActions.recallColumn = makeActionColumn({
-	variant = "danger",
+	variant = "secondary",
 	icon = "recall",
 	size = UDim2.new(0, 64, 0, 64), -- 56x56 -> 72x72 -> 64x64, matching Inventory's sizing exactly
 		-- at every step (see that column's own comment for the reason behind each change).
 	onClick = function()
-		Remotes.RecallFromMine:FireServer()
+		if inMineShaft then
+			Remotes.RecallFromMine:FireServer()
+			return
+		end
+		local ok, result = pcall(function()
+			return Remotes.ReturnToBase:InvokeServer()
+		end)
+		if not ok or not result or not result.Success then
+			Hud.showFailure("Recall", (result and result.Reason) or "You can't do that right now.")
+		end
 	end,
 }, "Recall", Hud.COLOR.Muted)
 
@@ -2793,8 +2812,7 @@ mainActions.recallButton, mainActions.recallCaption, mainActions.recallColumn = 
 -- pinned to screen centre in every state. Hiding the buttons/captions inside it instead still
 -- fully blocks input (an invisible TextButton doesn't receive clicks) and still hides them
 -- visually, so nothing about the player-facing behaviour changes.
-mainActions.recallButton.Visible = false
-mainActions.recallCaption.Visible = false
+
 
 -- Ends the run for everyone on the shared queue, heals you to full, and keeps whatever you've
 -- already looted (rewards are granted the instant each node resolves, not saved up for an
@@ -2814,8 +2832,15 @@ local returnHomeButton = Hud.button({
 	-- the same weight of control when swapped in the same slot; width (130) is untouched — it was
 	-- always wider than the 72px/64px slot it overflows symmetrically out of (see the comment
 	-- above), and the shrink doesn't change that relationship.
-	size = UDim2.new(0, 130, 0, 64),
-	parent = mainActions.recallColumn,
+	size = UDim2.new(0, 130, 0, 44),
+	-- OUT of the action row entirely. It used to share Recall's column because the two were
+	-- effectively exclusive, but Recall is permanent now, so they would collide. It also is not a
+	-- peer of the three main actions: it ENDS THE SHARED EXPEDITION for every player on the queue,
+	-- which is situational and consequential, so it sits with the other situational controls in the
+	-- top-right rather than competing with Start Defense for the eye.
+	anchorPoint = Vector2.new(1, 0),
+	position = UDim2.new(1, -16, 0, 144),
+	parent = Hud.screenGui,
 })
 returnHomeButton.Visible = false
 returnHomeButton.MouseButton1Click:Connect(function()
@@ -2835,7 +2860,10 @@ end)
 -- player gets their own button back the instant they Recall out.
 local expeditionActive = false
 local function syncExitButtons()
-	returnHomeButton.Visible = expeditionActive and not mainActions.recallButton.Visible
+	-- No longer suppressed by Recall. The two shared a slot while they were exclusive; Recall is
+	-- permanent now and lives in the action row, while this sits top-right, so the only question left
+	-- is whether an expedition is running at all.
+	returnHomeButton.Visible = expeditionActive
 end
 
 -- ExpeditionService replicates "which row is frontmost" via CurrentSlotId on the Expedition
@@ -3072,8 +3100,7 @@ Remotes.DepthUpdate.OnClientEvent:Connect(function(depth: number?)
 		-- Button/caption only, never the column — see the comment where recallColumn is built:
 		-- hiding the column itself would drop its reserved 72px from actionRow's centred layout and
 		-- knock Start Defense off-centre the moment you surface.
-		mainActions.recallButton.Visible = false
-		mainActions.recallCaption.Visible = false
+		inMineShaft = false
 		-- Surfacing may hand the shared slot back to Return to Base, if the expedition queue is
 		-- still active elsewhere — see syncExitButtons' precedence comment above.
 		syncExitButtons()
@@ -3084,8 +3111,7 @@ Remotes.DepthUpdate.OnClientEvent:Connect(function(depth: number?)
 	-- Visible any time you're anywhere in the mine, including right at the Depth-0 surface floor
 	-- — not just once you've actually descended. It's the one guaranteed way back to base, so it
 	-- should be there the moment you're in the mine at all, not gated behind digging first.
-	mainActions.recallButton.Visible = true
-	mainActions.recallCaption.Visible = true
+	inMineShaft = true
 	-- Recall now takes the shared slot away from Return to Base, if it happened to be showing —
 	-- see syncExitButtons' precedence comment above for why Recall always wins.
 	syncExitButtons()

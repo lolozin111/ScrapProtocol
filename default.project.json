@@ -75,6 +75,7 @@
         "PlaceTurretInSlot": { "$className": "RemoteFunction" },
         "UnplaceTurret": { "$className": "RemoteFunction" },
         "UpgradeTurret": { "$className": "RemoteFunction" },
+        "ReturnToBase": { "$className": "RemoteFunction" },
         "GetTestMode": { "$className": "RemoteFunction" },
         "ToggleTestMode": { "$className": "RemoteFunction" }
       }
