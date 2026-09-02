@@ -16,6 +16,11 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local CollectionService = game:GetService("CollectionService")
 local Workspace = game:GetService("Workspace")
+-- Both added for the Smelting tab's dial: RunService drives the ring's per-frame sweep (a
+-- once-a-second re-render makes it visibly step instead of move), and UserInputService carries the
+-- quantity slider's drag, which has to keep tracking after the pointer leaves the track itself.
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 
 local CraftingRecipes = require(ReplicatedStorage.Shared.CraftingRecipes)
 local OreConfig = require(ReplicatedStorage.Shared.OreConfig)
@@ -1921,11 +1926,12 @@ end
 -- not hidden), and the right side is one large batch-time readout with the per-ore cost spelled out
 -- directly beneath it, next to what that same ore cost at the smallest batch.
 --
--- NO TRUE ARC, DELIBERATELY. The design draws batch time as a ring filling clockwise. Roblox has no
--- arc primitive and this project has no radial-fill image asset, so the readout is a circular plate
--- with the time at Display size, and a running job shows progress on Hud.segmentBar beneath it
--- instead. A real ring drops in later with no layout change: add a radial-fill ImageLabel and drive
--- its ImageRectOffset, exactly the way HudKit.applyIcon already anticipates a sprite atlas.
+-- THE ARC IS A REAL RING. The design draws batch time as a ring filling clockwise, and it is one —
+-- see HudKit.ring for how it is drawn without an arc primitive or any art. It was briefly a
+-- straight segmentBar underneath the dial instead, which was wrong on both counts: it was not the
+-- agreed layout, and at 20 cells refreshed once a second it visibly stepped rather than swept.
+-- The ring drives itself on Heartbeat off os.clock(), so it moves continuously between the
+-- whole-second FinishTime values the server actually sends.
 --
 -- QUANTITY IS ALWAYS A LEGAL MULTIPLE. Every path that sets smeltQuantity below snaps it to a
 -- whole number of RefineRatio-sized batches. This is not cosmetic: SmeltService.StartSmelt rejects
@@ -2123,14 +2129,36 @@ renderSmeltingTab = function()
 		-- Re-derives the batch's original duration from the same shared formula rather than storing
 		-- it on the job, so remaining/duration gives a 0..1 progress ratio directly.
 		local duration = math.max(RefinedOreConfig.ComputeSmeltSeconds(job.Quantity), 1)
-		local remaining = job.FinishTime - os.time()
-		local ratio = math.clamp(1 - (remaining / duration), 0, 1)
 
-		-- SmeltService's completion loop only sweeps every RefinedOreConfig.SmeltTime.TickSeconds
-		-- (2s), so the countdown genuinely reaches zero a moment before the ore is granted. Saying
-		-- "finishing" is the honest reading of that gap — a frozen 0:00 reads as a hung job.
-		dialValue.Text = remaining > 0 and formatDuration(remaining) or "··"
-		dialCaption.Text = remaining > 0 and "REMAINING" or "FINISHING"
+		-- The arc sweeps on Heartbeat rather than on the tab's once-a-second re-render. os.time()
+		-- has whole-second resolution, so a per-second update can only ever step the ring 1/duration
+		-- at a time — visibly jumping, which is exactly what this replaces. os.clock() is
+		-- monotonic and sub-millisecond, so the remaining fraction is interpolated between the
+		-- whole seconds the server actually gave us.
+		local ring = Hud.ring(dial, { size = smelt.dialSize, thickness = 10 })
+		local anchorClock = os.clock()
+		local anchorRemaining = job.FinishTime - os.time()
+
+		local sweep
+		sweep = RunService.Heartbeat:Connect(function()
+			-- The tab re-renders (and destroys this dial) on every InventoryUpdate, so the
+			-- connection has to end with the instance it drives or it leaks one Heartbeat handler
+			-- per render for the rest of the session.
+			if not dial.Parent then
+				sweep:Disconnect()
+				return
+			end
+
+			local remaining = anchorRemaining - (os.clock() - anchorClock)
+			ring.setProgress(math.clamp(1 - (remaining / duration), 0, 1))
+
+			-- SmeltService's completion loop only sweeps every RefinedOreConfig.SmeltTime
+			-- .TickSeconds (2s), so the countdown genuinely reaches zero a moment before the ore is
+			-- granted. Saying "finishing" is the honest reading of that gap — a frozen 0:00 reads
+			-- as a hung job.
+			dialValue.Text = remaining > 0 and formatDuration(remaining) or "··"
+			dialCaption.Text = remaining > 0 and "REMAINING" or "FINISHING"
+		end)
 
 		Hud.new("TextLabel", {
 			BackgroundTransparency = 1,
@@ -2153,20 +2181,6 @@ renderSmeltingTab = function()
 			TextSize = Hud.TEXTSIZE.Body,
 			Parent = stage,
 		})
-
-		local progressHolder = Hud.new("Frame", {
-			BackgroundTransparency = 1,
-			Position = UDim2.new(0, Hud.SPACE.L, 0, smelt.dialSize + Hud.SPACE.XL + 52),
-			Size = UDim2.new(1, -Hud.SPACE.L * 2, 0, 20),
-			Parent = stage,
-		})
-
-		-- Reused rather than another hand-rolled track+fill pair: segmentBar is what the wave HUD
-		-- already uses, and a second implementation is how the two drift apart.
-		local cells = Hud.segmentBar(progressHolder, 20)
-		for index, cell in ipairs(cells) do
-			cell.BackgroundColor3 = (index / #cells) <= ratio and Hud.COLOR.Accent or Hud.COLOR.Line
-		end
 
 		Hud.new("TextLabel", {
 			BackgroundTransparency = 1,
@@ -2215,22 +2229,12 @@ renderSmeltingTab = function()
 		math.max(maxQuantity, oreData.RefineRatio)
 	)
 
-	local seconds = RefinedOreConfig.ComputeSmeltSeconds(smeltQuantity)
-	dialValue.Text = formatDuration(seconds)
-	dialCaption.Text = "BATCH TIME"
-
-	Hud.new("TextLabel", {
+	local ratioLabel = Hud.new("TextLabel", {
 		BackgroundTransparency = 1,
 		Font = Hud.FONT.Body,
 		Position = UDim2.new(0, Hud.SPACE.L, 0, smelt.dialSize + Hud.SPACE.L),
 		Size = UDim2.new(1, -Hud.SPACE.L * 2, 0, 24),
 		RichText = true,
-		Text = ("<b>%d</b> %s  →  <b>%d</b> %s"):format(
-			smeltQuantity,
-			oreDisplayName,
-			smeltQuantity / oreData.RefineRatio,
-			refinedDisplayName
-		),
 		TextColor3 = Hud.COLOR.Text,
 		TextSize = Hud.TEXTSIZE.Body,
 		Parent = stage,
@@ -2239,27 +2243,18 @@ renderSmeltingTab = function()
 	-- THE POINT OF THIS SCREEN. ComputeSmeltSeconds is BaseSeconds + LogSecondsPerOre * ln(qty), so
 	-- seconds-per-ore falls the whole way up the range — 20 + 24*ln(3) at one Scrap Iron batch is
 	-- ~8.8s per ore, and at 90 it is ~1.4s. Nothing in the old UI said so, so nobody could act on it.
-	local perOre = seconds / smeltQuantity
-	local smallestBatch = oreData.RefineRatio
-	local perOreAtSmallest = RefinedOreConfig.ComputeSmeltSeconds(smallestBatch) / smallestBatch
-
-	Hud.new("TextLabel", {
+	local perOreLabel = Hud.new("TextLabel", {
 		BackgroundTransparency = 1,
 		Font = Hud.FONT.Mono,
 		Position = UDim2.new(0, Hud.SPACE.L, 0, smelt.dialSize + Hud.SPACE.L + 24),
 		Size = UDim2.new(1, -Hud.SPACE.L * 2, 0, 20),
-		Text = ("%.1fs per ore  ·  %.1fs at one batch"):format(perOre, perOreAtSmallest),
-		TextColor3 = perOre < perOreAtSmallest and Hud.COLOR.Good or Hud.COLOR.Muted,
+		TextColor3 = Hud.COLOR.Muted,
 		TextSize = Hud.TEXTSIZE.Label,
 		Parent = stage,
 	})
 
 	local trackY = smelt.dialSize + Hud.SPACE.L + 56
 
-	-- A CLICKABLE track rather than a draggable handle: a click maps to one position and snaps, so
-	-- there is no drag state to get stuck, no pointer capture to lose when the cursor leaves the
-	-- track, and no way to end a gesture on an illegal quantity. The handle below is a readout of
-	-- where that click landed, not a grab target.
 	local track = Hud.new("TextButton", {
 		AutoButtonColor = false,
 		BackgroundColor3 = Hud.darken(Hud.COLOR.Panel, 0.3),
@@ -2270,26 +2265,90 @@ renderSmeltingTab = function()
 		Parent = stage,
 	})
 
-	local fillRatio = if maxQuantity > oreData.RefineRatio
-		then (smeltQuantity - oreData.RefineRatio) / (maxQuantity - oreData.RefineRatio)
-		else 1
-
-	Hud.new("Frame", {
+	local fill = Hud.new("Frame", {
 		BackgroundColor3 = Hud.COLOR.Accent,
 		BorderSizePixel = 0,
-		Size = UDim2.new(fillRatio, 0, 1, 0),
+		Size = UDim2.new(0, 0, 1, 0),
 		Parent = track,
 	})
 
-	Hud.new("Frame", {
+	local handle = Hud.new("Frame", {
 		BackgroundColor3 = Hud.COLOR.Text,
 		BorderSizePixel = 0,
-		Position = UDim2.new(fillRatio, -2, 0, -3),
+		Position = UDim2.new(0, -2, 0, -3),
 		Size = UDim2.fromOffset(4, 24),
 		Parent = track,
 	})
 
+	-- Everything the quantity drives, updated IN PLACE. This is not a tidiness choice: dragging has
+	-- to repaint on every mouse move, and repainting by calling renderCraftList would destroy the
+	-- very track the pointer is holding, ending the drag on its first frame. The old click-only
+	-- handler got away with a re-render precisely because a click is over before the rebuild lands.
+	local function applySmeltQuantity(quantity: number)
+		smeltQuantity = math.clamp(
+			snapSmeltQuantity(quantity, oreData.RefineRatio),
+			oreData.RefineRatio,
+			math.max(maxQuantity, oreData.RefineRatio)
+		)
+
+		local seconds = RefinedOreConfig.ComputeSmeltSeconds(smeltQuantity)
+		dialValue.Text = formatDuration(seconds)
+
+		ratioLabel.Text = ("<b>%d</b> %s  →  <b>%d</b> %s"):format(
+			smeltQuantity,
+			oreDisplayName,
+			smeltQuantity / oreData.RefineRatio,
+			refinedDisplayName
+		)
+
+		local perOre = seconds / smeltQuantity
+		local smallestBatch = oreData.RefineRatio
+		local perOreAtSmallest = RefinedOreConfig.ComputeSmeltSeconds(smallestBatch) / smallestBatch
+		perOreLabel.Text = ("%.1fs per ore  ·  %.1fs at one batch"):format(perOre, perOreAtSmallest)
+		perOreLabel.TextColor3 = perOre < perOreAtSmallest and Hud.COLOR.Good or Hud.COLOR.Muted
+
+		local alpha = if maxQuantity > oreData.RefineRatio
+			then (smeltQuantity - oreData.RefineRatio) / (maxQuantity - oreData.RefineRatio)
+			else 1
+		fill.Size = UDim2.new(alpha, 0, 1, 0)
+		handle.Position = UDim2.new(alpha, -2, 0, -3)
+	end
+
+	dialCaption.Text = "BATCH TIME"
+	applySmeltQuantity(smeltQuantity)
+
 	if maxQuantity > oreData.RefineRatio then
+		-- Drag, not just click. The pointer routinely leaves the 18px-tall track while dragging
+		-- along it, so the move and release handlers live on UserInputService rather than on the
+		-- track itself — a track-local InputChanged stops firing the moment the cursor strays
+		-- vertically, which reads as the slider randomly sticking.
+		local dragging = false
+		local moveConn, endConn
+
+		local function quantityAt(positionX: number): number
+			-- AbsolutePosition/AbsoluteSize rather than any click offset: MouseButton1Click carries
+			-- no position at all, and this is the same arithmetic that maps a screen point onto a
+			-- value everywhere else in this HUD.
+			local width = track.AbsoluteSize.X
+			if width <= 0 then
+				return smeltQuantity
+			end
+			local alpha = math.clamp((positionX - track.AbsolutePosition.X) / width, 0, 1)
+			return oreData.RefineRatio + alpha * (maxQuantity - oreData.RefineRatio)
+		end
+
+		local function stopDragging()
+			dragging = false
+			if moveConn then
+				moveConn:Disconnect()
+				moveConn = nil
+			end
+			if endConn then
+				endConn:Disconnect()
+				endConn = nil
+			end
+		end
+
 		track.InputBegan:Connect(function(input)
 			if
 				input.UserInputType ~= Enum.UserInputType.MouseButton1
@@ -2297,17 +2356,35 @@ renderSmeltingTab = function()
 			then
 				return
 			end
-			-- AbsolutePosition/AbsoluteSize rather than the click's own offset: MouseButton1Click
-			-- carries no position at all, and this arithmetic is the same one the wave HUD's bars
-			-- use to map a screen point onto a value.
-			local width = track.AbsoluteSize.X
-			if width <= 0 then
-				return
-			end
-			local ratio = math.clamp((input.Position.X - track.AbsolutePosition.X) / width, 0, 1)
-			local span = maxQuantity - oreData.RefineRatio
-			smeltQuantity = snapSmeltQuantity(oreData.RefineRatio + ratio * span, oreData.RefineRatio)
-			renderCraftList()
+
+			dragging = true
+			applySmeltQuantity(quantityAt(input.Position.X))
+
+			moveConn = UserInputService.InputChanged:Connect(function(moved)
+				if not dragging then
+					return
+				end
+				-- The tab can re-render underneath a live drag (an InventoryUpdate landing while
+				-- the button is held), which destroys this track. Without this the handler would
+				-- keep running against a destroyed instance whose AbsoluteSize is 0 for the rest
+				-- of the session.
+				if not track.Parent then
+					stopDragging()
+					return
+				end
+				if
+					moved.UserInputType == Enum.UserInputType.MouseMovement
+					or moved.UserInputType == Enum.UserInputType.Touch
+				then
+					applySmeltQuantity(quantityAt(moved.Position.X))
+				end
+			end)
+
+			endConn = UserInputService.InputEnded:Connect(function(ended)
+				if ended.UserInputType == input.UserInputType then
+					stopDragging()
+				end
+			end)
 		end)
 	end
 
@@ -2371,18 +2448,20 @@ renderSmeltingTab = function()
 	})
 end
 
--- Keeps the countdown/progress bar live while the Smelting tab is actually open and a job is
--- running — InventoryUpdate patches only arrive when a job starts or finishes, not every second
--- in between, so without this the bar would sit frozen until the next patch happened to land.
+-- Keeps the Decode countdown live while that tab is open — InventoryUpdate patches only arrive
+-- when a job starts or finishes, not every second in between, so without this it would sit frozen
+-- until the next patch happened to land.
+--
+-- SMELTING IS DELIBERATELY NOT IN HERE ANY MORE. Its dial now drives itself on Heartbeat (see the
+-- ring in renderSmeltingTab), which is both smoother — os.time() has whole-second resolution, so a
+-- once-a-second re-render can only step the arc, which is what it looked like — and far cheaper:
+-- re-rendering the tab rebuilds the ring's 90 segment Frames every second and resets the sweep's
+-- own timing anchor while it is at it. The start and finish transitions still arrive through
+-- InventoryUpdate's renderCraftList above, which is what actually swaps the tab between states.
 task.spawn(function()
 	while true do
 		task.wait(1)
-		-- Decode counts down in real time like smelting does; InventoryUpdate only arrives when a
-		-- job starts or finishes, not every second.
 		if craftFrame.Visible and currentTab == "Decode" and Hud.profile.DecodeJob then
-			renderCraftList()
-		end
-		if craftFrame.Visible and currentTab == "Smelting" and Hud.profile.SmeltJob then
 			renderCraftList()
 		end
 	end

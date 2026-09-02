@@ -1486,6 +1486,89 @@ function HudKit.segmentBar(parent: Instance, segments: number): { Frame }
 end
 
 ----------------------------------------------------------------------
+-- Ring gauge
+----------------------------------------------------------------------
+-- A circular progress arc, for the Smelting dial and (next) the Forge chamber's odds ring.
+--
+-- WHY SEGMENTS AND NOT A REAL ARC. Roblox has no arc primitive. The two ways to draw a true solid
+-- sweep are a radial-fill image (this project has no such asset, and inventing one would put the
+-- gauge behind art that does not exist yet) or the nested half-disc clipping trick, which needs
+-- two ClipsDescendants layers with a rotated disc inside each and is fiddly enough that getting it
+-- subtly wrong reads as a rendering bug. A ring of thin rotated Frames whose widths OVERLAP reads
+-- as a continuous arc, needs no art, and cannot half-work: either the segments are there or they
+-- are not.
+--
+-- RING_SEGMENTS is the granularity of the arc. 90 puts each step at 1.1% — fine enough that the
+-- fill reads as sweeping rather than stepping, which was the specific complaint about doing this
+-- with segmentBar's 20 cells.
+local RING_SEGMENTS = 90
+local RING_THICKNESS_DEFAULT = 10
+
+export type HudRingOptions = {
+	size: number, -- outer diameter in px
+	thickness: number?,
+	color: Color3?, -- filled arc; defaults to Accent
+	trackColor: Color3?, -- unfilled remainder; defaults to Line
+	segments: number?,
+}
+
+-- Returns `{ setProgress(alpha) }`. Build it once and drive it — do NOT rebuild the ring to change
+-- its value: 90 Frames per update is exactly the kind of churn that turns a once-a-second
+-- re-render into visible stutter.
+function HudKit.ring(parent: Instance, opts: HudRingOptions)
+	local diameter = opts.size
+	local thickness = opts.thickness or RING_THICKNESS_DEFAULT
+	local segments = opts.segments or RING_SEGMENTS
+	local color = opts.color or COLOR.Accent
+	local trackColor = opts.trackColor or COLOR.Line
+	local radius = (diameter - thickness) / 2
+
+	local holder = HudKit.new("Frame", {
+		BackgroundTransparency = 1,
+		Size = UDim2.fromOffset(diameter, diameter),
+		Parent = parent,
+	})
+
+	-- +2 rather than exact: adjacent segments have to OVERLAP or the ring renders as a dotted line
+	-- of hairline gaps, which is worse than either a solid ring or honest ticks.
+	local segmentWidth = math.ceil((2 * math.pi * radius) / segments) + 2
+
+	local cells = table.create(segments)
+	for index = 1, segments do
+		-- -90 so the arc starts at the top of the circle and sweeps clockwise, which is what every
+		-- timer gauge does and therefore what a player reads without being told.
+		local degrees = (index - 1) / segments * 360 - 90
+		local radians = math.rad(degrees)
+
+		cells[index] = HudKit.new("Frame", {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			BackgroundColor3 = trackColor,
+			BorderSizePixel = 0,
+			Position = UDim2.new(
+				0.5,
+				math.cos(radians) * radius,
+				0.5,
+				math.sin(radians) * radius
+			),
+			Rotation = degrees + 90, -- tangent to the circle, so the segment lies along the arc
+			Size = UDim2.fromOffset(segmentWidth, thickness),
+			Parent = holder,
+		})
+	end
+
+	local function setProgress(alpha: number)
+		local filled = math.clamp(alpha, 0, 1) * segments
+		for index, cell in ipairs(cells) do
+			cell.BackgroundColor3 = index <= filled and color or trackColor
+		end
+	end
+
+	setProgress(0)
+
+	return { holder = holder, setProgress = setProgress }
+end
+
+----------------------------------------------------------------------
 -- Modal — the shared popup plate
 ----------------------------------------------------------------------
 -- HUD phase 3, section D ("Popups B — lifted slabs"): every popup is its own plate on a scrim, with
