@@ -407,8 +407,9 @@ end
 -- MINIMUM SIZE: a 9-slice needs an element at least twice the slice inset per axis (roughly 40x40
 -- here) or the corner regions overlap and the cut renders wrong. plate()'s shell/surface are always
 -- far bigger than that so it never has to check; HudKit.button() DOES check, via
--- BUTTON_MIN_SLICE_SIZE below, because panelHeader's 28px close button is exactly the case that
--- would render broken — it deliberately stays on the plain rounded HudKit.corner() path instead.
+-- BUTTON_MIN_SLICE_SIZE below, because any button under that size (panelHeader's close button used
+-- to be a concrete example, at 28px, before it grew to 40 specifically to clear this floor) would
+-- render broken and needs the plain rounded HudKit.corner() path instead.
 local PANEL_FRAME_SLICE_CENTER = Rect.new(20, 20, 44, 44)
 
 ----------------------------------------------------------------------
@@ -423,8 +424,9 @@ local BUTTON_TWEEN_INFO = TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.Easing
 local BUTTON_HOVER_LIGHTEN = 0.12
 local BUTTON_PRESS_DARKEN = 0.18
 -- Below this (on either axis), a button falls back to the plain rounded-corner path instead of the
--- 9-slice — see PANEL_FRAME_SLICE_CENTER's MINIMUM SIZE note above for why. panelHeader's 28px
--- close button is the concrete case this exists for.
+-- 9-slice — see PANEL_FRAME_SLICE_CENTER's MINIMUM SIZE note above for why. panelHeader's close
+-- button used to be the concrete case this existed for, at 28px; it's now 40 (exactly this floor)
+-- specifically so it clears it and gets the sliced/angular frame instead.
 local BUTTON_MIN_SLICE_SIZE = 40
 
 -- Fraction of the button's own height, not a fixed pixel count: a 20px icon read as tiny on a
@@ -516,6 +518,32 @@ local function makeTweener(btn: TextButton, target: Instance, state, key: string
 	end
 end
 
+-- Light-to-dark contrast on every button's fill, requested after a Studio screenshot next to the
+-- reference showed this HUD's buttons reading flat by comparison.
+--
+-- WHITE-TO-GREY, NOT A REAL COLOR, AND THAT IS LOAD-BEARING: a UIGradient MULTIPLIES the color of
+-- whatever it's parented to (ImageColor3 on the sliceable path, BackgroundColor3 on the fallback
+-- path) rather than replacing it — the same mechanism plate()'s bevel gradient above relies on.
+-- Hover/press tween exactly that same property (see tweenFill in HudKit.button below) to the
+-- variant's hover/press shade every time the mouse moves. Because the gradient only multiplies,
+-- whatever color the tween lands on keeps shining through underneath it, so every variant AND every
+-- hover/press shade of every variant gets identical relative top-to-bottom shading for free, with
+-- zero coordination between this gradient and the tweens. A future edit that puts a real hue in
+-- here instead of a white/grey ramp would multiply that hue into every fill color in the HUD and
+-- silently break every hover/press state's color — don't.
+local BUTTON_GRADIENT_TOP = Color3.new(1, 1, 1)
+local BUTTON_GRADIENT_BOTTOM = Color3.new(0.72, 0.72, 0.72)
+
+local function buttonFillGradient(): UIGradient
+	return HudKit.new("UIGradient", {
+		Rotation = 90, -- 0 is left-to-right; 90 turns it top-to-bottom, darkening toward the bottom
+		Color = ColorSequence.new({
+			ColorSequenceKeypoint.new(0, BUTTON_GRADIENT_TOP),
+			ColorSequenceKeypoint.new(1, BUTTON_GRADIENT_BOTTOM),
+		}),
+	})
+end
+
 -- Builds a variant-styled TextButton with real hover/press feedback. Additive alongside makeRow's
 -- inline button and any hand-rolled TextButton elsewhere — nothing existing is changed to use this.
 function HudKit.button(opts: HudButtonOptions): TextButton
@@ -538,8 +566,9 @@ function HudKit.button(opts: HudButtonOptions): TextButton
 
 	-- Same 9-slice plate() panels use, so buttons carry the mockup's angular cut-steel corners
 	-- instead of HudKit.corner()'s rounded ones. Guarded by BUTTON_MIN_SLICE_SIZE (see its comment
-	-- above) so a button smaller than that -- panelHeader's 28px close button -- degrades to the
-	-- rounded fallback instead of rendering with overlapping/broken corners. Read fresh per call,
+	-- above) so a button smaller than that degrades to the rounded fallback instead of rendering
+	-- with overlapping/broken corners -- panelHeader's close button was the concrete case this
+	-- existed for until it grew to 40px specifically to clear this floor. Read fresh per call,
 	-- same reasoning as plate()'s panelFrameImage local: the two must never disagree about which
 	-- path they took. Offsets only (not Scale) because restSize.Y.Offset is already the load-bearing
 	-- "actual button height in pixels" assumption pressPos/hoverSize/the icon padding above all make.
@@ -565,10 +594,13 @@ function HudKit.button(opts: HudButtonOptions): TextButton
 		TextSize = HudKit.TEXTSIZE.Body,
 		Text = opts.text or "",
 		Parent = opts.parent,
-	}, if isSliceable then {} else { HudKit.corner(HudKit.RADIUS.Button) })
+	}, if isSliceable then {} else { HudKit.corner(HudKit.RADIUS.Button), buttonFillGradient() })
 	-- No UICorner on the sliceable path: the shape comes from the image's own cut corners, and
 	-- rounding on top of a sliced image would just clip the cut back into a plain rounded rect --
-	-- same reasoning as plate()'s shell/surface branch.
+	-- same reasoning as plate()'s shell/surface branch. The gradient here fills `btn` itself (its
+	-- BackgroundColor3 is the visible fill on this path); the sliceable path parents the same helper
+	-- onto backgroundLabel instead, since ImageColor3 is what's visible there. See buttonFillGradient
+	-- above for why it's a fresh instance per call rather than one shared UIGradient.
 
 	if variant.stroke then
 		HudKit.stroke().Parent = btn
@@ -578,14 +610,24 @@ function HudKit.button(opts: HudButtonOptions): TextButton
 	-- automatically (1,0,1,0 relative to `btn`, so no separate Size/Position tween is ever needed
 	-- for it — only its ImageColor3 changes on hover/press, via tweenFill below).
 	--
-	-- ZIndex = 0 keeps it below the icon (a sibling child, ZIndex defaults to 1, made explicit
-	-- below): two children of the same GuiObject DO respect ZIndex ordering against each other. The
-	-- button's own Text, though, is not a child at all — it's part of `btn`'s own rendering — and a
-	-- TextButton's native Text always paints on top of every child regardless of ZIndex (the same
-	-- behaviour that already let iconLabel and Text coexist above/below each other by POSITION alone
-	-- rather than needing any ZIndex dance between them). That's what makes an opaque, full-covering
-	-- background child safe to add here without it ever swallowing the button's caption.
+	-- ZIndex = 0 keeps it below the icon and caption (siblings, ZIndex 1 and 2 respectively — see
+	-- below): two children of the same GuiObject DO respect ZIndex ordering against each other.
+	--
+	-- THIS WAS PREVIOUSLY DOCUMENTED BACKWARDS, AND THAT IS WHAT SHIPPED THE BUG: the comment here
+	-- used to claim "a TextButton's native Text always paints on top of every child regardless of
+	-- ZIndex," which is false. This ScreenGui runs ZIndexBehavior.Sibling (see HudKit.screenGui
+	-- above), under which a GuiObject's CHILDREN are UNCONDITIONALLY drawn in front of their parent —
+	-- ZIndex only orders siblings against each other, it never lets a parent's own rendering (which is
+	-- all `btn`'s native Text ever was) win against a child. So an opaque, full-covering background
+	-- child does swallow the button's native Text, every time, with no ZIndex able to fix it. Icon-only
+	-- buttons looked fine only because the icon is ALSO a child and simply never had to compete with
+	-- the background for the same pixels the text needed.
+	--
+	-- The fix is captionLabel below: a child TextLabel that mirrors `btn`'s Text, which — being a
+	-- sibling of the background, not the parent's own rendering — CAN be given a higher ZIndex and
+	-- actually win.
 	local backgroundLabel: ImageLabel? = nil
+	local captionLabel: TextLabel? = nil
 	if isSliceable then
 		backgroundLabel = HudKit.new("ImageLabel", {
 			BackgroundTransparency = 1,
@@ -596,7 +638,35 @@ function HudKit.button(opts: HudButtonOptions): TextButton
 			Size = UDim2.new(1, 0, 1, 0),
 			ZIndex = 0,
 			Parent = btn,
+		}, { buttonFillGradient() })
+
+		-- `btn`'s native Text is now invisible (TextTransparency = 1) rather than removed: callers
+		-- across this HUD assign `button.Text = ...` / `button.TextColor3 = ...` directly as an
+		-- ongoing pattern (equip/deploy toggles, the detail panel's action button, ...), and that must
+		-- keep working with zero call-site changes. captionLabel is the thing actually seen; it starts
+		-- as a copy of btn's current Text/Font/TextColor3/TextSize and is kept in sync for the two
+		-- properties callers actually mutate afterward (Text, TextColor3) via the signals below. It is
+		-- sized to fill `btn` with Scale, so the same UIPadding instance that insets `btn`'s own native
+		-- text away from an icon (added further down, when both icon and text are present) insets this
+		-- label identically — UIPadding affects every direct Scale-sized child, not just the one
+		-- text a caller happens to be picturing.
+		btn.TextTransparency = 1
+		captionLabel = HudKit.new("TextLabel", {
+			BackgroundTransparency = 1,
+			Size = UDim2.new(1, 0, 1, 0),
+			Font = btn.Font,
+			TextColor3 = btn.TextColor3,
+			TextSize = btn.TextSize,
+			Text = btn.Text,
+			ZIndex = 2, -- above the background (0) and the icon (1)
+			Parent = btn,
 		})
+		btn:GetPropertyChangedSignal("Text"):Connect(function()
+			(captionLabel :: TextLabel).Text = btn.Text
+		end)
+		btn:GetPropertyChangedSignal("TextColor3"):Connect(function()
+			(captionLabel :: TextLabel).TextColor3 = btn.TextColor3
+		end)
 	end
 
 	-- Whichever instance/property actually carries the visible fill: the background ImageLabel's
@@ -648,13 +718,19 @@ function HudKit.button(opts: HudButtonOptions): TextButton
 			-- nil as "leave it alone" rather than disabling anything.
 			iconHoverImage = UiIconConfig.Get(opts.icon .. "_hover")
 			if hasText then
-				-- Only the button's own Text (rendered by the TextButton itself, not a separate
-				-- label) needs pushing clear of the icon; PaddingLeft reserves the icon's ACTUAL
+				-- The caption needs pushing clear of the icon; PaddingLeft reserves the icon's ACTUAL
 				-- footprint (inset + icon pixels + one XS gap), not the old fixed 20px, so a bigger
 				-- icon doesn't crowd the text and a smaller one doesn't strand it with dead space.
 				-- restSize.Y.Offset is the same offset-based-height assumption pressPos/hoverSize
 				-- above already make about how this function's callers size their buttons, so this
 				-- pixel math and the icon's live RelativeYY size agree.
+				--
+				-- One UIPadding, parented to `btn`, covers BOTH renderings of the caption: `btn`'s own
+				-- native Text (invisible on the sliceable path, but still the visible one on the
+				-- fallback path) AND captionLabel (a Scale-sized direct child on the sliceable path).
+				-- UIPadding insets a GuiObject's own text bounds as well as every direct child sized
+				-- with Scale, not just children under a UIListLayout, so both stay in sync without
+				-- needing two separate padding instances.
 				local iconPixels = restSize.Y.Offset * iconScale
 				HudKit.new("UIPadding", {
 					PaddingLeft = UDim.new(0, BUTTON_ICON_LEFT_INSET + iconPixels + HudKit.SPACE.XS),
@@ -947,11 +1023,22 @@ function HudKit.accentCap(surface: Frame, color: Color3?): Frame
 	})
 end
 
+-- Left at 48, deliberately, even though the close button below grew to 40: (48 - 40) / 2 = 4px of
+-- top/bottom clearance, which is exactly HudKit.SPACE.XS — a real token in this design system, not
+-- an eyeballed cramped number. Growing this further was considered (see the close button's own
+-- comment below) but INVENTORY/SHOP/TURRET/RESEARCH panels each hardcode "48" for where their body
+-- content starts beneath the header (see their own PANEL_HEADER_HEIGHT-referencing comments) — those
+-- four files are out of scope here, so bumping this constant would silently reopen a 1:1 overlap gap
+-- in every one of them for no visual gain this file's owner can verify.
 local PANEL_HEADER_HEIGHT = 48
 local PANEL_HEADER_DARKEN = 0.4 -- one shade darker than the surface, so the header reads as chrome
 local PANEL_HEADER_TICK_WIDTH = 4
 local PANEL_HEADER_BORDER = 2
-local PANEL_HEADER_CLOSE_SIZE = 28
+-- Grown from 28 to 40 so the close button clears BUTTON_MIN_SLICE_SIZE and gets the same angular
+-- 9-sliced frame as every other button, instead of being the one HUD control still using the plain
+-- rounded HudKit.corner() fallback. See PANEL_HEADER_HEIGHT above for why the header itself stayed
+-- at 48 rather than growing to match.
+local PANEL_HEADER_CLOSE_SIZE = 40
 
 -- The heavy panel header from the design: a darkened bar with an accent tick on the left, the
 -- title, and — only when the caller actually wants one — a close button on the right. `onClose`
@@ -995,9 +1082,13 @@ function HudKit.panelHeader(surface: Frame, title: string, onClose: (() -> ())?)
 	if onClose then
 		-- Routed through HudKit.button rather than a bare TextButton so the close control gets the
 		-- same hover/press feedback as everything else, instead of being the one dead-looking
-		-- button in an otherwise responsive panel.
+		-- button in an otherwise responsive panel. icon = "close" is the glyph actually authored for
+		-- this; text = "X" stays as the fallback HudKit.button already falls back to whenever the
+		-- "close" key is missing from UiIconConfig/UiIcons (see its icon-resolution branch), so a
+		-- place without that art still gets a legible, clickable close control instead of a blank one.
 		HudKit.button({
 			variant = "secondary",
+			icon = "close",
 			text = "X",
 			size = UDim2.new(0, PANEL_HEADER_CLOSE_SIZE, 0, PANEL_HEADER_CLOSE_SIZE),
 			position = UDim2.new(1, -(PANEL_HEADER_CLOSE_SIZE + HudKit.SPACE.S), 0.5, -PANEL_HEADER_CLOSE_SIZE / 2),

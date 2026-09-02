@@ -148,6 +148,16 @@ local currencyList = Hud.new("Frame", {
 -- Scale, for the same circularity reason currencyFrame/currencyList call out above: currencyList
 -- AutomaticSizes its Y from this row's height, so this row's height can't in turn depend on
 -- currencyList's.
+-- Every group's slots carry an explicit LayoutOrder (1 = icon, 2 = label, 3 = the value the caller
+-- appends after this returns) rather than relying on insertion order. UIListLayout's default
+-- SortOrder (LayoutOrder) breaks ties between equal LayoutOrder values by instance Name, not by
+-- parenting order — and icon/label/value aren't always the same ClassName (the energy group's
+-- value slot is a plain Frame wrapping current+max, not a TextLabel), so their Roblox-default
+-- Names differ too ("Frame" < "ImageLabel" < "TextLabel" alphabetically). That's exactly why the
+-- energy group rendered as value/icon/label while Scrap/Cores (icon/label/value, with label and
+-- value both untouched-Name TextLabels tying and falling back to a stable insertion-order sort)
+-- looked fine — a Studio screenshot caught the strip reading asymmetric. Explicit LayoutOrder on
+-- every slot makes render order independent of ClassName again.
 local function makeCurrencyGroupShell(iconKey: string, labelText: string): Frame
 	local group = Hud.new("Frame", {
 		BackgroundTransparency = 1,
@@ -166,6 +176,7 @@ local function makeCurrencyGroupShell(iconKey: string, labelText: string): Frame
 	local icon = Hud.new("ImageLabel", {
 		BackgroundTransparency = 1,
 		Size = UDim2.fromOffset(24, 24),
+		LayoutOrder = 1,
 		Parent = group,
 	})
 	if not Hud.applyIcon(icon, iconKey) then
@@ -183,6 +194,7 @@ local function makeCurrencyGroupShell(iconKey: string, labelText: string): Frame
 		TextColor3 = Hud.COLOR.Muted,
 		TextSize = Hud.TEXTSIZE.Label,
 		Text = labelText:upper(),
+		LayoutOrder = 2,
 		Parent = group,
 	})
 
@@ -204,7 +216,13 @@ end
 -- left-aligned or AutomaticSize-width value would jitter sideways every time a digit is added or
 -- dropped. A fixed box with right alignment keeps the ones-digit anchored in place; the number
 -- grows leftward into its own reserved space instead of shoving the divider/next group over.
-local function makeCurrencyValue(parent: Frame, color: Color3, width: number): TextLabel
+-- layoutOrder is optional and deliberately not defaulted to 3: this same helper builds the
+-- current-energy label nested inside energyValue below, where it must NOT get an explicit
+-- LayoutOrder — it and energyMax are both plain TextLabels, so they already tie and fall back to a
+-- stable insertion-order sort (current, then max), and forcing one of them to a fixed LayoutOrder
+-- while leaving the other at the 0 default would reorder them instead of fixing anything. Only the
+-- Scrap/Cores callers, where this return value IS the group's third (value) slot, pass 3.
+local function makeCurrencyValue(parent: Frame, color: Color3, width: number, layoutOrder: number?): TextLabel
 	return Hud.new("TextLabel", {
 		BackgroundTransparency = 1,
 		Size = UDim2.new(0, width, 0, 24),
@@ -213,6 +231,7 @@ local function makeCurrencyValue(parent: Frame, color: Color3, width: number): T
 		TextColor3 = color,
 		TextSize = Hud.TEXTSIZE.Readout,
 		Text = "",
+		LayoutOrder = layoutOrder,
 		Parent = parent,
 	})
 end
@@ -220,9 +239,9 @@ end
 -- Grouped into one table (rather than one local per label) to stay under Luau's 200-local cap —
 -- see this file's header note on that budget. refreshCurrency below addresses these by field name.
 local currencyStrip = {}
-currencyStrip.scrap = makeCurrencyValue(makeCurrencyGroupShell("scrap", "Scrap"), Hud.COLOR.Accent, 64)
+currencyStrip.scrap = makeCurrencyValue(makeCurrencyGroupShell("scrap", "Scrap"), Hud.COLOR.Accent, 64, 3)
 makeCurrencyDivider()
-currencyStrip.cores = makeCurrencyValue(makeCurrencyGroupShell("cores", "Cores"), Hud.COLOR.Good, 64)
+currencyStrip.cores = makeCurrencyValue(makeCurrencyGroupShell("cores", "Cores"), Hud.COLOR.Good, 64, 3)
 makeCurrencyDivider()
 
 -- Energy gets a second, Muted "/max" segment instead of one combined string — RichText would also
@@ -242,6 +261,8 @@ local energyValue = Hud.new("Frame", {
 	BackgroundTransparency = 1,
 	Size = UDim2.new(0, 0, 0, 24),
 	AutomaticSize = Enum.AutomaticSize.X,
+	LayoutOrder = 3, -- this Frame IS the energy group's value slot; see makeCurrencyGroupShell's
+		-- header comment for why that has to be explicit instead of relying on insertion order.
 	Parent = energyGroup,
 }, {
 	Hud.new("UIListLayout", {

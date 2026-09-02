@@ -25,6 +25,9 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local RaidConfig = require(ReplicatedStorage.Shared.RaidConfig)
+local Hud = require(script.Parent.HudKit) -- ONLY for the Start Raid button below; see that button's
+	-- own comment for why this file otherwise still keeps its own COLOR/new/corner and does not
+	-- route through HudKit generally.
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 local RequestStartRaid = Remotes.RequestStartRaid
@@ -97,27 +100,27 @@ local screenGui = new("ScreenGui", {
 -- once a raid is active; reappears the moment the raid ends, one way or another.
 ----------------------------------------------------------------------
 
--- PanelLight, not AccentDark: Start Defense (MainHud's action row) is the one loud accent-filled
--- action on screen, and two competing orange buttons in opposite corners read as two equally
--- primary choices. This is the secondary treatment HudKit.button gives its "secondary" variant,
--- hand-applied — this file deliberately keeps its own undecorated style until the raid loop is
--- reskinned wholesale (see the header), so it is not worth routing through HudKit for one button.
-local startButton = new("TextButton", {
-	Name = "StartRaidButton",
-	BackgroundColor3 = COLOR.PanelLight,
-	Position = UDim2.new(1, -16, 0, 16),
-	AnchorPoint = Vector2.new(1, 0),
-	Size = UDim2.new(0, 150, 0, 40),
-	Font = Enum.Font.SourceSansBold,
-	Text = "Start Raid",
-	TextColor3 = COLOR.Text,
-	TextSize = 18,
-	Parent = screenGui,
-}, { corner(6) })
-
-startButton.MouseButton1Click:Connect(function()
-	RequestStartRaid:FireServer()
-end)
+-- variant = "secondary", not "primary": Start Defense (MainHud's action row) is the one loud
+-- accent-filled action on screen, and two competing orange buttons in opposite corners would read
+-- as two equally primary choices. This is the LAST rounded, feedback-less button left in the HUD
+-- (confirmed by a Studio screenshot) — everything else has already moved to HudKit's angular
+-- 9-slice + hover/press treatment, so this one button is pulled onto it now even though the rest
+-- of this file deliberately has not (see the header: the raid loop gets reskinned wholesale later).
+-- Still parented to THIS file's own screenGui, not Hud.screenGui — the two ScreenGuis are kept
+-- separate on purpose (see header) and this button's layering is against the raid map GUI below,
+-- not MainHud's panels.
+local startButton = Hud.button({
+	text = "Start Raid",
+	variant = "secondary",
+	position = UDim2.new(1, -16, 0, 16),
+	anchorPoint = Vector2.new(1, 0),
+	size = UDim2.new(0, 150, 0, 40),
+	parent = screenGui,
+	onClick = function()
+		RequestStartRaid:FireServer()
+	end,
+})
+startButton.Name = "StartRaidButton"
 
 ----------------------------------------------------------------------
 -- "Scraps Collected" panel (top-left) — this RAID's own live currency pool, visible only while a

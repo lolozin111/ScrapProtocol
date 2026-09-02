@@ -60,6 +60,10 @@ local OreConfig = require(ReplicatedStorage.Shared.OreConfig)
 local RefinedOreConfig = require(ReplicatedStorage.Shared.RefinedOreConfig)
 local ModConfig = require(ReplicatedStorage.Shared.ModConfig)
 local UltimateConfig = require(ReplicatedStorage.Shared.UltimateConfig)
+-- Same asset HudKit.plate()/HudKit.button() 9-slice against — read directly (not through
+-- Hud.getUiIcon) because makeItemTile also needs the exact SliceCenter geometry those two use,
+-- and that Rect isn't exposed off HudKit itself (it's a local there). See makeItemTile below.
+local UiIconConfig = require(ReplicatedStorage.Shared.UiIconConfig)
 
 local Hud = require(script.Parent.HudKit)
 local ModPicker = require(script.Parent.ModPicker)
@@ -106,15 +110,16 @@ function InventoryPanel.new(context)
 	-- of text in the middle of the viewport read as an empty black rectangle dominating the screen.
 	-- Narrower (420, down from 640) and anchored/positioned flush against the right edge,
 	-- vertically centered, so sparse content reads as a compact sidebar instead of barren.
-	-- Height grown from 480 to 520 — the tab row below gets taller and properly gapped off the header
-	-- (see INV_TAB_HEIGHT's comment), which costs the scrolling list ~40px of visible height if the
-	-- shell doesn't grow to absorb it. Growing the container instead of shrinking the list back down,
-	-- per this pass's rule: the list area ends up exactly the same visible height as before (382px).
+	-- 480 tall (reverted from 520, which existed only to absorb a taller icon-over-caption tab row —
+	-- see INV_TAB_HEIGHT's comment for why that row is back to a plain 32px pill). No content below
+	-- the tab row depends on this exact number: the list/empty-label both size themselves relative to
+	-- INV_LIST_Y and the shell's own bottom edge, so this just controls how much visible list height
+	-- the shell gives them.
 	inv.surface, inv.frame = Hud.plate({
 		Name = "Inventory",
 		AnchorPoint = Vector2.new(1, 0.5),
 		Position = UDim2.new(1, 0, 0.5, 0),
-		Size = UDim2.new(0, 420, 0, 520),
+		Size = UDim2.new(0, 420, 0, 480),
 		Visible = false,
 		Parent = Hud.screenGui,
 	})
@@ -129,27 +134,37 @@ function InventoryPanel.new(context)
 		ModPicker.closeModPicker() -- don't leave the mod picker orphaned open behind a closed Inventory
 	end)
 
-	-- Height taken to 56 (from 32) so the tab icons render at a legible size instead of being the
-	-- smallest touch targets in the HUD — see INV_TAB_HEIGHT/the tab-building loop below for the full
-	-- arithmetic. Position also corrected from 40 to 56: Hud.panelHeader is a fixed 48px
-	-- (PANEL_HEADER_HEIGHT in HudKit.lua) tall, so the OLD position of 40 sat 8px INSIDE the header —
-	-- this row's top 8px were quietly drawing over the header's own bottom edge the whole time (the
-	-- header renders first, and both are default-ZIndex siblings of a Sibling-ZIndexBehavior
-	-- ScreenGui, so whichever is added later — this row — paints on top). 56 = 48 (header) + 8
-	-- (Hud.SPACE.S gap), matching the same "8px gap below the thing above it" convention the
-	-- listFrame below already uses.
-	local INV_TAB_HEIGHT = 56
+	-- REVERTED THIS PASS: tabs went icon-over-caption for one session, then back to plain text per the
+	-- approved design reference (plain uppercase labels in pill buttons, no icons at all). Text-only
+	-- tabs don't need the extra height that stacking an icon above a caption required, so this goes
+	-- back to 32 — a standard button-height pill, not the 56px two-row cell the icon layout needed.
+	-- Position is unaffected by this (see the math below): it was never about the tab height, only
+	-- about clearing the header.
+	--
+	-- Position 56: Hud.panelHeader is a fixed 48px (PANEL_HEADER_HEIGHT in HudKit.lua) tall, so this
+	-- row sits 48 (header) + 8 (Hud.SPACE.S gap) below it — the same "8px gap below the thing above
+	-- it" convention the listFrame below already uses. (A previous version of this row sat at Y=40,
+	-- 8px INSIDE the header, and quietly drew over the header's own bottom edge — kept here as
+	-- history since the same header-overlap mistake is easy to reintroduce if this ever moves again.)
+	local INV_TAB_HEIGHT = 32
 	local INV_TAB_ROW_Y = 56
 
+	-- HorizontalAlignment = Center (not the UIListLayout default of Left): the four tab widths plus
+	-- their gaps land 2px under this row's own usable width (see INV_TAB_WIDTH's arithmetic below),
+	-- and Left alignment would dump that whole 2px slack on the right edge — Center splits it evenly
+	-- instead, so the row reads as centred rather than "very slightly left-heavy."
 	inv.tabRow = Hud.new("Frame", {
 		BackgroundTransparency = 1,
 		Position = UDim2.new(0, 12, 0, INV_TAB_ROW_Y),
 		Size = UDim2.new(1, -24, 0, INV_TAB_HEIGHT),
 		Parent = inv.surface,
-	}, { Hud.new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, Hud.SPACE.S) }) })
+	}, { Hud.new("UIListLayout", {
+		FillDirection = Enum.FillDirection.Horizontal,
+		HorizontalAlignment = Enum.HorizontalAlignment.Center,
+		Padding = UDim.new(0, Hud.SPACE.S),
+	}) })
 
-	-- Y = tab row's bottom (56 + 56 = 112) + the same 8px gap = 120. Was 80 when the tab row was
-	-- shorter and mis-positioned; now correctly clears both the header AND the taller tab row.
+	-- Y = tab row's bottom (56 + 32 = 88) + the same 8px gap = 96.
 	local INV_LIST_Y = INV_TAB_ROW_Y + INV_TAB_HEIGHT + Hud.SPACE.S
 
 	inv.listFrame = Hud.new("ScrollingFrame", {
@@ -172,6 +187,12 @@ function InventoryPanel.new(context)
 		-- ~390px-wide list frame (see INV_TAB_WIDTH's comment below for where 390 comes from) leaves
 		-- 54px for 3 gaps = 18px each — an exact fit, not an estimate. Vertical padding is left at
 		-- Hud.SPACE.S to keep row spacing exactly as it was.
+		-- SYMMETRY CHECK: 4*84 + 3*18 = 390, exactly equal to this listFrame's own width (surface 414
+		-- minus this frame's 12px-each-side inset = 390) — the grid fills its row with zero leftover
+		-- pixels, so a full row is already centred with equal margins on both sides without needing a
+		-- HorizontalAlignment override the way the shorter tab row above does. Only the last, partial
+		-- row (whatever tab has a non-multiple-of-4 item count) sits left-aligned within that row —
+		-- ordinary grid behaviour, not an asymmetry bug to chase.
 		Hud.new("UIGridLayout", {
 			CellSize = UDim2.new(0, TILE_SIZE, 0, TILE_SIZE),
 			CellPadding = UDim2.new(0, 18, 0, Hud.SPACE.S),
@@ -183,6 +204,9 @@ function InventoryPanel.new(context)
 	-- UIGridLayout forces every child to CellSize, so a full-width "nothing here" message can't be a
 	-- grid child without looking cramped; this sits outside the grid instead and is only ever shown
 	-- when the grid has zero tiles in it, so the two never actually overlap in practice.
+	-- Centered both axes (was Left/Top, which read as hugging the top-left corner of a mostly-empty
+	-- 390px-wide area) — an empty-state message reads as a deliberate placeholder when it sits in the
+	-- middle of the space it's describing, not tucked into a corner of it.
 	inv.emptyLabel = Hud.new("TextLabel", {
 		BackgroundTransparency = 1,
 		Position = UDim2.new(0, 12, 0, INV_LIST_Y),
@@ -191,8 +215,8 @@ function InventoryPanel.new(context)
 		TextColor3 = Hud.COLOR.Muted,
 		TextSize = 14,
 		TextWrapped = true,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		TextYAlignment = Enum.TextYAlignment.Top,
+		TextXAlignment = Enum.TextXAlignment.Center,
+		TextYAlignment = Enum.TextYAlignment.Center,
 		Visible = false,
 		Text = "",
 		Parent = inv.surface,
@@ -516,17 +540,69 @@ function InventoryPanel.new(context)
 	-- Grid tiles — one per tab, built fresh every render
 	----------------------------------------------------------------------
 
+	-- Same 9-slice cut-steel frame as HudKit.plate()/HudKit.button() (see PANEL_FRAME_SLICE_CENTER's
+	-- header comment in HudKit.lua for the asset geometry) — tiles used to be plain rounded rects,
+	-- which read flat and generic next to every other angular panel in this HUD. Read fresh per tile,
+	-- same as `icon` right below it: this section's header already documents "look the key up fresh
+	-- every time a tile is built" for icons, and the panelframe asset should honor a Studio change
+	-- the same way rather than being cached once at panel-construction time.
+	--
+	-- The outer ImageButton no longer carries the item icon as its own .Image — with a frame behind
+	-- it, the icon has to be a separate child layered on top (ZIndex 1) instead of replacing the
+	-- frame (ZIndex 0). This is the one structural change here; everything else is the same
+	-- click-handling ImageButton it always was.
 	local function makeItemTile(key: string, displayName: string, badgeText: string?, highlighted: boolean, onSelect)
 		local icon = Hud.getItemIcon(key)
-		local tile = Hud.new("ImageButton", {
-			BackgroundColor3 = highlighted and Hud.COLOR.AccentDark or Hud.COLOR.PanelLight,
-			AutoButtonColor = false,
-			Image = icon or "",
-			ScaleType = Enum.ScaleType.Fit,
-			Size = UDim2.new(0, TILE_SIZE, 0, TILE_SIZE),
-		}, { Hud.corner(8), Hud.stroke() })
+		local panelFrameImage = UiIconConfig.Get("panelframe")
+		local isSliceable = panelFrameImage ~= nil
 
-		if not icon then
+		local tile = Hud.new("ImageButton", {
+			-- Only visible on the fallback (non-sliceable) path below — the sliceable path hides this
+			-- via BackgroundTransparency and paints the fill on the frame ImageLabel's ImageColor3
+			-- instead, same split HudKit.button() uses for its own sliced/fallback background.
+			BackgroundColor3 = highlighted and Hud.COLOR.AccentDark or Hud.COLOR.PanelLight,
+			BackgroundTransparency = if isSliceable then 1 else 0,
+			AutoButtonColor = false,
+			Image = "",
+			Size = UDim2.new(0, TILE_SIZE, 0, TILE_SIZE),
+		}, if isSliceable then {} else { Hud.corner(8), Hud.stroke() })
+		-- No UICorner/stroke on the sliceable path: the shape and outline both come from the image's
+		-- own cut corners and baked edge, same reasoning as HudKit.plate()'s shell/surface branch.
+
+		if isSliceable then
+			-- The selected tile is OUTLINED in accent, not filled — the reference shows the selected
+			-- slot as an accent-tinted frame around an otherwise normal dark interior, not a solid
+			-- accent block. Retinting this one ImageLabel (frame tint doubles as the fill, since the
+			-- slice image covers the whole tile) is the smallest change that gets there, rather than
+			-- adding a second filled layer underneath just for the unselected case.
+			Hud.new("ImageLabel", {
+				BackgroundTransparency = 1,
+				Image = panelFrameImage,
+				ImageColor3 = highlighted and Hud.COLOR.Accent or Hud.COLOR.PanelLight,
+				ScaleType = Enum.ScaleType.Slice,
+				SliceCenter = Rect.new(20, 20, 44, 44),
+				Size = UDim2.new(1, 0, 1, 0),
+				ZIndex = 0,
+				Parent = tile,
+			})
+		end
+
+		if icon then
+			-- Inset 6px each side so the icon sits inside the frame's cut corners instead of
+			-- overdrawing them — TILE_SIZE (84) clears the frame's own ~20px corner regions
+			-- comfortably either way, this is purely so the icon doesn't visually collide with the
+			-- frame's edge.
+			Hud.new("ImageLabel", {
+				BackgroundTransparency = 1,
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				Position = UDim2.new(0.5, 0, 0.5, 0),
+				Size = UDim2.new(1, -12, 1, -12),
+				Image = icon,
+				ScaleType = Enum.ScaleType.Fit,
+				ZIndex = 1,
+				Parent = tile,
+			})
+		else
 			Hud.new("TextLabel", {
 				BackgroundTransparency = 1,
 				Position = UDim2.new(0, 3, 0, 3),
@@ -536,6 +612,7 @@ function InventoryPanel.new(context)
 				TextSize = 12,
 				TextWrapped = true,
 				Text = displayName,
+				ZIndex = 1,
 				Parent = tile,
 			})
 		end
@@ -549,6 +626,7 @@ function InventoryPanel.new(context)
 				TextColor3 = Hud.COLOR.Text,
 				TextSize = 11,
 				Text = badgeText,
+				ZIndex = 2,
 				Parent = tile,
 			}, { Hud.corner(4) })
 		end
@@ -692,52 +770,31 @@ function InventoryPanel.new(context)
 	-- 390px of actual usable width. (The listFrame's own UIGridLayout comment above already assumes
 	-- this same 390px figure for the grid beneath it — this is the same row, so it has to agree.)
 	--
-	-- REVISED THIS PASS: icon-only, unlabeled tabs were four unlabeled pictures — a discoverability
-	-- problem the original text-dropped design explicitly traded away to fit the width. Now that the
-	-- row is taller (INV_TAB_HEIGHT = 56, up from 32) there's room to stack a caption under the icon
-	-- instead, matching the bottom action row's icon-over-caption treatment (see
-	-- MainHud.client.lua's makeActionColumn). HudKit.button's own `icon` option only ever anchors an
-	-- icon LEFT of text or CENTERED alone — it has no "icon above text" mode — so this builds the icon
-	-- and caption BY HAND as children of a plain (icon-less, text-less) HudKit.button, instead of
-	-- fighting that option or duplicating makeActionColumn's separate-wrapper-frame shape.
+	-- REVERTED THIS PASS: a brief icon-over-caption detour (each tab a stacked icon + label, needing
+	-- the taller 56px row) is gone per the approved design reference — plain uppercase text in a pill
+	-- button, no icons at all. That also removes the reason INV_TAB_HEIGHT was ever grown, and with it
+	-- the whole hand-built icon+caption content frame this section used to describe.
 	local INV_TAB_GAP = Hud.SPACE.S -- unchanged from the row's existing UIListLayout Padding, below
 	local INV_TAB_WIDTH = math.floor((390 - INV_TAB_GAP * (#INV_TAB_NAMES - 1)) / #INV_TAB_NAMES)
-	-- INV_TAB_WIDTH = 91: 4 * 91 + 3 * 8 = 388px against 390px available — fits, 2px to spare.
-	-- (Unchanged by the height increase — this is a width computation and the row is exactly as wide
-	-- as it was; only INV_TAB_HEIGHT and what's drawn inside each tab changed.)
-
-	-- Icon 24px + a 4px UIListLayout gap + a 16px caption row = 44px of content, centered inside the
-	-- 56px-tall button by the content frame's UIListLayout below — leaving ~6px of breathing room
-	-- above and below rather than pixel-perfect top/bottom insets that would need re-deriving if
-	-- either child ever changes size.
-	local INV_TAB_ICON_SIZE = 24
-	local INV_TAB_CAPTION_HEIGHT = 16
-
-	-- HudKit.button()'s BUTTON_VARIANTS table (primary/secondary text colors) is local to HudKit.lua
-	-- and not exported — mirrored here for the two variants this row actually uses, same as the detail
-	-- slot buttons a few sections up already hand-roll a rarity-based TextColor3 instead of asking
-	-- HudKit for one. If HudKit's variant text colors ever change, this needs updating to match.
-	local INV_TAB_CAPTION_COLOR = {
-		primary = Hud.COLOR.Panel, -- dark caption on the bright Accent fill, same contrast call as primary's own button text
-		secondary = Hud.COLOR.Text,
-	}
+	-- INV_TAB_WIDTH = 91: 4 * 91 + 3 * 8 = 388px against 390px available — fits, 2px to spare. That
+	-- 2px is what inv.tabRow's UIListLayout HorizontalAlignment = Center (set above) splits evenly
+	-- across both edges instead of leaving it all on the right.
 
 	local selectInvTab
 
-	-- Built ONCE, then recolored in place via HudKit.setButtonVariant on every tab switch (plus this
-	-- row's own caption recolor, since the caption lives outside HudKit.button's own variant-text
-	-- machinery — see INV_TAB_CAPTION_COLOR above). Keyed by name (not by loop index) so
-	-- `selectInvTab` never has to reason about which slot in a list is "currently active" — just look
-	-- up by name.
+	-- Built ONCE, then recolored in place via HudKit.setButtonVariant on every tab switch.
+	-- HudKit.setButtonVariant already flips both the fill AND the button's own Text color to match
+	-- the variant (see BUTTON_VARIANTS in HudKit.lua) — now that the caption IS the button's Text
+	-- (not a hand-built child label, like the icon-over-caption version needed), there's no second
+	-- color to keep in sync by hand, and no `inv.tabCaptions` table to maintain either. Keyed by name
+	-- (not by loop index) so `selectInvTab` never has to reason about which slot in a list is
+	-- "currently active" — just look up by name.
 	inv.tabButtons = {}
-	inv.tabCaptions = {}
 	for index, name in ipairs(INV_TAB_NAMES) do
 		local variantName = (currentInvTab == name) and "primary" or "secondary"
 		local tabButton = Hud.button({
 			variant = variantName,
-			-- No `icon`/`text` passed to HudKit.button — both are built by hand below as children, so
-			-- they can stack vertically instead of using HudKit.button's left-of-text/centered-alone
-			-- icon placement.
+			text = name:upper(),
 			size = UDim2.new(0, INV_TAB_WIDTH, 1, 0),
 			layoutOrder = index,
 			parent = inv.tabRow,
@@ -745,55 +802,19 @@ function InventoryPanel.new(context)
 				selectInvTab(name)
 			end,
 		})
+		-- HudKit.button() defaults every button to FONT.BodyBold/TEXTSIZE.Body — overridden here to
+		-- the small-uppercase-label treatment the reference wants for tab captions specifically
+		-- (Display font, Label size), same "override after building" pattern the detail-panel slot
+		-- buttons a few sections up already use for their own non-default text styling.
+		tabButton.Font = Hud.FONT.Display
+		tabButton.TextSize = Hud.TEXTSIZE.Label
 		inv.tabButtons[name] = tabButton
-
-		-- Fills the button and centers icon+caption as a vertical stack — this is what lets
-		-- INV_TAB_HEIGHT change (or the icon/caption sizes above change) without re-deriving pixel
-		-- offsets by hand.
-		local content = Hud.new("Frame", {
-			BackgroundTransparency = 1,
-			Size = UDim2.new(1, 0, 1, 0),
-			Parent = tabButton,
-		}, { Hud.new("UIListLayout", {
-			FillDirection = Enum.FillDirection.Vertical,
-			HorizontalAlignment = Enum.HorizontalAlignment.Center,
-			VerticalAlignment = Enum.VerticalAlignment.Center,
-			Padding = UDim.new(0, 4),
-		}) })
-
-		-- icon key matches the lower-cased tab name exactly (weapons/robots/mods/materials in
-		-- UiIconConfig.lua), same lookup HudKit.button's own `icon` option used to do internally.
-		-- Missing art destroys the icon and leaves the caption alone, centered by itself — per this
-		-- project's "missing art never breaks the loop" rule, and strictly better than before (a
-		-- missing icon used to mean a completely blank, unlabeled button).
-		local iconLabel = Hud.new("ImageLabel", {
-			BackgroundTransparency = 1,
-			Size = UDim2.fromOffset(INV_TAB_ICON_SIZE, INV_TAB_ICON_SIZE),
-			Image = "",
-			Parent = content,
-		})
-		if not Hud.applyIcon(iconLabel, string.lower(name)) then
-			iconLabel:Destroy()
-		end
-
-		local caption = Hud.new("TextLabel", {
-			BackgroundTransparency = 1,
-			Size = UDim2.new(1, 0, 0, INV_TAB_CAPTION_HEIGHT),
-			Font = Hud.FONT.Display,
-			TextColor3 = INV_TAB_CAPTION_COLOR[variantName],
-			TextSize = Hud.TEXTSIZE.Label,
-			Text = name:upper(),
-			Parent = content,
-		})
-		inv.tabCaptions[name] = caption
 	end
 
 	selectInvTab = function(name: string)
 		Hud.setButtonVariant(inv.tabButtons[currentInvTab], "secondary")
-		inv.tabCaptions[currentInvTab].TextColor3 = INV_TAB_CAPTION_COLOR.secondary
 		currentInvTab = name
 		Hud.setButtonVariant(inv.tabButtons[currentInvTab], "primary")
-		inv.tabCaptions[currentInvTab].TextColor3 = INV_TAB_CAPTION_COLOR.primary
 		closeInvDetail() -- a Mods-tab selection doesn't make sense once you've switched to Weapons, etc.
 		renderInvList()
 	end

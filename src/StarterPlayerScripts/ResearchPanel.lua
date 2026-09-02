@@ -31,17 +31,21 @@ function ResearchPanel.new(statusPanel: Frame)
 	-- locals and this file's main chunk hit that ceiling. Grouping UI element references costs
 	-- nothing at runtime and buys back a register per element.
 	local research = {}
-	-- The docked status-panel button. TextColor3 keeps getting overwritten by
-	-- refreshResearchButton() below (Accent vs. Good when a tier is claimable) — that still works
-	-- on top of Hud.button's hover/press tweens, since those only ever touch
-	-- BackgroundColor3/Size/Position, never TextColor3.
-	-- Height grown 30 -> 34: HudKit.button()'s default text size is Hud.TEXTSIZE.Body, raised this
-	-- pass from 14 to 16 — this button's text also grows the longest at "UPGRADE READY" swap
-	-- (refreshResearchButton below), so it needs the extra couple of pixels more than most.
+	-- The docked status-panel button. Text is now a fixed-shape "RESEARCH T<n>" — tier number only,
+	-- no station name, no status suffix — so it never reflows the button's width/corners the way
+	-- "Research T3 — UPGRADE READY" used to. The station name lives in the popup body instead (the
+	-- "Current" row in renderResearchPanel below already shows currentTier.Name), and "upgrade
+	-- ready" is now signalled by swapping the button's whole colour variant (refreshResearchButton
+	-- below calls Hud.setButtonVariant, primary when claimable, secondary otherwise) rather than by
+	-- TextColor3 or a text suffix — variant swap also recolors the fill, which a bare TextColor3
+	-- write never did.
+	-- Height grown 34 -> 40: HudKit.button() only applies the angular 9-slice frame at
+	-- BUTTON_MIN_SLICE_SIZE (40) or larger — below that it silently falls back to rounded corners,
+	-- which is why this button still looked rounded while everything else on screen was cut steel.
 	research.button = Hud.button({
 		variant = "secondary",
-		text = "Research Tier 1",
-		size = UDim2.new(1, 0, 0, 34),
+		text = "RESEARCH T1",
+		size = UDim2.new(1, 0, 0, 40),
 		layoutOrder = 3,
 		parent = statusPanel,
 	})
@@ -61,9 +65,18 @@ function ResearchPanel.new(statusPanel: Frame)
 	})
 	if Hud.applyIcon(research.chevron, "chevron") then
 		-- Reserve the same footprint on the right that HudKit.button's own left-side icon padding
-		-- uses (8px inset + icon size + one XS gap), so the button's own centered Text never runs
-		-- under the chevron for longer strings like "Research T3 — UPGRADE READY".
-		Hud.new("UIPadding", { PaddingRight = UDim.new(0, 8 + 16 + Hud.SPACE.XS), Parent = research.button })
+		-- uses (8px inset + icon size + one XS gap) — but MIRRORED on the left too. A right-only
+		-- UIPadding insets HudKit.button's captionLabel (a Scale-sized child, per HudKit.button's own
+		-- comment on why UIPadding hits it) asymmetrically: the text still centers itself within the
+		-- now-narrower box, but that box's center sits left of the BUTTON's true center by half the
+		-- reserved width, so the caption reads off-centre even though it's centered inside its own
+		-- padded rect. This was the actual cause of the off-centre label reported from Studio, not a
+		-- text-alignment property. Matching PaddingLeft keeps the reserved chevron gutter but makes
+		-- the remaining box — and therefore the centered text inside it — symmetric about the
+		-- button's real center again. The label is short and fixed now ("RESEARCH T1"), so the extra
+		-- left inset costs nothing.
+		local chevronGutter = UDim.new(0, 8 + 16 + Hud.SPACE.XS)
+		Hud.new("UIPadding", { PaddingLeft = chevronGutter, PaddingRight = chevronGutter, Parent = research.button })
 		-- Hover swap mirrors HudKit.button's own convention (rest/`_hover` pair), just wired by hand
 		-- since this icon lives outside HudKit.button's own icon machinery. Both connections are
 		-- additive to whatever HudKit.button already connected to MouseEnter/MouseLeave internally —
@@ -209,17 +222,18 @@ function ResearchPanel.new(statusPanel: Frame)
 	end)
 
 	-- Shows the tier on the button itself, and flags when a tier is actually claimable so the player
-	-- does not have to open the panel to find out.
+	-- does not have to open the panel to find out. Text stays a fixed shape ("RESEARCH T<n>", tier
+	-- number only) regardless of claimability — the station name and the "upgrade ready" state both
+	-- used to be baked into this string, but a button whose text changes length reflows and looks
+	-- unstable, and the long form overflowed the button's angular corners. The station name now
+	-- lives in the popup body (renderResearchPanel's "Current" row already shows currentTier.Name);
+	-- "upgrade ready" is now a colour swap via Hud.setButtonVariant, which recolors the fill AND the
+	-- text together, instead of a manual TextColor3 write that only ever touched the text.
 	refreshResearchButton = function()
-		local currentTier, currentIndex = ResearchConfig.GetTier(Hud.profile.ResearchTier or 1)
+		local _currentTier, currentIndex = ResearchConfig.GetTier(Hud.profile.ResearchTier or 1)
 		local req = ResearchConfig.GetNextTierRequirements(Hud.profile)
-		if req and req.CanClaim then
-			research.button.Text = ("Research T%d — UPGRADE READY"):format(currentIndex)
-			research.button.TextColor3 = Hud.COLOR.Good
-		else
-			research.button.Text = ("Research T%d — %s"):format(currentIndex, currentTier.Name)
-			research.button.TextColor3 = Hud.COLOR.Accent
-		end
+		research.button.Text = ("RESEARCH T%d"):format(currentIndex)
+		Hud.setButtonVariant(research.button, (req and req.CanClaim) and "primary" or "secondary")
 	end
 
 	return {
