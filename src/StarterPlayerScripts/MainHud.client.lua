@@ -435,42 +435,338 @@ local currentTab = "Weapons"
 -- only fail when a button was actually clicked.
 local renderCraftList
 
+-- The Workbench's four tabs, rebuilt as HUD phase 3's "Spec Sheet" (design round, section C).
+--
+-- WHAT CHANGED AND WHY. All four were makeRow lists whose subtitle stated a COST but never what you
+-- got for it: "Laser Cutter -> Plasma Drill, 60 steel plating · 20 gold contacts · 12 steel ingot"
+-- tells you the price of a thing you cannot evaluate. The shape below always answers both halves —
+-- what you have now, in real numbers, and what those same numbers become — because the before/after
+-- is the actual decision and it was the one thing missing.
+--
+-- One builder rather than four layouts: these tabs differ in their DATA, not their shape (a thing
+-- you own, its stats, what it cannot do yet, and one step you can buy). Four hand-built versions is
+-- how the old rows drifted into stating costs four slightly different ways.
+local SPEC_HERO_HEIGHT = 76
+local SPEC_CARD_HEIGHT = 88
+local SPEC_NEXT_HEIGHT = 92
+
+-- `stats` renders right-aligned value/label pairs in the hero, `cards` is one or two supporting
+-- panels, and `nextStep` is the buy row. nextStep = nil means maxed/owned, which draws nothing
+-- rather than a disabled button: a row you can never press is noise once it is permanent.
+type SpecStat = { value: string, label: string }
+type SpecDelta = { label: string, from: string, to: string }
+type SpecCard = { heading: string, body: string, accent: Color3? }
+type SpecNext = {
+	label: string,
+	deltas: { SpecDelta }?,
+	cost: string?,
+	buttonText: string,
+	blocked: boolean?, -- draws secondary + refuses with a toast instead of primary
+	blockedReason: string?,
+	onClick: (() -> ())?,
+}
+
+local function makeSpecSheet(opts: {
+	eyebrow: string,
+	title: string,
+	badge: string?,
+	stats: { SpecStat }?,
+	cards: { SpecCard }?,
+	nextStep: SpecNext?,
+	extra: ((parent: Instance, y: number) -> ())?,
+})
+	local body = Hud.new("Frame", {
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, SPEC_HERO_HEIGHT + SPEC_CARD_HEIGHT + SPEC_NEXT_HEIGHT + Hud.SPACE.S * 2),
+		Parent = listFrame,
+	})
+
+	local hero = Hud.new("Frame", {
+		BackgroundColor3 = Hud.COLOR.PanelLight,
+		BorderSizePixel = 0,
+		Size = UDim2.new(1, 0, 0, SPEC_HERO_HEIGHT),
+		Parent = body,
+	}, { Hud.corner(Hud.RADIUS.Panel), Hud.stroke() })
+
+	-- A tier badge rather than an item icon. There is no icon asset for a pickaxe tier, a suit tier
+	-- or a base tier, and inventing three would put this screen behind art that does not exist —
+	-- the project's "missing art never breaks the loop" rule pushed the other way here: draw
+	-- something real out of type instead of reserving a hole for a picture.
+	if opts.badge then
+		Hud.new("TextLabel", {
+			BackgroundColor3 = Hud.COLOR.Accent,
+			BorderSizePixel = 0,
+			Font = Hud.FONT.Display,
+			Position = UDim2.new(0, Hud.SPACE.M, 0.5, -20),
+			Size = UDim2.fromOffset(40, 40),
+			Text = opts.badge,
+			TextColor3 = Hud.COLOR.Panel,
+			TextSize = Hud.TEXTSIZE.Title,
+			Parent = hero,
+		}, { Hud.corner(Hud.RADIUS.Button) })
+	end
+
+	local textX = opts.badge and (Hud.SPACE.M + 40 + Hud.SPACE.M) or Hud.SPACE.M
+
+	Hud.new("TextLabel", {
+		BackgroundTransparency = 1,
+		Font = Hud.FONT.Display,
+		Position = UDim2.new(0, textX, 0, 14),
+		Size = UDim2.new(0.55, -textX, 0, 14),
+		Text = opts.eyebrow:upper(),
+		TextColor3 = Hud.COLOR.Muted,
+		TextSize = Hud.TEXTSIZE.Label,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Parent = hero,
+	})
+
+	Hud.new("TextLabel", {
+		BackgroundTransparency = 1,
+		Font = Hud.FONT.Display,
+		Position = UDim2.new(0, textX, 0, 32),
+		Size = UDim2.new(0.55, -textX, 0, 28),
+		Text = opts.title,
+		TextColor3 = Hud.COLOR.Text,
+		TextSize = Hud.TEXTSIZE.Title,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Parent = hero,
+	})
+
+	-- Stats lay out right-to-left from the hero's right edge, so a tab with two stats and one with
+	-- three both stay flush to the same edge instead of needing per-tab positions.
+	local statWidth = 84
+	for index, stat in ipairs(opts.stats or {}) do
+		local right = -(Hud.SPACE.M + statWidth * (index - 1))
+		local column = Hud.new("Frame", {
+			AnchorPoint = Vector2.new(1, 0.5),
+			BackgroundTransparency = 1,
+			Position = UDim2.new(1, right, 0.5, 0),
+			Size = UDim2.fromOffset(statWidth, 44),
+			Parent = hero,
+		})
+
+		Hud.new("TextLabel", {
+			BackgroundTransparency = 1,
+			Font = Hud.FONT.Mono,
+			Position = UDim2.new(0, 0, 0, 2),
+			Size = UDim2.new(1, 0, 0, 22),
+			Text = stat.value,
+			TextColor3 = Hud.COLOR.Text,
+			TextSize = 18,
+			TextXAlignment = Enum.TextXAlignment.Right,
+			Parent = column,
+		})
+
+		Hud.new("TextLabel", {
+			BackgroundTransparency = 1,
+			Font = Hud.FONT.Display,
+			Position = UDim2.new(0, 0, 0, 24),
+			Size = UDim2.new(1, 0, 0, 14),
+			Text = stat.label:upper(),
+			TextColor3 = Hud.COLOR.Muted,
+			TextSize = Hud.TEXTSIZE.Label,
+			TextXAlignment = Enum.TextXAlignment.Right,
+			Parent = column,
+		})
+	end
+
+	local cardsY = SPEC_HERO_HEIGHT + Hud.SPACE.S
+	local cards = opts.cards or {}
+	for index, card in ipairs(cards) do
+		local width = 1 / math.max(#cards, 1)
+		local gap = Hud.SPACE.S * (#cards - 1) / math.max(#cards, 1)
+
+		local panel = Hud.new("Frame", {
+			BackgroundColor3 = Hud.COLOR.Panel,
+			BorderSizePixel = 0,
+			Position = UDim2.new(width * (index - 1), Hud.SPACE.S * (index - 1), 0, cardsY),
+			Size = UDim2.new(width, -gap, 0, SPEC_CARD_HEIGHT),
+			Parent = body,
+		}, { Hud.corner(Hud.RADIUS.Panel), Hud.stroke() })
+
+		Hud.new("TextLabel", {
+			BackgroundTransparency = 1,
+			Font = Hud.FONT.Display,
+			Position = UDim2.new(0, Hud.SPACE.M, 0, 10),
+			Size = UDim2.new(1, -Hud.SPACE.M * 2, 0, 14),
+			Text = card.heading:upper(),
+			TextColor3 = Hud.COLOR.Muted,
+			TextSize = Hud.TEXTSIZE.Label,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			Parent = panel,
+		})
+
+		Hud.new("TextLabel", {
+			BackgroundTransparency = 1,
+			Font = Hud.FONT.Body,
+			Position = UDim2.new(0, Hud.SPACE.M, 0, 28),
+			Size = UDim2.new(1, -Hud.SPACE.M * 2, 0, SPEC_CARD_HEIGHT - 38),
+			Text = card.body,
+			TextColor3 = card.accent or Hud.COLOR.Text,
+			TextSize = Hud.TEXTSIZE.Body,
+			TextWrapped = true,
+			TextYAlignment = Enum.TextYAlignment.Top,
+			Parent = panel,
+		})
+
+		if index == #cards and opts.extra then
+			opts.extra(panel, 0)
+		end
+	end
+
+	local nextStep = opts.nextStep
+	if not nextStep then
+		return body
+	end
+
+	local nextY = cardsY + (#cards > 0 and SPEC_CARD_HEIGHT + Hud.SPACE.S or 0)
+	-- Its own UIStroke rather than Hud.stroke() plus a second one: a GuiObject honours ONE UIStroke,
+	-- so adding the accent outline on top of the default Line one would leave whichever Roblox
+	-- happens to pick — silently the wrong colour half the time. The buyable step is the only thing
+	-- on this screen outlined in Accent, which is what makes it read as the action.
+	local panel = Hud.new("Frame", {
+		BackgroundColor3 = Hud.COLOR.Panel,
+		BorderSizePixel = 0,
+		Position = UDim2.new(0, 0, 0, nextY),
+		Size = UDim2.new(1, 0, 0, SPEC_NEXT_HEIGHT),
+		Parent = body,
+	}, {
+		Hud.corner(Hud.RADIUS.Panel),
+		Hud.new("UIStroke", {
+			Color = nextStep.blocked and Hud.COLOR.Line or Hud.COLOR.Accent,
+			Thickness = 1,
+		}),
+	})
+
+	Hud.new("TextLabel", {
+		BackgroundTransparency = 1,
+		Font = Hud.FONT.Display,
+		Position = UDim2.new(0, Hud.SPACE.M, 0, 12),
+		Size = UDim2.new(1, -180, 0, 14),
+		Text = nextStep.label:upper(),
+		TextColor3 = nextStep.blocked and Hud.COLOR.Muted or Hud.COLOR.Accent,
+		TextSize = Hud.TEXTSIZE.Label,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Parent = panel,
+	})
+
+	-- The before/after row. Rendered as "0.5s -> 0.3s" per stat rather than as a single sentence so
+	-- the eye can compare columns; Good on the right-hand value because every delta here is an
+	-- improvement you are being asked to pay for.
+	local deltaX = Hud.SPACE.M
+	for _, delta in ipairs(nextStep.deltas or {}) do
+		local group = Hud.new("Frame", {
+			BackgroundTransparency = 1,
+			Position = UDim2.new(0, deltaX, 0, 30),
+			Size = UDim2.fromOffset(150, 34),
+			Parent = panel,
+		})
+
+		Hud.new("TextLabel", {
+			BackgroundTransparency = 1,
+			Font = Hud.FONT.Display,
+			Size = UDim2.new(1, 0, 0, 12),
+			Text = delta.label:upper(),
+			TextColor3 = Hud.COLOR.Muted,
+			TextSize = Hud.TEXTSIZE.Label,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			Parent = group,
+		})
+
+		Hud.new("TextLabel", {
+			BackgroundTransparency = 1,
+			Font = Hud.FONT.Mono,
+			Position = UDim2.new(0, 0, 0, 14),
+			RichText = true,
+			Size = UDim2.new(1, 0, 0, 18),
+			-- Derived from the palette rather than pasted as a hex literal: RichText needs a string,
+			-- and a literal here is exactly the kind of copy that stops matching COLOR.Good the
+			-- first time the palette is retuned, with nothing to catch it.
+			Text = ("%s  →  <font color=\"#%s\">%s</font>"):format(
+				delta.from,
+				Hud.COLOR.Good:ToHex(),
+				delta.to
+			),
+			TextColor3 = Hud.COLOR.Muted,
+			TextSize = Hud.TEXTSIZE.Body,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			Parent = group,
+		})
+
+		deltaX += 156
+	end
+
+	if nextStep.cost then
+		Hud.new("TextLabel", {
+			BackgroundTransparency = 1,
+			Font = Hud.FONT.Mono,
+			Position = UDim2.new(0, Hud.SPACE.M, 1, -24),
+			Size = UDim2.new(1, -180, 0, 18),
+			Text = nextStep.cost,
+			TextColor3 = nextStep.blocked and Hud.COLOR.Bad or Hud.COLOR.Text,
+			TextSize = Hud.TEXTSIZE.Label,
+			TextTruncate = Enum.TextTruncate.AtEnd,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			Parent = panel,
+		})
+	end
+
+	Hud.button({
+		variant = nextStep.blocked and "secondary" or "primary",
+		dropShadow = not nextStep.blocked,
+		text = nextStep.buttonText,
+		anchorPoint = Vector2.new(1, 0.5),
+		position = UDim2.new(1, -Hud.SPACE.M, 0.5, 0),
+		size = UDim2.fromOffset(148, 48),
+		parent = panel,
+		onClick = function()
+			-- A blocked step still RESPONDS. Silent rejection is the failure mode this project keeps
+			-- paying for, and "why is this button dead" is exactly that in slow motion.
+			if nextStep.blocked then
+				Hud.showFailure(nextStep.label, nextStep.blockedReason or "You can't do that yet.")
+				return
+			end
+			if nextStep.onClick then
+				nextStep.onClick()
+			end
+		end,
+	})
+
+	return body
+end
+
+-- Which ores a given tool tier is the gate for — real data out of OreConfig rather than a hardcoded
+-- sentence, so adding an ore with a MinToolTier automatically shows up as a reason to upgrade.
+local function oresUnlockedAtToolTier(tier: number): string?
+	local names = {}
+	for key, ore in pairs(OreConfig.Ores) do
+		if ore.MinToolTier == tier then
+			table.insert(names, ore.DisplayName or key)
+		end
+	end
+	if #names == 0 then
+		return nil
+	end
+	table.sort(names)
+	return table.concat(names, ", ")
+end
+
 local function renderToolRow()
 	local currentTier = Hud.profile.ToolTier or 1
 	local currentToolData = OreConfig.ToolTiers[currentTier]
 	local nextTier = currentTier + 1
 	local nextToolData = OreConfig.ToolTiers[nextTier]
+	local maxTier = #OreConfig.ToolTiers
 
-	if not nextToolData then
-		Hud.makeRow(
-			currentToolData and currentToolData.Name or "Tool",
-			"Max tier reached",
-			"Maxed",
-			function() end
-		).Parent = listFrame
-		return
-	end
-
-	local cost = OreConfig.ToolTierCosts[nextTier]
-	Hud.makeRow(
-		("%s -> %s"):format(currentToolData and currentToolData.Name or "?", nextToolData.Name),
-		cost and Hud.costString(cost) or "Not configured",
-		"Upgrade",
-		function()
-			local result = Remotes.UpgradeTool:InvokeServer()
-			if not result.Success then
-				Hud.showFailure("Upgrade failed", result.Reason)
-			end
-		end
-	).Parent = listFrame
-end
-
--- Special pickaxes, listed under the same tab as the tier ladder because both are "what am I mining
--- with". They are a different KIND of thing though — sideways choices you hold one of rather than a
--- track you climb — so only owned ones are listed, and equipping is a toggle rather than a purchase.
-local function renderToolModRows()
+	-- Special pickaxes are a DIFFERENT KIND of thing from the tier ladder — sideways choices you
+	-- hold one of, dropped by Epic rolls in Black Market cases, not bought here — so they share the
+	-- tab (both are "what am I mining with") but sit in their own card rather than in the ladder.
 	local owned = Hud.profile.OwnedTools or {}
 	local equipped = Hud.profile.EquippedTool
+	local equippedData = equipped and ToolModConfig.Tools[equipped]
 
 	local anyOwned = false
 	for _, key in ipairs(ToolModConfig.Order) do
@@ -480,52 +776,116 @@ local function renderToolModRows()
 		end
 	end
 
+	local pickaxeBody
 	if not anyOwned then
-		-- Named explicitly rather than left blank: an empty space under the tier row reads as a bug,
-		-- and this is the only place in the game that says these exist at all.
-		Hud.makeRow(
-			"Special pickaxes",
-			"None yet — they drop from Epic rolls in Black Market cases.",
-			"Locked",
-			function() end
-		).Parent = listFrame
-		return
+		pickaxeBody = "None yet — they drop from Epic rolls in Black Market cases."
+	elseif equippedData then
+		pickaxeBody = equippedData.DisplayName
+	else
+		pickaxeBody = "None equipped"
 	end
 
-	for _, key in ipairs(ToolModConfig.Order) do
-		if owned[key] then
-			local tool = ToolModConfig.Tools[key]
-			local isEquipped = equipped == key
-			Hud.makeRow(
-				tool.DisplayName,
-				tool.Description,
-				isEquipped and "Unequip" or "Equip",
-				function()
-					-- nil unequips. One at a time, so equipping another needs no explicit unequip first.
-					--
-					-- NOT `isEquipped and nil or key`. In Lua that collapses: `true and nil` is nil,
-					-- and `nil or key` is key — so the "unequip" branch silently re-sends the same key
-					-- and nothing ever comes off. Same trap as the `Field = value or false` idiom this
-					-- codebase already documents; an explicit local is the only safe way to pass a
-					-- deliberate nil.
-					local desired: string? = nil
-					if not isEquipped then
-						desired = key
-					end
-					local result = Remotes.EquipToolMod:InvokeServer(desired)
-					if not result.Success then
-						Hud.showFailure("Couldn't equip that pickaxe", result.Reason)
-					else
-						renderCraftList()
-					end
+	local gatedBy = nextToolData and oresUnlockedAtToolTier(nextTier)
+
+	local nextStep = nil
+	if nextToolData then
+		local cost = OreConfig.ToolTierCosts[nextTier]
+		nextStep = {
+			label = ("Next — %s"):format(nextToolData.Name),
+			deltas = {
+				{ label = "Swing", from = ("%.2fs"):format(currentToolData.SwingTime), to = ("%.2fs"):format(nextToolData.SwingTime) },
+				{ label = "Yield", from = ("%.2fx"):format(currentToolData.YieldMultiplier), to = ("%.2fx"):format(nextToolData.YieldMultiplier) },
+			},
+			cost = cost and Hud.costString(cost) or "Not configured",
+			buttonText = "Upgrade",
+			onClick = function()
+				local result = Remotes.UpgradeTool:InvokeServer()
+				if not result.Success then
+					Hud.showFailure("Upgrade failed", result.Reason)
 				end
-			).Parent = listFrame
-		end
+			end,
+		}
 	end
+
+	makeSpecSheet({
+		badge = ("T%d"):format(currentTier),
+		eyebrow = ("Tier %d of %d · equipped"):format(currentTier, maxTier),
+		title = currentToolData and currentToolData.Name or "Tool",
+		stats = {
+			{ value = ("%.2fx"):format(currentToolData and currentToolData.YieldMultiplier or 1), label = "Yield" },
+			{ value = ("%.2fs"):format(currentToolData and currentToolData.SwingTime or 0), label = "Swing" },
+		},
+		cards = {
+			{
+				heading = nextToolData and ("Unlocks at tier %d"):format(nextTier) or "Fully upgraded",
+				body = gatedBy or (nextToolData and "Nothing new — just faster and richer." or "Nothing left to mine that this cannot break."),
+				accent = gatedBy and Hud.COLOR.Text or Hud.COLOR.Muted,
+			},
+			{
+				heading = "Special pickaxe",
+				body = pickaxeBody,
+				accent = equippedData and Hud.COLOR.Text or Hud.COLOR.Muted,
+			},
+		},
+		nextStep = nextStep,
+		-- Equip chips go inside the pickaxe card, which is the last one — one chip per OWNED
+		-- pickaxe, so the card is a picker when there is something to pick and a plain readout
+		-- when there is not.
+		extra = function(panel)
+			if not anyOwned then
+				return
+			end
+			local row = Hud.new("Frame", {
+				BackgroundTransparency = 1,
+				Position = UDim2.new(0, Hud.SPACE.M, 1, -34),
+				Size = UDim2.new(1, -Hud.SPACE.M * 2, 0, 26),
+				Parent = panel,
+			}, { Hud.new("UIListLayout", {
+				FillDirection = Enum.FillDirection.Horizontal,
+				Padding = UDim.new(0, Hud.SPACE.XS),
+				SortOrder = Enum.SortOrder.LayoutOrder,
+			}) })
+
+			local order = 0
+			for _, key in ipairs(ToolModConfig.Order) do
+				if owned[key] then
+					order += 1
+					local tool = ToolModConfig.Tools[key]
+					local isEquipped = equipped == key
+					Hud.button({
+						variant = isEquipped and "primary" or "secondary",
+						text = tool.DisplayName:gsub("%s.*$", ""), -- first word; the card states the full name
+						layoutOrder = order,
+						size = UDim2.fromOffset(84, 26),
+						parent = row,
+						onClick = function()
+							-- nil unequips. NOT `isEquipped and nil or key`: in Lua that collapses,
+							-- since `true and nil` is nil and `nil or key` is key, so the unequip
+							-- branch would silently re-send the same key and nothing would ever come
+							-- off. Same trap as the `Field = value or false` idiom this codebase
+							-- already documents — an explicit local is the only safe way to pass a
+							-- deliberate nil.
+							local desired: string? = nil
+							if not isEquipped then
+								desired = key
+							end
+							local result = Remotes.EquipToolMod:InvokeServer(desired)
+							if not result.Success then
+								Hud.showFailure("Couldn't equip that pickaxe", result.Reason)
+							else
+								renderCraftList()
+							end
+						end,
+					})
+				end
+			end
+		end,
+	})
 end
 
--- Auto-Miner isn't a recipe table like Weapons/Robots — it's a single fixed structure — so it
--- gets its own row-builder instead of going through the generic recipes loop below.
+-- The Auto-Miner is NOT a tier track — it is one structure you either own or do not
+-- (AutoMinerConfig.MaxOwned is 1). So this tab's spec sheet has a built/not-built eyebrow and a
+-- single Build step that disappears once it exists, rather than a ladder.
 local function renderAutoMinerRow()
 	local owned = Hud.profile.CraftedStructures and Hud.profile.CraftedStructures.AutoMiner
 	local hasPass = Hud.profile.OwnedGamePasses and Hud.profile.OwnedGamePasses.AutoMiner
@@ -533,61 +893,113 @@ local function renderAutoMinerRow()
 	local oreDisplayName = (OreConfig.Ores[AutoMinerConfig.OreKey] and OreConfig.Ores[AutoMinerConfig.OreKey].DisplayName)
 		or AutoMinerConfig.OreKey
 
-	local subtitle
-	if owned then
-		subtitle = ("Built · +%d %s every %ds%s"):format(
-			rate, oreDisplayName, AutoMinerConfig.TickSeconds, hasPass and " (pass applied)" or "")
-	else
-		subtitle = Hud.costString(AutoMinerConfig.Cost)
+	local nextStep = nil
+	if not owned then
+		nextStep = {
+			label = "Build it",
+			deltas = {
+				{ label = "Passive income", from = "none", to = ("%d %s / %ds"):format(
+					AutoMinerConfig.BaseYieldPerTick, oreDisplayName, AutoMinerConfig.TickSeconds) },
+			},
+			cost = Hud.costString(AutoMinerConfig.Cost),
+			buttonText = "Build",
+			onClick = function()
+				local result = Remotes.CraftAutoMiner:InvokeServer()
+				if not result.Success then
+					Hud.showFailure("Build failed", result.Reason)
+				end
+			end,
+		}
 	end
 
-	Hud.makeRow(
-		"Mini Particle Accelerator",
-		subtitle,
-		owned and "Built" or "Build",
-		function()
-			if owned then return end
-			local result = Remotes.CraftAutoMiner:InvokeServer()
-			if not result.Success then
-				Hud.showFailure("Build failed", result.Reason)
-			end
-		end
-	).Parent = listFrame
+	makeSpecSheet({
+		badge = owned and "ON" or "—",
+		eyebrow = owned and "Built · running" or "Not built yet",
+		title = "Mini Particle Accelerator",
+		stats = owned and {
+			{ value = ("%ds"):format(AutoMinerConfig.TickSeconds), label = "Every" },
+			{ value = ("+%d"):format(rate), label = oreDisplayName },
+		} or nil,
+		cards = {
+			{
+				heading = "What it does",
+				body = ("Drips out %s on its own, so there is always some progress happening while you are elsewhere. Deliberately modest — it is not meant to replace mining."):format(oreDisplayName),
+				accent = Hud.COLOR.Muted,
+			},
+			{
+				heading = "Game pass",
+				body = hasPass
+					and ("Applied — %d per tick instead of %d."):format(rate, AutoMinerConfig.BaseYieldPerTick)
+					or ("The Auto-Miner pass would double this to %d per tick."):format(
+						AutoMinerConfig.BaseYieldPerTick * AutoMinerConfig.GamePassMultiplier),
+				accent = hasPass and Hud.COLOR.Good or Hud.COLOR.Muted,
+			},
+		},
+		nextStep = nextStep,
+	})
 end
 
--- Suit tier is the mine shaft's version of ToolTier — same sequential-upgrade-track shape as
--- renderToolRow above, just backed by MineShaftConfig.SuitTiers/SuitTierCosts and the UpgradeSuit
--- remote instead. Each tier knocks Heat/Toxic Air damage down by however many Tiers its
--- Protection table specifies (see MineShaftConfig.HazardTypes) rather than fully blocking a
--- hazard outright.
+-- Suit tier is the mine shaft's version of ToolTier — same sequential track, backed by
+-- MineShaftConfig.SuitTiers/SuitTierCosts and the UpgradeSuit remote. Each tier knocks Heat/Toxic
+-- Air damage down by however many Tiers its Protection table specifies (see
+-- MineShaftConfig.HazardTypes) rather than blocking a hazard outright.
 local function renderSuitRow()
 	local currentTier = Hud.profile.SuitTier or 1
 	local currentSuitData = MineShaftConfig.SuitTiers[currentTier]
 	local nextTier = currentTier + 1
 	local nextSuitData = MineShaftConfig.SuitTiers[nextTier]
+	local maxTier = #MineShaftConfig.SuitTiers
 
-	if not nextSuitData then
-		Hud.makeRow(
-			currentSuitData and currentSuitData.Name or "Suit",
-			"Max tier reached — protects against everything the mine shaft throws at you",
-			"Maxed",
-			function() end
-		).Parent = listFrame
-		return
+	local nextStep = nil
+	if nextSuitData then
+		local cost = MineShaftConfig.SuitTierCosts[nextTier]
+		nextStep = {
+			label = ("Next — %s"):format(nextSuitData.Name),
+			deltas = {
+				{
+					label = "Heat",
+					from = ("-%d tier"):format(currentSuitData.Protection.Heat),
+					to = ("-%d tier"):format(nextSuitData.Protection.Heat),
+				},
+				{
+					label = "Toxic air",
+					from = ("-%d tier"):format(currentSuitData.Protection.ToxicAir),
+					to = ("-%d tier"):format(nextSuitData.Protection.ToxicAir),
+				},
+			},
+			cost = cost and Hud.costString(cost) or "Not configured",
+			buttonText = "Upgrade",
+			onClick = function()
+				local result = Remotes.UpgradeSuit:InvokeServer()
+				if not result.Success then
+					Hud.showFailure("Suit upgrade failed", result.Reason)
+				end
+			end,
+		}
 	end
 
-	local cost = MineShaftConfig.SuitTierCosts[nextTier]
-	Hud.makeRow(
-		("%s -> %s"):format(currentSuitData and currentSuitData.Name or "?", nextSuitData.Name),
-		("Protects: %s · %s"):format(nextSuitData.ProtectsAgainst, cost and Hud.costString(cost) or "Not configured"),
-		"Upgrade",
-		function()
-			local result = Remotes.UpgradeSuit:InvokeServer()
-			if not result.Success then
-				Hud.showFailure("Suit upgrade failed", result.Reason)
-			end
-		end
-	).Parent = listFrame
+	makeSpecSheet({
+		badge = ("T%d"):format(currentTier),
+		eyebrow = ("Tier %d of %d · worn"):format(currentTier, maxTier),
+		title = currentSuitData and currentSuitData.Name or "Suit",
+		stats = {
+			{ value = ("-%d"):format(currentSuitData and currentSuitData.Protection.ToxicAir or 0), label = "Toxic air" },
+			{ value = ("-%d"):format(currentSuitData and currentSuitData.Protection.Heat or 0), label = "Heat" },
+		},
+		cards = {
+			{
+				heading = "Protects against",
+				body = currentSuitData and currentSuitData.ProtectsAgainst or "Nothing yet",
+				accent = Hud.COLOR.Text,
+			},
+			{
+				heading = "How protection works",
+				body = "A hazard tier is reduced, not blocked. Standing in Tier 2 Heat with -1 protection means you take Tier 1's damage.",
+				accent = Hud.COLOR.Muted,
+			},
+		},
+		nextStep = nextStep,
+	})
 end
 
 ----------------------------------------------------------------------
@@ -990,39 +1402,42 @@ local function renderForgeWeapons()
 end
 
 ----------------------------------------------------------------------
--- Base tab (Workbench) — now a thin summary plus the Research claim, because the two things that
--- used to fill it both moved somewhere better:
---   * turret placement moved into the world (click a slot pad — see TurretPanel.lua)
---   * the base-tier upgrade became the Research claim, which lives on the always-visible status
---     panel bottom-left so you can see progress without standing at a station
--- What is left here is the CLAIM itself, which is station-gated server-side, plus a readout of what
--- the current tier actually gives you.
-----------------------------------------------------------------------
-
+-- Base tab (Workbench). The two things that used to fill it both moved somewhere better — turret
+-- placement went into the world (click a slot pad; see TurretPanel.lua) and the per-turret detail
+-- went with it — so what is left is the base's own spec sheet plus the Research claim.
+--
+-- BaseTier and ResearchTier were merged into one progression number, so everything
+-- here comes out of ResearchConfig.Tiers (six of them, Scrap Workbench through Foundry) rather than
+-- BaseConfig, and the turret slot count is derived — TurretConfig.GetSlotCount, not a stored field.
+--
+-- This is the one Workbench tab whose next step can be blocked for reasons that are not money: a
+-- wave milestone and a boss-wave CoreItem gate each tier as well as its cost. GetNextTierRequirements
+-- already reports all three with per-entry Met flags, so the spec sheet states what is actually
+-- missing instead of a flat "Locked".
 local function renderBaseRow()
 	local currentTier, currentIndex = ResearchConfig.GetTier(Hud.profile.ResearchTier or 1)
 	local slotCount = TurretConfig.GetSlotCount(currentIndex)
+	local maxTier = #ResearchConfig.Tiers
 
-	Hud.makeRow(
-		("Research Tier %d — %s"):format(currentIndex, currentTier.Name),
-		("Wall %d HP · %d turret slots · %d-stud base footprint"):format(
-			currentTier.WallHP, slotCount, currentTier.FootprintHalfSize.X * 2),
-		"Current",
-		function() end
-	).Parent = listFrame
+	local placedCount, storedCount = 0, 0
+	for _, turret in ipairs(Hud.profile.Turrets or {}) do
+		if turret.SlotIndex then
+			placedCount += 1
+		else
+			storedCount += 1
+		end
+	end
 
 	local req = ResearchConfig.GetNextTierRequirements(Hud.profile)
-	if not req then
-		Hud.makeRow(
-			"Fully researched",
-			"You are at the highest tier there is.",
-			"Maxed",
-			function() end
-		).Parent = listFrame
-	else
+	local nextStep = nil
+
+	if req then
 		local nextTier = ResearchConfig.Tiers[req.TierIndex]
-		-- Summarises what is still missing rather than just saying no — the full breakdown lives in
-		-- the status panel's Research popup, which this points at.
+		local nextSlots = TurretConfig.GetSlotCount(req.TierIndex)
+
+		-- Summarises what is still missing rather than only saying no. The full breakdown lives in
+		-- the status panel's Research popup; this is the one-line version that tells you which of
+		-- the three kinds of gate you are actually stuck behind.
 		local missing = {}
 		if not req.WaveMet then
 			table.insert(missing, ("Wave %d"):format(req.RequiredWave))
@@ -1036,14 +1451,21 @@ local function renderBaseRow()
 			end
 		end
 
-		Hud.makeRow(
-			("Research Tier %d — %s"):format(req.TierIndex, req.Name),
-			#missing > 0
+		nextStep = {
+			label = ("Next — Tier %d, %s"):format(req.TierIndex, req.Name),
+			deltas = {
+				{ label = "Wall", from = ("%d hp"):format(currentTier.WallHP), to = ("%d hp"):format(nextTier.WallHP) },
+				{ label = "Turret slots", from = ("%d"):format(slotCount), to = ("%d"):format(nextSlots) },
+			},
+			cost = #missing > 0
 				and ("Still need: %s"):format(table.concat(missing, ", "))
-				or ("Wall %d HP · %d turret slots · ready to claim"):format(
-					nextTier.WallHP, TurretConfig.GetSlotCount(req.TierIndex)),
-			req.CanClaim and "Claim" or "Locked",
-			function()
+				or "Everything is ready — claiming rebuilds your base.",
+			buttonText = req.CanClaim and "Claim" or "Locked",
+			blocked = not req.CanClaim,
+			blockedReason = #missing > 0
+				and ("Still missing: %s."):format(table.concat(missing, ", "))
+				or "Not claimable yet.",
+			onClick = function()
 				local result = Remotes.UpgradeResearch:InvokeServer()
 				if not result.Success then
 					Hud.showFailure("Research failed", result.Reason)
@@ -1051,28 +1473,45 @@ local function renderBaseRow()
 					Hud.showToast(("Research Tier %d — your base has been rebuilt."):format(result.ResearchTier), 4)
 					renderCraftList()
 				end
-			end
-		).Parent = listFrame
+			end,
+		}
 	end
 
-	-- Turrets are placed by clicking a slot pad in the world now, not from here.
-	local placedCount, storedCount = 0, 0
-	for _, turret in ipairs(Hud.profile.Turrets or {}) do
-		if turret.SlotIndex then
-			placedCount += 1
-		else
-			storedCount += 1
-		end
-	end
-
-	Hud.makeRow(
-		("Turrets — %d placed of %d slots, %d in storage"):format(placedCount, slotCount, storedCount),
-		storedCount > 0
-			and "Walk to a blue slot pad at your base and click it to place one"
-			or "Buy a blueprint at the Hub Shop, build it at the Welding Station, then click a slot pad",
-		"OK",
-		function() end
-	).Parent = listFrame
+	makeSpecSheet({
+		badge = ("T%d"):format(currentIndex),
+		eyebrow = ("Tier %d of %d · built"):format(currentIndex, maxTier),
+		title = currentTier.Name,
+		stats = {
+			{ value = ("%d"):format(currentTier.FootprintHalfSize.X * 2), label = "Footprint" },
+			{ value = ("%d"):format(slotCount), label = "Slots" },
+			{ value = ("%d"):format(currentTier.WallHP), label = "Wall hp" },
+		},
+		cards = {
+			{
+				heading = "Turrets",
+				body = ("%d placed of %d slots, %d in storage.\n\n%s"):format(
+					placedCount,
+					slotCount,
+					storedCount,
+					storedCount > 0
+						and "Walk to a blue slot pad at your base and click it to place one."
+						or "Buy a blueprint at the Hub Shop, build it at the Welding Station, then click a slot pad."
+				),
+				accent = Hud.COLOR.Muted,
+			},
+			{
+				heading = req and "Gated by" or "Fully researched",
+				body = req
+					and ("Wave %d, a %s, and the materials. Each tier rebuilds the base and its stations."):format(
+						req.RequiredWave,
+						req.CoreRequirement and req.CoreRequirement.Key or "core item"
+					)
+					or "You are at the highest tier there is.",
+				accent = Hud.COLOR.Muted,
+			},
+		},
+		nextStep = nextStep,
+	})
 end
 
 ----------------------------------------------------------------------
@@ -1448,8 +1887,9 @@ renderCraftList = function()
 		renderAutoMinerRow()
 		return
 	elseif currentTab == "Tools" then
+		-- One call, not two: the special pickaxes used to be their own list of rows under the tier
+		-- ladder, and are now a card inside the tool's own spec sheet (see renderToolRow's `extra`).
 		renderToolRow()
-		renderToolModRows()
 		return
 	elseif currentTab == "Suit" then
 		renderSuitRow()

@@ -2180,3 +2180,25 @@ existing panel once it is re-proportioned), then Workbench B (zero server work),
 (needs the panel at 760x520 and the robot silhouettes), then Forge A (needs the panel, and the
 output-tray decision above). Popups B underpins all four, so its plate/scrim/cap treatment wants
 building as a shared HudKit helper before the first menu that raises one.
+
+**Progress (2026-09-02).** Done and verified in Studio by the user: `HudKit.modal` (the Popups B
+plate), per-station panel sizing, and Smelting B. Done but NOT yet verified: Workbench B. Not
+started: Welding A, Forge A.
+
+Two shared pieces came out of that work and are the right things for the remaining menus to reach
+for rather than re-solving:
+
+- `HudKit.ring` — a circular progress arc built from 90 overlapping rotated Frames, because Roblox
+  has no arc primitive and this project has no radial-fill asset. Forge A's chamber wants it.
+- `makeSpecSheet` in `MainHud.client.lua` — the Workbench's hero/stats/cards/next-step shape. Only
+  worth reusing if a menu genuinely has that shape; Welding A and Forge A do not.
+
+Two lessons from the Smelting round, both worth not relearning:
+
+- **Build what the reference shows, or say out loud that you cannot.** Smelting shipped first with a
+  straight segment bar instead of the ring and a click-only slider instead of a drag, both of them
+  quiet substitutions made because they were easier to get right blind. Both were rejected on sight
+  and had to be redone.
+- **A control that repaints by calling `renderCraftList` cannot be dragged**, because the re-render
+  destroys the instance the pointer is holding. Anything continuous needs an in-place update path
+  (see `applySmeltQuantity`) and a re-render only when the selection itself changes.
