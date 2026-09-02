@@ -31,50 +31,40 @@ function ResearchPanel.new(statusPanel: Frame)
 	-- locals and this file's main chunk hit that ceiling. Grouping UI element references costs
 	-- nothing at runtime and buys back a register per element.
 	local research = {}
-	research.button = Hud.new("TextButton", {
-		BackgroundColor3 = Hud.COLOR.PanelLight,
-		Size = UDim2.new(1, 0, 0, 30),
-		LayoutOrder = 3,
-		Font = Enum.Font.SourceSansBold,
-		TextColor3 = Hud.COLOR.Accent,
-		TextSize = 14,
-		Text = "Research Tier 1",
-		Parent = statusPanel,
-	}, { Hud.corner(6) })
+	-- The docked status-panel button. TextColor3 keeps getting overwritten by
+	-- refreshResearchButton() below (Accent vs. Good when a tier is claimable) — that still works
+	-- on top of Hud.button's hover/press tweens, since those only ever touch
+	-- BackgroundColor3/Size/Position, never TextColor3.
+	research.button = Hud.button({
+		variant = "secondary",
+		text = "Research Tier 1",
+		size = UDim2.new(1, 0, 0, 30),
+		layoutOrder = 3,
+		parent = statusPanel,
+	})
 
-	research.frame = Hud.new("Frame", {
+	-- research.frame is the plate's SHELL (the outer, positioned frame) so existing
+	-- `research.frame.Visible = ...` toggles keep working unchanged; research.surface is the inset
+	-- content surface the header and list parent into.
+	research.surface, research.frame = Hud.plate({
 		Name = "ResearchPanel",
-		BackgroundColor3 = Hud.COLOR.Panel,
 		Position = UDim2.new(0, 16, 1, -160),
 		AnchorPoint = Vector2.new(0, 1),
 		Size = UDim2.new(0, 360, 0, 340),
 		Visible = false,
 		ZIndex = 6,
 		Parent = Hud.screenGui,
-	}, { Hud.corner(10), Hud.stroke() })
-
-	research.title = Hud.new("TextLabel", {
-		BackgroundTransparency = 1,
-		Position = UDim2.new(0, 12, 0, 10),
-		Size = UDim2.new(1, -60, 0, 24),
-		Font = Enum.Font.SourceSansBold,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		TextColor3 = Hud.COLOR.Text,
-		TextSize = 18,
-		Text = "Research",
-		Parent = research.frame,
 	})
 
-	research.close = Hud.new("TextButton", {
-		BackgroundColor3 = Hud.COLOR.PanelLight,
-		Position = UDim2.new(1, -40, 0, 8),
-		Size = UDim2.new(0, 28, 0, 28),
-		Font = Enum.Font.SourceSansBold,
-		TextColor3 = Hud.COLOR.Text,
-		TextSize = 16,
-		Text = "X",
-		Parent = research.frame,
-	}, { Hud.corner(6) })
+	local function closeResearchPanel()
+		research.frame.Visible = false
+	end
+
+	-- panelHeader owns the header Frame's construction, but renderResearchPanel() still needs to
+	-- rewrite the title text per tier ("Research Tier 3") — pull the TextLabel back out rather than
+	-- hand-building a second one alongside it.
+	research.header = Hud.panelHeader(research.surface, "Research", closeResearchPanel)
+	research.title = research.header:FindFirstChildOfClass("TextLabel")
 
 	research.list = Hud.new("ScrollingFrame", {
 		BackgroundTransparency = 1,
@@ -83,12 +73,8 @@ function ResearchPanel.new(statusPanel: Frame)
 		CanvasSize = UDim2.new(0, 0, 0, 0),
 		AutomaticCanvasSize = Enum.AutomaticSize.Y,
 		ScrollBarThickness = 6,
-		Parent = research.frame,
+		Parent = research.surface,
 	}, { Hud.new("UIListLayout", { Padding = UDim.new(0, 6) }) })
-
-	research.close.MouseButton1Click:Connect(function()
-		research.frame.Visible = false
-	end)
 
 	local refreshResearchButton -- forward-declared; renderResearchPanel refreshes it after a claim
 

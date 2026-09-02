@@ -88,45 +88,36 @@ function InventoryPanel.new(context)
 	-- locals and this file's main chunk hit that ceiling. Grouping UI element references costs
 	-- nothing at runtime and buys back a register per element.
 	local inv = {}
-	inv.frame = Hud.new("Frame", {
+
+	-- closeInvDetail is defined further down (it needs inv.detailFrame/inv.detailState to exist
+	-- first), but the main panel's header wants to call it as part of ITS close button — forward
+	-- declare so the header's onClose closure can capture the upvalue now and see the real
+	-- function by the time a player actually clicks it.
+	local closeInvDetail
+
+	-- inv.frame is the plate's SHELL (the outer, positioned frame) so every existing
+	-- `inv.frame.Visible = ...` toggle keeps hiding/showing the whole panel; inv.surface is the
+	-- inset content surface the header/tabs/grid all parent into.
+	inv.surface, inv.frame = Hud.plate({
 		Name = "Inventory",
-		BackgroundColor3 = Hud.COLOR.Panel,
 		Position = UDim2.new(0.5, -320, 0.5, -200),
 		Size = UDim2.new(0, 640, 0, 400),
 		Visible = false,
 		Parent = Hud.screenGui,
-	}, { Hud.corner(10), Hud.stroke() })
-
-	Hud.new("TextLabel", {
-		BackgroundTransparency = 1,
-		Position = UDim2.new(0, 12, 0, 10),
-		Size = UDim2.new(1, -60, 0, 22),
-		Font = Enum.Font.SourceSansBold,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		TextColor3 = Hud.COLOR.Text,
-		TextSize = 18,
-		Text = "Inventory",
-		Parent = inv.frame,
 	})
 
-	-- Instance only — connected at the very bottom of this section, once closeInvDetail exists.
-	inv.closeButton = Hud.new("TextButton", {
-		BackgroundColor3 = Hud.COLOR.PanelLight,
-		Position = UDim2.new(1, -40, 0, 8),
-		Size = UDim2.new(0, 28, 0, 28),
-		Font = Enum.Font.SourceSansBold,
-		TextColor3 = Hud.COLOR.Text,
-		TextSize = 16,
-		Text = "X",
-		Parent = inv.frame,
-	}, { Hud.corner(6) })
+	Hud.panelHeader(inv.surface, "Inventory", function()
+		inv.frame.Visible = false
+		closeInvDetail()
+		ModPicker.closeModPicker() -- don't leave the mod picker orphaned open behind a closed Inventory
+	end)
 
 	inv.tabRow = Hud.new("Frame", {
 		BackgroundTransparency = 1,
 		Position = UDim2.new(0, 12, 0, 40),
 		Size = UDim2.new(1, -24, 0, 32),
-		Parent = inv.frame,
-	}, { Hud.new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 8) }) })
+		Parent = inv.surface,
+	}, { Hud.new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, Hud.SPACE.S) }) })
 
 	inv.listFrame = Hud.new("ScrollingFrame", {
 		BackgroundTransparency = 1,
@@ -135,8 +126,8 @@ function InventoryPanel.new(context)
 		CanvasSize = UDim2.new(0, 0, 0, 0),
 		AutomaticCanvasSize = Enum.AutomaticSize.Y,
 		ScrollBarThickness = 6,
-		Parent = inv.frame,
-	}, { Hud.new("UIGridLayout", { CellSize = UDim2.new(0, TILE_SIZE, 0, TILE_SIZE), CellPadding = UDim2.new(0, 8, 0, 8) }) })
+		Parent = inv.surface,
+	}, { Hud.new("UIGridLayout", { CellSize = UDim2.new(0, TILE_SIZE, 0, TILE_SIZE), CellPadding = UDim2.new(0, Hud.SPACE.S, 0, Hud.SPACE.S) }) })
 
 	-- Overlays inv.listFrame's area with a plain message when the current tab has nothing to show —
 	-- UIGridLayout forces every child to CellSize, so a full-width "nothing here" message can't be a
@@ -154,7 +145,7 @@ function InventoryPanel.new(context)
 		TextYAlignment = Enum.TextYAlignment.Top,
 		Visible = false,
 		Text = "",
-		Parent = inv.frame,
+		Parent = inv.surface,
 	})
 
 	----------------------------------------------------------------------
@@ -162,39 +153,25 @@ function InventoryPanel.new(context)
 	-- four tabs; which parts are visible (mod slots, the action button) depends on the category.
 	----------------------------------------------------------------------
 
-	inv.detailFrame = Hud.new("Frame", {
+	-- inv.detailFrame is the plate's SHELL (the outer, positioned frame) so every existing
+	-- `inv.detailFrame.Visible = ...` toggle keeps working unchanged; inv.detailSurface is the
+	-- inset content surface the header and every detail element parent into.
+	inv.detailSurface, inv.detailFrame = Hud.plate({
 		Name = "InventoryDetail",
-		BackgroundColor3 = Hud.COLOR.Panel,
 		Position = UDim2.new(0.5, 330, 0.5, -200),
 		Size = UDim2.new(0, 260, 0, 400),
 		Visible = false,
 		Parent = Hud.screenGui,
-	}, { Hud.corner(10), Hud.stroke() })
-
-	inv.detailTitle = Hud.new("TextLabel", {
-		BackgroundTransparency = 1,
-		Position = UDim2.new(0, 10, 0, 8),
-		Size = UDim2.new(1, -50, 0, 24),
-		Font = Enum.Font.SourceSansBold,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		TextColor3 = Hud.COLOR.Text,
-		TextSize = 17,
-		TextWrapped = true,
-		Text = "",
-		Parent = inv.detailFrame,
 	})
 
-	-- Instance only — connected once closeInvDetail exists, just below.
-	inv.detailCloseButton = Hud.new("TextButton", {
-		BackgroundColor3 = Hud.COLOR.PanelLight,
-		Position = UDim2.new(1, -36, 0, 8),
-		Size = UDim2.new(0, 28, 0, 28),
-		Font = Enum.Font.SourceSansBold,
-		TextColor3 = Hud.COLOR.Text,
-		TextSize = 16,
-		Text = "X",
-		Parent = inv.detailFrame,
-	}, { Hud.corner(6) })
+	-- panelHeader owns the header Frame's construction, but showInvDetail() still needs to rewrite
+	-- the title text per selected item — pull the TextLabel back out rather than hand-building a
+	-- second one alongside it. onClose is closeInvDetail itself (forward-declared above), same as
+	-- the original inv.detailCloseButton's connection.
+	inv.detailHeader = Hud.panelHeader(inv.detailSurface, "", function()
+		closeInvDetail()
+	end)
+	inv.detailTitle = inv.detailHeader:FindFirstChildOfClass("TextLabel")
 
 	inv.detailImage = Hud.new("ImageLabel", {
 		BackgroundColor3 = Hud.COLOR.PanelLight,
@@ -202,7 +179,7 @@ function InventoryPanel.new(context)
 		Size = UDim2.new(1, -20, 0, 140),
 		ScaleType = Enum.ScaleType.Fit,
 		Image = "",
-		Parent = inv.detailFrame,
+		Parent = inv.detailSurface,
 	}, { Hud.corner(8) })
 
 	inv.detailStats = Hud.new("TextLabel", {
@@ -216,7 +193,7 @@ function InventoryPanel.new(context)
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextYAlignment = Enum.TextYAlignment.Top,
 		Text = "",
-		Parent = inv.detailFrame,
+		Parent = inv.detailSurface,
 	})
 
 	inv.detailDescription = Hud.new("TextLabel", {
@@ -230,32 +207,40 @@ function InventoryPanel.new(context)
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextYAlignment = Enum.TextYAlignment.Top,
 		Text = "",
-		Parent = inv.detailFrame,
+		Parent = inv.detailSurface,
 	})
 
 	-- Weapons/Robots only — same slot-button idea as makeEquipmentRow's slotRow, just rebuilt for
 	-- whichever item the detail panel currently shows instead of being baked into a row.
+	--
+	-- The slot buttons built inside (see rebuildInvDetailSlots below) go through Hud.button's `fill`
+	-- option: their color is a per-render computed value (an equipped mod's AccentDark, an
+	-- Ultimate's rarity tint) that maps to none of the three named variants, which `fill` exists
+	-- specifically to cover — so these are among the most-clicked controls in the HUD and, until
+	-- now, the only ones with no hover/press feedback at all.
 	inv.detailSlotRow = Hud.new("Frame", {
 		BackgroundTransparency = 1,
 		Position = UDim2.new(0, 10, 0, 306),
 		Size = UDim2.new(1, -20, 0, 30),
 		Visible = false,
-		Parent = inv.detailFrame,
+		Parent = inv.detailSurface,
 	}, { Hud.new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 6) }) })
 
 	-- Weapons/Robots only — Equip, or Deploy/Undeploy. Hidden for Mods/Materials (nothing to toggle).
 	-- Connected further down, once inv.detailState/deployedCountForRobot are in scope.
-	inv.detailButton = Hud.new("TextButton", {
-		BackgroundColor3 = Hud.COLOR.Accent,
-		Position = UDim2.new(0, 10, 1, -42),
-		Size = UDim2.new(1, -20, 0, 32),
-		Font = Enum.Font.SourceSansBold,
-		TextColor3 = Color3.new(1, 1, 1),
-		TextSize = 15,
-		Visible = false,
-		Text = "",
-		Parent = inv.detailFrame,
-	}, { Hud.corner(6) })
+	--
+	-- showInvDetail's Weapons branch still directly recolors this to AccentDark when the shown
+	-- weapon is already equipped (see below) — that mutation is left intact per this migration's
+	-- rules, even though a later hover-out will tween it back to primary's rest Accent shade; the
+	-- color gets reasserted on the next render anyway (equip state changes always re-run
+	-- showInvDetail via refreshInvDetailIfShowing).
+	inv.detailButton = Hud.button({
+		variant = "primary",
+		size = UDim2.new(1, -20, 0, 32),
+		position = UDim2.new(0, 10, 1, -42),
+		parent = inv.detailSurface,
+	})
+	inv.detailButton.Visible = false
 
 	inv.detailState = { category = nil :: string?, key = nil :: string? }
 
@@ -305,51 +290,62 @@ function InventoryPanel.new(context)
 		for slotIndex = 1, ModConfig.SlotsPerItem do
 			local equippedKey = ModPicker.equippedModKeyForSlot(itemKey, slotIndex)
 			local mod = equippedKey and ModConfig.Mods[equippedKey]
-			local slotButton = Hud.new("TextButton", {
-				BackgroundColor3 = mod and Hud.COLOR.AccentDark or Hud.COLOR.Panel,
-				Size = UDim2.new(0, slotWidth, 1, 0),
-				Font = Enum.Font.Code,
-				TextColor3 = Hud.COLOR.Text,
-				TextSize = 11,
-				TextWrapped = true,
-				Text = mod and mod.DisplayName or ("Slot %d"):format(slotIndex),
-				Parent = inv.detailSlotRow,
-			}, { Hud.corner(4), Hud.stroke() })
-			slotButton.MouseButton1Click:Connect(function()
-				ModPicker.openModPicker(tree, itemKey, slotIndex)
-			end)
+			local slotButton = Hud.button({
+				-- Computed per-render (an equipped mod's own AccentDark, or the empty-slot Panel
+				-- shade) — `fill` is exactly the escape hatch for a color that isn't one of the
+				-- three named variants; hover/press are still derived from it same as any variant.
+				fill = mod and Hud.COLOR.AccentDark or Hud.COLOR.Panel,
+				size = UDim2.new(0, slotWidth, 1, 0),
+				text = mod and mod.DisplayName or ("Slot %d"):format(slotIndex),
+				parent = inv.detailSlotRow,
+				onClick = function()
+					ModPicker.openModPicker(tree, itemKey, slotIndex)
+				end,
+			})
+			-- Overridden after building, not exposed by HudButtonOptions: these cells are much
+			-- narrower than a standard button, and Body-size unwrapped text would truncate a longer
+			-- mod DisplayName instead of wrapping across the two lines the cell has room for.
+			slotButton.Font = Enum.Font.Code
+			slotButton.TextSize = 11
+			slotButton.TextWrapped = true
 		end
 
 		if showUltimate then
 			local equippedUltimate = (Hud.profile.EquippedUltimate or {})[itemKey]
 			local data = equippedUltimate and UltimateConfig.Mods[equippedUltimate]
 			local rarity = ModConfig.Rarities[UltimateConfig.Rarity] or {}
-			local ultButton = Hud.new("TextButton", {
+			local ultButton = Hud.button({
 				-- Tinted with the Mythical colour whether filled or empty, so the slot reads as a
 				-- different KIND of slot at a glance rather than a fourth ordinary one.
-				BackgroundColor3 = data and (rarity.Color or Hud.COLOR.AccentDark) or Hud.COLOR.Panel,
-				Size = UDim2.new(0, slotWidth, 1, 0),
-				Font = Enum.Font.Code,
-				TextColor3 = data and Color3.new(1, 1, 1) or (rarity.Color or Hud.COLOR.Muted),
-				TextSize = 11,
-				TextWrapped = true,
-				Text = data and data.DisplayName or UltimateConfig.SlotLabel,
-				Parent = inv.detailSlotRow,
-			}, { Hud.corner(4), Hud.stroke() })
-			ultButton.MouseButton1Click:Connect(function()
-				openUltPicker(itemKey)
-			end)
+				fill = data and (rarity.Color or Hud.COLOR.AccentDark) or Hud.COLOR.Panel,
+				text = data and data.DisplayName or UltimateConfig.SlotLabel,
+				size = UDim2.new(0, slotWidth, 1, 0),
+				parent = inv.detailSlotRow,
+				onClick = function()
+					openUltPicker(itemKey)
+				end,
+			})
+			ultButton.Font = Enum.Font.Code
+			ultButton.TextSize = 11
+			ultButton.TextWrapped = true
+			-- HudButtonOptions has no per-render text-color override (only the variant's fixed
+			-- `text` shade) — reasserted here same as before conversion, since the empty/filled
+			-- distinction needs white-on-fill vs. a rarity-tinted "empty slot" label, not either of
+			-- HudKit.button()'s two fixed text colors.
+			ultButton.TextColor3 = data and Color3.new(1, 1, 1) or (rarity.Color or Hud.COLOR.Muted)
 		end
 
 		inv.detailSlotRow.Visible = true
 	end
 
-	local function closeInvDetail()
+	-- Assigns into the forward-declared upvalue (no `local`) — the main panel's header, and the
+	-- detail panel's own header, both already captured `closeInvDetail` as a closure before this
+	-- function existed.
+	closeInvDetail = function()
 		inv.detailFrame.Visible = false
 		inv.detailState.category = nil
 		inv.detailState.key = nil
 	end
-	inv.detailCloseButton.MouseButton1Click:Connect(closeInvDetail)
 
 	local function showInvDetail(category: string, key: string)
 		inv.detailState.category = category
@@ -616,39 +612,41 @@ function InventoryPanel.new(context)
 		end
 	end
 
-	local function selectInvTab(name: string)
+	-- Fixed left-to-right order the tab row builds in, once, below.
+	local INV_TAB_NAMES = { "Weapons", "Robots", "Mods", "Materials" }
+
+	local selectInvTab
+
+	-- Built ONCE, then recolored in place via HudKit.setButtonVariant on every tab switch. This
+	-- used to destroy and rebuild all four buttons per click, purely because HudKit.button() fixed
+	-- a button's rest/hover/press colors to its variant at BUILD time — painting over
+	-- BackgroundColor3 by hand would get silently wiped by the next MouseLeave tween, which
+	-- targeted the ORIGINAL variant's rest color, not whatever was painted on top of it.
+	-- HudKit.setButtonVariant now rewrites that same state the hover/press handlers read from, so
+	-- recoloring in place is safe and this goes back to the normal "build once" shape every other
+	-- static row in this HUD uses. Keyed by name (not by loop index) so `selectInvTab` never has to
+	-- reason about which slot in a list is "currently active" — just look up the two buttons by name.
+	inv.tabButtons = {}
+	for index, name in ipairs(INV_TAB_NAMES) do
+		inv.tabButtons[name] = Hud.button({
+			variant = (currentInvTab == name) and "primary" or "secondary",
+			text = name,
+			size = UDim2.new(0, 140, 1, 0),
+			layoutOrder = index,
+			parent = inv.tabRow,
+			onClick = function()
+				selectInvTab(name)
+			end,
+		})
+	end
+
+	selectInvTab = function(name: string)
+		Hud.setButtonVariant(inv.tabButtons[currentInvTab], "secondary")
 		currentInvTab = name
-		for _, sibling in ipairs(inv.tabRow:GetChildren()) do
-			if sibling:IsA("TextButton") then
-				sibling.BackgroundColor3 = sibling.Text == name and Hud.COLOR.Accent or Hud.COLOR.PanelLight
-			end
-		end
+		Hud.setButtonVariant(inv.tabButtons[currentInvTab], "primary")
 		closeInvDetail() -- a Mods-tab selection doesn't make sense once you've switched to Weapons, etc.
 		renderInvList()
 	end
-
-	local function makeInvTabButton(name: string)
-		local button = Hud.new("TextButton", {
-			BackgroundColor3 = currentInvTab == name and Hud.COLOR.Accent or Hud.COLOR.PanelLight,
-			Size = UDim2.new(0, 140, 1, 0),
-			Font = Enum.Font.SourceSansBold,
-			TextColor3 = Hud.COLOR.Text,
-			TextSize = 15,
-			Text = name,
-			Parent = inv.tabRow,
-		}, { Hud.corner(6) })
-		button.MouseButton1Click:Connect(function()
-			selectInvTab(name)
-		end)
-		return button
-	end
-
-	-- Unlike the Workbench's tab row (which rebuilds per-station), the Inventory's tabs never
-	-- change — every filter is always available no matter where you are, since viewing is unrestricted.
-	makeInvTabButton("Weapons")
-	makeInvTabButton("Robots")
-	makeInvTabButton("Mods")
-	makeInvTabButton("Materials")
 
 	local function openInventory()
 		inv.frame.Visible = true
@@ -656,11 +654,9 @@ function InventoryPanel.new(context)
 		renderInvList()
 	end
 
-	inv.closeButton.MouseButton1Click:Connect(function()
-		inv.frame.Visible = false
-		closeInvDetail()
-		ModPicker.closeModPicker() -- don't leave the mod picker orphaned open behind a closed Inventory
-	end)
+	-- The main panel's close button (built by Hud.panelHeader, up where inv.surface was created)
+	-- already runs inv.frame.Visible = false / closeInvDetail() / ModPicker.closeModPicker() as its
+	-- onClose callback — nothing left to wire up here.
 
 	return {
 		openInventory = openInventory,

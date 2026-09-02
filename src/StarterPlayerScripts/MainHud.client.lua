@@ -68,16 +68,43 @@ local runActive = false
 -- Currency readout (top-left)
 ----------------------------------------------------------------------
 
-local currencyFrame = Hud.new("Frame", {
+-- Only the surface is bound (Hud.plate's second return, the shell, is discarded) — nothing else
+-- ever needs to reposition/hide this panel, only parent labels into it.
+--
+-- automaticSize = true restores the original AutomaticSize.Y behavior: plate's inner surface is
+-- normally sized as a SCALE of the shell (see Hud.plate's PLATE_SURFACE_INSET), which is circular
+-- with AutomaticSize and silently no-ops — this panel had been given a literal pixel height
+-- instead, which clipped silently the moment a currency row or status line was added and nobody
+-- remembered to recompute the magic number. Hud.plate's automaticSize option breaks that
+-- circularity on the shell/surface pair; currencyList below has to do the equivalent for itself
+-- to actually benefit from it (see its own comment).
+local currencyFrame = Hud.plate({
 	Name = "Currency",
-	BackgroundColor3 = Hud.COLOR.Panel,
 	Position = UDim2.new(0, 16, 0, 16),
-	Size = UDim2.new(0, 220, 0, 0),
-	AutomaticSize = Enum.AutomaticSize.Y,
+	Size = UDim2.new(0, 220, 0, 0), -- Y is a placeholder; automaticSize below drives the real height
+	automaticSize = true,
 	Parent = Hud.screenGui,
+})
+Hud.accentCap(currencyFrame) -- full-width, parented straight onto the surface (not into
+	-- currencyList below) so it sits flush at the top edge, unaffected by currencyList's own
+	-- UIPadding — that padding only insets the labels beneath the cap.
+
+-- The old UIListLayout/UIPadding/labels all lived directly on currencyFrame; now they're one level
+-- down, in their own frame below the accent cap, so the cap can span edge-to-edge while the labels
+-- keep their original padding untouched.
+--
+-- Size/AutomaticSize here mirror the same fix Hud.plate applies to its own shell/surface pair:
+-- Size.Y has no Scale component (an offset-only 0), so it doesn't depend on currencyFrame's
+-- still-being-computed automatic height, and AutomaticSize.Y then grows this frame to fit its
+-- UIListLayout'd rows. A Scale-based Y here (the old `1, -4`) would be circular against
+-- currencyFrame's own AutomaticSize.Y and quietly collapse instead of erroring.
+local currencyList = Hud.new("Frame", {
+	BackgroundTransparency = 1,
+	Position = UDim2.fromOffset(0, 4),
+	Size = UDim2.new(1, 0, 0, 0),
+	AutomaticSize = Enum.AutomaticSize.Y,
+	Parent = currencyFrame,
 }, {
-	Hud.corner(8),
-	Hud.stroke(),
 	Hud.new("UIListLayout", { Padding = UDim.new(0, 2) }),
 	Hud.new("UIPadding", {
 		PaddingTop = UDim.new(0, 8), PaddingBottom = UDim.new(0, 8),
@@ -94,7 +121,7 @@ local function makeStatLabel(color)
 		TextColor3 = color,
 		TextSize = 15,
 		Text = "",
-		Parent = currencyFrame,
+		Parent = currencyList,
 	})
 end
 
@@ -122,15 +149,19 @@ end
 -- Craft menu (center, toggled)
 ----------------------------------------------------------------------
 
-local craftFrame = Hud.new("Frame", {
+-- craftFrame is the plate's SHELL (the outer, positioned/sized/Visible-toggled frame) so every
+-- existing `craftFrame.Visible = ...` read/write elsewhere in this file keeps working unchanged;
+-- craftSurface is the inset content surface everything below parents into instead. Size is a
+-- literal here already (never was AutomaticSize), so plate's fixed-Scale inner surface is a
+-- straightforward swap with no height math needed.
+local craftSurface, craftFrame = Hud.plate({
 	Name = "CraftMenu",
-	BackgroundColor3 = Hud.COLOR.Panel,
 	Position = UDim2.new(0.5, -320, 0.5, -200),
 	Size = UDim2.new(0, 640, 0, 400), -- widened/heightened to fit up to 3 tabs at once and the
 	                                  -- taller equipment rows mod slots need
 	Visible = false,
 	Parent = Hud.screenGui,
-}, { Hud.corner(10), Hud.stroke() })
+})
 
 -- There's no standalone "Workbench" button anymore — this menu only ever opens FROM a physical
 -- station now (see openStationMenu / setupStation further down), so the title doubles as a
@@ -145,25 +176,22 @@ local craftTitleLabel = Hud.new("TextLabel", {
 	TextColor3 = Hud.COLOR.Text,
 	TextSize = 18,
 	Text = "Workbench",
-	Parent = craftFrame,
+	Parent = craftSurface,
 })
 
-local craftCloseButton = Hud.new("TextButton", {
-	BackgroundColor3 = Hud.COLOR.PanelLight,
-	Position = UDim2.new(1, -40, 0, 8),
-	Size = UDim2.new(0, 28, 0, 28),
-	Font = Enum.Font.SourceSansBold,
-	TextColor3 = Hud.COLOR.Text,
-	TextSize = 16,
-	Text = "X",
-	Parent = craftFrame,
-}, { Hud.corner(6) })
+local craftCloseButton = Hud.button({
+	variant = "secondary",
+	text = "X",
+	size = UDim2.new(0, 28, 0, 28),
+	position = UDim2.new(1, -40, 0, 8),
+	parent = craftSurface,
+})
 
 local tabRow = Hud.new("Frame", {
 	BackgroundTransparency = 1,
 	Position = UDim2.new(0, 12, 0, 40),
 	Size = UDim2.new(1, -24, 0, 32),
-	Parent = craftFrame,
+	Parent = craftSurface,
 }, { Hud.new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 8) }) })
 
 local listFrame = Hud.new("ScrollingFrame", {
@@ -173,7 +201,7 @@ local listFrame = Hud.new("ScrollingFrame", {
 	CanvasSize = UDim2.new(0, 0, 0, 0),
 	AutomaticCanvasSize = Enum.AutomaticSize.Y,
 	ScrollBarThickness = 6,
-	Parent = craftFrame,
+	Parent = craftSurface,
 }, { Hud.new("UIListLayout", { Padding = UDim.new(0, 6) }) })
 
 -- Delegates to Wallet so the HUD names and orders cost keys exactly the way the server resolves
@@ -423,17 +451,16 @@ local function makeEquipmentRow(tree: string, itemKey: string, titleText: string
 		Parent = row,
 	})
 
-	local button = Hud.new("TextButton", {
-		BackgroundColor3 = Hud.COLOR.Accent,
-		Position = UDim2.new(1, -96, 0, 4),
-		Size = UDim2.new(0, 86, 0, 32),
-		Font = Enum.Font.SourceSansBold,
-		TextColor3 = Color3.new(1, 1, 1),
-		TextSize = 14,
-		Text = buttonText,
-		Parent = row,
-	}, { Hud.corner(6) })
-	button.MouseButton1Click:Connect(onClick)
+	-- Always Accent-filled regardless of state (only the TEXT changes between Equip/Deploy/
+	-- Undeploy) — a clean, honest fit for the primary variant.
+	Hud.button({
+		variant = "primary",
+		text = buttonText,
+		position = UDim2.new(1, -96, 0, 4),
+		size = UDim2.new(0, 86, 0, 32),
+		parent = row,
+		onClick = onClick,
+	})
 
 	local slotRow = Hud.new("Frame", {
 		BackgroundTransparency = 1,
@@ -442,22 +469,30 @@ local function makeEquipmentRow(tree: string, itemKey: string, titleText: string
 		Parent = row,
 	}, { Hud.new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 6) }) })
 
+	-- Its fill (AccentDark vs. Panel) is a THIRD state — which mod is equipped in this slot, not
+	-- "is this button primary/secondary/danger" — so it doesn't map onto any of the three fixed
+	-- variants. `fill` sets that arbitrary rest color at build time (hover/press still get derived
+	-- from it, same as a named variant), which is exactly the gap that used to force this button to
+	-- be hand-rolled with no hover/press feedback at all. The whole row is rebuilt fresh on every
+	-- render (never recolored in place), so a build-time fill is enough here — no
+	-- Hud.setButtonFill call needed.
 	for slotIndex = 1, ModConfig.SlotsPerItem do
 		local equippedKey = ModPicker.equippedModKeyForSlot(itemKey, slotIndex)
 		local mod = equippedKey and ModConfig.Mods[equippedKey]
-		local slotButton = Hud.new("TextButton", {
-			BackgroundColor3 = mod and Hud.COLOR.AccentDark or Hud.COLOR.Panel,
-			Size = UDim2.new(0, MOD_SLOT_WIDTH, 1, 0),
-			Font = Enum.Font.Code,
-			TextColor3 = Hud.COLOR.Text,
-			TextSize = 12,
-			TextWrapped = true,
-			Text = mod and mod.DisplayName or ("Slot %d: Empty"):format(slotIndex),
-			Parent = slotRow,
-		}, { Hud.corner(4), Hud.stroke() })
-		slotButton.MouseButton1Click:Connect(function()
-			ModPicker.openModPicker(tree, itemKey, slotIndex)
-		end)
+		local slotButton = Hud.button({
+			fill = mod and Hud.COLOR.AccentDark or Hud.COLOR.Panel,
+			text = mod and mod.DisplayName or ("Slot %d: Empty"):format(slotIndex),
+			size = UDim2.new(0, MOD_SLOT_WIDTH, 1, 0),
+			parent = slotRow,
+			onClick = function()
+				ModPicker.openModPicker(tree, itemKey, slotIndex)
+			end,
+		})
+		-- HudButtonOptions has no knobs for these, and an equipped mod's DisplayName can run long
+		-- enough at this slot width to need wrapping — matches the original hand-rolled button.
+		slotButton.Font = Enum.Font.Code
+		slotButton.TextSize = 12
+		slotButton.TextWrapped = true
 	end
 
 	return row
@@ -1259,31 +1294,37 @@ renderCraftList = function()
 	end
 end
 
+-- Keyed by tab NAME, not creation order/index — rebuildTabs destroys and recreates these every
+-- time a different station's menu opens, so an index captured in a closure would end up pointing
+-- at whatever tab happens to occupy that slot in the NEW row, not the one it was built for.
+local tabButtons: { [string]: TextButton } = {}
+
 -- Shared by the tab buttons below and by the base stations further down (clicking a Workbench/
 -- Welding Station in the world jumps straight to that station's tab via the same path).
+--
+-- Routed through Hud.setButtonVariant rather than writing BackgroundColor3 directly, now that it
+-- exists: it rewrites the button's REST color (what hover/press are derived from) as well as the
+-- fill, so a hover-out after selecting a tab tweens back to the newly-selected color instead of
+-- whatever stale fill the button was built with — see setButtonVariant's own comment in HudKit.
 local function selectTab(name: string)
 	currentTab = name
-	for _, sibling in ipairs(tabRow:GetChildren()) do
-		if sibling:IsA("TextButton") then
-			sibling.BackgroundColor3 = sibling.Text == name and Hud.COLOR.Accent or Hud.COLOR.PanelLight
-		end
+	for tabName, button in pairs(tabButtons) do
+		Hud.setButtonVariant(button, tabName == name and "primary" or "secondary")
 	end
 	renderCraftList()
 end
 
-local function makeTabButton(name)
-	local button = Hud.new("TextButton", {
-		BackgroundColor3 = currentTab == name and Hud.COLOR.Accent or Hud.COLOR.PanelLight,
-		Size = UDim2.new(0, 90, 1, 0), -- shrunk from 100 to fit 6 tabs (added Mods) in the same row width
-		Font = Enum.Font.SourceSansBold,
-		TextColor3 = Hud.COLOR.Text,
-		TextSize = 15,
-		Text = name,
-		Parent = tabRow,
-	}, { Hud.corner(6) })
-	button.MouseButton1Click:Connect(function()
-		selectTab(name)
-	end)
+local function makeTabButton(name: string)
+	local button = Hud.button({
+		variant = currentTab == name and "primary" or "secondary",
+		text = name,
+		size = UDim2.new(0, 90, 1, 0), -- shrunk from 100 to fit 6 tabs (added Mods) in the same row width
+		parent = tabRow,
+		onClick = function()
+			selectTab(name)
+		end,
+	})
+	tabButtons[name] = button
 	return button
 end
 
@@ -1298,6 +1339,8 @@ local function rebuildTabs(tabNames: { string })
 			child:Destroy()
 		end
 	end
+	table.clear(tabButtons) -- old entries would otherwise point at now-destroyed buttons forever;
+		-- harmless (setButtonVariant/setButtonFill both guard on button.Parent) but an unbounded leak
 	for _, name in ipairs(tabNames) do
 		makeTabButton(name)
 	end
@@ -1340,16 +1383,13 @@ Hud.new("TextLabel", {
 	Parent = ultPicker.frame,
 })
 
-ultPicker.close = Hud.new("TextButton", {
-	BackgroundColor3 = Hud.COLOR.PanelLight,
-	Position = UDim2.new(1, -40, 0, 8),
-	Size = UDim2.new(0, 28, 0, 28),
-	Font = Enum.Font.SourceSansBold,
-	TextColor3 = Hud.COLOR.Text,
-	TextSize = 16,
-	Text = "X",
-	Parent = ultPicker.frame,
-}, { Hud.corner(6) })
+ultPicker.close = Hud.button({
+	variant = "secondary",
+	text = "X",
+	size = UDim2.new(0, 28, 0, 28),
+	position = UDim2.new(1, -40, 0, 8),
+	parent = ultPicker.frame,
+})
 
 ultPicker.list = Hud.new("ScrollingFrame", {
 	BackgroundTransparency = 1,
@@ -1456,14 +1496,17 @@ local pity = {}
 -- 0.5,+200), 10px gap. potionButton is a fixed 64-wide square on the left; pity.barFrame fills the
 -- remaining width to craftFrame's own right edge (0.5,+320) — together they span exactly as wide
 -- as the Forge menu above them, not just huddled off to one side of it.
-pity.barFrame = Hud.new("Frame", {
+--
+-- pity.barFrame stays bound to the plate's SHELL (not renamed — setForgeWidgetsVisible below reads
+-- pity.barFrame.Visible, and the "Do not break" list forbids renaming pity's existing fields);
+-- pity.surface is the new field for the inset content surface everything below parents into.
+pity.surface, pity.barFrame = Hud.plate({
 	Name = "ForgePity",
-	BackgroundColor3 = Hud.COLOR.Panel,
 	Position = UDim2.new(0.5, -320 + POTION_BUTTON_SIZE + 10, 0.5, 220),
 	Size = UDim2.new(0, 640 - POTION_BUTTON_SIZE - 10, 0, 44),
 	Visible = false,
 	Parent = Hud.screenGui,
-}, { Hud.corner(8), Hud.stroke() })
+})
 
 pity.caption = Hud.new("TextLabel", {
 	BackgroundTransparency = 1,
@@ -1474,14 +1517,14 @@ pity.caption = Hud.new("TextLabel", {
 	TextColor3 = Hud.COLOR.Muted,
 	TextSize = 13,
 	Text = "Forge Pity: 0 / 0",
-	Parent = pity.barFrame,
+	Parent = pity.surface,
 })
 
 pity.track = Hud.new("Frame", {
 	BackgroundColor3 = Hud.COLOR.PanelLight,
 	Position = UDim2.new(0, 10, 0, 24),
 	Size = UDim2.new(1, -20, 0, 12),
-	Parent = pity.barFrame,
+	Parent = pity.surface,
 }, { Hud.corner(4) })
 
 pity.fill = Hud.new("Frame", {
@@ -1628,16 +1671,13 @@ Hud.new("TextLabel", {
 	Parent = orePickerFrame,
 })
 
-local orePickerClose = Hud.new("TextButton", {
-	BackgroundColor3 = Hud.COLOR.PanelLight,
-	Position = UDim2.new(1, -40, 0, 8),
-	Size = UDim2.new(0, 28, 0, 28),
-	Font = Enum.Font.SourceSansBold,
-	TextColor3 = Hud.COLOR.Text,
-	TextSize = 16,
-	Text = "X",
-	Parent = orePickerFrame,
-}, { Hud.corner(6) })
+local orePickerClose = Hud.button({
+	variant = "secondary",
+	text = "X",
+	size = UDim2.new(0, 28, 0, 28),
+	position = UDim2.new(1, -40, 0, 8),
+	parent = orePickerFrame,
+})
 
 local orePickerList = Hud.new("ScrollingFrame", {
 	BackgroundTransparency = 1,
@@ -1834,20 +1874,17 @@ renderSmeltingTab = function()
 			Parent = square,
 		})
 
-		local resetButton = Hud.new("TextButton", {
-			BackgroundColor3 = Hud.COLOR.PanelLight,
-			Position = UDim2.new(1, -78, 0, 97),
-			Size = UDim2.new(0, 66, 0, 20),
-			Font = Enum.Font.Code,
-			TextColor3 = Hud.COLOR.Muted,
-			TextSize = 12,
-			Text = "Reset",
-			Parent = square,
-		}, { Hud.corner(4) })
-		resetButton.MouseButton1Click:Connect(function()
-			smeltQuantity = oreData.RefineRatio
-			renderCraftList()
-		end)
+		Hud.button({
+			variant = "secondary",
+			text = "Reset",
+			position = UDim2.new(1, -78, 0, 97),
+			size = UDim2.new(0, 66, 0, 20),
+			parent = square,
+			onClick = function()
+				smeltQuantity = oreData.RefineRatio
+				renderCraftList()
+			end,
+		})
 
 		-- Bulk-add row — "+1"/"+10"/"+100"/"MAX" ADD BATCHES (RefineRatio-sized steps), not raw ore
 		-- 1-at-a-time, so the quantity landed on is always a legal multiple without any rounding —
@@ -1865,15 +1902,12 @@ renderSmeltingTab = function()
 		}) })
 
 		local function makeBulkAddButton(label: string, batches: number?)
-			local button = Hud.new("TextButton", {
-				BackgroundColor3 = Hud.COLOR.PanelLight,
-				Size = UDim2.new(0, 52, 1, 0),
-				Font = Enum.Font.SourceSansBold,
-				TextColor3 = Hud.COLOR.Text,
-				TextSize = 14,
-				Text = label,
-				Parent = stepButtonsRow,
-			}, { Hud.corner(6) })
+			local button = Hud.button({
+				variant = "secondary",
+				text = label,
+				size = UDim2.new(0, 52, 1, 0),
+				parent = stepButtonsRow,
+			})
 			button.MouseButton1Click:Connect(function()
 				if batches then
 					smeltQuantity = math.min(smeltQuantity + batches * oreData.RefineRatio, maxQuantity)
@@ -1909,16 +1943,13 @@ renderSmeltingTab = function()
 
 		-- The "button [that] would allow you to smelt the ore" — only ever appears once an ore is
 		-- actually selected, per the ask.
-		local smeltButton = Hud.new("TextButton", {
-			BackgroundColor3 = Hud.COLOR.Accent,
-			Position = UDim2.new(0.5, -60, 0, 180),
-			Size = UDim2.new(0, 120, 0, 36),
-			Font = Enum.Font.SourceSansBold,
-			TextColor3 = Color3.new(1, 1, 1),
-			TextSize = 15,
-			Text = "Smelt",
-			Parent = square,
-		}, { Hud.corner(6) })
+		local smeltButton = Hud.button({
+			variant = "primary",
+			text = "Smelt",
+			position = UDim2.new(0.5, -60, 0, 180),
+			size = UDim2.new(0, 120, 0, 36),
+			parent = square,
+		})
 		smeltButton.MouseButton1Click:Connect(function()
 			local oreKey, quantity = smeltSelectedOreKey, smeltQuantity
 			local result = Remotes.StartSmelt:InvokeServer(oreKey, quantity)
@@ -2227,21 +2258,28 @@ end
 -- slots and turret levels (see ResearchConfig.lua).
 ----------------------------------------------------------------------
 
-local statusPanel = Hud.new("Frame", {
+-- Only the surface is bound (same reasoning as currencyFrame above) — nothing else needs the
+-- shell, only to parent rows into the panel.
+--
+-- automaticSize = true restores AutomaticSize.Y here too (see currencyFrame's comment for why
+-- plate's surface needs the opt-in rather than just setting AutomaticSize directly). Unlike
+-- currencyList above, every row parented straight into statusPanel (Health/Stamina/the Research
+-- button) already sizes itself with an offset-only Y — UDim2.new(1, 0, 0, 30) and friends — so
+-- there's no second circularity to fix here; the UIListLayout/UIPadding below just work once the
+-- surface itself can grow.
+local statusPanel = Hud.plate({
 	Name = "Status",
-	BackgroundColor3 = Hud.COLOR.Panel,
 	Position = UDim2.new(0, 16, 1, -16),
 	AnchorPoint = Vector2.new(0, 1),
-	Size = UDim2.new(0, 240, 0, 0),
-	AutomaticSize = Enum.AutomaticSize.Y,
+	Size = UDim2.new(0, 240, 0, 0), -- Y is a placeholder; automaticSize below drives the real height
+	automaticSize = true,
 	Parent = Hud.screenGui,
-}, {
-	Hud.corner(8), Hud.stroke(),
-	Hud.new("UIListLayout", { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder }),
-	Hud.new("UIPadding", {
-		PaddingTop = UDim.new(0, 10), PaddingBottom = UDim.new(0, 10),
-		PaddingLeft = UDim.new(0, 12), PaddingRight = UDim.new(0, 12),
-	}),
+})
+Hud.new("UIListLayout", { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder, Parent = statusPanel })
+Hud.new("UIPadding", {
+	PaddingTop = UDim.new(0, 10), PaddingBottom = UDim.new(0, 10),
+	PaddingLeft = UDim.new(0, 12), PaddingRight = UDim.new(0, 12),
+	Parent = statusPanel,
 })
 
 -- Small labelled bar, reused for Health and Stamina so the two stay visually identical.
@@ -2277,7 +2315,36 @@ local function makeStatusBar(order: number, label: string, fillColor: Color3, di
 	return caption, fill
 end
 
-local statusHealthCaption, statusHealthFill = makeStatusBar(1, "Health", Hud.COLOR.Good)
+-- Health is the segmented bar from the design (10 cells) rather than a plain fill — built by hand
+-- instead of through makeStatusBar (which stays plain-fill for Stamina below) since segmentBar's
+-- shape (a list of cells to colour) doesn't fit makeStatusBar's (caption, fill) return signature.
+-- Scoped in a do-block so `holder` doesn't cost a permanent top-level local in a file already near
+-- Luau's 200-local ceiling — only the two things refreshHealthBar actually needs escape the block.
+local statusHealthCaption, statusHealthCells
+do
+	local holder = Hud.new("Frame", {
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 32), -- 2px taller than makeStatusBar's 30: segmentBar's track is a
+			-- fixed 16px tall (vs. the old plain fill's 12px), same 16px caption-to-bar offset below
+		LayoutOrder = 1,
+		Parent = statusPanel,
+	})
+	statusHealthCaption = Hud.new("TextLabel", {
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 14),
+		Font = Enum.Font.SourceSansBold,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextColor3 = Hud.COLOR.Text,
+		TextSize = 13,
+		Text = "Health",
+		Parent = holder,
+	})
+	statusHealthCells = Hud.segmentBar(holder, 10)
+	-- segmentBar parents its track directly into `holder` at (0,0) — nudge it down to sit below the
+	-- caption, matching makeStatusBar's original 16px offset.
+	local statusHealthTrack = statusHealthCells[1].Parent.Parent
+	statusHealthTrack.Position = UDim2.fromOffset(0, 16)
+end
 
 -- Stamina is a PLACEHOLDER. There is no stamina or dash system in this codebase yet — no input
 -- handling, no regen loop, no server validation — so this is a reserved, visibly-disabled slot
@@ -2310,8 +2377,14 @@ local function refreshHealthBar()
 	-- rather than from any remote payload.
 	raidHealthFill.Size = UDim2.new(pct, 0, 1, 0)
 	raidHealthCaption.Text = ("Your HP: %d / %d"):format(math.ceil(humanoid.Health), math.ceil(playerMaxHealth))
-	statusHealthFill.Size = UDim2.new(pct, 0, 1, 0)
-	statusHealthFill.BackgroundColor3 = (pct <= 0.3) and Hud.COLOR.Bad or Hud.COLOR.Good
+	-- Segmented instead of a plain fill: colour the first N of 10 cells solid, leave the rest at
+	-- segmentBar's default COLOR.Line (empty). Same <=30% low-health color swap as before, just
+	-- applied per-cell instead of to one fill Frame.
+	local filledColor = (pct <= 0.3) and Hud.COLOR.Bad or Hud.COLOR.Good
+	local filledCount = math.ceil(pct * #statusHealthCells)
+	for i, cell in ipairs(statusHealthCells) do
+		cell.BackgroundColor3 = (i <= filledCount) and filledColor or Hud.COLOR.Line
+	end
 	statusHealthCaption.Text = ("Health  %d / %d"):format(math.ceil(humanoid.Health), math.ceil(playerMaxHealth))
 end
 
@@ -2357,26 +2430,20 @@ end)
 
 -- Inventory, unlike the Workbench, isn't gated to a physical station — it's just a view onto
 -- `Hud.profile` — so it gets a normal always-available button here instead.
-local inventoryOpenButton = Hud.new("TextButton", {
-	BackgroundColor3 = Hud.COLOR.PanelLight,
-	Size = UDim2.new(0, 130, 1, 0),
-	Font = Enum.Font.SourceSansBold,
-	TextColor3 = Hud.COLOR.Text,
-	TextSize = 16,
-	Text = "Inventory",
-	Parent = actionRow,
-}, { Hud.corner(8), Hud.stroke() })
-inventoryOpenButton.MouseButton1Click:Connect(openInventory)
+local inventoryOpenButton = Hud.button({
+	variant = "secondary",
+	text = "Inventory",
+	size = UDim2.new(0, 130, 1, 0),
+	parent = actionRow,
+	onClick = openInventory,
+})
 
-local defendButton = Hud.new("TextButton", {
-	BackgroundColor3 = Hud.COLOR.Accent,
-	Size = UDim2.new(0, 140, 1, 0),
-	Font = Enum.Font.SourceSansBold,
-	TextColor3 = Color3.new(1, 1, 1),
-	TextSize = 16,
-	Text = "Start Defense",
-	Parent = actionRow,
-}, { Hud.corner(8) })
+local defendButton = Hud.button({
+	variant = "primary",
+	text = "Start Defense",
+	size = UDim2.new(0, 140, 1, 0),
+	parent = actionRow,
+})
 -- Doubles as the stop button rather than adding a second one — the action row is already tight
 -- (and gets hidden wholesale while the Forge is open). Before StopWave existed this just no-op'd
 -- while a run was active, so there was no way to end a run short of losing or resetting your
@@ -2393,16 +2460,13 @@ end)
 -- ends the run for everyone on the shared queue, heals you to full, and keeps whatever you've
 -- already looted (rewards are granted the instant each node resolves, not saved up for an
 -- "end of run" payout, so there's nothing separate to preserve here).
-local returnHomeButton = Hud.new("TextButton", {
-	BackgroundColor3 = Hud.COLOR.Bad,
-	Size = UDim2.new(0, 130, 1, 0),
-	Font = Enum.Font.SourceSansBold,
-	TextColor3 = Color3.new(1, 1, 1),
-	TextSize = 15,
-	Text = "Return to Base",
-	Visible = false,
-	Parent = actionRow,
-}, { Hud.corner(8) })
+local returnHomeButton = Hud.button({
+	variant = "danger",
+	text = "Return to Base",
+	size = UDim2.new(0, 130, 1, 0),
+	parent = actionRow,
+})
+returnHomeButton.Visible = false
 returnHomeButton.MouseButton1Click:Connect(function()
 	Remotes.EndExpedition:FireServer()
 end)
@@ -2411,16 +2475,13 @@ end)
 -- at least one level down in the quarry — there's no climb-out mechanic, so once you're a few
 -- levels down this is the only way back short of finding a wall to walk into. Respawns at a
 -- normal SpawnLocation, full health, same as Return to Base — see RecallFromMine's comment.
-local recallButton = Hud.new("TextButton", {
-	BackgroundColor3 = Hud.COLOR.Bad,
-	Size = UDim2.new(0, 100, 1, 0),
-	Font = Enum.Font.SourceSansBold,
-	TextColor3 = Color3.new(1, 1, 1),
-	TextSize = 15,
-	Text = "Recall",
-	Visible = false,
-	Parent = actionRow,
-}, { Hud.corner(8) })
+local recallButton = Hud.button({
+	variant = "danger",
+	text = "Recall",
+	size = UDim2.new(0, 100, 1, 0),
+	parent = actionRow,
+})
+recallButton.Visible = false
 recallButton.MouseButton1Click:Connect(function()
 	Remotes.RecallFromMine:FireServer()
 end)
@@ -2474,15 +2535,19 @@ task.spawn(function()
 		return text
 	end
 
-	testMode.button = Hud.new("TextButton", {
-		BackgroundColor3 = testMode.on and Hud.COLOR.Bad or Hud.COLOR.PanelLight,
-		Size = UDim2.new(0, 150, 1, 0),
-		Font = Enum.Font.SourceSansBold,
-		TextColor3 = Color3.new(1, 1, 1),
-		TextSize = 15,
-		Text = labelFor(),
-		Parent = actionRow,
-	}, { Hud.corner(8) })
+	-- variant picked from the STARTING state (on = danger/Bad, off = secondary/PanelLight); the
+	-- toggle handler below still overwrites BackgroundColor3 directly on every flip, same as
+	-- before. KNOWN QUIRK: Hud.button's hover/mouse-leave tween always animates back to the fill
+	-- captured at construction time, so hovering this button after a toggle can flash back to the
+	-- ORIGINAL on/off color before the manual override reasserts itself on the next full toggle —
+	-- acceptable here since this is an admin-only, rarely-clicked control, not a first-class UI
+	-- element.
+	testMode.button = Hud.button({
+		variant = testMode.on and "danger" or "secondary",
+		text = labelFor(),
+		size = UDim2.new(0, 150, 1, 0),
+		parent = actionRow,
+	})
 
 	testMode.button.MouseButton1Click:Connect(function()
 		local toggleResult = Remotes.ToggleTestMode:InvokeServer()

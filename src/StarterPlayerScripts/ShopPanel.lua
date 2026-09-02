@@ -20,39 +20,20 @@ local ShopPanel = {}
 -- One table instead of 5 separate top-level locals: Luau caps a function scope at 200
 -- locals and this file's main chunk hit that ceiling. Grouping UI element references costs
 -- nothing at runtime and buys back a register per element.
+--
+-- shopUI.frame is the plate's SHELL (the outer, positioned frame) so every existing
+-- `shopUI.frame.Visible = ...` toggle keeps hiding/showing the whole panel; shopUI.surface is
+-- the inset content surface that the header and children parent into.
 local shopUI = {}
-shopUI.frame = Hud.new("Frame", {
+shopUI.surface, shopUI.frame = Hud.plate({
 	Name = "ShopMenu",
-	BackgroundColor3 = Hud.COLOR.Panel,
 	Position = UDim2.new(0.5, -200, 0.5, -190),
 	Size = UDim2.new(0, 400, 0, 388),
 	Visible = false,
 	Parent = Hud.screenGui,
-}, { Hud.corner(10), Hud.stroke() })
-
-Hud.new("TextLabel", {
-	BackgroundTransparency = 1,
-	Position = UDim2.new(0, 12, 0, 10),
-	Size = UDim2.new(1, -60, 0, 24),
-	Font = Enum.Font.SourceSansBold,
-	TextXAlignment = Enum.TextXAlignment.Left,
-	TextColor3 = Hud.COLOR.Text,
-	TextSize = 18,
-	Text = "Outpost Shop",
-	Parent = shopUI.frame,
 })
 
-shopUI.closeButton = Hud.new("TextButton", {
-	BackgroundColor3 = Hud.COLOR.PanelLight,
-	Position = UDim2.new(1, -40, 0, 8),
-	Size = UDim2.new(0, 28, 0, 28),
-	Font = Enum.Font.SourceSansBold,
-	TextColor3 = Hud.COLOR.Text,
-	TextSize = 16,
-	Text = "X",
-	Parent = shopUI.frame,
-}, { Hud.corner(6) })
-shopUI.closeButton.MouseButton1Click:Connect(function()
+Hud.panelHeader(shopUI.surface, "Outpost Shop", function()
 	shopUI.frame.Visible = false
 end)
 
@@ -63,22 +44,19 @@ shopUI.listFrame = Hud.new("ScrollingFrame", {
 	CanvasSize = UDim2.new(0, 0, 0, 0),
 	AutomaticCanvasSize = Enum.AutomaticSize.Y,
 	ScrollBarThickness = 6,
-	Parent = shopUI.frame,
+	Parent = shopUI.surface,
 }, { Hud.new("UIListLayout", { Padding = UDim.new(0, 6) }) })
 
 -- Expedition Shop nodes are one-time — if you can't (or don't want to) buy anything, Skip
 -- destroys the node outright and lets the queue move on rather than leaving you stuck standing
 -- in front of a shop you can't use.
-shopUI.skipButton = Hud.new("TextButton", {
-	BackgroundColor3 = Hud.COLOR.PanelLight,
-	Position = UDim2.new(0, 12, 1, -40),
-	Size = UDim2.new(1, -24, 0, 32),
-	Font = Enum.Font.SourceSansBold,
-	TextColor3 = Hud.COLOR.Text,
-	TextSize = 15,
-	Text = "Skip — move to the next node",
-	Parent = shopUI.frame,
-}, { Hud.corner(6) })
+shopUI.skipButton = Hud.button({
+	variant = "secondary",
+	text = "Skip — move to the next node",
+	position = UDim2.new(0, 12, 1, -40),
+	size = UDim2.new(1, -24, 0, 32),
+	parent = shopUI.surface,
+})
 
 local currentShopNode = nil -- set right before the Shop panel opens
 shopUI.nodeDestroyingConn = nil -- auto-closes the panel if the node vanishes out from under it (bought, skipped, or otherwise)

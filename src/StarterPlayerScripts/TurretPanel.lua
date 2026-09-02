@@ -27,49 +27,18 @@ local TurretPanel = {}
 -- One table instead of 5 separate top-level locals: Luau caps a function scope at 200
 -- locals and this file's main chunk hit that ceiling. Grouping UI element references costs
 -- nothing at runtime and buys back a register per element.
+-- turretPanel.frame is the plate's SHELL (the outer, positioned frame) so existing
+-- `turretPanel.frame.Visible = ...` toggles keep working unchanged; turretPanel.surface is the
+-- inset content surface the header and list parent into.
 local turretPanel = {}
-turretPanel.frame = Hud.new("Frame", {
+turretPanel.surface, turretPanel.frame = Hud.plate({
 	Name = "TurretSlotPanel",
-	BackgroundColor3 = Hud.COLOR.Panel,
 	Position = UDim2.new(0.5, -190, 0.5, -190),
 	Size = UDim2.new(0, 380, 0, 380),
 	Visible = false,
 	ZIndex = 5,
 	Parent = Hud.screenGui,
-}, { Hud.corner(10), Hud.stroke() })
-
-turretPanel.title = Hud.new("TextLabel", {
-	BackgroundTransparency = 1,
-	Position = UDim2.new(0, 12, 0, 10),
-	Size = UDim2.new(1, -60, 0, 24),
-	Font = Enum.Font.SourceSansBold,
-	TextXAlignment = Enum.TextXAlignment.Left,
-	TextColor3 = Hud.COLOR.Text,
-	TextSize = 18,
-	Text = "Turret Slot",
-	Parent = turretPanel.frame,
 })
-
-turretPanel.close = Hud.new("TextButton", {
-	BackgroundColor3 = Hud.COLOR.PanelLight,
-	Position = UDim2.new(1, -40, 0, 8),
-	Size = UDim2.new(0, 28, 0, 28),
-	Font = Enum.Font.SourceSansBold,
-	TextColor3 = Hud.COLOR.Text,
-	TextSize = 16,
-	Text = "X",
-	Parent = turretPanel.frame,
-}, { Hud.corner(6) })
-
-turretPanel.list = Hud.new("ScrollingFrame", {
-	BackgroundTransparency = 1,
-	Position = UDim2.new(0, 12, 0, 44),
-	Size = UDim2.new(1, -24, 1, -56),
-	CanvasSize = UDim2.new(0, 0, 0, 0),
-	AutomaticCanvasSize = Enum.AutomaticSize.Y,
-	ScrollBarThickness = 6,
-	Parent = turretPanel.frame,
-}, { Hud.new("UIListLayout", { Padding = UDim.new(0, 6) }) })
 
 -- Which slot the panel is currently open for, so an InventoryUpdate arriving while it's open can
 -- re-render it in place (a placed/upgraded/unplaced turret changes what this panel should show).
@@ -79,7 +48,22 @@ local function closeTurretPanel()
 	turretPanel.frame.Visible = false
 	turretPanel.state.slotIndex = nil
 end
-turretPanel.close.MouseButton1Click:Connect(closeTurretPanel)
+
+-- panelHeader owns the header Frame's construction, but renderTurretPanel() still needs to
+-- rewrite the title text per slot ("Turret Slot 3") — pull the TextLabel back out rather than
+-- hand-building a second one alongside it.
+turretPanel.header = Hud.panelHeader(turretPanel.surface, "Turret Slot", closeTurretPanel)
+turretPanel.title = turretPanel.header:FindFirstChildOfClass("TextLabel")
+
+turretPanel.list = Hud.new("ScrollingFrame", {
+	BackgroundTransparency = 1,
+	Position = UDim2.new(0, 12, 0, 44),
+	Size = UDim2.new(1, -24, 1, -56),
+	CanvasSize = UDim2.new(0, 0, 0, 0),
+	AutomaticCanvasSize = Enum.AutomaticSize.Y,
+	ScrollBarThickness = 6,
+	Parent = turretPanel.surface,
+}, { Hud.new("UIListLayout", { Padding = UDim.new(0, 6) }) })
 
 -- Formats one turret instance's live stats line, shared by the occupied-slot view and the
 -- storage list so a turret reads the same in both places.
