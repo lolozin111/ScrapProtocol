@@ -2078,14 +2078,82 @@ exactly as tight as it is now. The client button picks the path from state it al
 server re-checks regardless, since the client can lie about all of it.
 
 
+#### C-revised: directions drafted and CHOSEN (2026-09-02) — not yet built
+
+The design round happened: ten mockups, 2-3 per menu, drafted blind (the user said draft rather than
+describe first). Working files are `.design/menus/*.dc.html` + `canvas.json`, assembled into
+`.design/menus/station-menu-directions.html` and published as an Artifact. The `.dc.html` files are
+Claude Design artboards and seed straight into an editable canvas once Node exists on the machine —
+there is none right now, which is the only reason that round shipped as a flat page.
+
+**The picks:**
+
+| Menu | Chosen | Panel size |
+| --- | --- | --- |
+| Forge — Weapons tab | **A, "Crucible"** — input bay / running chamber / output tray; pity drawn as machine heat, Luck Potion as an additive you slot in | 760x520 |
+| Forge — Smelting tab | **B, "Batch Dial"** — one dial reading batch time, a quantity slider, per-ore cost underneath | drawn 640x424, must be re-proportioned |
+| Welding Station | **A, "Rig Diagram"** — the robot centre-stage, its 3 mod slots as hardpoints on leader lines | 760x520 |
+| Workbench | **B, "Spec Sheet"** — tabs stay; each is one equipped item as a hero with an explicit before/after for the next tier | 640x424 |
+| Popups | **B, "Lifted Slabs"** — own plate, scrim, shadow, accent cap coloured by kind | — |
+| Case opening | **A/B hybrid**, per direct request: A's in-panel reveal while the roll is running, then B's full-takeover card animates in when it lands | — |
+
+**Facts the mockups got wrong, corrected against the code — fix these before building:**
+
+- **Tool mods are not multi-slot.** `profile.EquippedTool` holds ONE key; `ToolModConfig.Tools` has
+  exactly three (Split-Head Pick, Featherweight Pick, Prospector's Pick) and they are sideways
+  choices, not a collection. Workbench B drew a chip row with an empty `+` slot. It is a pick-one.
+- **Auto-Miner is not an upgrade track.** One-time craftable (`AutoMinerConfig.Cost` = 60 ScrapIron +
+  15 CopperWire), `MaxOwned = 1`, yields `BaseYieldPerTick` 3 ScrapIron every `TickSeconds` 60. The
+  tab is a build-it / own-it state, not levels. The mockup invented "Level 4 -> 5" and a cost.
+- **Base tiers live in `ResearchConfig.Tiers`, not BaseConfig**, and there are SIX: Scrap Workbench,
+  Reinforced Workshop, Fortified Bunker, Bastion, Citadel, Foundry. T2->T3 costs Scrap 1200 +
+  SteelPlating 150 + CopperWire 80 + SteelIngot 20. Turret slots by tier are 2/4/5/7/8/10
+  (`TurretConfig.GetSlotCount`), so "+1 slot" is right for T2->T3 only by coincidence.
+- **Robot mod slots are never locked.** `EquippedMods[itemKey][slotIndex]`, slotIndex 1..3, and
+  `CraftingService` checks only the range — an empty slot means you have not fitted a mod, not that
+  the slot needs buying. Welding A invented "unlock 40 cores". Also note `itemKey` is a robot TYPE,
+  so every deployed Scrapbot shares one loadout.
+
+**The structural conflict that has to be settled first.** Weapons and Smelting are two tabs of the
+SAME station (`StationConfig.Types.Forge.Tabs`), and `craftFrame` is one plate sized once at
+640x424. Forge A needs 760x520; Smelting B was drawn at 640x424. Resizing per TAB would make the
+panel jump while switching tabs inside one station, which is worse than either size. So panel size
+becomes **per station** — Forge and Welding at 760x520, Workbench staying 640x424 — and Smelting B
+gets re-proportioned up to 760x520 rather than the panel shrinking under it.
+
+**Server-side reality check, per pick:**
+
+- **Smelting B is free.** `profile.SmeltJob` already carries `FinishTime` as an `os.time()` stamp, so
+  a live countdown needs no new remote. The job also auto-grants — `SmeltService`'s loop adds the
+  refined ore and clears the job — so there is correctly no Collect button in the design. One
+  wrinkle: `RefinedOreConfig.SmeltTime.TickSeconds` is 2, so the grant lands up to 2s after the
+  countdown hits zero. Show a "finishing" state, never a stuck 0:00.
+- **Welding A and Workbench B are free.** Fitting a mod is the existing `CraftingService` remote;
+  every number the Spec Sheet shows already exists in config.
+- **Forge A's output tray is the ONE real server question.** `ForgeService.ForgeWeapon` inserts the
+  instance straight into `profile.Weapons` and returns it — there is no uncollected state. Either
+  (a) add a `ForgeOutput` profile field plus a collect remote (touches `DataService.defaultProfile` +
+  backfill and `ForgeService`), so the tray survives a relog, or (b) treat the tray as presentation
+  of a roll that has already banked, which costs nothing server-side and cannot lose a weapon. (b) is
+  the recommendation; the risk is only that a player closes the menu without clicking Collect and
+  wonders where it went, which is fixed by never gating anything on the click.
+
+**Art needed before Welding A can look like the mockup:** one line-drawing silhouette per robot
+(Scrapbot, Sentry Drone, Iron Guardian, Arc Turret). All 22 existing `UiIconConfig.Icons` keys are
+filled, so these are additions — upload the PNGs, add the asset IDs there (git-tracked, unlike the
+Studio `ItemIcons` folder). Per the project's own rule, a missing rig silhouette must fall back to a
+generic chassis outline rather than an empty frame. Forge A's chamber needs no art; it is gradients
+and frames.
+
 ### Resuming after a context reset
 
-Everything above is the live plan. Section A is BUILT; B, C and D are not started. The next step is
-C's design round: a page showing 2-3 genuinely different directions PER MENU (Workbench, Forge,
-Welding, Smelting) plus the popups, each with its own character rather than one house style applied
-four times — then pick or hybridise, then build. The HUD overhaul went well because the look was
-settled on a page first; do that again rather than starting in code.
+Everything above is the live plan. Sections A and C's design round are done; B (raid map light
+touch) is not started, C's BUILD is not started, D ships with C. The picks, the corrections, the
+panel-size decision and the server-side notes are all in the "C-revised" table just above — start
+there, not from the mockups, because the mockups contain the four wrong facts listed under it.
 
-Open question to put to the user before drafting: whether to draft the directions blind, or after
-they describe how the Forge should feel. Their one concrete steer so far is that the Forge is a
-machine you feed — ore in, visible processing, collect the output — not a list of rows.
+Build order that falls out of the dependencies: Smelting B first (zero server work, fits the
+existing panel once it is re-proportioned), then Workbench B (zero server work), then Welding A
+(needs the panel at 760x520 and the robot silhouettes), then Forge A (needs the panel, and the
+output-tray decision above). Popups B underpins all four, so its plate/scrim/cap treatment wants
+building as a shared HudKit helper before the first menu that raises one.
