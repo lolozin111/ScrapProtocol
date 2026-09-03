@@ -23,9 +23,12 @@ already made (numbers, mechanics, sequencing), not just vague direction.
 | Gun variants (14) + tools (3) | **Built** — 18 weapons across 6 families, 3 pickaxes |
 | Drone companion (4 Drone Cores) | **Built** — unlocks at Research Tier 3, follows you everywhere |
 | Player Test Mode (admin throwaway profile) | **Built** — see "Data safety" section below |
+| HUD phase 3 (all station menus) | **Built and verified** — see "Road to release" below |
+| Raid overhaul | **Not specced** — the gate on everything else, see below |
+| Enemy AI patterns | **Engine built, one pattern** — `Chaser`, and all six enemies use it |
 | Early-game pacing & onboarding | **Planned, not built** — see below |
 | Raid shop rework (run-only perks) | **Planned, not built** — half the tag plumbing exists |
-| PvP base invasion | Not started, sequence last |
+| PvP base invasion | **Recommended cut from v1** — see "Road to release" below |
 
 Agreed build order (most recent discussion): Raid Energy → Mining zone rework → weapon mod
 slots → base building/tiers (+ turrets) → Research level → Black Market → PvP invasion last.
@@ -33,11 +36,105 @@ Re-confirm this order before starting each one — priorities may have shifted. 
 Black Market are both BUILT (the Black Market **superseded** the planned "main shop" rather than
 being built alongside it — same rotating-stock shape, so they were merged).
 
-**Next up: an art/visual pass**, then early-game pacing + the raid shop rework (both planned
-below), then PvP base invasion last. The mechanics roadmap is complete; what remains before PvP is
-tuning how the game OPENS and what the raid Shop is for. The content backlog below is now
-BUILT — kept as the record of what each weapon was specced to do, since the code says how they work
-and only this says what they were meant to feel like.
+**Next up: settle what the raid overhaul IS** — see "Road to release" immediately below, which
+supersedes the build order above as the live plan. The content backlog further down is now BUILT —
+kept as the record of what each weapon was specced to do, since the code says how they work and only
+this says what they were meant to feel like.
+
+## Road to release — the live plan (2026-09-03)
+
+Agreed with the user in full, in dependency order. Six phases, with a gate in front of them.
+
+**Two companion pages hold the tickable versions of this.** They are private Artifacts, they persist
+independently of any session, and they are the fastest way back into this plan after a reset:
+
+- **Road to release** — this plan, phase by phase: https://claude.ai/code/artifact/c520148b-a3db-4056-b273-7b5cd0e87ac8
+- **Asset Bench** — every missing art/Studio asset with its exact key: https://claude.ai/code/artifact/53fec0c0-7889-4e51-8399-5bbe26fb583b
+
+### Phase 00 — the gate: decide what the raid overhaul IS
+
+**Nothing else starts until this does.** The raid overhaul is the ONLY item on the whole plan with no
+design behind it — before this section it appeared in this file exactly once, as an aside under the
+HUD phase-3 notes ("the raid system is getting its own overhaul later"). It needs a design round of
+its own: what a run is, what the map means, what makes a room worth entering, what the player is
+optimising.
+
+It is a gate rather than just a first task because **the enemy AI work depends on its answer** — what
+enemies should DO is a function of what a raid is. Building patterns first would mean building them
+against a raid that does not exist yet.
+
+Run it the way the HUD round ran: settle it on a page first, then build. That round went well
+*because* nothing was implemented before the direction was chosen, and the raid is a bigger surface
+than any single menu.
+
+### Phase 01 — build the rest
+
+- **Raid overhaul** — blocked on Phase 00. Absorbs the interim raid-map styling pass already written
+  up in section B (node panels + Scraps Collected onto HudKit plates, map graph left alone); doing
+  that inside the overhaul is cheaper than doing it twice.
+- **Enemy AI patterns** — the ENGINE is finished and correct: one shared per-encounter tick loop,
+  config-driven dispatch, wave scaling, spawn grace, robots answering with their own named
+  behaviours. What is missing is content — `EnemyAI.Patterns` holds exactly one entry, `Chaser`, and
+  every enemy including the elite points at it. Each new pattern is one function plus one config
+  line. Note `EnemyAI`'s own header already anticipates raid combat: base defense aims
+  `TargetPosition` at the plot anchor, and a raid mode that wants enemies chasing the PLAYER just
+  passes a different point — that file does not change.
+- **Raid shop rework** — already specced further down this file (run-only perks instead of ore
+  bundles); half the tag plumbing exists.
+- **Animations** — enemy attacks, robot fire, and the crafting "cute" step that has been open since
+  the base phase.
+- **Turret models** and **the mine's visual pass** — art; both also on the Asset Bench.
+- **PvP base invasion — DECIDE. Recommendation: cut from v1.** It is the one remaining item that adds
+  a whole new CLASS of exploit surface (player-vs-player state, griefing, offline raids) precisely
+  when Phase 04 is trying to close that surface down, plus an entirely new balance axis to tune. This
+  file has always sequenced it last. Shipping without it costs little; including it moves the release
+  date a lot. It is a strong first post-launch update. The user is undecided — this is a
+  recommendation, not a decision.
+
+### Phase 02 — feature freeze
+
+Nothing new after this line. Anything unbuilt goes on the post-launch list. Recorded as its own phase
+because it is the step that gets skipped and is why projects at this stage do not ship.
+
+### Phase 03 — cleanup
+
+- **Memory leaks are a KNOWN pattern here, not a hypothetical.** Every animated thing built in the
+  HUD phase needed an explicit `Disconnect` guard or it leaks one Heartbeat handler per render, for
+  the rest of the session, with nothing in Output to say so — the Smelting dial, the Forge chamber
+  ring and the case reel each carry that guard and a comment explaining it. A sweep for connections
+  with no teardown is concrete and findable, and is the highest-value item in this phase.
+- Dead and messy code: retired files still on disk, orphaned requires, comments describing code that
+  has moved.
+- Efficiency: re-render churn, per-frame work that could be event-driven, tables rebuilt per frame.
+- **Debt: README's Smelting testing step (section 4, step 7)** still describes the pre-Batch-Dial UI —
+  the ore-picker popup and the +1/+10/+100/MAX buttons, both deleted.
+- **Debt: the Black Market's Cases tab** is the last station menu never given the phase-3 pass; still
+  a plain `makeRow` list sitting next to the Crucible.
+
+### Phase 04 — security
+
+Full remote-surface audit (`sp-remote-scout` sweeps every RemoteEvent/RemoteFunction for argument
+validation, plot/station gating, rate limiting, and rewards re-derived rather than trusted), then fix
+what it finds, then a basic anti-cheat pass — movement and fire-rate sanity checks, impossible-value
+rejection. Basic is the right scope: a Roblox game cannot win that fight, only make it boring.
+
+**But the audit is the safety net, not the plan.** The actual defence is a standing habit that starts
+NOW rather than at this phase: every new remote gets gated when it is written. An ungated remote costs
+minutes to fix the day it is added and hours to find in a batch six features later.
+
+### Phase 05 — sound and music
+
+Sound effects (mining hits, gun fire, the Forge lever, the case reel landing — the reveal especially,
+it is built for a sound it does not have yet) and music (base, raid, boss at minimum).
+
+**Independent of everything above it, and movable.** Biggest perceived-quality jump per hour on the
+whole plan and nothing blocks it — pull it forward whenever the project needs a morale win.
+
+### Phase 06 — ship
+
+Balance pass (every number in the Config modules is a first guess never played against), the full
+README section 4 loop on a fresh profile the way a new player meets it, then a multi-player stress
+test watching for whatever Phase 03 missed. Then release.
 
 ## Mining zone — BUILT
 
@@ -2169,6 +2266,13 @@ generic chassis outline rather than an empty frame. Forge A's chamber needs no a
 and frames.
 
 ### Resuming after a context reset
+
+**START AT "Road to release" NEAR THE TOP OF THIS FILE, not here.** That section is the live plan for
+the whole project now; this one is the record of the HUD phase-3 round, which is finished, shipped
+and verified in Studio. The immediate next action is Phase 00 — a design round settling what the raid
+overhaul actually is, because it gates everything else.
+
+The rest of this section is kept as the HUD round's own history.
 
 Everything above is the live plan. Sections A and C's design round are done; B (raid map light
 touch) is not started, C's BUILD is not started, D ships with C. The picks, the corrections, the
