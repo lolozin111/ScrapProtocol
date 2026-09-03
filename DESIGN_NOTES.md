@@ -2212,6 +2212,16 @@ animation works and it is safe here for the usual reason: the client cannot chan
 because `OpenCase` granted it before the first frame. Every card carries a rarity edge on the way
 past — the winner only grows and thickens ON ARRIVAL, or it would be spottable mid-spin.
 
+**Two things Studio caught, both worth not relearning.** First: `HudKit.panelHeader` drew a
+full-width bar flush against the top edge, so its top-right corner ran past the panelframe's
+45-degree cut on EVERY panel in the game — the identical bug `accentCap` was written to fix, just
+never applied to the header. `HudKit.CORNER_CUT` is now exported so a panel can inset its own
+full-bleed decorations too, because `ClipsDescendants` does not help here: Roblox clips to the
+rectangle, not to the sliced shape, so the diagonal corners still leak. Second: the reveal's diamond
+backdrop was drawn at the mockup's literal 300, and a square rotated 45 degrees occupies side *
+sqrt(2) in BOTH axes — 424x424 inside a 440-wide plate. Anything rotated has to be sized DOWN from
+the space available rather than up from the number in the drawing.
+
 `Remotes.CaseOpened` is GONE — event, listener and declaration. The reveal is driven by `OpenCase`'s
 return value, so the event had no listener left, and its old client handler was also reading a
 `ConsolationContraband` field that no longer exists.

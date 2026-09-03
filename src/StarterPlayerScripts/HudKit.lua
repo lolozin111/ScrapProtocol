@@ -473,6 +473,13 @@ local PANEL_FRAME_SLICE_CENTER = Rect.new(20, 20, 44, 44)
 -- a glance and could drift from it on a future asset retune.
 local PANEL_FRAME_CORNER_CUT = 16
 
+-- Exported, because this is not just accentCap's problem. Any full-bleed decoration drawn inside a
+-- plate — a gradient band, a glow, a backdrop — runs straight past the 45-degree corner cuts unless
+-- it is inset by this much, and the result is a bright wedge sticking out of the panel's silhouette.
+-- ClipsDescendants does NOT save you: Roblox clips to the rectangle, not to the sliced shape, so the
+-- diagonal corners still leak. Inset by CORNER_CUT instead.
+HudKit.CORNER_CUT = PANEL_FRAME_CORNER_CUT
+
 ----------------------------------------------------------------------
 -- Buttons: variants + hover/press feedback
 ----------------------------------------------------------------------
@@ -1372,9 +1379,24 @@ local PANEL_HEADER_CLOSE_SIZE = 40
 function HudKit.panelHeader(surface: Frame, title: string, onClose: (() -> ())?): Frame
 	local closeReserve = if onClose then PANEL_HEADER_CLOSE_SIZE + HudKit.SPACE.S else 0
 
+	-- SAME BUG accentCap documents, and it went unnoticed here for longer: a full-width bar flush
+	-- against the top edge runs straight past the panelframe's top-RIGHT 45-degree cut, so the dark
+	-- header jutted out of the panel's silhouette on every screen in the game. Inset the right edge by
+	-- the cut so it stops exactly where the diagonal begins.
+	--
+	-- The bottom seam and the close button are children of this frame, so both follow it in
+	-- automatically — the seam now stops 16px short on the right, which reads as deliberate because
+	-- the accent cap directly above it already does exactly that.
+	--
+	-- GATED on panelframe being available, same as accentCap: on the rounded fallback there is no
+	-- diagonal to clear and an inset would just be an unexplained gap.
+	local panelFrameImage = UiIconConfig.Get("panelframe")
+
 	local header = HudKit.new("Frame", {
 		BackgroundColor3 = HudKit.darken(COLOR.Panel, PANEL_HEADER_DARKEN),
-		Size = UDim2.new(1, 0, 0, PANEL_HEADER_HEIGHT),
+		Size = if panelFrameImage
+			then UDim2.new(1, -PANEL_FRAME_CORNER_CUT, 0, PANEL_HEADER_HEIGHT)
+			else UDim2.new(1, 0, 0, PANEL_HEADER_HEIGHT),
 		Parent = surface,
 	}, {
 		-- Bottom seam only: a UIStroke would wrap all four sides, but the design calls for a border

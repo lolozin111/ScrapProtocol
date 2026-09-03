@@ -93,6 +93,25 @@ local LANDED_HOLD_SECONDS = 0.45 -- the beat between the reel stopping and the t
 local TAKEOVER_WIDTH = 440
 local PRIZE_CARD = Vector2.new(74, 92)
 
+-- A square rotated 45 degrees occupies side * sqrt(2) in BOTH axes, so the side has to come DOWN
+-- from the space available, not up from a number that looked right in a drawing — the mockup's 300
+-- would have occupied 424x424 inside a 440-wide plate and hung out of it on every side.
+--
+-- Derived from the SMALLER budget, which is the height: the plate is as tall as its contents make it
+-- (the stage below is AutomaticSize), so there is no exact number to divide, and the conservative
+-- floor below is what keeps this honest rather than relying on the surface clip to hide a diamond
+-- that does not actually fit.
+local TAKEOVER_MIN_HEIGHT = 300 -- the shortest this plate gets with the shortest reward text
+local DIAMOND_SIDE = math.floor(
+	(math.min(TAKEOVER_WIDTH, TAKEOVER_MIN_HEIGHT) - Hud.CORNER_CUT * 2) / math.sqrt(2)
+)
+
+-- How much wider the landed card gets. Every card left of the winner slides half of this to the
+-- left and every card right of it slides half to the right, so the reel opens up around the winner
+-- instead of the winner growing over its neighbours.
+local WINNER_GROW_X = 14
+local WINNER_GROW_Y = 18
+
 ----------------------------------------------------------------------
 -- Reward presentation
 ----------------------------------------------------------------------
@@ -203,26 +222,37 @@ function CasePanel.new(context: CasePanelContext)
 			end,
 		})
 
-		-- The diamond: a square rotated 45 degrees behind everything, exactly as drawn. ZIndex 0 so it
-		-- sits under the modal's own content column without needing that column reparented.
+		-- Backstop for the straight edges. It does NOT save the 45-degree corners — Roblox clips to the
+		-- rectangle, not to the sliced shape — which is why the backdrop below is sized to fit rather
+		-- than relying on this.
+		modal.surface.ClipsDescendants = true
+
+		-- The diamond: a square rotated 45 degrees behind everything, as drawn.
+		--
+		-- SIZED TO FIT, not drawn at the mockup's 300. A rotated square's bounding box is side * sqrt2,
+		-- so a 300 diamond occupies 424x424 — larger than the plate in both axes, and it hung out of
+		-- the panel on every side. DIAMOND_SIDE is derived from the plate's width less both corner
+		-- cuts, so it stays inside the angular silhouette at any TAKEOVER_WIDTH.
 		Hud.new("Frame", {
 			AnchorPoint = Vector2.new(0.5, 0.5),
 			BackgroundTransparency = 1,
 			Position = UDim2.fromScale(0.5, 0.5),
 			Rotation = 45,
-			Size = UDim2.fromOffset(300, 300),
+			Size = UDim2.fromOffset(DIAMOND_SIDE, DIAMOND_SIDE),
 			ZIndex = 0,
 			Parent = modal.surface,
 		}, { Hud.new("UIStroke", { Color = Hud.darken(color, 0.55), Thickness = 1 }) })
 
 		-- The warm pool behind the prize. Roblox has no radial gradient, so this is a graded
 		-- transparency on a rarity-tinted band — the same substitution the Forge's chamber makes.
+		-- Inset by a corner cut at each side so the band stops where the diagonals begin. At full width
+		-- its own square corners ran out past them.
 		Hud.new("Frame", {
 			AnchorPoint = Vector2.new(0.5, 0.5),
 			BackgroundColor3 = color,
 			BorderSizePixel = 0,
 			Position = UDim2.fromScale(0.5, 0.5),
-			Size = UDim2.fromScale(1, 0.7),
+			Size = UDim2.new(1, -Hud.CORNER_CUT * 2, 0.7, 0),
 			ZIndex = 0,
 			Parent = modal.surface,
 		}, { Hud.new("UIGradient", {
@@ -236,10 +266,15 @@ function CasePanel.new(context: CasePanelContext)
 
 		-- Everything below parents into the modal's content column at LayoutOrder 2, the slot its
 		-- `body` would have taken — this reveal has no body text, it has a prize.
+		-- AutomaticSize.Y, not a fixed height: the halo, the rarity, the name and the detail line add up
+		-- to more than any number written here would stay right about, and a fixed 210 had the detail
+		-- line spilling out through the bottom of the plate. The column above it is already
+		-- layout-driven, so growing is free.
 		local stage = Hud.new("Frame", {
+			AutomaticSize = Enum.AutomaticSize.Y,
 			BackgroundTransparency = 1,
 			LayoutOrder = 2,
-			Size = UDim2.new(1, 0, 0, 210),
+			Size = UDim2.new(1, 0, 0, 0),
 			Parent = modal.content,
 		}, { Hud.new("UIListLayout", {
 			HorizontalAlignment = Enum.HorizontalAlignment.Center,
@@ -396,9 +431,9 @@ function CasePanel.new(context: CasePanelContext)
 			BackgroundColor3 = Hud.COLOR.AccentDark,
 			BorderSizePixel = 0,
 			Position = UDim2.fromScale(0.5, 0.55),
-			Size = UDim2.fromScale(1, 0.6),
+			Size = UDim2.new(1, -Hud.CORNER_CUT, 0.6, 0),
 			Parent = stage,
-		}, { Hud.new("UIGradient", {
+		}, { Hud.corner(Hud.RADIUS.Panel), Hud.new("UIGradient", {
 			Rotation = 90,
 			Transparency = NumberSequence.new({
 				NumberSequenceKeypoint.new(0, 1),
@@ -415,16 +450,20 @@ function CasePanel.new(context: CasePanelContext)
 			Parent = stage,
 		})
 
+		-- Cards are anchored at their CENTRES, not their left edges. That is what lets the winner grow
+		-- symmetrically about its own middle while it stays parked under the marker — anchored left, it
+		-- grew rightwards and swallowed its neighbour.
+		local cards = {}
 		local winnerCard
 		for index = 1, STRIP_CARDS do
 			local isWinner = index == WINNER_INDEX
 			local color = isWinner and rarityColor(reward.Rarity) or rarityColor(fillerRarity(caseKey))
 
 			local cardFrame = Hud.new("Frame", {
-				AnchorPoint = Vector2.new(0, 0.5),
+				AnchorPoint = Vector2.new(0.5, 0.5),
 				BackgroundColor3 = Hud.darken(Hud.COLOR.Panel, 0.15),
 				BorderSizePixel = 0,
-				Position = UDim2.new(0, (index - 1) * CARD_PERIOD, 0.5, 0),
+				Position = UDim2.new(0, (index - 1) * CARD_PERIOD + CARD_WIDTH / 2, 0.5, 0),
 				Size = UDim2.fromOffset(CARD_WIDTH, CARD_HEIGHT),
 				Parent = strip,
 			}, {
@@ -434,6 +473,7 @@ function CasePanel.new(context: CasePanelContext)
 				Hud.new("UIStroke", { Color = color, Thickness = 1 }),
 			})
 
+			cards[index] = cardFrame
 			if isWinner then
 				winnerCard = cardFrame
 			end
@@ -506,17 +546,32 @@ function CasePanel.new(context: CasePanelContext)
 
 			if winnerCard then
 				-- The marker highlights whatever stopped under it: the landed card grows and takes a
-				-- heavier edge. Doing this on ARRIVAL rather than at build time is what keeps the
-				-- winner from being spottable while the reel is still moving.
+				-- heavier edge. Doing this on ARRIVAL rather than at build time is what keeps the winner
+				-- from being spottable while the reel is still moving.
 				local stroke = winnerCard:FindFirstChildOfClass("UIStroke")
 				if stroke then
 					stroke.Thickness = 2
 				end
-				TweenService:Create(
-					winnerCard,
-					TweenInfo.new(POP_SECONDS, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
-					{ Size = UDim2.fromOffset(CARD_WIDTH + 14, CARD_HEIGHT + 18) }
-				):Play()
+
+				local pop = TweenInfo.new(POP_SECONDS, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+
+				TweenService:Create(winnerCard, pop, {
+					Size = UDim2.fromOffset(CARD_WIDTH + WINNER_GROW_X, CARD_HEIGHT + WINNER_GROW_Y),
+				}):Play()
+
+				-- The reel OPENS UP around the winner rather than the winner growing over the top of
+				-- its neighbours. It takes WINNER_GROW_X more width, half of that on each side, so
+				-- everything to its left slides half a growth left and everything to its right slides
+				-- half a growth right — which keeps every gap in the strip exactly as it was.
+				local shift = WINNER_GROW_X / 2
+				for index, cardFrame in ipairs(cards) do
+					if index ~= WINNER_INDEX then
+						local direction = index < WINNER_INDEX and -1 or 1
+						TweenService:Create(cardFrame, pop, {
+							Position = cardFrame.Position + UDim2.fromOffset(direction * shift, 0),
+						}):Play()
+					end
+				end
 			end
 
 			task.delay(LANDED_HOLD_SECONDS, function()

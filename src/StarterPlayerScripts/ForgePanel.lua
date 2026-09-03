@@ -714,6 +714,9 @@ function ForgePanel.new(context: ForgePanelContext)
 		-- Heat pooling in the bottom of the chamber. Roblox has no radial gradient, so the design's
 		-- glow is a bottom band whose TRANSPARENCY is graded instead of its colour — same result,
 		-- and it needs no art.
+		-- Carries the chamber's own corner radius. ClipsDescendants on the chamber clips to its
+		-- RECTANGLE, not to its rounded shape, so a square full-bleed band shows square corners poking
+		-- through the rounded ones underneath it.
 		Hud.new("Frame", {
 			AnchorPoint = Vector2.new(0, 1),
 			BackgroundColor3 = Hud.COLOR.AccentDark,
@@ -721,7 +724,7 @@ function ForgePanel.new(context: ForgePanelContext)
 			Position = UDim2.new(0, 0, 1, 0),
 			Size = UDim2.new(1, 0, 0.46, 0),
 			Parent = chamber,
-		}, { Hud.new("UIGradient", {
+		}, { Hud.corner(Hud.RADIUS.Button), Hud.new("UIGradient", {
 			Rotation = 90,
 			Transparency = NumberSequence.new({
 				NumberSequenceKeypoint.new(0, 1),
