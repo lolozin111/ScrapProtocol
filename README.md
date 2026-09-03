@@ -199,9 +199,12 @@ no manual copy-pasting scripts into Studio.
   `CraftingRecipes.lua`/`ModConfig.lua`. Cost is validated and deducted server-side. **Only works
   while standing at your own base plot, near the right station** — see `PlotService
   .IsPlayerInOwnPlot` and `StationService.IsPlayerNearStation`, which every Workbench/Forge remote
-  (`CraftItem`, `DeployRobot`, `EquipMod`, `EquipWeapon`, `ForgeWeapon`, `CraftLuckPotion`,
-  `UpgradeForgeTier`, `StartSmelt`, `UpgradeTool`, `UpgradeSuit`, `CraftAutoMiner`) and `StartWave` (plot only,
-  no station needed) check first, rejecting with a clear reason if you're not.
+  (`CraftItem`, `DeployRobot`, `EquipMod`, `EquipWeapon`, `ForgeWeapon`, `CollectForgeOutput`,
+  `TrashForgeOutput`, `CraftLuckPotion`, `UpgradeForgeTier`, `StartSmelt`, `UpgradeTool`,
+  `UpgradeSuit`, `CraftAutoMiner`) and `StartWave` (plot only, no station needed) check first,
+  rejecting with a clear reason if you're not. (`EquipWeapon`, `EquipMod`, `DeployRobot` and
+  `UndeployRobot` are the deliberate exceptions on the plot/station gate — changing your loadout
+  works from anywhere; see the Inventory panel below.)
 - **Forge (weapon rolling + rarity + Luck + Pity)** — every weapon in the game is Forged, not
   flat-crafted: click the **Forge** station's Weapons tab, pick a weapon type, and hit "Forge" to
   spend that recipe's normal `CraftingRecipes.Weapons[key].Cost` and mint a brand-new unique
@@ -209,32 +212,60 @@ no manual copy-pasting scripts into Studio.
   gives you two independent weapons, never a shared upgrade. Rarity (`ModConfig.Rarities` — Common
   through Legendary) is weighted-random (`ForgeConfig.BaseWeights`/`ForgeService.rollRarity`), and
   higher rarities roll 1-3 bonus stat affixes (`ForgeConfig.AffixPool` — flat +Damage or
-  +Fire-Rate percentages) on top of the recipe's base stats. **This tab is craft-only** — it shows
-  your Forge-tier upgrade row, a Luck Potion craft row, a "last result" readout, and one Forge
-  button per weapon type, nothing more; there are no Equip buttons or mod slots here (they used to
-  sit right below each owned weapon on this tab, which just duplicated the Inventory panel and made
-  "click Forge" and "click Equip" easy to mix up). Owning, equipping, and mod-slotting a Forged
-  weapon all happen exclusively in the **Inventory panel** now (see below).
+  +Fire-Rate percentages) on top of the recipe's base stats. **This tab is craft-only** — there are
+  no Equip buttons or mod slots here (they used to sit right below each owned weapon on this tab,
+  which just duplicated the Inventory panel and made "click Forge" and "click Equip" easy to mix
+  up). Owning, equipping, and mod-slotting a Forged weapon all happen exclusively in the **Inventory
+  panel** now (see below).
+
+  **The tab is the "Crucible"** (`ForgePanel.lua`) — a machine in three columns, not a list:
+
+  - **INPUT BAY** (left) — what this roll consumes, one line per material with your own count beside
+    it, turning red and reading `have / need` where you are short. Under it, two dropdowns naming
+    what you are rolling (family, then weapon; both open the shared `HudKit.modal` plate, and a
+    locked family stays listed and says which Black Market blueprint opens it). Under those, the
+    Luck Potion as an **additive slot** you arm rather than a button parked elsewhere on screen.
+  - **CHAMBER** (middle) — a `HudKit.ring` that sweeps for ~0.55s when you pull the lever, then the
+    tray reveals. Under it, the **real odds** as a proportional bar coloured by rarity, straight out
+    of `ForgeConfig.RollChances` — the same weights `ForgeService.rollRarity` walks, so the bar
+    cannot advertise odds the roll does not use. Under that, pity redrawn as **HEAT**: a gauge that
+    fills as the machine runs cold, reading `N / 15`, guaranteeing Rare+ at full.
+  - **OUTPUT TRAY** (right) — what came out, bordered in its own rarity colour, with its affixes
+    listed; then **Collect** and **Trash**, and the big **Forge** lever beneath.
+
+  **The tray is real state.** A roll lands in `profile.ForgeOutput` (one pending weapon, the same
+  `{ Id, WeaponKey, Rarity, Affixes }` shape as an owned one) and stays there across a relog until
+  you `CollectForgeOutput` it into your inventory or `TrashForgeOutput` it away. This exists for the
+  PILE, not for efficiency: players reroll the same weapon chasing a good one, and if every roll
+  landed in the inventory they would drown in junk they then have to sort. The tray is what lets a
+  roll be refused. Rules, all re-checked server-side:
+
+  - **No refund on trash**, deliberately — you paid for the roll, not for the gun.
+  - **Rolling with the tray occupied overwrites it.** The common case is a junk roll you want to
+    reroll immediately, and blocking the roll outright would tax that to guard the rare case.
+  - **Except at `ForgeConfig.DiscardConfirmMinRarity` (Epic) or better**, which raises a
+    confirmation first. The popup is client UX, so `ForgeWeapon` independently refuses an
+    unconfirmed roll that would discard one — a client that lies can only hurt itself.
+  - Only a **collected** weapon can be equipped, and the "your very first weapon auto-equips"
+    convenience moved to Collect with it.
 
   **Luck** pushes the odds toward better rarities two ways that stack: your Forge's own permanent
   `ForgeTier` upgrade track (Forge's Weapons tab, same sequential-tier shape as Tool/Suit tier,
   costed by `ForgeConfig.ForgeTierCosts` — there's no separate abstract "Luck" stat, a better Forge
   just rolls luckier) and a consumable **Luck Potion** (craftable at the Forge,
-  `ForgeConfig.LuckPotion`, burned on one roll). Whether the next roll spends a Potion is armed by
-  a **square button** (`potionButton`, icon via `ReplicatedStorage.ItemIcons.LuckPotion` same as
-  everything else, badge shows how many you own) docked directly under the Forge menu — not a row
-  buried inside its tab, but not a permanent HUD fixture either. **Pity** backstops a genuinely
-  unlucky run: `ForgeConfig.Pity.Threshold` (15) rolls in a row without landing `Pity.MinRarity`
-  (Rare) or better forces the very next roll to at least that rarity — still luck-weighted among
-  Rare-and-up, not a flat guarantee of exactly Rare. Shown the same way: a **pity progress bar**
-  (`pity.barFrame`) reading `Forge Pity: N / 15 (Rare+)` with a filling bar, docked right beside the
-  Potion button, filling the rest of the row out to the Forge menu's own right edge. **Both widgets
-  are Forge-only** — hidden the rest of the time, and hidden again for the Workbench/Welding
-  Station's own menus (`setForgeWidgetsVisible`, toggled from `openStationMenu`/
-  `craftCloseButton`) — they only ever appear docked under the Forge's own Weapons tab, resetting
-  to empty the moment any roll, forced or not, lands Rare+. The bottom action row
-  (Inventory/Start Defense/etc.) hides for the same window, since on shorter viewports the docked
-  row sits low enough to overlap it otherwise.
+  `ForgeConfig.LuckPotion`, burned on one roll). Your Forge's tier, its permanent luck, and the
+  Upgrade button all sit in the **panel header**; the Potion is the input bay's **additive slot**,
+  armed by clicking it and spent one-shot on the next roll. **Pity** backstops a genuinely unlucky
+  run: `ForgeConfig.Pity.Threshold` (15) rolls in a row without landing `Pity.MinRarity` (Rare) or
+  better forces the very next roll to at least that rarity — still luck-weighted among Rare-and-up,
+  not a flat guarantee of exactly Rare. It is the chamber's **HEAT** gauge, and it resets to empty
+  the moment any roll, forced or not, lands Rare+. When it is full the odds bar collapses to the
+  outcomes still possible and its caption reads `ODDS · FORCED`, rather than continuing to advertise
+  a Common the roll can no longer produce.
+
+  *(Both of these used to be a pity bar and a square Potion button docked in a strip under the plate,
+  with the bottom action row hiding itself to avoid them on short viewports. The strip is gone —
+  they say the same two things inside the machine now, and the action row no longer hides.)*
 
   Pick which owned instance actually counts for combat DPS with `EquipWeapon`
   (`profile.EquippedWeaponId`, called from the Inventory panel) — same "explicit choice wins, else
@@ -595,10 +626,10 @@ actually visible before any real art or UI design happens.
 
 It's no longer one script doing all of that: `MainHud.client.lua` shares a `StarterPlayerScripts`
 folder with `HudKit.lua` (the palette/design-token/instance-builder foundation every panel is built
-from) and five panel ModuleScripts split out of it — `ShopPanel.lua` (Outpost Shop), `TurretPanel.lua`
+from) and six panel ModuleScripts split out of it — `ShopPanel.lua` (Outpost Shop), `TurretPanel.lua`
 (the turret slot popup), `ResearchPanel.lua` (the Research requirements popup), `InventoryPanel.lua`,
-and `WeldingPanel.lua` (all four of the Welding Station's tabs) — plus the earlier `ModPicker.lua`
-(the mod-slot picker). The split exists partly to stay under Luau's 200-local-per-function-scope
+`WeldingPanel.lua` (all four of the Welding Station's tabs), and `ForgePanel.lua` (the Forge's
+Weapons tab, the Crucible) — plus the earlier `ModPicker.lua` (the mod-slot picker). The split exists partly to stay under Luau's 200-local-per-function-scope
 compile ceiling (see `CLAUDE.md`) — `WeldingPanel.lua` also exists because a whole station's worth of
 redesigned tabs is its own thing, not a section of the HUD script.
 
@@ -655,31 +686,50 @@ to end:
    Then walk well outside your `Plot` Part's footprint entirely and try once more — this time it
    should fail with "You need to be at your own base to do that" instead (the broader plot check,
    checked first).
-6. Before opening any station, confirm neither the Pity bar nor the Potion button is visible
-   anywhere on screen — they're Forge-only now. Click your `Crafting` Workbench or `Welding`
-   Station and confirm they still don't appear (only the Forge shows them). Click your
-   `Forge`-tagged Station — the menu should open titled **Forge**, and the moment it does, a small
-   **Forge Pity** bar (`Forge Pity: 0 / 15 (Rare+)`, empty fill) and a 64x64 square **Luck Potion**
-   button (plain "Luck Potion" text and a `0` badge, since you have none yet and haven't added an
-   icon) should appear docked in a row directly under the Forge window — the Potion button flush
-   with its left edge, the Pity bar filling the rest of the row out to its right edge. The
-   **Weapons** tab itself shows only a Forge-tier upgrade row, a Luck Potion craft row, and one
-   **Forge** row per weapon type — no owned-weapon rows, Equip buttons, Pity row, or Potion toggle
-   inside it, those live in the docked row below the window now. Click **Forge** on Pipe Pistol —
-   it should spend the recipe cost, the Pity bar should tick to `1 / 15` with its fill nudging
-   forward, and a **Last Forged: [Rarity] Pipe Pistol** row should appear inside the menu showing
-   an affix summary (most rolls will say "No bonus affixes" — Common has none by design, see
-   `ForgeConfig.AffixCountByRarity`). Craft a Luck Potion from the row above (costs Copper Wire +
-   Gold Contacts) and confirm the Potion button's badge updates to `1`; click the Potion button
-   itself and confirm it highlights (armed); Forge another weapon and confirm the badge drops back
-   to `0` and the button un-highlights, since the toggle is one-shot. Forge about 15 more (any
-   type, Potion armed or not) without landing Rare or better — the bar fills to `15 / 15`, and the
-   NEXT roll after that is guaranteed at least Rare (the Pity bar snaps back to empty on that roll, and
-   every roll that naturally lands Rare+ before then should already reset it early). While the
-   Forge is open, confirm the bottom **Inventory**/**Start Defense** row is gone (it would
-   otherwise sit under/behind the docked Pity bar and Potion button on shorter windows). Close the
-   Forge with the **X** and confirm the Pity bar and Potion button disappear immediately AND the
-   Inventory/Start Defense row comes right back. Then go back to the **Welding Station → Robots**,
+6. Click your `Forge`-tagged Station — the menu should open titled **Forge** at 760x520, landing on
+   **Weapons**, which is the **Crucible**: three columns (INPUT BAY / CHAMBER / OUTPUT TRAY). The
+   header should read `SCRAP FORGE  +0 luck` with an **Upgrade** button beside it. Confirm the
+   bottom **Inventory**/**Start Defense** row stays visible the whole time — the docked pity/potion
+   strip that used to force it to hide is gone.
+
+   In the input bay, the **Family** dropdown should open a popup listing all six families with the
+   five you have not unlocked greyed and naming their blueprint; **Salvage** is the only one open at
+   the start. The **Weapon** dropdown lists that family's guns with their stats and cost. Pick
+   **Pipe Pistol** and confirm the input bay prices it, in white if you can afford it and in red as
+   `have / need` if you cannot.
+
+   In the chamber, the odds bar should read `71 / 28 / 0 / 0 / 0`-ish at zero luck (grey/green
+   dominating) and **HEAT** should read `0 / 15`. Press the big **Forge** lever: the ring should
+   sweep for about half a second reading **ROLLING**, then the **output tray** should fill with a
+   card bordered in the roll's rarity colour, naming the weapon and listing its affixes (most rolls
+   say "No bonus affixes" — Common rolls none by design, see `ForgeConfig.AffixCountByRarity`). HEAT
+   ticks to `1 / 15`.
+
+   **The tray is the new part.** Roll again without collecting and confirm the tray simply
+   overwrites — that is intended. Press **Collect** and confirm it toasts, empties the tray back to
+   its dashed EMPTY state, and that the weapon now appears in the Inventory panel (step 14); press
+   **Trash** on a later roll and confirm it just disappears with no refund. Confirm **Collect** on
+   an empty tray is refused with "Nothing in the tray", and that walking away from the Forge and
+   pressing Collect gives you the "You need to be at your Forge" rejection.
+
+   Craft a **Luck Potion** from the button under the input bay (costs Copper Wire + Gold Contacts)
+   and confirm the additive slot's count goes to `x1`. Click the slot itself — it should switch from
+   a dashed empty socket to a filled, accent-edged one reading "Luck Potion — armed", the odds bar
+   should visibly shift toward the better rarities, and `burns 1 potion` should appear under the
+   Forge lever. Roll once and confirm the count drops to `x0` and the slot disarms itself, since the
+   toggle is one-shot.
+
+   Forge about 15 more (any type) without landing Rare or better — HEAT fills to `15 / 15`, its
+   caption turns green, and the odds caption should read `ODDS · FORCED` with Common and Uncommon
+   collapsed to `0`. The next roll is then guaranteed at least Rare, and HEAT snaps back to empty
+   (any roll that naturally lands Rare+ before then resets it early too).
+
+   Finally, the **discard confirmation**: get an Epic or better into the tray (`/giveweapon` will not
+   do it — just reroll, or temporarily lower `ForgeConfig.DiscardConfirmMinRarity` to `"Common"` to
+   exercise the path). With one sitting there, press **Forge** again: instead of rolling, a popup
+   should ask "DISCARD THIS ROLL?" with its accent cap in the pending weapon's rarity colour, and
+   **Keep it** / **Roll anyway**. Keep it, and confirm nothing was spent. Then go back to the
+   **Welding Station → Robots**,
    select the Scrapbot in the left rail, and press **Deploy** in the rig diagram's footer — the
    header readout should tick to **DEPLOYED 1 / 3**, the status beside the robot's name should
    change from "in storage" to "deployed ×1", and the button itself should flip to **Recall**.

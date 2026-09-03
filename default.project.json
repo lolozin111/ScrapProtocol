@@ -58,6 +58,8 @@
         "EquipWeapon": { "$className": "RemoteFunction" },
         "UndeployRobot": { "$className": "RemoteFunction" },
         "ForgeWeapon": { "$className": "RemoteFunction" },
+        "CollectForgeOutput": { "$className": "RemoteFunction" },
+        "TrashForgeOutput": { "$className": "RemoteFunction" },
         "CraftLuckPotion": { "$className": "RemoteFunction" },
         "UpgradeForgeTier": { "$className": "RemoteFunction" },
         "StartSmelt": { "$className": "RemoteFunction" },

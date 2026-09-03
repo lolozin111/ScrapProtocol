@@ -95,4 +95,85 @@ ForgeConfig.Pity = {
 	MinRarity = "Rare",
 }
 
+-- A roll lands in profile.ForgeOutput (the Crucible's output tray), not straight into your
+-- inventory — you Collect it or Trash it. Rolling again while the tray is occupied OVERWRITES what
+-- is in it, which is the right default: the common case is a junk roll you want to reroll
+-- immediately, and taxing that to guard the rare case would be backwards. This is the rarity at
+-- which that stops being the right default and the client raises a confirmation first.
+--
+-- A KEY, not an index, and compared through RarityOrder — never a hardcoded rarity name at the call
+-- site. Reordering or inserting a rarity then moves this threshold with it automatically.
+--
+-- Set it to nil to never confirm; set it to "Common" to confirm on every discard.
+ForgeConfig.DiscardConfirmMinRarity = "Epic"
+
+-- Index of a rarity key within RarityOrder (1 = Common ... 5 = Legendary). Lives here rather than
+-- in ForgeService because the HUD needs the same comparison — the Crucible decides whether to raise
+-- the discard confirmation, and it must reach the same answer the server will.
+function ForgeConfig.RarityIndex(rarityKey: string?): number
+	for index, key in ipairs(ForgeConfig.RarityOrder) do
+		if key == rarityKey then
+			return index
+		end
+	end
+	return 1
+end
+
+-- Whether discarding a pending output of this rarity should be confirmed first. Both the Crucible
+-- (which raises the popup) and ForgeService.ForgeWeapon (which refuses an unconfirmed roll that
+-- would discard one) ask this, so a client that lies about the confirm flag can only hurt itself —
+-- the same reasoning as the Recall remote's re-checks.
+function ForgeConfig.NeedsDiscardConfirm(rarityKey: string?): boolean
+	if not rarityKey or not ForgeConfig.DiscardConfirmMinRarity then
+		return false
+	end
+	return ForgeConfig.RarityIndex(rarityKey) >= ForgeConfig.RarityIndex(ForgeConfig.DiscardConfirmMinRarity)
+end
+
+-- Total luck points for a roll: your Forge's permanent ForgeTiers bonus, plus the Luck Potion's
+-- one-roll bonus if you are burning one.
+--
+-- SHARED, not server-only, for the same reason Shared/Wallet.lua is: the Crucible prints your luck
+-- in its header and draws the odds bar those points produce, and a HUD that computes luck its own
+-- way is a HUD that can promise odds the server will not honour.
+function ForgeConfig.LuckPoints(profile, usePotion: boolean?): number
+	local tierData = ForgeConfig.ForgeTiers[(profile and profile.ForgeTier) or 1]
+	return (tierData and tierData.Bonus or 0) + (usePotion and ForgeConfig.LuckPotion.Bonus or 0)
+end
+
+-- The weight table a roll of this luck actually uses. Every non-Common tier's weight scales by
+-- (1 + luckPoints/100) — Common itself never moves, so more luck just grows the non-Common slice of
+-- the pie relative to it. `floorIndex` (default 1) restricts the roll to RarityOrder[floorIndex..],
+-- which is how a pity-forced roll guarantees at least Pity.MinRarity.
+--
+-- Returns the per-rarity weights and their total. ForgeService.rollRarity walks these to pick a
+-- rarity; the Crucible normalises them into the percentages on its odds bar. One function, so the
+-- bar cannot advertise odds the roll does not use.
+function ForgeConfig.RollWeights(luckPoints: number, floorIndex: number?): ({ [string]: number }, number)
+	local floor = floorIndex or 1
+	local weights = {}
+	local total = 0
+	for index, rarityKey in ipairs(ForgeConfig.RarityOrder) do
+		if index >= floor then
+			local base = ForgeConfig.BaseWeights[rarityKey] or 0
+			local weight = (rarityKey == "Common") and base or (base * (1 + luckPoints / 100))
+			weights[rarityKey] = weight
+			total += weight
+		end
+	end
+	return weights, total
+end
+
+-- The same weights as fractions of 1, in RarityOrder, for drawing. A rarity below the floor comes
+-- back as 0 rather than being omitted, so the bar keeps five segments and a pity-forced roll reads
+-- as "these three are the only outcomes now" rather than as a bar that changed shape.
+function ForgeConfig.RollChances(luckPoints: number, floorIndex: number?): { number }
+	local weights, total = ForgeConfig.RollWeights(luckPoints, floorIndex)
+	local chances = {}
+	for index, rarityKey in ipairs(ForgeConfig.RarityOrder) do
+		chances[index] = total > 0 and (weights[rarityKey] or 0) / total or 0
+	end
+	return chances
+end
+
 return ForgeConfig

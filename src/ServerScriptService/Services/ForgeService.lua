@@ -27,14 +27,11 @@ local ForgeService = {}
 
 -- Index of a rarity key within ForgeConfig.RarityOrder (1 = Common ... 5 = Legendary). Used both
 -- to floor a pity-forced roll at Pity.MinRarity and to check whether a roll landed at or above it.
-local function rarityIndex(rarityKey: string): number
-	for i, key in ipairs(ForgeConfig.RarityOrder) do
-		if key == rarityKey then
-			return i
-		end
-	end
-	return 1
-end
+--
+-- MOVED to ForgeConfig and kept here as an alias: the Crucible has to reach the same answer this
+-- file does about whether a pending output is precious enough to confirm before discarding, and it
+-- cannot require anything under ServerScriptService. Same reasoning as ModConfig.ApplyMods.
+local rarityIndex = ForgeConfig.RarityIndex
 
 -- Weighted rarity roll. Every non-Common tier's weight scales up by (1 + luckPoints/100) — Common
 -- itself never moves, so more luck just means the non-Common slice of the total pie keeps growing
@@ -46,16 +43,10 @@ end
 -- identical, it's just never allowed to consider anything below the floor.
 local function rollRarity(luckPoints: number, floorIndex: number?): string
 	local floor = floorIndex or 1
-	local weights = {}
-	local totalWeight = 0
-	for i, rarityKey in ipairs(ForgeConfig.RarityOrder) do
-		if i >= floor then
-			local base = ForgeConfig.BaseWeights[rarityKey] or 0
-			local weight = (rarityKey == "Common") and base or (base * (1 + luckPoints / 100))
-			weights[rarityKey] = weight
-			totalWeight += weight
-		end
-	end
+	-- The weight math itself is ForgeConfig.RollWeights, because the Crucible's odds bar normalises
+	-- the SAME weights into the percentages it shows you. A second copy here is a bar that can
+	-- advertise odds this roll does not use.
+	local weights, totalWeight = ForgeConfig.RollWeights(luckPoints, floor)
 
 	local roll = math.random() * totalWeight
 	local cumulative = 0
@@ -105,7 +96,7 @@ end
 -- or not) lands ForgeConfig.Pity.MinRarity or better. Once the counter reaches Pity.Threshold, THIS
 -- roll is forced to at least MinRarity (still randomized/luck-weighted among MinRarity and up, not
 -- a flat guarantee of exactly MinRarity) — a genuinely unlucky streak always pays off eventually.
-Remotes.ForgeWeapon.OnServerInvoke = function(player: Player, weaponKey: string, usePotion: boolean?)
+Remotes.ForgeWeapon.OnServerInvoke = function(player: Player, weaponKey: string, usePotion: boolean?, confirmDiscard: boolean?)
 	if not PlotService.IsPlayerInOwnPlot(player) then
 		return { Success = false, Reason = PlotConfig.NotInBaseMessage }
 	end
@@ -139,6 +130,28 @@ Remotes.ForgeWeapon.OnServerInvoke = function(player: Player, weaponKey: string,
 
 	if usePotion and (profile.LuckPotions or 0) <= 0 then
 		return { Success = false, Reason = "No Luck Potions to use" }
+	end
+
+	-- The tray holds ONE pending weapon and a fresh roll overwrites it. That is deliberate: the common
+	-- case is a junk roll you want to reroll immediately, and blocking the roll outright while the
+	-- tray is occupied would tax that to guard the rare case. The rare case gets a confirmation
+	-- instead, and this is the server half of it. The client raises the popup, but a client that lies
+	-- about `confirmDiscard` must only be able to hurt itself, so the refusal is re-derived here from
+	-- the same ForgeConfig.NeedsDiscardConfirm the HUD asked. Same reasoning as the Recall re-checks.
+	--
+	-- Checked BEFORE TrySpend, so a refused roll never costs the player anything.
+	local pending = profile.ForgeOutput
+	if pending and not confirmDiscard and ForgeConfig.NeedsDiscardConfirm(pending.Rarity) then
+		local pendingRecipe = CraftingRecipes.Weapons[pending.WeaponKey]
+		return {
+			Success = false,
+			Reason = ("Rolling again would discard the %s %s in the tray. Collect or trash it first."):format(
+				pending.Rarity, pendingRecipe and pendingRecipe.DisplayName or pending.WeaponKey),
+			-- Lets the HUD tell "this one needs confirming" apart from every other rejection without
+			-- parsing the reason string, so it can raise the popup instead of just toasting.
+			NeedsDiscardConfirm = true,
+			Pending = pending,
+		}
 	end
 
 	local spent = DataService.TrySpend(player, recipe.Cost)
@@ -177,25 +190,106 @@ Remotes.ForgeWeapon.OnServerInvoke = function(player: Player, weaponKey: string,
 		Rarity = rarity,
 		Affixes = affixes,
 	}
-	table.insert(profile.Weapons, instance)
 
-	-- First weapon ever Forged auto-equips — nothing worse than rolling your very first gun and
-	-- having no idea it isn't actually in your hand yet. Every roll after that stays an explicit
-	-- choice made via EquipWeapon (now in the Inventory panel, not this station's own tab).
+	-- Into the TRAY, not straight into profile.Weapons. Real state rather than presentation, and not
+	-- for efficiency — for the pile: players reroll the same weapon chasing a good one, and if every
+	-- roll landed in the inventory they would drown in junk they then have to sort. The tray is what
+	-- lets a roll be REFUSED, and it survives a relog for the same reason SmeltJob does.
+	--
+	-- Overwriting whatever was already there is the intended behaviour; the guard above is the only
+	-- thing standing in front of it, and only for a genuinely good pending roll.
+	profile.ForgeOutput = instance
+
+	Remotes.InventoryUpdate:FireClient(player, {
+		OreCounts = profile.OreCounts,
+		LuckPotions = profile.LuckPotions,
+		ForgePityCounter = profile.ForgePityCounter,
+		-- `or false`, never a bare nil: a nil-valued entry is dropped from the table before it reaches
+		-- the wire, so the client would keep whatever was in its tray. See CLAUDE.md's InventoryUpdate
+		-- rules. It cannot be nil on THIS path, but every ForgeOutput broadcast is written the same way
+		-- so the one that DOES clear it can never be the odd one out.
+		ForgeOutput = profile.ForgeOutput or false,
+	})
+
+	return { Success = true, Weapon = instance }
+end
+
+-- CollectForgeOutput: moves the pending roll out of the tray and into your inventory for keeps.
+--
+-- Gated to the Forge, like the roll that produced it: the tray is a physical part of the machine,
+-- not a mailbox. (EquipWeapon deliberately is NOT gated — changing your loadout works from
+-- anywhere — but taking a weapon OUT of the Forge is a Forge action.) Nothing is lost by having to
+-- walk back: the tray persists across a relog.
+Remotes.CollectForgeOutput.OnServerInvoke = function(player: Player)
+	if not PlotService.IsPlayerInOwnPlot(player) then
+		return { Success = false, Reason = PlotConfig.NotInBaseMessage }
+	end
+	if not StationService.IsPlayerNearStation(player, "Forge") then
+		return { Success = false, Reason = StationConfig.Types.Forge.NotThereMessage }
+	end
+
+	local profile = DataService.Get(player)
+	if not profile then
+		return { Success = false, Reason = "Profile not loaded" }
+	end
+
+	local instance = profile.ForgeOutput
+	if not instance then
+		return { Success = false, Reason = "Nothing in the tray" }
+	end
+
+	table.insert(profile.Weapons, instance)
+	profile.ForgeOutput = nil
+
+	-- First weapon ever collected auto-equips — nothing worse than rolling your very first gun and
+	-- having no idea it isn't actually in your hand yet. Every one after that stays an explicit
+	-- choice made via EquipWeapon (in the Inventory panel). This moved here from ForgeWeapon along
+	-- with the insert, and had to: a weapon still sitting in the tray is not owned yet, so it must not
+	-- be equippable.
 	if not profile.EquippedWeaponId and #profile.Weapons == 1 then
-		profile.EquippedWeaponId = id
+		profile.EquippedWeaponId = instance.Id
 		WeaponToolService.SyncEquippedTool(player, instance)
 	end
 
 	Remotes.InventoryUpdate:FireClient(player, {
-		OreCounts = profile.OreCounts,
 		Weapons = profile.Weapons,
-		LuckPotions = profile.LuckPotions,
-		ForgePityCounter = profile.ForgePityCounter,
 		EquippedWeaponId = profile.EquippedWeaponId or false,
+		ForgeOutput = false, -- see ForgeWeapon above: a bare nil would silently not clear the client
 	})
 
 	return { Success = true, Weapon = instance }
+end
+
+-- TrashForgeOutput: throws the pending roll away.
+--
+-- NO REFUND, deliberately. You paid for the ROLL, not for the gun. It also makes the player weigh
+-- keeping a mediocre weapon against going and buying upgrades first, which is the intended
+-- pressure — and any refund would have to stay strictly under the recipe cost, or forge-then-scrap
+-- becomes a farm loop.
+Remotes.TrashForgeOutput.OnServerInvoke = function(player: Player)
+	if not PlotService.IsPlayerInOwnPlot(player) then
+		return { Success = false, Reason = PlotConfig.NotInBaseMessage }
+	end
+	if not StationService.IsPlayerNearStation(player, "Forge") then
+		return { Success = false, Reason = StationConfig.Types.Forge.NotThereMessage }
+	end
+
+	local profile = DataService.Get(player)
+	if not profile then
+		return { Success = false, Reason = "Profile not loaded" }
+	end
+
+	if not profile.ForgeOutput then
+		return { Success = false, Reason = "Nothing in the tray" }
+	end
+
+	profile.ForgeOutput = nil
+
+	Remotes.InventoryUpdate:FireClient(player, {
+		ForgeOutput = false,
+	})
+
+	return { Success = true }
 end
 
 -- EquipWeapon: sets which single owned weapon INSTANCE actually counts toward combat DPS (see

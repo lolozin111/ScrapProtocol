@@ -139,6 +139,16 @@ local function defaultProfile()
 		ForgePityCounter = 0,   -- rolls since your last Rare-or-better — see ForgeConfig.Pity and
 			-- ForgeService.ForgeWeapon. Resets to 0 the moment a roll (forced or natural) lands
 			-- Pity.MinRarity or better; forces the next roll to that floor once it hits Threshold.
+			-- ForgeOutput (table?) is deliberately NOT listed here, same reasoning as SmeltJob and
+			-- DecodeJob below: pairs() skips nil-valued entries so a `= nil` line would be a no-op,
+			-- and nil reads correctly as "nothing waiting in the tray". It is one FORGED WEAPON
+			-- INSTANCE — the same { Id, WeaponKey, Rarity, Affixes } shape as an entry in Weapons —
+			-- sitting in the Forge's output tray, not yet owned. ForgeService's CollectForgeOutput
+			-- moves it into Weapons, TrashForgeOutput drops it, and a fresh roll overwrites it.
+			-- Always broadcast as `ForgeOutput or false` so a clear survives the network.
+			--
+			-- NOTE it holds a real Id minted from NextWeaponId at roll time, so collecting never has
+			-- to mint one and two pending rolls can never collide on an Id.
 		RefinedOreCounts = {},  -- [refinedKey] = amount owned — see RefinedOreConfig.lua/
 			-- SmeltService.lua. Keyed by RefinedKey (e.g. "SteelIngot"), not the raw ore key it came
 			-- from. Starts empty and fills in on demand, same convention as CraftedRobots below.

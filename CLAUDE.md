@@ -76,12 +76,16 @@ locally several times and the copies drifted:
   between `MiningService` and `MineShaftService` with a comment warning about the drift.
 - `Shared/Wallet.lua` — where a cost key lives on a profile, how much you have, what it's called.
   Shared (not server-only) so the HUD can't disagree with what the server will charge.
-- `ModConfig.ApplyMods(fireRate, damage, hp, itemKey, profile)` and
-  `CraftingRecipes.MaxDeployedRobots(profile)` — same idea, same reason. Both used to live inside
-  server-only modules (`CombatMath.lua`'s local `applyMods`, `CraftingService`'s inline slot math)
-  until the Welding Station's rig diagram needed the same numbers on the client, at which point the
-  choice was one shared function or two implementations that drift. `CombatMath.applyMods` is now a
-  one-line delegate. Anything the HUD has to AGREE with the server about belongs in `Shared/`.
+- `ModConfig.ApplyMods(fireRate, damage, hp, itemKey, profile)`,
+  `CraftingRecipes.MaxDeployedRobots(profile)`, and `ForgeConfig`'s `RarityIndex` /
+  `NeedsDiscardConfirm` / `LuckPoints` / `RollWeights` / `RollChances` — same idea, same reason. All
+  of them used to live inside server-only modules (`CombatMath.lua`'s local `applyMods`,
+  `CraftingService`'s inline slot math, `ForgeService`'s `rarityIndex`/`rollRarity`) until a
+  redesigned HUD panel needed the same numbers client-side, at which point the choice was one shared
+  function or two implementations that drift. `CombatMath.applyMods` and `ForgeService.rarityIndex`
+  are now one-line delegates and `rollRarity` walks the shared weights. Anything the HUD has to AGREE
+  with the server about belongs in `Shared/` — the Crucible's odds bar must not be able to advertise
+  odds the roll will not honour.
 
 **`StarterPlayerScripts/HudKit.lua` is the client-side equivalent** — the shared foundation every
 HUD panel is built out of, not just the palette (`HudKit.COLOR`) it started as. It now also carries
@@ -169,29 +173,30 @@ trick (bundling related UI elements into one table — `inv`, `research`, `turre
 `pity` — instead of one local per frame) bought back registers for a while, but the file kept
 growing anyway, so four of those five groups have since been lifted into their own ModuleScripts
 beside `HudKit.lua` and `ModPicker.lua`: `ShopPanel.lua`, `TurretPanel.lua`, `ResearchPanel.lua`, and
-`InventoryPanel.lua`. `WeldingPanel.lua` joined them later for a different reason — not a grouped
-table but a whole STATION (all four of the Welding Station's tabs), extracted as it was rewritten, so
-the rewrite landed ~2,000 lines in a new file instead of in this one. That is the pattern to follow
-for the remaining phase-3 menus: a station's tabs move out as they're redone, not after. It is also
-where the phase-3 station shape lives — rail of candidates left, selected one rendered large right,
-action in the footer, with the rail/title/stat-bar/footer builders shared by all four tabs — so a
-new tab in that station is a stage, not a screen.
+`InventoryPanel.lua`. `WeldingPanel.lua` and `ForgePanel.lua` joined them later for a different
+reason — not grouped tables but whole redesigned tabs (all four of the Welding Station's, and the
+Forge's Weapons tab), extracted as they were rewritten rather than after. That is the pattern:
+a station's tabs move out as they are redone. `WeldingPanel.lua` is also where the phase-3 station
+shape lives — rail of candidates left, selected one rendered large right, action in the footer, with
+the rail/title/stat-bar/footer builders shared by all four tabs — so a new tab in that station is a
+stage, not a screen.
+
+`MainHud.client.lua` is ~3,600 lines and ~144 top-level locals after all of that, well clear of the
+ceiling for the first time in a while.
 `MainHud.client.lua` went from 4121 lines / ~164 top-level locals to 3121
 lines / ~151 — a smaller drop than the four extractions suggest, because the grouped-table trick had
 already banked most of the register savings; each extraction only nets back one local (`require`)
 minus however many aliases MainHud still needs for functions the extracted module exposes back to
 it. Don't expect a bigger win from moving `pity` too.
 
-`pity` stayed behind on purpose, not by oversight: `refreshPityBar`/`refreshPotionButton` are
-forward-declared (`local refreshPityBar` / `local refreshPotionButton`, ~line 561-562) and *called*
-from the Forge tab (~line 726-727) before they're assigned their real function bodies (~line 1497
-and ~1547) — a self-reference pattern that only works within one script's compile unit. Move `pity`
-to a module and that forward-declare/assign-later relationship crosses a module boundary, which
-doesn't error, it just silently stops updating the bar (the module's own local never gets rebound to
-MainHud's later assignment). `setForgeWidgetsVisible` is also called from both the Forge and craft
-sections, and `potionButton` itself is a separate top-level local, not a member of the `pity` group
-— extracting `pity` cleanly would mean untangling all three first, which nobody has needed enough to
-do yet.
+`pity` stayed behind for a long time on purpose — `refreshPityBar`/`refreshPotionButton` were
+forward-declared and CALLED from the Forge tab before they were assigned, a self-reference that only
+works within one compile unit, and `setForgeWidgetsVisible` was called from two more places. That
+whole tangle is GONE: the Crucible (`ForgePanel.lua`) draws pity as its own HEAT gauge and the Luck
+Potion as its own additive slot, so the docked widgets, their refreshers, and the visibility toggle
+were all deleted rather than moved. Worth knowing as the general lesson: a forward-declare tangle
+that blocks an extraction is usually a sign the thing wants REDESIGNING out of existence, not
+relocating.
 
 The precedent for the next panel: `ModPicker.lua`, `ShopPanel.lua`, and `TurretPanel.lua` all
 self-boot their whole UI as top-level code the first time they're `require`d, because they only ever

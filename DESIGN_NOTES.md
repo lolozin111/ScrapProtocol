@@ -2182,8 +2182,10 @@ output-tray decision above). Popups B underpins all four, so its plate/scrim/cap
 building as a shared HudKit helper before the first menu that raises one.
 
 **Progress (2026-09-02).** Done AND verified in Studio by the user: `HudKit.modal` (the Popups B
-plate), per-station panel sizing, Smelting B, and Workbench B. Built but NOT yet verified in Studio:
-the whole Welding Station — Robots (Welding A), then Mods, Turrets and Drones. Not started: Forge A.
+plate), per-station panel sizing, Smelting B, Workbench B, and the whole Welding Station (Robots =
+Welding A, plus Mods, Turrets and Drones). Built but NOT yet verified in Studio: Forge A, the
+Crucible. **Section C is now built end to end** — every menu in the picks table has shipped. What is
+left of the design round is the Case-opening A/B hybrid, which was never in the build order.
 
 **Welding A, as built (`StarterPlayerScripts/WeldingPanel.lua`).** All four of the station's tabs.
 Four things came out of it that the Forge build should reuse or knows about:
@@ -2233,6 +2235,47 @@ Two refactors fell out of doing three more tabs rather than one, both worth know
 `drawRig` split into a general `drawChassis(spec, opts)` plus a robot-specific wrapper, and
 `drawLeader` now takes a card LAYOUT rather than a mod-slot index — so a one-socket machine can reuse
 both. The rail, stage title, stat bars and footer are likewise one implementation each.
+
+**Forge A, as built (`StarterPlayerScripts/ForgePanel.lua`).** The Weapons tab only; Smelting is the
+Batch Dial and stays in MainHud. Three columns as drawn — input bay, chamber, output tray — with
+`HudKit.ring` as the chamber's sweep (which is what that helper was built anticipating) and pity
+redrawn as the machine's HEAT gauge.
+
+**The output tray shipped as decided: real state (option (a)).** `profile.ForgeOutput` is a nil-able
+table following the `SmeltJob`/`DecodeJob` convention exactly — absent from `defaultProfile` so nil
+already reads as "nothing pending" and no backfill is needed, always broadcast as `ForgeOutput or
+false`. Two new RemoteFunctions, `CollectForgeOutput` and `TrashForgeOutput`, both gated to
+plot+Forge like the roll that produced the thing. The Id is minted at ROLL time, not at collect time,
+so two pending rolls can never collide on one.
+
+Everything in the decided rules list above is in: no refund on trash, a fresh roll overwrites the
+tray, and `DiscardConfirmMinRarity` ("Epic", compared through `ForgeConfig.RarityIndex`) raises a
+confirmation the SERVER independently enforces via a `confirmDiscard` flag on `ForgeWeapon`. The
+rejection carries `NeedsDiscardConfirm = true` so the HUD can tell a question from a refusal without
+parsing the reason string. Note the "your first weapon auto-equips" convenience moved from
+`ForgeWeapon` to `CollectForgeOutput` — a weapon still in the tray is not owned, so it must not be
+equippable.
+
+**More shared math moved into config, same rule as the Welding round.** `ForgeConfig` gained
+`RarityIndex`, `NeedsDiscardConfirm`, `LuckPoints`, `RollWeights` and `RollChances`;
+`ForgeService.rarityIndex`/`rollRarity` now delegate. The chamber's odds bar normalises the SAME
+weights the roll walks, so it cannot advertise odds the server will not honour — which for a
+gambling screen is not a tidiness point.
+
+**What the mockup did not settle, and what was decided instead.** It drew one dropdown labelled
+Family and no way to pick WHICH gun in that family, but the input bay has to price a specific
+recipe — so there are two rows of the same drawn control, Family and Weapon. And it drew a single
+Collect button where the decision above had already called for Collect and Trash side by side; the
+decision won.
+
+**The docked pity bar and Luck Potion button are DELETED**, not hidden — heat and the additive slot
+say the same two things inside the machine. That took `forgeDock`, `pity`, `potionButton`,
+`potionPlaceholderLabel`, `potionBadge`, `POTION_BUTTON_SIZE`, `refreshPityBar`,
+`refreshPotionButton` and `setForgeWidgetsVisible` out of `MainHud.client.lua` with it, and with
+THOSE went the forward-declare tangle CLAUDE.md documented as the reason `pity` could never be
+extracted. The bottom action row no longer hides itself when the Forge opens, because the dock it was
+avoiding is gone. MainHud is down to ~3,600 lines and ~144 top-level locals, from 4,248 / 161 at the
+start of the phase.
 
 **Where the build deviates from the mockup, and why.** Three, all deliberate:
 

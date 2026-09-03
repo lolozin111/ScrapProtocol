@@ -22,7 +22,6 @@ local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 
-local CraftingRecipes = require(ReplicatedStorage.Shared.CraftingRecipes)
 local OreConfig = require(ReplicatedStorage.Shared.OreConfig)
 local NodeConfig = require(ReplicatedStorage.Shared.NodeConfig)
 local AutoMinerConfig = require(ReplicatedStorage.Shared.AutoMinerConfig)
@@ -30,7 +29,6 @@ local RaidEnergyConfig = require(ReplicatedStorage.Shared.RaidEnergyConfig)
 local MineShaftConfig = require(ReplicatedStorage.Shared.MineShaftConfig)
 local ModConfig = require(ReplicatedStorage.Shared.ModConfig)
 local StationConfig = require(ReplicatedStorage.Shared.StationConfig)
-local ForgeConfig = require(ReplicatedStorage.Shared.ForgeConfig)
 local WeaponFamilyConfig = require(ReplicatedStorage.Shared.WeaponFamilyConfig)
 local ToolModConfig = require(ReplicatedStorage.Shared.ToolModConfig)
 local DroneConfig = require(ReplicatedStorage.Shared.DroneConfig)
@@ -56,6 +54,7 @@ local TurretPanel = require(script.Parent.TurretPanel)
 local ResearchPanel = require(script.Parent.ResearchPanel)
 local InventoryPanel = require(script.Parent.InventoryPanel)
 local WeldingPanel = require(script.Parent.WeldingPanel)
+local ForgePanel = require(script.Parent.ForgePanel)
 
 
 local runActive = false
@@ -378,12 +377,11 @@ local craftSurface, craftFrame = Hud.plate({
 })
 
 -- craftClose is forward-declared (no value yet) so the header's onClose closure just below can
--- capture it as an upvalue now and see the real function once it's assigned much further down,
--- alongside setForgeWidgetsVisible's own definition -- same "capture now, assign later" pattern
--- InventoryPanel.lua uses for closeInvDetail. It can't be defined inline here: the real close
--- behavior needs setForgeWidgetsVisible, which isn't declared until further down this same chunk,
--- and a closure built here would resolve that name against a `local` that doesn't exist yet
--- (reading as a nil global) rather than the one declared later in this file.
+-- capture it as an upvalue now and see the real function once it's assigned much further down --
+-- the same "capture now, assign later" pattern InventoryPanel.lua uses for closeInvDetail. It is
+-- assigned down with the bottom action row rather than here because that is where it has always
+-- lived; nothing in its body needs anything from down there any more, now that the Forge's docked
+-- widgets are gone.
 local craftClose
 
 -- There's no standalone "Workbench" button anymore — this menu only ever opens FROM a physical
@@ -1071,222 +1069,25 @@ local weldingPanel = WeldingPanel.new({
 	end,
 })
 
-----------------------------------------------------------------------
--- Forge tab — replaces the old flat "craft one of each weapon type" list. Every weapon in the
--- game is Forged now: rolling the same weapon type twice mints two independent instances, each
--- with its own random Rarity (ModConfig.Rarities) and Affixes (ForgeConfig.AffixPool). Luck (both
--- your Forge's own permanent ForgeTier and the consumable LuckPotion) bends the rarity odds, and
--- Pity guarantees a floor after a long enough unlucky streak — see ForgeService.rollRarity/
--- ForgeWeapon server-side for the actual math this UI is just presenting.
---
--- This tab is craft-only, deliberately — equipping, mod slots, and browsing what you already own
--- all live in the Inventory panel instead (see that section further down). Rolling a weapon here
--- used to also drop a full owned-instance list with Equip buttons right below the roll buttons,
--- which just duplicated the Inventory and made "click Forge" and "click Equip" easy to fumble
--- together. All this tab shows now is your Luck/Pity status and the roll buttons themselves, plus
--- a small "last result" readout so a roll doesn't feel like it vanished into the void.
-----------------------------------------------------------------------
+-- The Forge's Weapons tab — the Crucible (HUD phase 3, design round section C). Its Smelting tab is
+-- the Batch Dial and stays in this file. Constructed alongside the Welding panel because it takes
+-- the same three things and has the same `refresh` forward-reference constraint.
+local forgePanel = ForgePanel.new({
+	listFrame = listFrame,
+	craftHeader = craftHeader,
+	refresh = function()
+		renderCraftList()
+	end,
+})
 
--- Whether the player's NEXT Forge click should burn one Luck Potion. Client-side-only toggle —
--- ForgeWeapon re-validates Potion ownership server-side regardless, so this can never desync into
--- spending a Potion the player doesn't have.
-local forgeUsePotion = false
-
--- What the last successful Forge roll produced, purely for the "last result" readout below — not
--- server state, just cleared back to nil on a fresh HUD load. { WeaponKey, Rarity, Affixes }.
-local lastForgedResult = nil
-
--- Which family's guns the Forge is currently listing. nil = the family picker itself, which is
--- what the tab opens on. A flat list of every weapon was fine at four and unreadable at
--- eighteen — see WeaponFamilyConfig.
-local forgeFamily = nil
-
--- Forward-declared, same reason as renderCraftList below: the Forge roll button (defined here,
--- earlier in the file) needs to refresh the persistent pity bar / potion button (defined later,
--- in the "Forge status HUD" section, since the potion button needs getItemIcon which isn't
--- available yet at this point in the script) the instant a roll lands, not just whenever the next
--- InventoryUpdate patch happens to arrive.
-local refreshPityBar
-local refreshPotionButton
-
--- Forward-declared: setForgeWidgetsVisible (assigned in the "Forge status HUD" section) hides the
--- bottom action row (Inventory/Start Defense/etc.) while the Forge-docked pity bar and Potion
--- button are showing — on shorter viewports the docked row sits low enough to overlap the action
--- row otherwise (see the screenshot that prompted this). actionRow itself isn't created until much
--- later in the file (down by the other bottom-of-screen panels), hence the forward declaration.
-local actionRow
-
--- Forward-declared for the same reason as actionRow just above: setForgeWidgetsVisible also needs
--- to hide the Test Mode button while the Forge widgets are up (it used to get hidden for free as
--- a side effect of living inside actionRow — see that button's own section for why it doesn't
--- anymore), but the table only gets built way down in the "Player Test Mode" section, and even
--- then only for an admin. `testMode.button` is guarded against nil at the call site for exactly
--- that reason.
-local testMode
-
--- Forward-declared: renderCraftList's "Smelting" branch (below) needs to call this, but the real
--- definition lives in the "Smelting" section much further down, same ordering constraint as
--- refreshPityBar/refreshPotionButton above. (It used to additionally depend on makeItemTile/
--- showInvDetail and a popup frame of its own; the Batch Dial rebuild dropped all three when the
--- ore picker became a permanent rail, so only the renderCraftList cycle keeps it down there now.)
-local renderSmeltingTab
-
-local function renderForgeWeapons()
-	local forgeTier = Hud.profile.ForgeTier or 1
-	local forgeTierData = ForgeConfig.ForgeTiers[forgeTier]
-	local nextForgeTierData = ForgeConfig.ForgeTiers[forgeTier + 1]
-
-	if nextForgeTierData then
-		local cost = ForgeConfig.ForgeTierCosts[forgeTier + 1]
-		Hud.makeRow(
-			("Forge: %s -> %s"):format(forgeTierData and forgeTierData.Name or "?", nextForgeTierData.Name),
-			("Currently +%d luck · %s"):format(forgeTierData and forgeTierData.Bonus or 0, cost and Hud.costString(cost) or "Not configured"),
-			"Upgrade",
-			function()
-				local result = Remotes.UpgradeForgeTier:InvokeServer()
-				if not result.Success then
-					Hud.showFailure("Forge upgrade failed", result.Reason)
-				end
-			end
-		).Parent = listFrame
-	else
-		Hud.makeRow(
-			forgeTierData and forgeTierData.Name or "Forge",
-			("+%d luck · max tier reached"):format(forgeTierData and forgeTierData.Bonus or 0),
-			"Maxed",
-			function() end
-		).Parent = listFrame
-	end
-
-	Hud.makeRow(
-		("Luck Potion (%d owned)"):format(Hud.profile.LuckPotions or 0),
-		("%s · +%d luck, consumed on your next roll"):format(Hud.costString(ForgeConfig.LuckPotion.Cost), ForgeConfig.LuckPotion.Bonus),
-		"Craft",
-		function()
-			local result = Remotes.CraftLuckPotion:InvokeServer()
-			if not result.Success then
-				Hud.showFailure("Craft Luck Potion failed", result.Reason)
-			end
-		end
-	).Parent = listFrame
-
-	-- The "use a Potion on next roll" toggle and the Pity progress readout both moved OUT of this
-	-- list per direct feedback — see the "Forge status HUD" section further down for the persistent
-	-- pity bar and Luck Potion button that replaced them (positioned under the top-left currency
-	-- readout, always visible, not just while this menu happens to be open).
-
-	if lastForgedResult then
-		local recipe = CraftingRecipes.Weapons[lastForgedResult.WeaponKey]
-		local rarityData = ModConfig.Rarities[lastForgedResult.Rarity]
-		local rarityName = rarityData and rarityData.DisplayName or lastForgedResult.Rarity
-		Hud.makeRow(
-			("Last Forged: [%s] %s"):format(rarityName, recipe and recipe.DisplayName or lastForgedResult.WeaponKey),
-			affixSummary(lastForgedResult.Affixes),
-			"OK",
-			function() end
-		).Parent = listFrame
-	end
-
-	----------------------------------------------------------------------
-	-- Family picker. Locked families are still SHOWN, greyed, naming the blueprint that opens them —
-	-- a player who can't see what they're missing has no reason to chase a case. Locked rows just
-	-- don't navigate anywhere.
-	----------------------------------------------------------------------
-
-	if not forgeFamily then
-		for _, familyKey in ipairs(WeaponFamilyConfig.Order) do
-			local family = WeaponFamilyConfig.Families[familyKey]
-			local unlocked = WeaponFamilyConfig.IsUnlocked(Hud.profile, familyKey)
-
-			local count = 0
-			for _, recipe in pairs(CraftingRecipes.Weapons) do
-				if recipe.Family == familyKey then
-					count += 1
-				end
-			end
-
-			Hud.makeRow(
-				family.DisplayName,
-				unlocked
-					and ("%d weapon%s · %s"):format(count, count == 1 and "" or "s", family.Description)
-					or ("LOCKED · find the %s in a Black Market case"):format(
-						WeaponFamilyConfig.BlueprintName(familyKey)),
-				unlocked and "Open" or "Locked",
-				function()
-					if not unlocked then
-						Hud.showFailure(
-							("%s is locked"):format(family.DisplayName),
-							("Its blueprint (%s) drops from Legendary rolls at the Black Market."):format(
-								WeaponFamilyConfig.BlueprintName(familyKey)))
-						return
-					end
-					forgeFamily = familyKey
-					renderCraftList()
-				end
-			).Parent = listFrame
-		end
-		return
-	end
-
-	----------------------------------------------------------------------
-	-- One family's roll rows. Unlike the old flat-craft list there's no "already own it" gate —
-	-- every click mints a brand-new independent instance.
-	----------------------------------------------------------------------
-
-	local familyData = WeaponFamilyConfig.Families[forgeFamily]
-	Hud.makeRow(
-		"< Back to families",
-		familyData and familyData.Description or "",
-		"Back",
-		function()
-			forgeFamily = nil
-			renderCraftList()
-		end
-	).Parent = listFrame
-
-	local keys = {}
-	for key, recipe in pairs(CraftingRecipes.Weapons) do
-		if recipe.Family == forgeFamily then
-			table.insert(keys, key)
-		end
-	end
-	table.sort(keys, function(a, b)
-		return CraftingRecipes.Weapons[a].Tier < CraftingRecipes.Weapons[b].Tier
-	end)
-	for _, key in ipairs(keys) do
-		local recipe = CraftingRecipes.Weapons[key]
-
-		-- Two stat lines are worth surfacing because they change how a gun is USED, not just how hard
-		-- it hits: a headshot bonus tells you to aim high, a wield penalty tells you it costs mobility.
-		local notes = ("%s · Base %.1f dmg x %.1f/s"):format(
-			Hud.costString(recipe.Cost), recipe.BaseDamage, recipe.FireRate)
-		if recipe.HeadshotMultiplier and recipe.HeadshotMultiplier > 1 then
-			notes ..= ("  ·  x%.1f headshots"):format(recipe.HeadshotMultiplier)
-		end
-		if recipe.WieldSpeedMultiplier then
-			notes ..= ("  ·  %d%% move speed while held"):format(
-				math.floor(recipe.WieldSpeedMultiplier * 100 + 0.5))
-		end
-
-		Hud.makeRow(
-			("T%d  %s"):format(recipe.Tier, recipe.DisplayName),
-			notes,
-			"Forge",
-			function()
-				local usePotion = forgeUsePotion and (Hud.profile.LuckPotions or 0) > 0
-				local result = Remotes.ForgeWeapon:InvokeServer(key, usePotion)
-				if not result.Success then
-					Hud.showFailure("Forge failed", result.Reason)
-				else
-					forgeUsePotion = false -- one-shot regardless of whether a Potion actually got spent
-					lastForgedResult = result.Weapon
-					refreshPotionButton() -- reflects both the reset toggle and the (likely) spent Potion
-					refreshPityBar() -- snappier than waiting on the InventoryUpdate patch that follows
-					renderCraftList()
-				end
-			end
-		).Parent = listFrame
-	end
+-- Both station panels park a readout in the shared plate header, which renderCraftList's sweep
+-- deliberately does not clear (it only empties listFrame). Hiding ALL of them up front and letting
+-- whichever panel is about to draw show its own is the only arrangement where a readout cannot be
+-- left over on a tab that does not own it — one-by-one hiding at each branch is a rule someone
+-- forgets the next time a panel is added.
+local function hideHeaderReadouts()
+	weldingPanel.hideReadout()
+	forgePanel.hideReadout()
 end
 
 ----------------------------------------------------------------------
@@ -1638,15 +1439,12 @@ renderCraftList = function()
 
 	-- All four Welding Station tabs live in WeldingPanel.lua — Robots, Mods, Turrets and Drones are
 	-- declared by no other station (see StationConfig.Types), so the tab name alone routes them.
+	hideHeaderReadouts()
+
 	if WELDING_TABS[currentTab] then
 		weldingPanel.render(currentTab)
 		return
 	end
-
-	-- The Welding tabs' header readout lives in the panel HEADER, which the sweep above deliberately
-	-- doesn't touch (it only clears listFrame). Hidden here rather than by the panel, so it can never
-	-- sit there over the Forge's Weapons tab still claiming a deploy count.
-	weldingPanel.hideReadout()
 
 	if currentTab == "Auto-Miner" then
 		renderAutoMinerRow()
@@ -1672,7 +1470,7 @@ renderCraftList = function()
 		renderDecodeRow()
 		return
 	elseif currentTab == "Weapons" then
-		renderForgeWeapons()
+		forgePanel.render()
 		return
 	elseif currentTab == "Smelting" then
 		renderSmeltingTab()
@@ -1878,182 +1676,6 @@ local makeItemTile = inventoryPanel.makeItemTile
 local TILE_SIZE = inventoryPanel.TILE_SIZE
 
 ----------------------------------------------------------------------
--- Forge status HUD — a pity progress bar and a Luck Potion button, both pulled out of the Forge's
--- own Weapons tab per direct feedback. First pass put them in a permanent column under the
--- top-left currency readout; second pass ("currently the pity and all that appears even when the
--- forge UI is not open, please only have the pity appear when the forge UI is open, and make it
--- under the forge GUI please for some cool layout thing, and make the potion close to the forge UI
--- too") moved both to dock directly under `craftFrame` instead, as one row spanning its width, and
--- made them Forge-only — they show up exactly when the Forge's Weapons tab is what's open, hidden
--- for the Workbench/Welding Station and hidden again the moment the menu closes. See
--- `setForgeWidgetsVisible` below (called from `openStationMenu` and `craftClose`).
-----------------------------------------------------------------------
-
-local POTION_BUTTON_SIZE = 64
-
--- These two widgets dock under the CRAFT PLATE'S bottom edge, but they are screenGui siblings
--- rather than children of it, so they can only find that edge by doing the plate's centring maths
--- themselves. That was fine while the plate was permanently 640x424 — the numbers were literally
--- written as 320/212, half of each — but the plate is now sized per station
--- (StationConfig.PanelSize), and the Forge is the very station that grows. Left as constants, these
--- would have kept docking to where a 640x424 panel's edge USED to be: the potion button floating
--- inside the taller Forge plate instead of beneath it, and the pity bar 120px short of its right
--- edge. Nothing would error; it would just quietly look broken, and only on the Forge.
---
--- One grouped table rather than four top-level locals, same register-budget reasoning as `pity`
--- below and the other grouped UI tables in this file.
-local forgeDock = {
-	size = StationConfig.Types.Forge.PanelSize or StationConfig.DefaultPanelSize,
-	gap = 10,
-}
-
--- Docked under craftFrame's bottom edge (Position 0.5,-212 + Size 0,424 -> bottom sits at
--- One table instead of 4 separate top-level locals: Luau caps a function scope at 200
--- locals and this file's main chunk hit that ceiling. Grouping UI element references costs
--- nothing at runtime and buys back a register per element.
-local pity = {}
--- the Forge plate's bottom edge), one forgeDock.gap below it. potionButton is a fixed 64-wide
--- square on the left; pity.barFrame fills the remaining width out to that plate's right edge —
--- together they span exactly as wide as the Forge menu above them, not just huddled off to one
--- side of it.
---
--- Every offset here is DERIVED from forgeDock.size rather than written out, so the pair follows the
--- Forge's configured panel size instead of needing a matching hand-edit each time it changes. See
--- forgeDock's own comment above for what went wrong when these were constants.
---
--- pity.barFrame stays bound to the plate's SHELL (not renamed — setForgeWidgetsVisible below reads
--- pity.barFrame.Visible, and the "Do not break" list forbids renaming pity's existing fields);
--- pity.surface is the new field for the inset content surface everything below parents into.
-pity.surface, pity.barFrame = Hud.plate({
-	Name = "ForgePity",
-	Position = UDim2.new(
-		0.5,
-		-forgeDock.size.X / 2 + POTION_BUTTON_SIZE + forgeDock.gap,
-		0.5,
-		forgeDock.size.Y / 2 + forgeDock.gap * 2
-	),
-	Size = UDim2.new(0, forgeDock.size.X - POTION_BUTTON_SIZE - forgeDock.gap, 0, 44),
-	Visible = false,
-	Parent = Hud.screenGui,
-})
-
-pity.caption = Hud.new("TextLabel", {
-	BackgroundTransparency = 1,
-	Position = UDim2.new(0, 10, 0, 4),
-	Size = UDim2.new(1, -20, 0, 16),
-	Font = Enum.Font.Code,
-	TextXAlignment = Enum.TextXAlignment.Left,
-	TextColor3 = Hud.COLOR.Muted,
-	TextSize = 13,
-	Text = "Forge Pity: 0 / 0",
-	Parent = pity.surface,
-})
-
-pity.track = Hud.new("Frame", {
-	BackgroundColor3 = Hud.COLOR.PanelLight,
-	Position = UDim2.new(0, 10, 0, 24),
-	Size = UDim2.new(1, -20, 0, 12),
-	Parent = pity.surface,
-}, { Hud.corner(4) })
-
-pity.fill = Hud.new("Frame", {
-	BackgroundColor3 = Hud.COLOR.Accent,
-	Size = UDim2.new(0, 0, 1, 0),
-	Parent = pity.track,
-}, { Hud.corner(4) })
-
--- Assigns into the `local refreshPityBar` forward-declared up in the Forge tab section, so the
--- Forge roll button (defined earlier in the file) can call this the instant a roll lands rather
--- than waiting on the next InventoryUpdate patch — see that section's comment for why the forward
--- declaration exists at all.
-refreshPityBar = function()
-	local counter = Hud.profile.ForgePityCounter or 0
-	local threshold = ForgeConfig.Pity.Threshold
-	pity.caption.Text = ("Forge Pity: %d / %d (%s+)"):format(counter, threshold, ForgeConfig.Pity.MinRarity)
-	local ratio = threshold > 0 and math.clamp(counter / threshold, 0, 1) or 0
-	pity.fill.Size = UDim2.new(ratio, 0, 1, 0)
-end
-refreshPityBar()
-
-local potionButton = Hud.new("ImageButton", {
-	Name = "LuckPotionButton",
-	BackgroundColor3 = Hud.COLOR.PanelLight,
-	AutoButtonColor = false,
-	Image = "",
-	ScaleType = Enum.ScaleType.Fit,
-	Position = UDim2.new(0.5, -forgeDock.size.X / 2, 0.5, forgeDock.size.Y / 2 + forgeDock.gap),
-	Size = UDim2.new(0, POTION_BUTTON_SIZE, 0, POTION_BUTTON_SIZE),
-	Visible = false,
-	Parent = Hud.screenGui,
-}, { Hud.corner(8), Hud.stroke() })
-
--- Same "no icon yet? fall back to plain text" pattern as makeItemTile's placeholder — looked up
--- via Hud.getItemIcon("LuckPotion"), so dropping an ImageLabel/ImageButton/Decal named exactly
--- "LuckPotion" into ReplicatedStorage.ItemIcons picks it up automatically, same convention as
--- every other icon in this project.
-local potionPlaceholderLabel = Hud.new("TextLabel", {
-	BackgroundTransparency = 1,
-	Position = UDim2.new(0, 3, 0, 3),
-	Size = UDim2.new(1, -6, 1, -6),
-	Font = Enum.Font.SourceSansBold,
-	TextColor3 = Hud.COLOR.Muted,
-	TextSize = 12,
-	TextWrapped = true,
-	Text = "Luck\nPotion",
-	Parent = potionButton,
-})
-
-local potionBadge = Hud.new("TextLabel", {
-	BackgroundColor3 = Hud.COLOR.Panel,
-	Position = UDim2.new(1, -24, 1, -18),
-	Size = UDim2.new(0, 22, 0, 16),
-	Font = Enum.Font.Code,
-	TextColor3 = Hud.COLOR.Text,
-	TextSize = 11,
-	Text = "0",
-	Parent = potionButton,
-}, { Hud.corner(4) })
-
--- Assigns into the `local refreshPotionButton` forward-declared up in the Forge tab section, same
--- reason as refreshPityBar above.
-refreshPotionButton = function()
-	local icon = Hud.getItemIcon("LuckPotion")
-	potionButton.Image = icon or ""
-	potionPlaceholderLabel.Visible = not icon
-	potionBadge.Text = tostring(Hud.profile.LuckPotions or 0)
-	potionButton.BackgroundColor3 = forgeUsePotion and Hud.COLOR.AccentDark or Hud.COLOR.PanelLight
-end
-refreshPotionButton()
-
-potionButton.MouseButton1Click:Connect(function()
-	if (Hud.profile.LuckPotions or 0) <= 0 then
-		return
-	end
-	forgeUsePotion = not forgeUsePotion
-	refreshPotionButton() -- the button's own highlight is the only thing that needs to react to this
-end)
-
--- Shows/hides both widgets together — called from openStationMenu (true only when the station
--- just opened is specifically the Forge, false for Workbench/Welding) and from craftClose's
--- handler (always false, whichever menu was open). Kept as one function so the two widgets can
--- never end up toggled independently by a future edit that only remembers to update one of them.
-local function setForgeWidgetsVisible(visible: boolean)
-	pity.barFrame.Visible = visible
-	potionButton.Visible = visible
-	-- The docked row can sit low enough (on shorter viewports) to overlap the bottom action row
-	-- (Inventory/Start Defense/etc.) — hide that row while the Forge ones are up, restore it the
-	-- moment they're hidden again, so the two never visually collide.
-	actionRow.Visible = not visible
-	-- Test Mode used to disappear for free as a side effect of the line above, back when it was
-	-- parented inside actionRow. It now lives anchored to its own corner (see that section for
-	-- why), so nothing hides it unless told to here — without this it sits on screen over the open
-	-- Workbench. Guarded because a non-admin never gets `testMode.button` built at all.
-	if testMode.button then
-		testMode.button.Visible = not visible
-	end
-end
-
-----------------------------------------------------------------------
 -- Ore Smelting — the Forge's second mechanic, alongside rolling weapons (see RefinedOreConfig.lua
 -- /SmeltService.lua). A single square panel inside the Forge's "Smelting" tab with three states:
 -- (1) nothing picked yet — one big centered icon that opens a popup grid into your raw ore
@@ -2114,7 +1736,8 @@ local smelt = {
 	-- The tab's body fills the plate rather than scrolling: listFrame's own height is the plate
 	-- height minus the header/tab stack (116) — see craftFrame's vertical-stack comment — and this
 	-- is that, less the 12px bottom margin the surface's other edges use. Derived from the Forge's
-	-- configured size rather than written out, for the same reason forgeDock's offsets are: the
+	-- configured size rather than written out, for the same reason ForgePanel's and WeldingPanel's
+	-- are: the
 	-- plate is sized per station now, and a constant here would silently stop filling it.
 	height = (StationConfig.Types.Forge.PanelSize or StationConfig.DefaultPanelSize).Y - 116 - 12,
 }
@@ -3024,8 +2647,8 @@ LocalPlayer.CharacterAdded:Connect(bindHealth)
 -- Bottom action buttons
 ----------------------------------------------------------------------
 
--- Assigns into the `local actionRow` forward-declared up in the Forge tab section — see that
--- comment for why setForgeWidgetsVisible needs to reach this row before it technically exists yet.
+-- Assigns into the `local actionRow` forward-declared much further up — see that comment for why
+-- it needs a name before it exists.
 --
 -- Icon-led layout: Inventory/Start Defense/Recall are now square icon buttons with a caption
 -- underneath (see makeActionColumn below), so the row is taller than a single button row and grows
@@ -3051,12 +2674,12 @@ actionRow = Hud.new("Frame", {
 -- No standalone "Workbench" toggle button anymore — per-station gating (openStationMenu, near
 -- the base-station setup further down) is the only way this menu opens now, so there's nothing
 -- generic left to toggle from here. craftClose (forward-declared alongside craftFrame above, and
--- already wired into the panel's Hud.panelHeader close button there) is the only way to close it —
--- assigning it here, rather than at the header, is what lets its body reference
--- setForgeWidgetsVisible, which doesn't exist as a local until just above this line.
+-- already wired into the panel's Hud.panelHeader close button there) is the only way to close it.
+--
+-- The station panels' header readouts need no hiding here: they are parented INSIDE the plate, so
+-- they go with it.
 craftClose = function()
 	craftFrame.Visible = false
-	setForgeWidgetsVisible(false) -- no-op if a non-Forge station was open, harmless either way
 	ModPicker.closeModPicker() -- don't leave the mod picker orphaned open behind a closed Workbench
 end
 
@@ -3273,8 +2896,8 @@ end)
 ----------------------------------------------------------------------
 
 -- Assigns into the `local testMode` forward-declared up in the Forge tab section — see that
--- comment for why setForgeWidgetsVisible needs to reach this table before it technically exists
--- yet, same pattern as actionRow just above it there.
+-- comment for why this table needs a name before it technically exists yet, same pattern as
+-- actionRow just above it there.
 testMode = {}
 
 -- Built (or not) once at startup from the server's honest answer, rather than assumed from
@@ -3350,8 +2973,6 @@ end)
 Remotes.InventoryUpdate.OnClientEvent:Connect(function(patch)
 	Hud.MergeProfile(patch)
 	refreshCurrency()
-	refreshPityBar()
-	refreshPotionButton()
 	if craftFrame.Visible then
 		renderCraftList()
 	end
@@ -3833,7 +3454,6 @@ local function openStationMenu(stationData)
 	craftTitleLabel.Text = stationData.DisplayName:upper() -- static chrome; see craftTitleLabel's own comment
 	craftFrame.Visible = true
 	selectTab(stationData.DefaultTab)
-	setForgeWidgetsVisible(stationData == StationConfig.Types.Forge)
 end
 
 local function setupStation(station: Instance)
@@ -3970,8 +3590,6 @@ task.spawn(function()
 	if initial then
 		Hud.MergeProfile(initial)
 		refreshCurrency()
-		refreshPityBar()
-		refreshPotionButton()
 		refreshResearchButton()
 	end
 end)
