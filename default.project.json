@@ -53,7 +53,7 @@
         "BuyCase": { "$className": "RemoteFunction" },
         "StartDecode": { "$className": "RemoteFunction" },
         "RushDecode": { "$className": "RemoteFunction" },
-        "CaseOpened": { "$className": "RemoteEvent" },
+        "OpenCase": { "$className": "RemoteFunction" },
         "ContrabandAwarded": { "$className": "RemoteEvent" },
         "EquipWeapon": { "$className": "RemoteFunction" },
         "UndeployRobot": { "$className": "RemoteFunction" },

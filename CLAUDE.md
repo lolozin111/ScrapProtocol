@@ -173,10 +173,11 @@ trick (bundling related UI elements into one table — `inv`, `research`, `turre
 `pity` — instead of one local per frame) bought back registers for a while, but the file kept
 growing anyway, so four of those five groups have since been lifted into their own ModuleScripts
 beside `HudKit.lua` and `ModPicker.lua`: `ShopPanel.lua`, `TurretPanel.lua`, `ResearchPanel.lua`, and
-`InventoryPanel.lua`. `WeldingPanel.lua` and `ForgePanel.lua` joined them later for a different
-reason — not grouped tables but whole redesigned tabs (all four of the Welding Station's, and the
-Forge's Weapons tab), extracted as they were rewritten rather than after. That is the pattern:
-a station's tabs move out as they are redone. `WeldingPanel.lua` is also where the phase-3 station
+`InventoryPanel.lua`. `WeldingPanel.lua`, `ForgePanel.lua` and `CasePanel.lua` joined them later for
+a different reason — not grouped tables but whole redesigned tabs (all four of the Welding Station's,
+the Forge's Weapons tab, and the Hacker Machine's Decode tab with its case-opening reveal), extracted
+as they were rewritten rather than after. That is the pattern: a station's tabs move out as they are
+redone. `WeldingPanel.lua` is also where the phase-3 station
 shape lives — rail of candidates left, selected one rendered large right, action in the footer, with
 the rail/title/stat-bar/footer builders shared by all four tabs — so a new tab in that station is a
 stage, not a screen.

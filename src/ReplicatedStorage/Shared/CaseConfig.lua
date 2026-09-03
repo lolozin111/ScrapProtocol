@@ -156,6 +156,51 @@ CaseConfig.Cases = {
 -- Two paths with deliberately different risk (see DESIGN_NOTES): Robux finishes instantly and
 -- safely; Cores finishes instantly but can corrupt the case. The paid path buys certainty, the
 -- grind path is a gamble — which is what stops the Cores rush from simply being the better option.
+-- A "unique" reward — an Ultimate, a weapon-family blueprint, a special pickaxe, a Drone Core — is
+-- a permanent unlock rather than a count, so rolling one you already own can otherwise pay nothing at
+-- all, which is the most disappointing possible outcome of a premium case.
+--
+-- It used to convert to a flat, hand-tuned Contraband consolation per Kind (6 / 10 / 4 / 5). That was
+-- four numbers nobody could relate back to anything, and they paid the SAME whether the duplicate
+-- fell out of a 600-Scrap Scavenged Case or a 12-Contraband Blackline. Now it refunds half of what
+-- the case actually cost, in the currency it cost — so compensation scales with the stake on its own
+-- and there is nothing per-Kind left to tune.
+CaseConfig.DuplicateRefundFraction = 0.5
+
+-- The Robux case has no profile-side Cost to take a fraction of (see Prototype above — it is paid in
+-- Robux through ShopConfig, not out of the profile), so it names its refund outright instead.
+CaseConfig.RobuxDuplicateRefund = { Contraband = 8 }
+
+-- The refund for a duplicate out of `caseKey`, as a cost-shaped table ({ Scrap = 300 }).
+--
+-- Rounded UP, and never below 1: a cheap case refunding zero of something would read as "you got
+-- nothing", which is the exact outcome this mechanic exists to prevent.
+--
+-- SHARED rather than server-only, for the same reason as everything else in this project that both
+-- sides have to agree on: the reveal card tells the player what they are getting back, and a HUD
+-- that works it out its own way is a HUD that can promise a number the server will not pay.
+function CaseConfig.DuplicateRefund(caseKey: string): { [string]: number }
+	local case = CaseConfig.Cases[caseKey]
+	if not case then
+		return {}
+	end
+
+	local refund = {}
+	local priced = false
+	for key, amount in pairs(case.Cost or {}) do
+		refund[key] = math.max(math.ceil(amount * CaseConfig.DuplicateRefundFraction), 1)
+		priced = true
+	end
+
+	if not priced then
+		for key, amount in pairs(CaseConfig.RobuxDuplicateRefund) do
+			refund[key] = amount
+		end
+	end
+
+	return refund
+end
+
 CaseConfig.Rush = {
 	CoresCost = 25,
 	CorruptChance = 0.25, -- lose the case entirely

@@ -42,36 +42,34 @@ local HackerService = {}
 
 local TICK_SECONDS = 2
 
--- Rolls the case, grants it, clears the job, and tells the client what came out. One place, so the
--- natural completion below and both rush paths cannot pay out differently.
+-- Finishing the decode no longer opens the case. It moves it to profile.DecodedCase — cracked, sat
+-- on the bench, waiting — and the player OPENS it themselves with the remote below.
+--
+-- WHY THE SPLIT. The reveal is a roulette that scrolls and lands, and a decode finishes on a timer
+-- that can elapse while the player is down a mine shaft or mid-raid. Paying out silently in that
+-- moment meant the payoff of the whole system was a toast they might not even be looking at. Making
+-- opening its own deliberate act means the animation can only ever run while somebody is watching
+-- it, which is the entire point of having one.
+--
+-- The roll therefore happens at OPEN, not here — as late as it can, same instinct as this file's
+-- original "contents are rolled at completion, not at purchase" note, just moved one step later now
+-- that there is a later step.
 local function completeDecode(player: Player, profile)
 	local job = profile.DecodeJob
 	if not job then
 		return
 	end
 
-	local reward = BlackMarketService.RollCase(job.CaseKey)
 	profile.DecodeJob = nil
-
-	if not reward then
-		-- Config problem rather than a player one — hand the case back rather than eating it.
-		profile.Cases[job.CaseKey] = (profile.Cases[job.CaseKey] or 0) + 1
-		Remotes.InventoryUpdate:FireClient(player, {
-			DecodeJob = false,
-			Cases = profile.Cases,
-		})
-		return
-	end
-
-	BlackMarketService.GrantReward(player, reward)
+	profile.DecodedCase = { CaseKey = job.CaseKey }
 
 	Remotes.InventoryUpdate:FireClient(player, {
 		-- `or false`, same nil-drop reasoning as every other optional field this codebase
 		-- broadcasts: a bare nil vanishes from the table literal before it reaches the wire, so the
 		-- client would never learn the job ended.
 		DecodeJob = false,
+		DecodedCase = profile.DecodedCase or false,
 	})
-	Remotes.CaseOpened:FireClient(player, job.CaseKey, reward)
 end
 
 ----------------------------------------------------------------------
@@ -162,6 +160,53 @@ Remotes.RushDecode.OnServerInvoke = function(player: Player)
 end
 
 -- The Robux path: instant and safe. Called by ShopService once a real purchase is confirmed, never
+-- OpenCase: cracks open a case that has finished decoding. Rolls its contents, grants them, and
+-- hands the reward back so the HUD can run the reveal on it.
+--
+-- Gated to the Hacker Machine like the decode that produced it — the case is physically sitting in
+-- the machine, and a reveal that plays while you are somewhere else is the thing this split exists
+-- to prevent. Nothing is lost by having to walk back: DecodedCase persists across a relog.
+-- Station gate only, no plot check — deliberately matching StartDecode/RushDecode right above.
+-- The Hacker Machine is a shared world location like the Black Market, not part of anyone's base.
+Remotes.OpenCase.OnServerInvoke = function(player: Player)
+	if not StationService.IsPlayerNearStation(player, "Hacker") then
+		return { Success = false, Reason = StationConfig.Types.Hacker.NotThereMessage }
+	end
+
+	local profile = DataService.Get(player)
+	if not profile then
+		return { Success = false, Reason = "Profile not loaded" }
+	end
+
+	local decoded = profile.DecodedCase
+	if not decoded then
+		return { Success = false, Reason = "Nothing decoded to open" }
+	end
+
+	local reward = BlackMarketService.RollCase(decoded.CaseKey)
+	if not reward then
+		-- Config problem rather than a player one — hand the case back rather than eating it.
+		profile.DecodedCase = nil
+		profile.Cases[decoded.CaseKey] = (profile.Cases[decoded.CaseKey] or 0) + 1
+		Remotes.InventoryUpdate:FireClient(player, {
+			DecodedCase = false,
+			Cases = profile.Cases,
+		})
+		return { Success = false, Reason = "That case has no valid contents — it has been returned to you." }
+	end
+
+	-- Cleared BEFORE the grant, so a grant that errors partway cannot leave a case that can be
+	-- opened twice. The reward is already rolled, so nothing is lost by clearing first.
+	profile.DecodedCase = nil
+	BlackMarketService.GrantReward(player, reward, decoded.CaseKey)
+
+	Remotes.InventoryUpdate:FireClient(player, {
+		DecodedCase = false,
+	})
+
+	return { Success = true, CaseKey = decoded.CaseKey, Reward = reward }
+end
+
 -- reachable from the client directly — which is why it is a module function rather than a remote.
 function HackerService.RushWithoutRisk(player: Player): boolean
 	local profile = DataService.Get(player)

@@ -16,6 +16,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local CaseConfig = require(ReplicatedStorage.Shared.CaseConfig)
+local Wallet = require(ReplicatedStorage.Shared.Wallet)
 local StationConfig = require(ReplicatedStorage.Shared.StationConfig)
 local UltimateConfig = require(ReplicatedStorage.Shared.UltimateConfig)
 local WeaponFamilyConfig = require(ReplicatedStorage.Shared.WeaponFamilyConfig)
@@ -111,9 +112,37 @@ function BlackMarketService.RollCase(caseKey: string)
 	return { Rarity = rarity, Kind = entry.Kind, Key = entry.Key, Amount = amount }
 end
 
+-- Pays out a duplicate of a permanent unlock. ONE place, so the four Kinds that can be duplicated
+-- cannot drift apart on how it pays — which is exactly what happened to the four hand-tuned
+-- Contraband consolations this replaces. See CaseConfig.DuplicateRefund for the rule.
+--
+-- `Refund` rides back on the reward so the reveal card can say what you got instead, rather than the
+-- client recomputing it and risking a different answer.
+local function payDuplicateRefund(player: Player, reward, caseKey: string?)
+	reward.Duplicate = true
+	reward.Refund = CaseConfig.DuplicateRefund(caseKey)
+
+	for key, amount in pairs(reward.Refund) do
+		-- Case costs are currencies today, but routing through Wallet rather than assuming keeps a
+		-- future ore-priced case from silently paying out nothing.
+		local bucket = Wallet.BucketFor(key)
+		if bucket == "Currency" then
+			DataService.AddCurrency(player, key, amount)
+		elseif bucket == "Ore" then
+			DataService.AddOre(player, key, amount)
+		elseif bucket == "Refined" then
+			DataService.AddRefinedOre(player, key, amount)
+		else
+			warn(("[BlackMarketService] duplicate refund key %q is not payable"):format(tostring(key)))
+		end
+	end
+end
+
 -- Applies a rolled reward. The one place a case's contents become real, so adding a new Kind (Tool,
 -- Weapon) is a branch here plus a pool entry — nothing else changes.
-function BlackMarketService.GrantReward(player: Player, reward): boolean
+--
+-- `caseKey` is needed because a duplicate now refunds a fraction of what THAT case cost.
+function BlackMarketService.GrantReward(player: Player, reward, caseKey: string?): boolean
 	local profile = DataService.Get(player)
 	if not profile or not reward then
 		return false
@@ -128,30 +157,21 @@ function BlackMarketService.GrantReward(player: Player, reward): boolean
 	elseif reward.Kind == "Core" then
 		DataService.AddCoreItem(player, reward.Key, reward.Amount)
 	elseif reward.Kind == "Ultimate" then
-		-- Ultimates are a permanent unlock, not a count. Rolling a duplicate is not nothing: it is
-		-- converted to Contraband below rather than silently vanishing, because "you got a thing you
-		-- already own" is the most disappointing possible outcome of a premium case.
+		-- Ultimates are a permanent unlock, not a count. Rolling a duplicate is not nothing: it
+		-- refunds half the case rather than silently vanishing, because "you got a thing you already
+		-- own" is the most disappointing possible outcome of a premium case.
 		if profile.OwnedUltimates[reward.Key] then
-			local consolation = 6
-			DataService.AddCurrency(player, "Contraband", consolation)
-			reward.Duplicate = true
-			reward.ConsolationContraband = consolation
+			payDuplicateRefund(player, reward, caseKey)
 		else
 			profile.OwnedUltimates[reward.Key] = true
 		end
 		Remotes.InventoryUpdate:FireClient(player, { OwnedUltimates = profile.OwnedUltimates })
 	elseif reward.Kind == "WeaponFamily" then
-		-- Same permanent-unlock shape as an Ultimate, and the same duplicate handling for the same
-		-- reason: a Legendary roll that lands a family you already own is the second most
-		-- disappointing outcome a case has, so it pays Contraband instead of nothing. Set higher than
-		-- the Ultimate consolation because a family unlock is the larger prize to have missed, and
-		-- because there are only six of them — duplicates start happening early.
+		-- Same permanent-unlock shape as an Ultimate, and the same duplicate handling — there are
+		-- only six families, so duplicates start happening early.
 		profile.UnlockedWeaponFamilies = profile.UnlockedWeaponFamilies or {}
 		if profile.UnlockedWeaponFamilies[reward.Key] then
-			local consolation = 10
-			DataService.AddCurrency(player, "Contraband", consolation)
-			reward.Duplicate = true
-			reward.ConsolationContraband = consolation
+			payDuplicateRefund(player, reward, caseKey)
 		else
 			profile.UnlockedWeaponFamilies[reward.Key] = true
 		end
@@ -160,15 +180,10 @@ function BlackMarketService.GrantReward(player: Player, reward): boolean
 			UnlockedWeaponFamilies = profile.UnlockedWeaponFamilies,
 		})
 	elseif reward.Kind == "Tool" then
-		-- Third permanent unlock, third identical duplicate path. Smaller consolation than a weapon
-		-- family because there are only three pickaxes and Epic is a common rung — duplicates here
-		-- are routine rather than a disappointment worth compensating heavily.
+		-- Third permanent unlock, third identical duplicate path.
 		profile.OwnedTools = profile.OwnedTools or {}
 		if profile.OwnedTools[reward.Key] then
-			local consolation = 4
-			DataService.AddCurrency(player, "Contraband", consolation)
-			reward.Duplicate = true
-			reward.ConsolationContraband = consolation
+			payDuplicateRefund(player, reward, caseKey)
 		else
 			profile.OwnedTools[reward.Key] = true
 		end
@@ -177,10 +192,7 @@ function BlackMarketService.GrantReward(player: Player, reward): boolean
 	elseif reward.Kind == "DroneCore" then
 		profile.OwnedDroneCores = profile.OwnedDroneCores or {}
 		if profile.OwnedDroneCores[reward.Key] then
-			local consolation = 5
-			DataService.AddCurrency(player, "Contraband", consolation)
-			reward.Duplicate = true
-			reward.ConsolationContraband = consolation
+			payDuplicateRefund(player, reward, caseKey)
 		else
 			profile.OwnedDroneCores[reward.Key] = true
 		end

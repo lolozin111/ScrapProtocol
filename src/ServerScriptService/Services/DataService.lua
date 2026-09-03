@@ -189,6 +189,12 @@ local function defaultProfile()
 			-- EquippedWeaponId: pairs() skips nil-valued entries so a `= nil` line would be a no-op,
 			-- and nil reads correctly as "nothing decoding". Shape when active:
 			-- { CaseKey, FinishTime } — see HackerService, always broadcast as `DecodeJob or false`.
+			-- DecodedCase (table?) is the STEP AFTER that, and omitted for the same reason. Shape:
+			-- { CaseKey }. A decode that finishes no longer opens the case — it leaves it here,
+			-- cracked but unopened, until the player runs HackerService's OpenCase remote themselves,
+			-- which is what rolls and grants the contents. That split exists so the reveal animation
+			-- can only ever play while somebody is actually watching it; see completeDecode's comment.
+			-- Always broadcast as `DecodedCase or false`.
 		RobuxCasesToday = {},   -- [caseKey] = count bought today; paired with RobuxCaseDay below to
 			-- enforce CaseConfig's DailyLimit on the Robux case. Reset when the day rolls over.
 		RobuxCaseDay = 0,       -- os.time() day number the counts above belong to.

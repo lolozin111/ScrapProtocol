@@ -2183,9 +2183,38 @@ building as a shared HudKit helper before the first menu that raises one.
 
 **Progress (2026-09-02).** Done AND verified in Studio by the user: `HudKit.modal` (the Popups B
 plate), per-station panel sizing, Smelting B, Workbench B, and the whole Welding Station (Robots =
-Welding A, plus Mods, Turrets and Drones). Built but NOT yet verified in Studio: Forge A, the
-Crucible. **Section C is now built end to end** — every menu in the picks table has shipped. What is
-left of the design round is the Case-opening A/B hybrid, which was never in the build order.
+Welding A, plus Mods, Turrets and Drones), and Forge A (the Crucible). Built but NOT yet verified in
+Studio: the case-opening A/B hybrid. **The design round is now built in full** — every row of the
+picks table has shipped.
+
+**Case opening, as built (`StarterPlayerScripts/CasePanel.lua`).** The A/B hybrid exactly as picked:
+Popups A's in-panel reel while it runs, Popups B's full takeover when it lands.
+
+**The flow gained a step, at the user's direction.** Decoding no longer opens the case. A finished
+decode leaves it cracked-but-unopened in `profile.DecodedCase` (the same nil-able convention as
+`SmeltJob`/`DecodeJob`/`ForgeOutput`), and a new `OpenCase` remote rolls and grants the contents when
+the player presses Open. The reason is the reveal itself: a decode elapses on a timer that can fire
+while the player is down a mine shaft, so paying out at completion meant the payoff of the whole
+Black Market system was a toast nobody was looking at. Making opening deliberate means the animation
+can only ever run while someone is watching it.
+
+**Duplicates now refund half the case, in the currency it cost** — 300 Scrap from a Scavenged, 30
+Cores from an Encrypted, 6 Contraband from a Blackline — with a flat 8 Contraband for the
+Robux-bought Prototype, which has no profile-side price to halve (`CaseConfig.DuplicateRefund`).
+That replaces four hand-tuned per-Kind Contraband consolations (6/10/4/5) which paid the same
+whether the duplicate fell out of a 600-Scrap case or a 12-Contraband one, and which nobody could
+relate back to anything. Refund amounts are rounded UP and never below 1: a case refunding zero would
+read as "you got nothing", the exact outcome the mechanic exists to prevent.
+
+**The reel is built backwards from an answer the server already gave**, with the winner planted at a
+fixed index and filler cards weighted by that case's own Odds. That is how every case-opening
+animation works and it is safe here for the usual reason: the client cannot change the outcome
+because `OpenCase` granted it before the first frame. Every card carries a rarity edge on the way
+past — the winner only grows and thickens ON ARRIVAL, or it would be spottable mid-spin.
+
+`Remotes.CaseOpened` is GONE — event, listener and declaration. The reveal is driven by `OpenCase`'s
+return value, so the event had no listener left, and its old client handler was also reading a
+`ConsolationContraband` field that no longer exists.
 
 **Welding A, as built (`StarterPlayerScripts/WeldingPanel.lua`).** All four of the station's tabs.
 Four things came out of it that the Forge build should reuse or knows about:

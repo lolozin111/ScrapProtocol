@@ -564,9 +564,33 @@ no manual copy-pasting scripts into Studio.
   **Contraband** — earned 3-6 on a clean raid extract and 2 per boss wave — buys the premium
   Blackline case, the only one that rolls Mythical (i.e. Ultimate mods). A decode can be rushed two
   ways with deliberately different risk: **Robux** is instant and safe, **25 Cores** is instant but
-  has a 25% chance to corrupt the case and lose it outright. Rolling a duplicate Ultimate converts
-  to Contraband rather than vanishing. The dealer shows its odds per case. See `CaseConfig.lua` to
-  retune anything, and `DESIGN_NOTES.md` for the full design.
+  has a 25% chance to corrupt the case and lose it outright. The dealer shows its odds per case. See
+  `CaseConfig.lua` to retune anything, and `DESIGN_NOTES.md` for the full design.
+
+  **Decoding and opening are two separate steps.** A finished decode does NOT pay out — it leaves
+  the case cracked but unopened (`profile.DecodedCase`), and the Decode tab shows one big **Open it**
+  control. The contents are rolled and granted by `HackerService`'s `OpenCase` remote at the moment
+  you press it, not before. That split exists so the reveal can only ever play while somebody is
+  watching it: a decode finishes on a timer that can elapse while you are down a mine shaft, and
+  paying out silently in that moment made the payoff of the whole system a toast you might miss.
+
+  **The reveal** (`CasePanel.lua`) is the design round's A/B hybrid. While it runs, the tab's own
+  body becomes the stage — a 2px accent line down the dead centre is the ticker marker, and a strip
+  of cards scrolls past it and eases to a stop with the winner underneath, its edge lighting up as it
+  lands. Then the full takeover lifts over a scrim: a diamond backdrop, the prize on a glowing card
+  bordered in its own rarity colour, its rarity and name, and **Claim**. The strip is built backwards
+  from an answer the server already decided — the filler cards are weighted by that case's own Odds
+  so the reel looks like it belongs to the case you opened — and the client cannot influence the
+  outcome, because `OpenCase` granted it before the first frame.
+
+  **Duplicates refund half the case.** A unique reward you already own (an Ultimate, a weapon-family
+  blueprint, a special pickaxe, a Drone Core) can otherwise pay nothing at all, which is the worst
+  outcome a premium case has. It now pays back `CaseConfig.DuplicateRefundFraction` (50%) of what
+  that case cost, **in the currency it cost** — 300 Scrap from a Scavenged, 30 Cores from an
+  Encrypted, 6 Contraband from a Blackline — and a flat `CaseConfig.RobuxDuplicateRefund`
+  (8 Contraband) for the Robux-bought Prototype, which has no profile-side price to halve. This
+  replaces four hand-tuned per-Kind Contraband consolations that paid the same regardless of what the
+  case was worth; the reveal card states the refund rather than burying it in a toast.
 
 - **Player saves are session-locked** — `DataService.lua` claims a lock through `UpdateAsync`
   (atomic) before loading, refreshes it on every save, and releases it on leave. Two servers can no
@@ -628,8 +652,9 @@ It's no longer one script doing all of that: `MainHud.client.lua` shares a `Star
 folder with `HudKit.lua` (the palette/design-token/instance-builder foundation every panel is built
 from) and six panel ModuleScripts split out of it — `ShopPanel.lua` (Outpost Shop), `TurretPanel.lua`
 (the turret slot popup), `ResearchPanel.lua` (the Research requirements popup), `InventoryPanel.lua`,
-`WeldingPanel.lua` (all four of the Welding Station's tabs), and `ForgePanel.lua` (the Forge's
-Weapons tab, the Crucible) — plus the earlier `ModPicker.lua` (the mod-slot picker). The split exists partly to stay under Luau's 200-local-per-function-scope
+`WeldingPanel.lua` (all four of the Welding Station's tabs), `ForgePanel.lua` (the Forge's Weapons
+tab, the Crucible), and `CasePanel.lua` (the Hacker Machine's Decode tab and the case-opening reveal)
+— plus the earlier `ModPicker.lua` (the mod-slot picker). The split exists partly to stay under Luau's 200-local-per-function-scope
 compile ceiling (see `CLAUDE.md`) — `WeldingPanel.lua` also exists because a whole station's worth of
 redesigned tabs is its own thing, not a section of the HUD script.
 
@@ -954,9 +979,23 @@ to end:
     not queue. Then test both rush paths, which are deliberately NOT the same deal: **`/give Cores
     500`**, hit the Cores rush a handful of times across several cases and confirm roughly a quarter
     of them corrupt and lose the case (Cores are spent either way — that's the gamble), whereas the
-    Robux rush is instant and always safe. On completion the case should open with a reveal naming
-    what dropped, and the item should be in your Inventory. Roll a duplicate Ultimate and confirm it
-    converts to Contraband instead of vanishing. Finally, confirm income actually flows: extract
+    Robux rush is instant and always safe.
+
+    **On completion the case does NOT open itself** — the tab should switch to a single **Open it**
+    control naming the case, reading "The machine is done. Nothing is rolled until you open it."
+    Confirm it survives leaving and rejoining the server, and that walking away from the machine and
+    pressing Open is refused with "You need to be at your Hacker Machine". Press **Open it**: the
+    panel body should become a reel of cards scrolling left past a centre marker, decelerating over
+    about two and a half seconds until one card stops under the marker, grows, and takes a heavier
+    edge in its rarity colour. A beat later the full takeover should lift over a scrim — diamond
+    backdrop, the prize on a glowing card, its rarity and name, and **Claim**. Claim it and confirm
+    the item is in your Inventory and the tab is back to its idle list.
+
+    Roll a duplicate unique (easiest with `/giveultimate` first, then open Blacklines) and confirm the
+    takeover says **"Already owned — refunded N …"** naming the currency that case cost, and that the
+    amount actually lands in your wallet: 300 Scrap from a Scavenged, 30 Cores from an Encrypted, 6
+    Contraband from a Blackline, 8 Contraband from the Robux Prototype. Finally, confirm income
+    actually flows: extract
     cleanly from a Raid Room (step 15) and from a boss wave, and watch Contraband go up — abandoning
     or dying should pay nothing.
 
