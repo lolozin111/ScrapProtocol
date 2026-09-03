@@ -1,0 +1,575 @@
+<title>Salvage Protocol Asset Bench</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800&family=Source+Sans+3:wght@400;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  /* Palette lifted from the game's own HudKit.COLOR, so this bench reads as part of the
+     product rather than a document about it. Dark is the primary world; the light set keeps
+     the same rust accent on a warm paper ground. */
+  :root {
+    --ground:      #EFEAE1;
+    --panel:       #FFFFFF;
+    --panel-2:     #E4DED3;
+    --line:        #CFC6B8;
+    --line-soft:   #DED7CB;
+    --text:        #24201C;
+    --muted:       #6E6559;
+    --accent:      #B24C18;
+    --accent-soft: #E07A3B;
+    --good:        #3F7A5F;
+    --shadow:      0 1px 2px rgba(36,32,28,.10), 0 8px 24px rgba(36,32,28,.07);
+
+    --cut: 14px;
+    --cut-sm: 8px;
+
+    --f-display: 'Montserrat', system-ui, sans-serif;
+    --f-body: 'Source Sans 3', system-ui, sans-serif;
+    --f-mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:      #14110F;
+      --panel:       #1C1815;
+      --panel-2:     #221D1A;
+      --line:        #3C352F;
+      --line-soft:   #2A2521;
+      --text:        #EDE7DC;
+      --muted:       #A79C8C;
+      --accent:      #E07A3B;
+      --accent-soft: #B24C18;
+      --good:        #5FA082;
+      --shadow:      0 2px 0 rgba(0,0,0,.45), 0 14px 34px rgba(0,0,0,.42);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground:      #14110F;
+    --panel:       #1C1815;
+    --panel-2:     #221D1A;
+    --line:        #3C352F;
+    --line-soft:   #2A2521;
+    --text:        #EDE7DC;
+    --muted:       #A79C8C;
+    --accent:      #E07A3B;
+    --accent-soft: #B24C18;
+    --good:        #5FA082;
+    --shadow:      0 2px 0 rgba(0,0,0,.45), 0 14px 34px rgba(0,0,0,.42);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--ground);
+    color: var(--text);
+    font-family: var(--f-body);
+    font-size: 16px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 940px;
+    margin: 0 auto;
+    padding: 40px 20px 96px;
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+  }
+
+  /* The game's panelframe silhouette: square top-left and bottom-right, 45-degree cut on the
+     other two. Same shape every panel in the HUD wears. */
+  .cut { clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut))); }
+
+  .lbl {
+    font-family: var(--f-display);
+    font-weight: 800;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+  }
+
+  /* ---------- masthead ---------- */
+
+  header { display: flex; flex-direction: column; gap: 14px; }
+
+  .eyebrow { font-size: 11px; color: var(--muted); }
+  .eyebrow b { color: var(--accent); font-weight: 800; }
+
+  h1 {
+    font-family: var(--f-display);
+    font-weight: 800;
+    font-size: clamp(30px, 5.2vw, 46px);
+    letter-spacing: -.015em;
+    line-height: 1.05;
+    margin: 0;
+    text-wrap: balance;
+  }
+
+  .lede { color: var(--muted); max-width: 62ch; margin: 0; }
+  .lede strong { color: var(--text); font-weight: 600; }
+
+  /* ---------- overall meter ---------- */
+
+  .meter {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    box-shadow: var(--shadow);
+    padding: 18px 20px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 18px 24px;
+  }
+  .meter-figure { display: flex; align-items: baseline; gap: 8px; }
+  .meter-figure .n {
+    font-family: var(--f-mono);
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    font-size: 30px;
+    color: var(--accent);
+    line-height: 1;
+  }
+  .meter-figure .of { font-family: var(--f-mono); font-size: 13px; color: var(--muted); }
+  .meter-label { font-size: 10px; color: var(--muted); }
+
+  .track { flex: 1 1 200px; height: 10px; background: var(--line-soft); min-width: 160px; }
+  .track > i { display: block; height: 100%; background: var(--accent); width: 0; transition: width .3s ease; }
+
+  .btn {
+    font-family: var(--f-display);
+    font-weight: 700;
+    font-size: 10px;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+    color: var(--muted);
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    padding: 8px 14px;
+    cursor: pointer;
+    transition: color .14s ease, border-color .14s ease;
+  }
+  .btn:hover { color: var(--text); border-color: var(--accent); }
+  .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* ---------- note ---------- */
+
+  .note {
+    border-left: 3px solid var(--good);
+    background: var(--panel);
+    padding: 14px 18px;
+    color: var(--muted);
+    font-size: 15px;
+  }
+  .note b { color: var(--text); font-weight: 600; }
+
+  /* ---------- section ---------- */
+
+  section {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    box-shadow: var(--shadow);
+  }
+  section > .cap { height: 3px; background: var(--accent); }
+  section.done > .cap { background: var(--good); }
+
+  .head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 6px 14px;
+    padding: 16px 20px 14px;
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .head h2 { font-family: var(--f-display); font-weight: 800; font-size: 16px; letter-spacing: .02em; margin: 0; }
+  .head .dest {
+    font-family: var(--f-mono);
+    font-size: 12px;
+    color: var(--muted);
+    flex: 1 1 100%;
+    word-break: break-word;
+  }
+  .head .dest em { color: var(--accent); font-style: normal; }
+  .count {
+    font-family: var(--f-mono);
+    font-variant-numeric: tabular-nums;
+    font-size: 12px;
+    color: var(--muted);
+    margin-left: auto;
+  }
+  .count b { color: var(--accent); font-weight: 600; }
+  section.done .count b { color: var(--good); }
+
+  .payoff {
+    font-family: var(--f-display);
+    font-weight: 700;
+    font-size: 9px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--ground);
+    background: var(--accent);
+    padding: 3px 7px;
+  }
+
+  .body { padding: 6px 20px 20px; display: flex; flex-direction: column; gap: 4px; }
+
+  .group { padding-top: 14px; }
+  .group-head { display: flex; align-items: center; gap: 10px; margin-bottom: 9px; }
+  .group-head .gl { font-size: 10px; color: var(--muted); }
+  .group-head .rule { flex: 1; height: 1px; background: var(--line-soft); }
+
+  .chips { display: grid; grid-template-columns: repeat(auto-fill, minmax(178px, 1fr)); gap: 6px; }
+
+  .chip {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    width: 100%;
+    text-align: left;
+    font-family: var(--f-mono);
+    font-size: 12.5px;
+    color: var(--text);
+    background: var(--panel-2);
+    border: 1px solid var(--line-soft);
+    padding: 8px 10px;
+    cursor: pointer;
+    transition: border-color .14s ease, background .14s ease, color .14s ease;
+    clip-path: polygon(0 0, calc(100% - var(--cut-sm)) 0, 100% var(--cut-sm), 100% 100%, var(--cut-sm) 100%, 0 calc(100% - var(--cut-sm)));
+  }
+  .chip:hover { border-color: var(--accent); }
+  .chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .box {
+    flex: 0 0 auto;
+    width: 13px; height: 13px;
+    border: 1.5px solid var(--line);
+    position: relative;
+  }
+  .chip[aria-pressed="true"] { color: var(--muted); background: transparent; }
+  .chip[aria-pressed="true"] .box { border-color: var(--good); background: var(--good); }
+  .chip[aria-pressed="true"] .box::after {
+    content: "";
+    position: absolute; left: 3.5px; top: .5px;
+    width: 4px; height: 8px;
+    border: solid var(--panel);
+    border-width: 0 2px 2px 0;
+    transform: rotate(43deg);
+  }
+  .chip[aria-pressed="true"] .k { text-decoration: line-through; text-decoration-color: var(--line); }
+  .k { overflow-wrap: anywhere; }
+
+  .copy {
+    font-family: var(--f-display);
+    font-weight: 700;
+    font-size: 9px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    background: none;
+    border: 1px solid var(--line-soft);
+    padding: 3px 8px;
+    cursor: pointer;
+    transition: color .14s ease, border-color .14s ease;
+  }
+  .copy:hover { color: var(--accent); border-color: var(--accent); }
+  .copy:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .hint { font-size: 13px; color: var(--muted); padding: 12px 20px 0; }
+  .hint code {
+    font-family: var(--f-mono);
+    font-size: 12px;
+    background: var(--panel-2);
+    border: 1px solid var(--line-soft);
+    padding: 1px 5px;
+  }
+
+  footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line-soft); padding-top: 18px; }
+  footer code { font-family: var(--f-mono); font-size: 12px; color: var(--text); }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow lbl">Salvage Protocol &nbsp;·&nbsp; <b>Art &amp; Studio assets</b></div>
+    <h1>What's left to draw</h1>
+    <p class="lede">Every asset the game looks up and doesn't have yet. <strong>None of it blocks anything</strong> — each one falls back to a placeholder — so this is all visual payoff, ordered by how much of it you actually see. Tick things off as you go; the page remembers.</p>
+  </header>
+
+  <div class="meter cut">
+    <div class="meter-figure">
+      <span class="n" id="done">0</span>
+      <span class="of">/ <span id="total">0</span></span>
+    </div>
+    <div class="meter-label lbl">Assets made</div>
+    <div class="track"><i id="bar"></i></div>
+    <button class="btn" id="reset" type="button">Reset ticks</button>
+  </div>
+
+  <div class="note">
+    <b>Naming is load-bearing.</b> Every key below must match <b>exactly</b>, character for character — the lookups are literal string matches, and a near-miss fails silently to the placeholder with only a warning in Output. Use <b>Copy</b> on each group rather than retyping.
+  </div>
+
+  <div id="sections"></div>
+
+  <footer>
+    Keys pulled from <code>CraftingRecipes</code>, <code>ModConfig</code>, <code>OreConfig</code>, <code>RefinedOreConfig</code>, <code>DroneConfig</code>, <code>ToolModConfig</code>, <code>UltimateConfig</code>, <code>CaseConfig</code>, <code>TurretConfig</code>, <code>EnemyConfig</code> and <code>NodeConfig</code>. If you add an entry to any of those, its asset key lands here too.
+  </footer>
+
+</div>
+
+<script>
+const DATA = [
+  {
+    id: "rigs",
+    title: "Robot silhouettes",
+    dest: "Upload, then paste the ID into <em>src/ReplicatedStorage/Shared/UiIconConfig.lua</em>",
+    payoff: "Top payoff",
+    hint: "Line drawings, roughly <code>180 × 230</code>, same proportion as the design mockups. These are the only ones that go in <b>code</b>, not a Studio folder — the file already has the six slots sitting at <code>0</code>. <code>rig_generic</code> is the catch-all any future robot falls back to.",
+    groups: [
+      { name: "Welding Station rig diagram", keys: ["rig_Scrapbot","rig_SentryDrone","rig_IronGuardian","rig_ArcTurret","rig_drone","rig_generic"] }
+    ]
+  },
+  {
+    id: "icons-core",
+    title: "Item icons — the constant ones",
+    dest: "Studio folder <em>ReplicatedStorage.ItemIcons</em> · one ImageLabel per key",
+    payoff: "Top payoff",
+    hint: "These 14 appear on nearly every screen — every cost line, the Smelting rail, the Forge input bay, the Materials tab. Best return per icon in the whole list.",
+    groups: [
+      { name: "Currencies", keys: ["Scrap","Cores","Contraband","LuckPotion"] },
+      { name: "Raw ore", keys: ["ScrapIron","CopperWire","SteelPlating","GoldContacts","VoidiumShard"] },
+      { name: "Refined materials", keys: ["SteelIngot","CopperCoil","HardenedPlate","GoldBar","VoidiumCore"] }
+    ]
+  },
+  {
+    id: "icons-loadout",
+    title: "Item icons — loadout &amp; rewards",
+    dest: "Studio folder <em>ReplicatedStorage.ItemIcons</em> · one ImageLabel per key",
+    hint: "Robots and Cores show on the Welding Station's rig and bay cards. Cases and Ultimates carry the case-opening reveal, so they land on the biggest single moment in the game.",
+    groups: [
+      { name: "Robots", keys: ["Scrapbot","SentryDrone","IronGuardian","ArcTurret"] },
+      { name: "Mods", keys: ["SpeedCoil","HeavyRounds","Stabilizer","ScavengedCapacitor","ReinforcedPlating","OverclockedCore"] },
+      { name: "Drone Cores", keys: ["Combat","Support","Scavenger","Recon"] },
+      { name: "Pickaxes", keys: ["SplitHead","Featherweight","Prospector"] },
+      { name: "Ultimates", keys: ["Detonator","Ricochet","LegBreaker","HundredMil","SharkBullet","AimBot"] },
+      { name: "Cases", keys: ["Scavenged","Encrypted","Blackline","Prototype"] }
+    ]
+  },
+  {
+    id: "icons-weapons",
+    title: "Item icons — weapons",
+    dest: "Studio folder <em>ReplicatedStorage.ItemIcons</em> · one ImageLabel per key",
+    hint: "Shown in the Forge's chamber while a roll resolves, on the output tray card, and across the Inventory. Without one, the chamber falls back to the weapon's name in text — which reads fine, so this is the long tail.",
+    groups: [
+      { name: "All 18", keys: ["PipePistol","ScrapSMG","RailRifle","ArcCannon","Flamethrower","IceThrower","PoisonThrower","RegularBow","Longbow","ExplosiveBow","StringedBow","RegularSniper","QuickSniper","GrenadeLauncher","StickyGrenade","Trailblazer","Hellfire","Minigun"] }
+    ]
+  },
+  {
+    id: "enemies",
+    title: "Enemy rigs",
+    dest: "Studio folder <em>ServerStorage.EnemyModels</em> · one Model per name",
+    hint: "Currently spawns a grey box per enemy. <code>VoidwakenHulk</code> is the elite.",
+    groups: [
+      { name: "Models", keys: ["Scavenger","Raider","Brute","ScrapCrawler","SentinelDrone","VoidwakenHulk"] }
+    ]
+  },
+  {
+    id: "turrets",
+    title: "Turret models",
+    dest: "Studio folder <em>ServerStorage.TurretModels</em> · one Model per name",
+    hint: "These stand on the pads around your base perimeter, so they're the most-looked-at models in the game after the base itself.",
+    groups: [
+      { name: "Models", keys: ["PulseTurret","FlakTurret","SniperTurret","ArcTurret","MortarTurret","RailTurret"] }
+    ]
+  },
+  {
+    id: "tools",
+    title: "Weapon Tools",
+    dest: "Studio folder <em>ReplicatedStorage.WeaponTools</em> · one real Tool per name",
+    hint: "Must be an actual <code>Tool</code> with a <code>Handle</code>, not just a model — it goes in the player's hand. Same 18 names as the weapon icons.",
+    groups: [
+      { name: "All 18", keys: ["PipePistol","ScrapSMG","RailRifle","ArcCannon","Flamethrower","IceThrower","PoisonThrower","RegularBow","Longbow","ExplosiveBow","StringedBow","RegularSniper","QuickSniper","GrenadeLauncher","StickyGrenade","Trailblazer","Hellfire","Minigun"] }
+    ]
+  },
+  {
+    id: "map-backdrop",
+    title: "Raid map backdrop",
+    dest: "Upload, then paste the ID into <em>src/ReplicatedStorage/Shared/UiIconConfig.lua</em>",
+    hint: "Not a glyph — a full-bleed <b>background</b> behind the Sector Map\u0027s node tree, and the only entry of its kind in that file. Wants something map-ish and roughly <code>3:4</code> portrait: a schematic, a scan, a torn survey chart. It is scrimmed hard on purpose (the tree has to stay readable over it), so pick something with texture rather than detail. At <code>0</code> the map draws its own grid and looks finished either way.",
+    groups: [
+      { name: "Sector Map panel", keys: ["raid_map_backdrop"] }
+    ]
+  },
+  {
+    id: "rooms",
+    title: "Raid room models",
+    dest: "Studio folder <em>ServerStorage.RaidRoomModels</em> · one Model per node type",
+    hint: "Cloned when you enter a node. Falls back to a plain grey floor today. <b>Every room you build now also needs <code>ExitDoor</code> Parts</b> — one per branch, two is enough — because walking through a door is how the player picks where to go next. Order them with a number attribute <code>ExitIndex</code>, or leave it unset and they sort left-to-right. A room with too few warns and falls back to the clickable map, so an unfinished one can\u0027t strand a run. Combat/Boss rooms can also carry <code>SpawnPoint</code> Parts (string attribute <code>EnemyType</code>); Heal/Shop want an <code>InteractPoint</code>.",
+    groups: [
+      { name: "One per node type", keys: ["Combat","Heal","Shop","Boss"] }
+    ]
+  }
+];
+
+const STORE = "sp-asset-bench-v1";
+
+function load() {
+  try { return new Set(JSON.parse(localStorage.getItem(STORE) || "[]")); }
+  catch (e) { return new Set(); }
+}
+function save(set) {
+  try { localStorage.setItem(STORE, JSON.stringify([...set])); } catch (e) {}
+}
+
+let ticked = load();
+
+function chipId(sectionId, groupName, key) {
+  return sectionId + "::" + groupName + "::" + key;
+}
+
+function copyText(text, button) {
+  const done = () => {
+    const was = button.textContent;
+    button.textContent = "Copied";
+    setTimeout(() => { button.textContent = was; }, 1200);
+  };
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, () => fallback(text, done));
+      return;
+    }
+  } catch (e) {}
+  fallback(text, done);
+}
+function fallback(text, done) {
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand("copy");
+    document.body.removeChild(ta);
+    done();
+  } catch (e) {}
+}
+
+function render() {
+  const host = document.getElementById("sections");
+  host.innerHTML = "";
+  let total = 0;
+
+  DATA.forEach(section => {
+    const secTotal = section.groups.reduce((n, g) => n + g.keys.length, 0);
+    total += secTotal;
+
+    const el = document.createElement("section");
+    el.className = "cut";
+    el.dataset.section = section.id;
+
+    const cap = document.createElement("div");
+    cap.className = "cap";
+    el.appendChild(cap);
+
+    const head = document.createElement("div");
+    head.className = "head";
+    head.innerHTML =
+      '<h2>' + section.title + '</h2>' +
+      (section.payoff ? '<span class="payoff">' + section.payoff + '</span>' : '') +
+      '<span class="count"><b class="sec-done">0</b> / ' + secTotal + '</span>' +
+      '<span class="dest">' + section.dest + '</span>';
+    el.appendChild(head);
+
+    if (section.hint) {
+      const h = document.createElement("p");
+      h.className = "hint";
+      h.innerHTML = section.hint;
+      el.appendChild(h);
+    }
+
+    const body = document.createElement("div");
+    body.className = "body";
+
+    section.groups.forEach(group => {
+      const g = document.createElement("div");
+      g.className = "group";
+
+      const gh = document.createElement("div");
+      gh.className = "group-head";
+      gh.innerHTML = '<span class="gl lbl">' + group.name + ' · ' + group.keys.length + '</span><span class="rule"></span>';
+      const copyBtn = document.createElement("button");
+      copyBtn.type = "button";
+      copyBtn.className = "copy";
+      copyBtn.textContent = "Copy";
+      copyBtn.addEventListener("click", () => copyText(group.keys.join("\n"), copyBtn));
+      gh.appendChild(copyBtn);
+      g.appendChild(gh);
+
+      const chips = document.createElement("div");
+      chips.className = "chips";
+
+      group.keys.forEach(key => {
+        const id = chipId(section.id, group.name, key);
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "chip";
+        b.setAttribute("aria-pressed", ticked.has(id) ? "true" : "false");
+        b.innerHTML = '<span class="box"></span><span class="k">' + key + '</span>';
+        b.addEventListener("click", () => {
+          if (ticked.has(id)) { ticked.delete(id); } else { ticked.add(id); }
+          b.setAttribute("aria-pressed", ticked.has(id) ? "true" : "false");
+          save(ticked);
+          tally();
+        });
+        chips.appendChild(b);
+      });
+
+      g.appendChild(chips);
+      body.appendChild(g);
+    });
+
+    el.appendChild(body);
+    host.appendChild(el);
+  });
+
+  document.getElementById("total").textContent = total;
+  tally();
+}
+
+function tally() {
+  let done = 0, total = 0;
+
+  DATA.forEach(section => {
+    let secDone = 0, secTotal = 0;
+    section.groups.forEach(group => {
+      group.keys.forEach(key => {
+        secTotal++;
+        if (ticked.has(chipId(section.id, group.name, key))) secDone++;
+      });
+    });
+    done += secDone;
+    total += secTotal;
+
+    const el = document.querySelector('[data-section="' + section.id + '"]');
+    if (el) {
+      el.querySelector(".sec-done").textContent = secDone;
+      el.classList.toggle("done", secDone === secTotal && secTotal > 0);
+    }
+  });
+
+  document.getElementById("done").textContent = done;
+  document.getElementById("bar").style.width = total ? ((done / total) * 100) + "%" : "0%";
+}
+
+document.getElementById("reset").addEventListener("click", () => {
+  ticked = new Set();
+  save(ticked);
+  document.querySelectorAll(".chip").forEach(c => c.setAttribute("aria-pressed", "false"));
+  document.querySelectorAll("section").forEach(s => s.classList.remove("done"));
+  tally();
+});
+
+render();
+</script>
