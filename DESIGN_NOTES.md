@@ -24,7 +24,7 @@ already made (numbers, mechanics, sequencing), not just vague direction.
 | Drone companion (4 Drone Cores) | **Built** — unlocks at Research Tier 3, follows you everywhere |
 | Player Test Mode (admin throwaway profile) | **Built** — see "Data safety" section below |
 | HUD phase 3 (all station menus) | **Built and verified** — see "Road to release" below |
-| Raid overhaul | **Not specced** — the gate on everything else, see below |
+| Raid overhaul | **Designed, not built** — three modes + physical doors, see Phase 00 below |
 | Enemy AI patterns | **Engine built, one pattern** — `Chaser`, and all six enemies use it |
 | Early-game pacing & onboarding | **Planned, not built** — see below |
 | Raid shop rework (run-only perks) | **Planned, not built** — half the tag plumbing exists |
@@ -36,8 +36,8 @@ Re-confirm this order before starting each one — priorities may have shifted. 
 Black Market are both BUILT (the Black Market **superseded** the planned "main shop" rather than
 being built alongside it — same rotating-stock shape, so they were merged).
 
-**Next up: settle what the raid overhaul IS** — see "Road to release" immediately below, which
-supersedes the build order above as the live plan. The content backlog further down is now BUILT —
+**Next up: build the raid overhaul, now that Phase 00 has settled what it is** — see "Road to
+release" immediately below, which supersedes the build order above as the live plan. The content backlog further down is now BUILT —
 kept as the record of what each weapon was specced to do, since the code says how they work and only
 this says what they were meant to feel like.
 
@@ -45,31 +45,118 @@ this says what they were meant to feel like.
 
 Agreed with the user in full, in dependency order. Six phases, with a gate in front of them.
 
-**Two companion pages hold the tickable versions of this.** They are private Artifacts, they persist
+**Three companion pages hold the tickable versions of this.** They are private Artifacts, they persist
 independently of any session, and they are the fastest way back into this plan after a reset:
 
 - **Road to release** — this plan, phase by phase: https://claude.ai/code/artifact/c520148b-a3db-4056-b273-7b5cd0e87ac8
 - **Asset Bench** — every missing art/Studio asset with its exact key: https://claude.ai/code/artifact/53fec0c0-7889-4e51-8399-5bbe26fb583b
+- **Three Ways In** — the Phase 00 raid overhaul design, settled: https://claude.ai/code/artifact/bc06cd42-19a8-40d6-9d0a-1c50f5d67648
 
-### Phase 00 — the gate: decide what the raid overhaul IS
+### Phase 00 — the gate: what the raid overhaul IS — DESIGNED (2026-09-03)
 
-**Nothing else starts until this does.** The raid overhaul is the ONLY item on the whole plan with no
-design behind it — before this section it appeared in this file exactly once, as an aside under the
-HUD phase-3 notes ("the raid system is getting its own overhaul later"). It needs a design round of
-its own: what a run is, what the map means, what makes a room worth entering, what the player is
-optimising.
+**The gate is open.** Settled in a design round with the user and written up in full on its own page,
+**Three Ways In**: https://claude.ai/code/artifact/bc06cd42-19a8-40d6-9d0a-1c50f5d67648 — read that
+before building any of it; what follows is the summary, not the spec.
 
-It is a gate rather than just a first task because **the enemy AI work depends on its answer** — what
-enemies should DO is a function of what a raid is. Building patterns first would mean building them
-against a raid that does not exist yet.
+It was a gate because **the enemy AI work depends on its answer** — what enemies should DO is a
+function of what a raid is. That dependency is now resolved in the concrete direction below: nine
+patterns, three per mode.
 
-Run it the way the HUD round ran: settle it on a page first, then build. That round went well
-*because* nothing was implemented before the direction was chosen, and the raid is a bigger surface
-than any single menu.
+**The diagnosis the round started from, all four verified against source, not remembered.** The raid
+structure is finished and correct after five build-and-playtest rounds; what is missing is content in
+slots the engine already opened:
+
+- `RaidConfig.CardPool` (RaidConfig.lua:528) is four stubs, one per rarity, no effects wired.
+- `NodeConfig.ShopCatalog` (NodeConfig.lua:91) sells ore bundles, no rotation — a vending machine.
+- **Nothing anywhere is tagged `RunLocked` or `Permanent`** (NodeConfig.lua:26). The most
+  consequential one: `settleRunLoot` is fully built and fully inert, so pushing deeper risks nothing
+  and extracting protects nothing. The one decision the raid is shaped around has no stakes on it.
+- `EnemyAI.Patterns` (EnemyAI.lua:69) has exactly one entry, `Chaser`, and all six enemy types point
+  at it — Combat, Ambush and Boss rooms play identically.
+
+**Decision 1 — three raid modes, not one raid.** The user's call, and a better answer than any of the
+three single directions offered: build all three, as modes, each owning ONE loot axis, so they demand
+different builds and picking between them before spending Energy is itself a strategy layer. Each
+mode adopts one of the hollow slots above as the thing it is *about*, which turns four disconnected
+content chores into three coherent reasons to enter a raid.
+
+- **Gauntlet** — Cores/Contraband. Cards are the point: they stack all run, always lost on exit.
+  Endless chapters, one guaranteed Boss per map, payout multiplies with `MapsCleared`. Shop sells
+  run-only perks (this is where the raid shop rework lands). Rewards glass cannon. Patterns:
+  `Swarmer`, `Charger`, `Artillery`.
+- **Salvage Run** — Ore/refined, the crafting feedstock. Every ore drop `RunLocked`; a carry cap; a
+  physical Extraction room you must REACH to bank. Shop sells capacity and escape. Rewards
+  survivability and movement. Patterns: `Stalker`, `Guardian`, `Screamer`.
+- **Contract** — blueprints, gun variants, Drone Cores. A rotating board of objectives, fixed run
+  length, reward tagged `Permanent` so completing banks it even on a bad exit. Rewards specialisation
+  and prep. Patterns: `Defender`, `Runner`, `Sapper`.
+
+**Decision 2 — the map choice comes off the screen.** Also the user's, and the second half of what
+they meant by "overhaul". Today a cleared room calls `showMapChoice`, the GUI map opens and you click
+a circle. Instead the room's **exit doors unlock** — one per branch, each taking its destination
+type's own `NodeTypes.Color` and `DisplayName` — and walking through one fires the SAME
+`ChooseRaidNode` remote. The map GUI is demoted to a persistent read-only minimap: where you are,
+what you cleared, what is ahead. `redrawMap`'s dendrogram layout is kept exactly as-is; its
+5,000-map no-crossing-lines guarantee is worth more now that the map is a reference than it was when
+it was a control.
+
+Door contract (full version on the page): a Part named `ExitDoor` (new `RaidConfig.ExitDoorName`,
+following `SpawnPointName`/`InteractPointName` exactly), ordered by an optional numeric `ExitIndex`
+attribute or by local X when unset; doors locked and dark until the encounter resolves; **too few
+doors warns and falls back to the GUI map for that node** (the missing-art rule applied to geometry —
+a half-built room must never strand a run); extras stay sealed; a leaf seals all of them and
+`onMapCleared` fires unchanged; the fallback room grows doors procedurally on its guard rail the same
+way it already grows an `InteractPoint`.
+
+**Decision 3 — room variants.** `buildRoom` looks up ONE Model per node type, so a fifteen-node map
+walks through the identical box a dozen times. `RaidRoomModels.Combat` may now be a **Folder of
+Models** instead of a Model, one picked at random per node — backwards compatible by construction (a
+Model is used directly, a Folder picks a random Model child), roughly six lines, and it turns "make
+the map pretty" into as many small Studio jobs as wanted instead of one big one.
+
+**What none of this touches**, worth stating because "overhaul" reads like a rewrite: `GenerateMap`'s
+tree + retry, chaptered maps, `onMapCleared`, instancing and the slot free-list, `RunRaidCombat`,
+room-authored spawns, `settleRunLoot`, the run currency pool, boss placement, Ambush run-scaling,
+`PlayerActivityService` gating, Energy cost, `redrawMap`. **`EnemyAI.lua` does not change either** —
+every pattern named above is one new function in `EnemyAI.Patterns` plus one config line, which is
+what that table was built to be.
+
+**Build order inside the overhaul** (dependency order — doors first because all three modes need
+them, AI patterns last because they need three raids to exist):
+
+1. Physical exit doors + read-only minimap — mode-agnostic, biggest feel change.
+2. Room variant folders — small, independent, unblocks Studio art.
+3. Mode plumbing — a `RaidMode` on the raid state plus one `RaidConfig.Modes` table of named rules
+   (the project's standard flat-table-of-strategies shape).
+4. Salvage Run — cheapest: tagging, carry cap, Extraction as a real room. Almost no new systems.
+5. Gauntlet — a real card pool with real effects plus the run-only perk shop. Biggest content write.
+6. Contract — largest new surface: board, objective tracking, rotation, `Permanent` payouts.
+7. Enemy AI patterns — nine, three per mode.
+
+**Five open decisions, each with a recommendation on the page, none blocking steps 1-2:** do the
+modes cost the same Energy (rec: yes, 1 each); are Gauntlet cards lost on EVERY exit including a
+clean one (rec: yes always — a bankable card makes Gauntlet a permanent-power farm and every other
+system has to be balanced around it); does Salvage Run's carry cap cover currency (rec: no, currency
+is already exempt from `RunLocked` by an earlier explicit decision); where does the Contract board
+live (rec: a third tab on the existing raid terminal, not a new tagged Station — no Studio setup); do
+all three modes unlock at once (rec: Salvage Run first, the other two behind Research Tiers).
+
+**The Studio authoring contract, answered for the user during the round** and true TODAY — everything
+except `ExitDoor` is already live, so rooms can be built before any of the above is written.
+`ServerStorage.RaidRoomModels`, one Model per type named exactly `Start`/`Combat`/`Ambush`/`Heal`/
+`Shop`/`Boss`, each needing a **PrimaryPart** (missing one silently falls back to the placeholder)
+and built centred on the origin since the Model is cloned and `PivotTo`'d there. Inside: `SpawnPoint`
+Parts with a String attribute `EnemyType` from `Scavenger`/`Raider`/`Brute`/`ScrapCrawler`/
+`SentinelDrone`/`VoidwakenHulk` (unrecognised spawns nothing and warns; none at all falls back to the
+random 50-70 stud ring), and an `InteractPoint` Part on Heal/Shop which gets a ProximityPrompt added
+automatically. No Model gives a 260x260 concrete square with an invisible guard rail. Rooms build at
+`(0, 800, 0)`, 600 studs apart, up to 20 concurrent — each alone in its slot, so rotation never
+matters.
 
 ### Phase 01 — build the rest
 
-- **Raid overhaul** — blocked on Phase 00. Absorbs the interim raid-map styling pass already written
+- **Raid overhaul** — Phase 00 settled what it is; see there for the seven-step build order inside it.
+  Absorbs the interim raid-map styling pass already written
   up in section B (node panels + Scraps Collected onto HudKit plates, map graph left alone); doing
   that inside the overhaul is cheaper than doing it twice.
 - **Enemy AI patterns** — the ENGINE is finished and correct: one shared per-encounter tick loop,
@@ -2269,8 +2356,9 @@ and frames.
 
 **START AT "Road to release" NEAR THE TOP OF THIS FILE, not here.** That section is the live plan for
 the whole project now; this one is the record of the HUD phase-3 round, which is finished, shipped
-and verified in Studio. The immediate next action is Phase 00 — a design round settling what the raid
-overhaul actually is, because it gates everything else.
+and verified in Studio. Phase 00 is now DONE — the raid overhaul is designed (three modes, physical
+exit doors, room variants) and written up on the "Three Ways In" page linked from that section. The
+immediate next action is step 1 of its build order: physical exit doors plus the read-only minimap.
 
 The rest of this section is kept as the HUD round's own history.
 

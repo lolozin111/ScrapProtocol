@@ -1,0 +1,971 @@
+<title>Three Ways In</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+<style>
+  :root {
+    /* Cool steel neutrals, biased very slightly green — the salvage yard, not a document. */
+    --ground:      #E4E7E8;
+    --surface:     #F3F5F5;
+    --surface-2:   #FAFBFB;
+    --ink:         #14181A;
+    --ink-2:       #3D4649;
+    --ink-3:       #6D797D;
+    --rule:        #C3CACC;
+    --rule-soft:   #D6DCDD;
+
+    /* One hue per mode, all three pulled from the game's own NodeTypes / card-rarity palette. */
+    --gauntlet:    #B24C18;
+    --gauntlet-lo: #F0DED4;
+    --salvage:     #35606B;
+    --salvage-lo:  #D5E2E5;
+    --contract:    #96741A;
+    --contract-lo: #EEE5CB;
+
+    --warn:        #8A3A12;
+    --good:        #3D6A4C;
+
+    --shadow: 0 1px 0 rgba(20,24,26,.05), 0 2px 10px rgba(20,24,26,.05);
+
+    --f-display: "Chakra Petch", "Arial Narrow", system-ui, sans-serif;
+    --f-body: "IBM Plex Sans", -apple-system, "Segoe UI", Roboto, sans-serif;
+    --f-mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+
+    --cut: 14px;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:      #0E1214;
+      --surface:     #171D1F;
+      --surface-2:   #1E2528;
+      --ink:         #E6EAEB;
+      --ink-2:       #B3BDC0;
+      --ink-3:       #7E8B8F;
+      --rule:        #2E383B;
+      --rule-soft:   #252E31;
+
+      --gauntlet:    #E8814A;
+      --gauntlet-lo: #332016;
+      --salvage:     #6FB4C6;
+      --salvage-lo:  #15272C;
+      --contract:    #D6B14C;
+      --contract-lo: #2B2413;
+
+      --warn:        #E08B5E;
+      --good:        #79BC92;
+
+      --shadow: 0 1px 0 rgba(0,0,0,.3), 0 2px 12px rgba(0,0,0,.35);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground:      #0E1214;
+    --surface:     #171D1F;
+    --surface-2:   #1E2528;
+    --ink:         #E6EAEB;
+    --ink-2:       #B3BDC0;
+    --ink-3:       #7E8B8F;
+    --rule:        #2E383B;
+    --rule-soft:   #252E31;
+
+    --gauntlet:    #E8814A;
+    --gauntlet-lo: #332016;
+    --salvage:     #6FB4C6;
+    --salvage-lo:  #15272C;
+    --contract:    #D6B14C;
+    --contract-lo: #2B2413;
+
+    --warn:        #E08B5E;
+    --good:        #79BC92;
+
+    --shadow: 0 1px 0 rgba(0,0,0,.3), 0 2px 12px rgba(0,0,0,.35);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--f-body);
+    font-size: 15.5px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 1060px;
+    margin: 0 auto;
+    padding: 0 28px 120px;
+  }
+
+  /* ---- the signature device: HudKit's 45-degree corner cut, the same one every
+         panel in the game already wears. Used on panels only, never on inline chrome. ---- */
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    box-shadow: var(--shadow);
+    clip-path: polygon(var(--cut) 0, 100% 0, 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, 0 100%, 0 var(--cut));
+  }
+
+  /* ---------- masthead ---------- */
+  header.masthead {
+    padding: 60px 0 34px;
+    border-bottom: 2px solid var(--ink);
+    margin-bottom: 44px;
+  }
+  .eyebrow {
+    font-family: var(--f-display);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin: 0 0 14px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+  }
+  .eyebrow .sep { color: var(--rule); }
+  h1 {
+    font-family: var(--f-display);
+    font-weight: 700;
+    font-size: clamp(42px, 7vw, 76px);
+    line-height: .96;
+    letter-spacing: -.015em;
+    margin: 0 0 18px;
+    text-wrap: balance;
+  }
+  .standfirst {
+    font-size: 18.5px;
+    line-height: 1.55;
+    color: var(--ink-2);
+    max-width: 60ch;
+    margin: 0;
+  }
+  .standfirst strong { color: var(--ink); font-weight: 600; }
+
+  .status-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 26px;
+  }
+  .chip {
+    font-family: var(--f-display);
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    padding: 5px 11px;
+    border: 1px solid var(--rule);
+    background: var(--surface-2);
+    color: var(--ink-2);
+  }
+  .chip.hot { border-color: var(--gauntlet); color: var(--gauntlet); background: var(--gauntlet-lo); }
+  .chip.ok  { border-color: var(--good); color: var(--good); }
+
+  /* ---------- sections ---------- */
+  section { margin: 0 0 76px; }
+  h2 {
+    font-family: var(--f-display);
+    font-weight: 700;
+    font-size: clamp(25px, 3.4vw, 34px);
+    line-height: 1.1;
+    letter-spacing: -.01em;
+    margin: 0 0 6px;
+    text-wrap: balance;
+  }
+  .sec-head {
+    border-top: 1px solid var(--ink);
+    padding-top: 16px;
+    margin-bottom: 26px;
+  }
+  .sec-head .label {
+    font-family: var(--f-display);
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: .17em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    display: block;
+    margin-bottom: 12px;
+  }
+  .sec-head p {
+    margin: 10px 0 0;
+    color: var(--ink-2);
+    max-width: 66ch;
+  }
+  h3 {
+    font-family: var(--f-display);
+    font-weight: 600;
+    font-size: 19px;
+    letter-spacing: .005em;
+    margin: 0 0 8px;
+  }
+  p { max-width: 68ch; }
+  p + p { margin-top: 14px; }
+  a { color: var(--salvage); text-underline-offset: 3px; }
+  a:focus-visible, button:focus-visible { outline: 2px solid var(--gauntlet); outline-offset: 3px; }
+
+  code, .k {
+    font-family: var(--f-mono);
+    font-size: .875em;
+    background: var(--surface-2);
+    border: 1px solid var(--rule-soft);
+    padding: 1px 5px;
+    color: var(--ink);
+    white-space: nowrap;
+  }
+
+  /* ---------- diagnosis list ---------- */
+  .findings { display: grid; gap: 12px; }
+  .finding {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 6px 20px;
+    align-items: start;
+    padding: 16px 18px;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--warn);
+  }
+  .finding .what { font-weight: 600; grid-column: 1; margin: 0; }
+  .finding .where {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    font-family: var(--f-mono);
+    font-size: 12px;
+    color: var(--ink-3);
+    white-space: nowrap;
+    padding-top: 2px;
+  }
+  .finding .why { grid-column: 1; margin: 0; color: var(--ink-2); font-size: 14.5px; max-width: 62ch; }
+
+  /* ---------- three modes ---------- */
+  .modes {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+  }
+  .mode {
+    --hue: var(--ink-2);
+    --hue-lo: var(--surface-2);
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-top: 4px solid var(--hue);
+    box-shadow: var(--shadow);
+    display: flex;
+    flex-direction: column;
+    clip-path: polygon(0 0, 100% 0, 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, 0 100%);
+  }
+  .mode.g { --hue: var(--gauntlet); --hue-lo: var(--gauntlet-lo); }
+  .mode.s { --hue: var(--salvage);  --hue-lo: var(--salvage-lo); }
+  .mode.c { --hue: var(--contract); --hue-lo: var(--contract-lo); }
+
+  .mode-head { padding: 18px 20px 16px; background: var(--hue-lo); }
+  .mode-head .num {
+    font-family: var(--f-mono);
+    font-size: 11.5px;
+    letter-spacing: .1em;
+    color: var(--hue);
+    display: block;
+    margin-bottom: 6px;
+  }
+  .mode-head h3 { font-size: 24px; color: var(--hue); margin: 0 0 6px; letter-spacing: .01em; }
+  .mode-head .axis {
+    font-size: 13.5px;
+    color: var(--ink-2);
+    margin: 0;
+    line-height: 1.45;
+  }
+  .mode-body { padding: 4px 20px 20px; display: grid; gap: 0; }
+  .row {
+    display: grid;
+    gap: 3px;
+    padding: 13px 0;
+    border-bottom: 1px solid var(--rule-soft);
+  }
+  .row:last-child { border-bottom: 0; padding-bottom: 0; }
+  .row .rk {
+    font-family: var(--f-display);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .13em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  .row .rv { font-size: 14.2px; line-height: 1.5; color: var(--ink); }
+  .row .rv em { color: var(--ink-2); font-style: normal; }
+  .row.hero .rv { font-weight: 600; color: var(--hue); font-size: 15px; }
+
+  .patterns { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 5px; }
+  .patterns li { font-size: 13.6px; line-height: 1.45; color: var(--ink-2); }
+  .patterns b {
+    font-family: var(--f-mono);
+    font-size: 12.4px;
+    font-weight: 500;
+    color: var(--hue);
+  }
+
+  /* ---------- before / after flow ---------- */
+  .flows { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 22px; }
+  .flow { padding: 20px; }
+  .flow > .tag {
+    font-family: var(--f-display);
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    margin-bottom: 14px;
+    display: inline-block;
+  }
+  .flow.now > .tag { color: var(--ink-3); }
+  .flow.next > .tag { color: var(--gauntlet); }
+  .flow ol { margin: 0; padding: 0; list-style: none; display: grid; gap: 0; counter-reset: s; }
+  .flow li {
+    font-family: var(--f-mono);
+    font-size: 13px;
+    line-height: 1.45;
+    padding: 9px 0 9px 26px;
+    border-bottom: 1px dashed var(--rule-soft);
+    position: relative;
+    color: var(--ink-2);
+  }
+  .flow li:last-child { border-bottom: 0; }
+  .flow li::before {
+    content: "↓";
+    position: absolute;
+    left: 4px;
+    color: var(--rule);
+  }
+  .flow li:first-child::before { content: "▸"; color: var(--ink-3); }
+  .flow li b { color: var(--ink); font-weight: 500; }
+  .flow.next li b { color: var(--gauntlet); }
+
+  /* ---------- rules / contract lists ---------- */
+  .rules { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+  .rules > li {
+    display: grid;
+    grid-template-columns: 200px 1fr;
+    gap: 4px 24px;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--rule-soft);
+    align-items: start;
+  }
+  .rules > li:first-child { border-top: 1px solid var(--rule); }
+  .rules .n {
+    font-family: var(--f-mono);
+    font-size: 13px;
+    color: var(--ink);
+    font-weight: 500;
+  }
+  .rules .n small {
+    display: block;
+    font-family: var(--f-display);
+    font-size: 10.5px;
+    letter-spacing: .13em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin-top: 3px;
+    font-weight: 600;
+  }
+  .rules .d { color: var(--ink-2); font-size: 14.6px; max-width: 64ch; }
+  .rules .d b { color: var(--ink); font-weight: 600; }
+
+  .callout {
+    border-left: 3px solid var(--salvage);
+    background: var(--salvage-lo);
+    padding: 14px 18px;
+    margin: 22px 0 0;
+    font-size: 14.6px;
+    color: var(--ink-2);
+  }
+  .callout b { color: var(--ink); }
+  .callout.warnbox { border-left-color: var(--warn); background: var(--gauntlet-lo); }
+
+  /* ---------- open decisions ---------- */
+  .decisions { display: grid; gap: 12px; }
+  .decision {
+    padding: 16px 18px 15px;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    display: grid;
+    gap: 6px;
+  }
+  .decision .q { font-weight: 600; margin: 0; }
+  .decision .rec { margin: 0; font-size: 14.4px; color: var(--ink-2); }
+  .decision .rec span {
+    font-family: var(--f-display);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: .13em;
+    text-transform: uppercase;
+    color: var(--good);
+    margin-right: 8px;
+  }
+
+  /* ---------- build order (a genuine sequence — hence numbers) ---------- */
+  .steps { list-style: none; margin: 0; padding: 0; counter-reset: step; display: grid; gap: 0; }
+  .steps li {
+    counter-increment: step;
+    display: grid;
+    grid-template-columns: 54px 1fr auto;
+    gap: 4px 18px;
+    align-items: baseline;
+    padding: 15px 0;
+    border-bottom: 1px solid var(--rule-soft);
+  }
+  .steps li:first-child { border-top: 1px solid var(--ink); }
+  .steps li::before {
+    content: counter(step, decimal-leading-zero);
+    font-family: var(--f-mono);
+    font-size: 15px;
+    color: var(--ink-3);
+    grid-row: 1 / span 2;
+  }
+  .steps .t { font-weight: 600; font-family: var(--f-display); font-size: 17px; }
+  .steps .n { grid-column: 2; color: var(--ink-2); font-size: 14.4px; max-width: 62ch; }
+  .steps .owner {
+    grid-column: 3;
+    grid-row: 1 / span 2;
+    font-family: var(--f-mono);
+    font-size: 11.5px;
+    color: var(--ink-3);
+    white-space: nowrap;
+  }
+
+  .keeps { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 4px; }
+  .keeps span {
+    font-family: var(--f-mono);
+    font-size: 12px;
+    padding: 4px 9px;
+    border: 1px solid var(--rule);
+    color: var(--ink-2);
+    background: var(--surface-2);
+  }
+
+  footer {
+    border-top: 2px solid var(--ink);
+    padding-top: 20px;
+    color: var(--ink-3);
+    font-size: 13.5px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 20px;
+  }
+  footer .f-mono { font-family: var(--f-mono); }
+
+  @media (max-width: 900px) {
+    .modes { grid-template-columns: 1fr; }
+    .flows { grid-template-columns: 1fr; }
+    .rules > li { grid-template-columns: 1fr; }
+    .steps li { grid-template-columns: 40px 1fr; }
+    .steps .owner { grid-column: 2; grid-row: auto; }
+  }
+  @media (max-width: 560px) {
+    .wrap { padding: 0 18px 80px; }
+    .finding { grid-template-columns: 1fr; }
+    .finding .where { grid-column: 1; grid-row: auto; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <p class="eyebrow">
+      <span>Salvage Protocol</span><span class="sep">/</span>
+      <span>Phase 00 — the gate</span><span class="sep">/</span>
+      <span>Design round, 2026-09-03</span>
+    </p>
+    <h1>Three Ways In</h1>
+    <p class="standfirst">
+      The raid overhaul, settled. Not a rebuild — the tree map, chapters, instancing and run
+      economy all survive untouched. What changes is <strong>why</strong> you go in: three raid
+      modes, each owning one loot axis and rewarding a different build. And the path choice comes
+      off the screen and into the room — <strong>you walk through a door</strong>.
+    </p>
+    <div class="status-strip">
+      <span class="chip hot">Awaiting sign-off</span>
+      <span class="chip">Blocks: enemy AI patterns</span>
+      <span class="chip">Blocks: raid shop rework</span>
+      <span class="chip ok">Engine already built</span>
+    </div>
+  </header>
+
+  <!-- ============ DIAGNOSIS ============ -->
+  <section>
+    <div class="sec-head">
+      <span class="label">Why an overhaul at all</span>
+      <h2>The structure is finished. Four places are hollow.</h2>
+      <p>
+        Raids went through five build-and-playtest rounds and each ended well. Nothing here is
+        broken. What is missing is <em>content in the slots the engine already opened</em> — every
+        finding below was checked against the source, not remembered.
+      </p>
+    </div>
+
+    <div class="findings">
+      <div class="finding">
+        <p class="what">The card pool is four stubs.</p>
+        <p class="why">
+          One per rarity, all named “Placeholder Buff”, no effects wired — the post-boss pick works
+          and there is nothing to pick. This is the roguelike layer, entirely unbuilt.
+        </p>
+        <p class="where">RaidConfig.lua:528</p>
+      </div>
+      <div class="finding">
+        <p class="what">The raid shop sells ore bundles.</p>
+        <p class="why">
+          The same fixed menu every raid, no rotation, selling the exact resource you came in to
+          farm. A shop node is currently a vending machine, not a decision.
+        </p>
+        <p class="where">NodeConfig.lua:91</p>
+      </div>
+      <div class="finding">
+        <p class="what">Nothing anywhere is tagged <code>RunLocked</code> or <code>Permanent</code>.</p>
+        <p class="why">
+          <b>The most consequential one.</b> <code>settleRunLoot</code> is fully built and fully
+          inert, so pushing deeper risks nothing and extracting protects nothing — the single
+          decision the whole raid is shaped around has no stakes attached to it yet.
+        </p>
+        <p class="where">NodeConfig.lua:26</p>
+      </div>
+      <div class="finding">
+        <p class="what"><code>EnemyAI.Patterns</code> has exactly one entry.</p>
+        <p class="why">
+          <code>Chaser</code>, and all six enemy types point at it. Combat, Ambush and Boss rooms
+          therefore play identically — the only thing that changes between them is how much HP walks
+          at you.
+        </p>
+        <p class="where">EnemyAI.lua:69</p>
+      </div>
+    </div>
+
+    <div class="callout">
+      <b>These four are why the modes below are the right shape.</b> Each mode adopts one of the
+      hollow slots as the thing it is <em>about</em> — so filling them stops being four disconnected
+      content chores and becomes three coherent reasons to enter a raid.
+    </div>
+  </section>
+
+  <!-- ============ THE THREE MODES ============ -->
+  <section>
+    <div class="sec-head">
+      <span class="label">The centrepiece</span>
+      <h2>Three modes, one engine</h2>
+      <p>
+        Picked before you spend Energy. Same map generator, same rooms, same combat — different
+        rules, different loot axis, different question you are answering while you play. The point
+        is variety of <em>build</em>: gear that carries a Gauntlet run is the wrong gear for a
+        Salvage Run.
+      </p>
+    </div>
+
+    <div class="modes">
+
+      <article class="mode g">
+        <div class="mode-head">
+          <span class="num">MODE 01</span>
+          <h3>Gauntlet</h3>
+          <p class="axis">Cores &amp; Contraband — the power currencies. How far can you push before it kills you?</p>
+        </div>
+        <div class="mode-body">
+          <div class="row hero">
+            <div class="rk">You are optimising</div>
+            <div class="rv">Card synergy, and when to stop.</div>
+          </div>
+          <div class="row">
+            <div class="rk">Run shape</div>
+            <div class="rv">Endless chapters. <em>One guaranteed Boss per map</em> instead of the current 1–2 rolled, so cards arrive on a rhythm you can plan around.</div>
+          </div>
+          <div class="row">
+            <div class="rk">Cards</div>
+            <div class="rv">The whole point. They stack all run and are <em>always lost on exit</em> — the power is the run, not the account.</div>
+          </div>
+          <div class="row">
+            <div class="rk">Shop sells</div>
+            <div class="rv">Run-only perk accessories, priced in run Scrap. This is where the shop rework lands.</div>
+          </div>
+          <div class="row">
+            <div class="rk">The stake</div>
+            <div class="rv">Payout multiplies with <code>MapsCleared</code>. Die and you keep the base, lose the multiplier.</div>
+          </div>
+          <div class="row">
+            <div class="rk">AI patterns it wants</div>
+            <div class="rv">
+              <ul class="patterns">
+                <li><b>Swarmer</b> — weak, many, flanks rather than beelines.</li>
+                <li><b>Charger</b> — telegraphed rush, punishing if you stand still.</li>
+                <li><b>Artillery</b> — ranged, keeps distance, forces you to move.</li>
+              </ul>
+            </div>
+          </div>
+          <div class="row">
+            <div class="rk">Build rewarded</div>
+            <div class="rv">Glass cannon. Damage now, scale into the cards, get out before the curve catches you.</div>
+          </div>
+        </div>
+      </article>
+
+      <article class="mode s">
+        <div class="mode-head">
+          <span class="num">MODE 02</span>
+          <h3>Salvage Run</h3>
+          <p class="axis">Ore &amp; refined materials — the feedstock the Welding Station and Forge actually eat.</p>
+        </div>
+        <div class="mode-body">
+          <div class="row hero">
+            <div class="rk">You are optimising</div>
+            <div class="rv">How much to carry against how far the exit is.</div>
+          </div>
+          <div class="row">
+            <div class="rk">Run shape</div>
+            <div class="rv">Shorter maps, no guaranteed Boss, Heal nodes rare. <em>Extraction is a physical room</em> you must reach to bank — not a button.</div>
+          </div>
+          <div class="row">
+            <div class="rk">Carry cap</div>
+            <div class="rv">A real ceiling on ore held. Full bag means choosing what to drop, or leaving now.</div>
+          </div>
+          <div class="row">
+            <div class="rk">Shop sells</div>
+            <div class="rv">Capacity and escape — bag upgrades, a speed boost, one-shot extraction beacons.</div>
+          </div>
+          <div class="row">
+            <div class="rk">The stake</div>
+            <div class="rv">Every ore drop tagged <code>RunLocked</code>. Die or abandon and it is gone. Currency stays exempt, as it already is.</div>
+          </div>
+          <div class="row">
+            <div class="rk">AI patterns it wants</div>
+            <div class="rv">
+              <ul class="patterns">
+                <li><b>Stalker</b> — spawns behind you, slow, patient, does not give up.</li>
+                <li><b>Guardian</b> — parks on the loot and will not chase. You come to it.</li>
+                <li><b>Screamer</b> — calls reinforcements if you linger in the room.</li>
+              </ul>
+            </div>
+          </div>
+          <div class="row">
+            <div class="rk">Build rewarded</div>
+            <div class="rv">Survivability and movement. Getting out alive is the win condition, not the kill count.</div>
+          </div>
+        </div>
+      </article>
+
+      <article class="mode c">
+        <div class="mode-head">
+          <span class="num">MODE 03</span>
+          <h3>Contract</h3>
+          <p class="axis">Blueprints, gun variants, Drone Cores, Contraband — the things you cannot farm anywhere else.</p>
+        </div>
+        <div class="mode-body">
+          <div class="row hero">
+            <div class="rk">You are optimising</div>
+            <div class="rv">Which contract your current build can actually clear.</div>
+          </div>
+          <div class="row">
+            <div class="rk">Run shape</div>
+            <div class="rv">Fixed length, set by the contract. You know going in how long it is and what it demands.</div>
+          </div>
+          <div class="row">
+            <div class="rk">The board</div>
+            <div class="rv">Rotating offers at difficulty tiers — <em>reach map 3</em>, <em>kill two bosses</em>, <em>clear it without dying</em> — each naming its exact payout.</div>
+          </div>
+          <div class="row">
+            <div class="rk">Shop sells</div>
+            <div class="rv">Objective tools: intel on what is ahead, a re-roll of the remaining map, a revive.</div>
+          </div>
+          <div class="row">
+            <div class="rk">The stake</div>
+            <div class="rv">Reward tagged <code>Permanent</code> — complete the objective and it banks even on a bad exit. Fail it and the trip paid nothing.</div>
+          </div>
+          <div class="row">
+            <div class="rk">AI patterns it wants</div>
+            <div class="rv">
+              <ul class="patterns">
+                <li><b>Defender</b> — holds a point and will not leave it.</li>
+                <li><b>Runner</b> — flees on sight; the objective is catching it.</li>
+                <li><b>Sapper</b> — attacks the objective, not you. Ignore it and you fail.</li>
+              </ul>
+            </div>
+          </div>
+          <div class="row">
+            <div class="rk">Build rewarded</div>
+            <div class="rv">Specialisation and prep. You pick the loadout for the contract, not a general-purpose one.</div>
+          </div>
+        </div>
+      </article>
+
+    </div>
+
+    <div class="callout">
+      <b>Why three modes and not one bigger raid:</b> a single raid has to be balanced for every
+      player at once, so it ends up rewarding one dominant build and quietly retiring the rest.
+      Three narrow modes each get to be unfair in their own direction — and the player choosing
+      between them <em>before</em> spending Energy is itself the strategy layer that raids do not
+      have today.
+    </div>
+  </section>
+
+  <!-- ============ PHYSICAL DOORS ============ -->
+  <section>
+    <div class="sec-head">
+      <span class="label">The second half of the overhaul</span>
+      <h2>The map choice comes off the screen</h2>
+      <p>
+        Today a cleared room opens a GUI and you click a circle. Instead: the room's
+        <strong>exit doors unlock</strong>, each one labelled with where it goes, and you walk
+        through the one you want. The map GUI stays — it stops being the input and becomes the
+        thing that tells you where you are.
+      </p>
+    </div>
+
+    <div class="flows">
+      <div class="flow now panel">
+        <span class="tag">How it works now</span>
+        <ol>
+          <li>Room encounter clears</li>
+          <li><b>showMapChoice(state)</b></li>
+          <li>RaidMapUpdate → GUI map opens</li>
+          <li>Player clicks a circle</li>
+          <li><b>ChooseRaidNode</b> fires</li>
+          <li>Teleport to the next room</li>
+        </ol>
+      </div>
+      <div class="flow next panel">
+        <span class="tag">How it works after</span>
+        <ol>
+          <li>Room encounter clears</li>
+          <li><b>unlockExits(state)</b></li>
+          <li>Doors light up, one per branch</li>
+          <li>Player <b>walks through a door</b></li>
+          <li><b>ChooseRaidNode</b> fires — same remote</li>
+          <li>Teleport to the next room</li>
+        </ol>
+      </div>
+    </div>
+
+    <h3>The door contract</h3>
+    <ul class="rules">
+      <li>
+        <div class="n">ExitDoor <small>New Part name</small></div>
+        <div class="d">A Part in the room Model, one per possible branch. New <code>RaidConfig.ExitDoorName</code> key, following <code>SpawnPointName</code> / <code>InteractPointName</code> exactly.</div>
+      </li>
+      <li>
+        <div class="n">ExitIndex <small>Optional attribute</small></div>
+        <div class="d">A number, deciding which door maps to which branch. Unset on all of them, doors sort by local X instead — so a two-door room needs no attributes at all to behave sensibly.</div>
+      </li>
+      <li>
+        <div class="n">Locked until cleared <small>Behaviour</small></div>
+        <div class="d">Doors are solid and dark while the encounter runs. On resolve each takes its <b>destination type's own <code>NodeTypes.Color</code></b> and a label with that type's <code>DisplayName</code> — so the information the map circles carried is now on the door itself.</div>
+      </li>
+      <li>
+        <div class="n">Too few doors <small>Fallback</small></div>
+        <div class="d"><b>Warn and open the GUI map for that node.</b> A half-built room must never strand a run — the project's missing-art rule applied to geometry.</div>
+      </li>
+      <li>
+        <div class="n">Too many doors <small>Fallback</small></div>
+        <div class="d">Extras stay sealed and unlit. A room built with three doors works fine in a map that only ever gives it two branches.</div>
+      </li>
+      <li>
+        <div class="n">Leaf nodes <small>Behaviour</small></div>
+        <div class="d">Zero connections, so every door stays sealed and <code>onMapCleared</code> fires exactly as it does today — the chapter transition is unchanged.</div>
+      </li>
+      <li>
+        <div class="n">Fallback room <small>No art yet</small></div>
+        <div class="d">Grows its doors procedurally on the guard rail, the same way it already grows an <code>InteractPoint</code> when none is authored.</div>
+      </li>
+    </ul>
+
+    <div class="callout">
+      <b>The map GUI's new job.</b> A persistent, read-only minimap: where you are, what you cleared,
+      what is ahead. <code>redrawMap</code>'s dendrogram layout is kept as-is — it is already proven
+      over 5,000 generated maps to never cross a line, and that guarantee is worth more now that the
+      map is a reference rather than a control.
+    </div>
+  </section>
+
+  <!-- ============ STUDIO AUTHORING ============ -->
+  <section>
+    <div class="sec-head">
+      <span class="label">You asked how to build these</span>
+      <h2>Authoring a raid room in Studio</h2>
+      <p>
+        This is the contract as it exists <em>today</em> — everything except <code>ExitDoor</code>
+        is already live, so you can start building rooms before any of the above is written.
+      </p>
+    </div>
+
+    <ul class="rules">
+      <li>
+        <div class="n">ServerStorage.RaidRoomModels <small>Where they live</small></div>
+        <div class="d">One Model per node type, named <b>exactly</b>: <code>Start</code>, <code>Combat</code>, <code>Ambush</code>, <code>Heal</code>, <code>Shop</code>, <code>Boss</code>. Any other name is not found and you get the placeholder square.</div>
+      </li>
+      <li>
+        <div class="n">PrimaryPart <small>Required</small></div>
+        <div class="d">Every room Model must have one, or it silently falls back to the placeholder. The Model is cloned and <code>PivotTo</code>'d to the room origin — so <b>build it centred on the origin</b>, and the pivot is where the player lands.</div>
+      </li>
+      <li>
+        <div class="n">SpawnPoint <small>Combat / Ambush / Boss</small></div>
+        <div class="d">
+          A Part per enemy, each with a <b>String attribute <code>EnemyType</code></b> set to one of:
+          <code>Scavenger</code>, <code>Raider</code>, <code>Brute</code>, <code>ScrapCrawler</code>,
+          <code>SentinelDrone</code>, <code>VoidwakenHulk</code>. An unrecognised value spawns
+          nothing there and warns — it never guesses. No SpawnPoints at all falls back to the
+          random ring, 50–70 studs out.
+        </div>
+      </li>
+      <li>
+        <div class="n">InteractPoint <small>Heal / Shop</small></div>
+        <div class="d">One Part. A ProximityPrompt is added automatically if it has none — this is what makes the room wait for you instead of firing on entry, and it is where an NPC eventually goes.</div>
+      </li>
+      <li>
+        <div class="n">No Model built <small>Fallback</small></div>
+        <div class="d">A 260×260 concrete square with an invisible guard rail, plus a stand-in InteractPoint on Heal/Shop. Playable, ugly, never blocking.</div>
+      </li>
+      <li>
+        <div class="n">Where rooms sit <small>Instancing</small></div>
+        <div class="d">Built fresh at <code>(0, 800, 0)</code>, 600 studs apart per concurrent raid, up to 20 at once. Nothing to line up against — every room is alone in its slot, so rotation never matters.</div>
+      </li>
+    </ul>
+
+    <div class="callout warnbox">
+      <b>One gap worth closing while you are in there: every Combat room is the same room.</b>
+      <code>buildRoom</code> looks up one Model per type, so a fifteen-node map walks through the
+      identical box a dozen times. Proposal —
+      <b><code>RaidRoomModels.Combat</code> may be a Folder of Models instead of a Model</b>, one
+      picked at random per node. Backwards compatible by construction: a Model is used directly, a
+      Folder picks a random Model child. Roughly six lines in <code>buildRoom</code>, and it turns
+      “make the map pretty” from one big build into as many small ones as you feel like making.
+    </div>
+  </section>
+
+  <!-- ============ WHAT SURVIVES ============ -->
+  <section>
+    <div class="sec-head">
+      <span class="label">Scope guard</span>
+      <h2>What none of this touches</h2>
+      <p>
+        Worth stating plainly, because “overhaul” reads like a rewrite and this is not one. All of
+        the following keeps working exactly as built and verified:
+      </p>
+    </div>
+    <div class="keeps">
+      <span>GenerateMap tree + retry</span>
+      <span>Chaptered maps</span>
+      <span>onMapCleared</span>
+      <span>Instancing + slot free-list</span>
+      <span>RunRaidCombat</span>
+      <span>Room-authored spawns</span>
+      <span>settleRunLoot</span>
+      <span>Run currency pool</span>
+      <span>Boss placement rules</span>
+      <span>Ambush run-scaling</span>
+      <span>PlayerActivityService gating</span>
+      <span>Energy cost</span>
+      <span>redrawMap dendrogram</span>
+    </div>
+    <div class="callout">
+      <b>And <code>EnemyAI.lua</code> itself does not change either.</b> Its header already
+      anticipated this: base defense aims <code>TargetPosition</code> at the plot anchor, raids aim
+      it at the player. Every pattern named on this page is one new function in
+      <code>EnemyAI.Patterns</code> plus one config line — which is exactly what that table was
+      built to be.
+    </div>
+  </section>
+
+  <!-- ============ OPEN DECISIONS ============ -->
+  <section>
+    <div class="sec-head">
+      <span class="label">Needs your call before building</span>
+      <h2>Five open decisions</h2>
+      <p>Each has a recommendation. None of them block starting on step 01 or 02 below.</p>
+    </div>
+
+    <div class="decisions">
+      <div class="decision">
+        <p class="q">Do the three modes cost the same Energy?</p>
+        <p class="rec"><span>Recommend</span> Yes, 1 each to start. Different costs are a balance lever you cannot tune before any of them has been played, and an expensive mode nobody picks reads as broken rather than as premium.</p>
+      </div>
+      <div class="decision">
+        <p class="q">Are Gauntlet cards really lost on every exit, including a clean one?</p>
+        <p class="rec"><span>Recommend</span> Yes, always. The moment a card can be banked, Gauntlet becomes a farm for permanent power and every other system has to be balanced around it. Losing them is what makes the run the unit.</p>
+      </div>
+      <div class="decision">
+        <p class="q">Does Salvage Run's carry cap cover currency too?</p>
+        <p class="rec"><span>Recommend</span> No. Currency is already exempt from <code>RunLocked</code> by an explicit earlier decision, and capping it would make the raid shop unusable at exactly the moment you need it.</p>
+      </div>
+      <div class="decision">
+        <p class="q">Where does the Contract board physically live?</p>
+        <p class="rec"><span>Recommend</span> On the existing raid terminal, as the mode-select screen's third tab — not a new tagged Station. It keeps “choose a mode” and “choose a contract” as one decision in one place, and adds no Studio setup.</p>
+      </div>
+      <div class="decision">
+        <p class="q">Do all three modes unlock at once?</p>
+        <p class="rec"><span>Recommend</span> Salvage Run first, the other two behind Research Tiers. It is the mode that feeds crafting, it is the gentlest, and it gives the early-game pacing plan something concrete to hand a new player.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ BUILD ORDER ============ -->
+  <section>
+    <div class="sec-head">
+      <span class="label">Dependency order — this one really is a sequence</span>
+      <h2>Build order</h2>
+      <p>
+        Doors first because all three modes need them. Salvage Run before Gauntlet because it is
+        almost entirely tagging and reuse. AI patterns last, once there are three different jobs for
+        them to do.
+      </p>
+    </div>
+
+    <ol class="steps">
+      <li>
+        <div class="t">Physical exit doors + read-only minimap</div>
+        <div class="n">Mode-agnostic, and the single biggest feel change on the page. <code>ExitDoorName</code>, <code>unlockExits</code>, the GUI map demoted to a reference panel.</div>
+        <div class="owner">sp-server-dev · sp-config-dev</div>
+      </li>
+      <li>
+        <div class="t">Room variant folders</div>
+        <div class="n">Six lines in <code>buildRoom</code>. Small, independent, and it unblocks every hour of Studio art you want to spend afterwards.</div>
+        <div class="owner">sp-server-dev</div>
+      </li>
+      <li>
+        <div class="t">Mode plumbing</div>
+        <div class="n">A <code>RaidMode</code> on the raid state, chosen at start, plus one <code>RaidConfig.Modes</code> table holding each mode's rules. Flat table of named strategies — the project's standard shape.</div>
+        <div class="owner">sp-config-dev → sp-server-dev</div>
+      </li>
+      <li>
+        <div class="t">Salvage Run</div>
+        <div class="n">Cheapest of the three: tag ore <code>RunLocked</code>, add the carry cap, make Extraction a real room. Almost no new systems.</div>
+        <div class="owner">sp-server-dev · sp-config-dev</div>
+      </li>
+      <li>
+        <div class="t">Gauntlet</div>
+        <div class="n">A real card pool with real effects, plus the run-only perk shop. The biggest content write on the page — and the one that finally spends <code>RollCardChoices</code>.</div>
+        <div class="owner">sp-config-dev → sp-server-dev</div>
+      </li>
+      <li>
+        <div class="t">Contract</div>
+        <div class="n">Largest new surface: the board, objective tracking, rotation, <code>Permanent</code> payouts. Last because it is the only one that needs a system that does not exist yet.</div>
+        <div class="owner">sp-server-dev</div>
+      </li>
+      <li>
+        <div class="t">Enemy AI patterns</div>
+        <div class="n">Nine patterns, three per mode. Deliberately last: built against three raids that exist, not one that does not.</div>
+        <div class="owner">sp-combat-dev</div>
+      </li>
+    </ol>
+  </section>
+
+  <footer>
+    <span class="f-mono">Salvage Protocol · DESIGN_NOTES.md Phase 00</span>
+    <span class="f-mono">Companion pages: Road to release · Asset Bench</span>
+    <span class="f-mono">Drafted 2026-09-03</span>
+  </footer>
+
+</div>
