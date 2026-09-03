@@ -24,7 +24,7 @@ already made (numbers, mechanics, sequencing), not just vague direction.
 | Drone companion (4 Drone Cores) | **Built** — unlocks at Research Tier 3, follows you everywhere |
 | Player Test Mode (admin throwaway profile) | **Built** — see "Data safety" section below |
 | HUD phase 3 (all station menus) | **Built and verified** — see "Road to release" below |
-| Raid overhaul | **Designed, not built** — three modes + physical doors, see Phase 00 below |
+| Raid overhaul | **Designed; step 1 of 7 built** — doors + Sector Map done, see Phase 00 below |
 | Enemy AI patterns | **Engine built, one pattern** — `Chaser`, and all six enemies use it |
 | Early-game pacing & onboarding | **Planned, not built** — see below |
 | Raid shop rework (run-only perks) | **Planned, not built** — half the tag plumbing exists |
@@ -124,7 +124,8 @@ what that table was built to be.
 **Build order inside the overhaul** (dependency order — doors first because all three modes need
 them, AI patterns last because they need three raids to exist):
 
-1. Physical exit doors + read-only minimap — mode-agnostic, biggest feel change.
+1. ~~Physical exit doors + read-only minimap~~ — **BUILT (2026-09-03)**, see "Raid Rooms — physical
+   exit doors + the Sector Map" below.
 2. Room variant folders — small, independent, unblocks Studio art.
 3. Mode plumbing — a `RaidMode` on the raid state plus one `RaidConfig.Modes` table of named rules
    (the project's standard flat-table-of-strategies shape).
@@ -1358,6 +1359,77 @@ post-boss card pick.
   player must choose from before the map advances. Card system is a placeholder scaffold — one stub
   card per rarity, no real buff effects wired up (`state.CollectedCards` just records the pick) —
   proves out the rarity/roll/pick-one flow for real content to replace it later.
+
+### Raid Rooms — physical exit doors + the Sector Map (BUILT)
+
+Step 1 of the raid overhaul's build order (see Phase 00). Mode-agnostic on purpose — all three raid
+modes need it — and the biggest change in how a raid FEELS that the overhaul contains.
+
+**The map stopped being the control.** A cleared room used to open a centred overlay you clicked a
+circle on. Now the room's own doors unlock and you walk through one. `ChooseRaidNode` is unchanged
+and still does the same `table.find(currentNode.Connections, nodeId)` legality check — only the input
+moved, which is why this was cheap: a door is just another way to send an id the server already
+validates.
+
+- **`RaidConfig`** gained the whole door contract: `ExitDoorName` ("ExitDoor"), `ExitDoorIndexAttribute`
+  ("ExitIndex"), `ExitDoorUseProximityPrompt` / `ExitDoorPromptDistance`, `ExitDoorSealedColor` /
+  `ExitDoorUnlockedTransparency` / `ExitDoorLabelHeightOffset`, and `FallbackExitDoorCount` /
+  `Size` / `Inset`.
+- **`RaidRoomService`** gained `collectExitDoors` / `sealExitDoors` / `unlockExitDoors` plus
+  `buildFallbackExitDoors`, and `showMapChoice` now unlocks doors instead of just firing an event.
+  Doors are sealed on every room entry, BEFORE the type branch chain — sealing after it would
+  immediately undo the Start node's own `showMapChoice`.
+- **An unlocked door wears its DESTINATION's colour**, straight off `NodeTypes.Color`, with a
+  floating label carrying that type's `DisplayName` and Tier. One colour language for the door, the
+  map circle and the legend, and it cannot drift because all three read the same table.
+- **Walk-through, not a prompt.** An unlocked door drops `CanCollide` and you pass through it —
+  "to choose where to go is gonna be a physical thing." `ExitDoorUseProximityPrompt` flips the whole
+  thing to a press-E affordance instead; both paths are implemented, so if playtesting says a
+  walk-through triggers too easily (a door near an authored room's spawn point is the risk) that is a
+  config flip rather than a code change.
+- **Too few doors warns and re-opens the clickable map for that one node** — the missing-art rule
+  applied to geometry. A room with one door in a two-way fork is playable, not a soft-lock. The
+  payload carries `AllowNodeClick` so the client knows to make circles live again, and ONLY then.
+- **The fallback square grows three doors of its own**, same idea as the `InteractPoint` stand-in it
+  already grew, so physical exits work before a single Room Model exists. Three is one more than any
+  map can currently use, which means the "extras stay sealed" path gets exercised every raid rather
+  than only in authored rooms.
+
+**The map became the Sector Map** (`RaidClient.client.lua`) — docked right, persistent for the whole
+raid, read-only. It is the one part of that file that has had its reskin, because it is now on screen
+for the entire run rather than for the few seconds a choice was open.
+
+- **On HudKit's angular plate**, with a `raid_map_backdrop` art slot in `UiIconConfig` — a full-bleed
+  background image rather than a glyph, the only entry of its kind there. Scrimmed hard (0.72 plus a
+  top-to-bottom gradient) because whatever art lands has to sit UNDER a node tree that must stay
+  readable. At 0 it resolves to nothing and the procedural grid shows instead, so the panel is
+  finished either way — wants something map-ish and roughly 3:4 portrait.
+- **The tree draws top-to-bottom now**, stage on Y and lane on X. A docked panel is tall and narrow
+  and a map can reach 14 stages deep. The dendrogram's no-crossing-lines guarantee is topological,
+  not axis-dependent, so the swap keeps it intact.
+- **Only the current node and its reachable children are labelled.** At 346x424 with up to 18 nodes,
+  labelling everything is a wall of overlapping type. Type is carried by colour plus a legend; the
+  map is for orienting, not for reciting the graph.
+- **It draws your trail** — visited nodes solid, unvisited hollow, and edges you actually walked in
+  warm gold. Reset per chapter, keyed off `StartNodeId` changing, since node ids are reused between
+  generations and a previous chapter's visits say nothing about this one.
+- **`ChoicePending` replaced `mapFrame.Visible`** as the gate on "Go Back To Base". The old test
+  worked only because the map WAS the choice; with a permanent panel it would have left the bail-out
+  button up for the whole raid and undone the rule it exists for ("so they cant just quit while doing
+  a raid"). The server sets `ChoicePending` only while a choice is genuinely live.
+- The banner's pulse is a single stored `Tween` with `RepeatCount = -1`, cancelled in a `hideSectorMap`
+  teardown funnel — a looping tween on a hidden Frame runs forever otherwise, the same silent leak
+  the Smelting dial and the case reel each carry a guard against. No Heartbeat connection anywhere in
+  the panel, deliberately.
+
+**Two bugs worth not relearning.** `HudKit.plate` returns **(surface, shell)**, surface FIRST — taking
+them the other way round hides only the panel's inner face and leaves the outer frame drawn. And
+`COLOR.MapLine` is gone: the map palette moved into a local `MAP` table, because every entry in it is
+about drawing a chart rather than HUD chrome, and none of it is reused.
+
+**Still to do on the map:** nothing blocks the next step, but the backdrop art does not exist yet and
+is on the Asset Bench.
+
 
 > **SUPERSEDED by the Black Market & Hacker Machine section above.** Kept for the reasoning, not as
 > a separate thing to build — the geode/extractor mechanic below is the same shape as the case/decode

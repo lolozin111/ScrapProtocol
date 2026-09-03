@@ -920,36 +920,63 @@ to end:
 15. **Raid Rooms** (separate from the Expedition conveyor in step 10 — this is the newer, instanced
     version, see `DESIGN_NOTES.md`'s "Raid Rooms" sections). No Studio setup needed — click the
     orange **Start Raid** button, top-right. You should teleport somewhere new immediately (a
-    private area, high in the sky, invisible from your base) and land in an Entry room, then the
-    **Raid Map** should pop up automatically: a handful of colored circles (orange=Combat,
-    blue=Shop, green=Heal, gold=Extraction, dark red=Ambush) connected by lines, laid out left to
-    right in stages. Click a bright/outlined circle (the only ones that respond) to travel there —
-    dim circles are locked. Pick a Combat node: you land in a plain grey placeholder room (**you
-    need at least one Model per type in `ServerStorage.RaidRoomModels`** — e.g. a Model named
-    `Combat` with a `PrimaryPart` — for real rooms; with none placed, the fallback square is
-    expected, not a bug — it's a big 260x260 floor now with an invisible edge barrier, not a visible
-    wall) and a small panel shows an Enemies bar ticking as you fight (same real combat engine as
-    base defense — your equipped gun/robots work here too). Clear it and confirm you're kicked back
-    to the map automatically with a "Room cleared!" toast naming whatever loot dropped. Pick a Heal
-    node: confirms an instant "Fully healed." message and a **Continue** button — click it to go
-    back to the map. Pick a Shop node: confirms a list of buy buttons (same catalog as the
-    Expedition Shop node) plus **Continue**; buying with insufficient currency should toast a
-    rejection instead of charging you. Pick an Ambush node (rarer — you may need a couple of raids
-    before one shows up): confirms the same panel but prefixed **"Wave X/Y"**, with a toast after
-    each wave and another fight starting a couple seconds later, for however many waves got rolled.
-    The red **Abandon Raid** button (bottom-right) should be visible any time you're in a raid
-    EXCEPT mid-Combat/Ambush — try clicking it during a fight (nothing should happen) and again
-    between rooms (should immediately end the raid and return you to your base plot, healed). Let a
-    branch run all the way to the gold **Extraction** node — reaching it should NOT end the raid;
-    confirm a "Map cleared!" toast, an immediate teleport into a freshly-shaped new map, and a green
-    **Extract** button now appearing next to Abandon. Click Extract from there (or after clearing a
-    later map) and confirm it does end the raid and return you home. Try starting a second raid with
-    Energy at 0 (see step 9) and confirm a "Not enough Energy" toast instead of teleporting you
-    anywhere. **Room-authored spawns (optional):** in a Combat or Ambush Room Model, place a Part
-    named exactly `SpawnPoint` with a string Attribute named `EnemyType` set to a valid key (e.g.
-    `Raider`) — enter that room and confirm exactly that enemy spawns at that Part's position
-    instead of a random composition; try a typo'd `EnemyType` too and confirm the Output window
-    warns instead of spawning anything there.
+    private area, high in the sky, invisible from your base) and land in an Entry room.
+
+    **The Sector Map** docks to the right of the screen and stays there for the whole raid — it is
+    a readout, not a control. Confirm it shows an angular panel headed `SECTOR MAP` with a `CH 1`
+    chip, a tree of coloured circles running top-to-bottom (orange=Combat, dark red=Ambush,
+    red=Boss, green=Heal, blue=Shop), a legend along the bottom, and a banner under the header. The
+    node you are standing in is the biggest one, ringed in white and labelled; the ones you could go
+    to next are labelled in orange; everything else is a plain dot. As you move, confirm the trail
+    behind you fills in — visited nodes go solid and the edges you actually walked turn warm gold —
+    and that the `— / +` button in the header collapses the panel to just its title bar and back.
+
+    **Choosing a path is physical now.** Clear a room and confirm the banner starts pulsing
+    `CHOOSE AN EXIT — WALK THROUGH A DOOR`, and that doors in the room light up — one per branch,
+    each glowing in its DESTINATION's colour with a floating label naming it ("Combat · T2"). Walk
+    into one and confirm you travel there. The circles on the map should NOT respond to clicks;
+    they are a display. In the placeholder room the doors are three dark slabs along one edge that
+    light up when the room clears — with a two-way fork only two of them light, and the third
+    staying sealed is correct, not a bug.
+
+    Pick a Combat node: you land in a plain grey placeholder room (**you need at least one Model per
+    type in `ServerStorage.RaidRoomModels`** — e.g. a Model named `Combat` with a `PrimaryPart` —
+    for real rooms; with none placed, the fallback square is expected, not a bug — it's a big
+    260x260 floor with an invisible edge barrier, not a visible wall) and a small panel shows an
+    Enemies bar ticking as you fight (same real combat engine as base defense — your equipped
+    gun/robots work here too). Clear it and confirm a "Room cleared!" toast naming whatever loot
+    dropped, and that the map's "you are here" marker stays put until you actually walk through a
+    door. Pick a Heal node: confirms an instant "Fully healed." message and a **Continue** button.
+    Pick a Shop node: confirms a list of buy buttons (same catalog as the Expedition Shop node) plus
+    **Continue**; buying with insufficient currency should toast a rejection instead of charging you.
+    Pick an Ambush node (rarer — you may need a couple of raids before one shows up): confirms the
+    same panel but prefixed **"Wave X/Y"**, with a toast after each wave and another fight starting a
+    couple of seconds later, for however many waves got rolled.
+
+    The **Go Back To Base** button (top-centre) should appear ONLY while a choice is actually live —
+    i.e. exactly while that banner is pulsing. Confirm it is gone during a fight, gone while a Heal
+    or Shop room is waiting on its interact prompt, and back the moment the exits unlock. Run a
+    branch all the way to its dead end — that should NOT end the raid; confirm a "Map cleared!"
+    toast, an immediate teleport into a freshly-shaped new map, the `CH` chip ticking to `CH 2` with
+    the trail reset, and a green **Extract** button appearing. Click Extract and confirm it ends the
+    raid and returns you home. Try starting a second raid with Energy at 0 (see step 9) and confirm
+    a "Not enough Energy" toast instead of teleporting you anywhere.
+
+    **Room-authored spawns (optional):** in a Combat or Ambush Room Model, place a Part named exactly
+    `SpawnPoint` with a string Attribute named `EnemyType` set to a valid key (e.g. `Raider`) — enter
+    that room and confirm exactly that enemy spawns at that Part's position instead of a random
+    composition; try a typo'd `EnemyType` too and confirm the Output window warns instead of spawning
+    anything there.
+
+    **Authoring exit doors (needed on every real Room Model):** place Parts named exactly `ExitDoor`,
+    one per branch the room can offer — two is enough for any map the generator produces. Which door
+    leads where is decided by a **number attribute named `ExitIndex`** (1, 2, ...); leave them all
+    unset and doors sort by world X instead, so a plain left/right pair needs no attributes at all
+    and the leftmost door is branch 1. Test the safety net deliberately: build a room with only ONE
+    `ExitDoor`, walk into a two-way fork there, and confirm the Output window warns and the old
+    clickable map comes back for that one choice rather than stranding you — the banner should read
+    `PICK A NODE ON THE MAP` instead. Doors are sealed and dark while a room's fight is running; if
+    you ever see one lit mid-fight, that's a bug.
 
 16. **Training dummies and damage numbers.** Make sure you're NOT in a wave (dummies are
     deliberately unshootable during one, so they can never steal a shot from a real fight), then
@@ -1110,11 +1137,17 @@ and that are easy to get subtly wrong (economy math, save data, purchase handlin
   Tool so equipping still works end-to-end — swap in the real thing whenever the art exists, no
   code changes needed.
 - **Raid Room models.** Same convention again: one Model per node type (`Start`/`Combat`/`Shop`/
-  `Heal`/`Extraction`/`Ambush`) inside `ServerStorage.RaidRoomModels`, each with a `PrimaryPart` set
-  at floor level. Without one, `RaidRoomService.lua` falls back to a plain big square per that node
-  type — see `DESIGN_NOTES.md`'s "Raid Rooms" sections and this file's step 15. A Combat/Ambush
-  Model can additionally place `SpawnPoint`-named Parts with an `EnemyType` string Attribute to
-  hand-author exactly what spawns there instead of a random roll — same section for the convention.
+  `Heal`/`Ambush`/`Boss`) inside `ServerStorage.RaidRoomModels`, each with a `PrimaryPart` set at
+  floor level. (There is no `Extraction` type any more — a branch's dead end is just whichever
+  regular type its last node rolled.) Without one, `RaidRoomService.lua` falls back to a plain big
+  square per that node type — see `DESIGN_NOTES.md`'s "Raid Rooms" sections and this file's step 15.
+  Inside a Model you can additionally place: `SpawnPoint` Parts with an `EnemyType` string Attribute
+  (Combat/Ambush/Boss) to hand-author exactly what spawns there instead of a random roll; an
+  `InteractPoint` Part (Heal/Shop) to make the room wait for the player to walk up and trigger it;
+  and **`ExitDoor` Parts, one per branch, which are how the player picks where to go next** —
+  optionally ordered by a number Attribute `ExitIndex`, otherwise by world X. A room with fewer
+  `ExitDoor`s than the branches on offer warns and falls back to the old clickable map for that one
+  choice, so an unfinished room can never strand a run.
 - Real UI *design* — `MainHud.client.lua` is functional, not styled; treat it as scaffolding
   to reskin once the loop feels right, not a finished screen
 - Sound design, icon, and thumbnail

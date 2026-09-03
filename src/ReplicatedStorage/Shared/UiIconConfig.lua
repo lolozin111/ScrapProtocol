@@ -31,6 +31,13 @@ UiIconConfig.Icons = {
 	cores = 112359366159478,
 	energy = 85520253556045,
 
+	-- Raid sector map backdrop. Not a glyph like everything else here — a full-bleed BACKGROUND
+	-- image sitting behind the raid minimap's node tree (RaidClient.client.lua), scrimmed down so
+	-- the nodes stay legible whatever art lands here. Wants something map-ish and roughly 3:4
+	-- portrait: a schematic, a scan, a torn survey chart. At 0 the minimap draws its own procedural
+	-- grid instead and looks finished either way, so this can stay empty indefinitely.
+	raid_map_backdrop = 0,
+
 	-- Action row (bottom-centre). `defense` is the big Start Defense shield.
 	inventory = 104907654078136,
 	inventory_hover = 	140560506379845,

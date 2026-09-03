@@ -194,6 +194,51 @@ RaidConfig.SpawnPointEnemyAttribute = "EnemyType"
 -- room is for from its own node.Type.
 RaidConfig.InteractPointName = "InteractPoint"
 
+-- Exit doors — the PHYSICAL replacement for clicking a circle on the map GUI. A cleared room
+-- unlocks one door per branch out of the current node; walking through one fires the same
+-- ChooseRaidNode remote the map circles used to fire, so the server-side legality check
+-- (is this node actually a child of where I am?) is completely unchanged — only the input moved.
+--
+-- HOW TO BUILD ONE: put Parts named exactly ExitDoorName in the Room Model, one per branch the
+-- room could offer. Two is enough for every map RaidConfig.GenerateMap can produce today (a fork
+-- splits in two and never more), but building three is harmless — extras stay sealed.
+--
+-- ORDERING is what decides which door leads where. Set a NUMBER attribute named
+-- ExitDoorIndexAttribute on each (1, 2, 3...) and doors sort by it. Leave them all unset and they
+-- sort by world X instead, so a plain left/right pair needs no attributes at all — the leftmost
+-- door is branch 1. Mixed (some set, some not) puts the numbered ones first, in order.
+--
+-- TOO FEW DOORS for the branches on offer is NOT an error the player ever sees: RaidRoomService
+-- warns and re-opens the old clickable map GUI for that one node instead. Same missing-art rule
+-- the rest of the project follows, applied to geometry — a half-built room must never be able to
+-- strand a run with no way forward.
+RaidConfig.ExitDoorName = "ExitDoor"
+RaidConfig.ExitDoorIndexAttribute = "ExitIndex"
+
+-- Walk through, don't press a button — "to choose where to go is gonna be a physical thing." A
+-- sealed door is solid; an unlocked one drops CanCollide and you pass straight through it. Flip
+-- ExitDoorUseProximityPrompt to true if playtesting says a walk-through triggers too easily (a
+-- door placed near an authored room's spawn point is the risk) — RaidRoomService implements both
+-- paths, so this is a config flip rather than a code change.
+RaidConfig.ExitDoorUseProximityPrompt = false
+RaidConfig.ExitDoorPromptDistance = 12
+
+-- Sealed vs. unlocked appearance. An unlocked door takes its DESTINATION node type's own
+-- NodeTypes.Color (so a Combat door is the same orange as the Combat circle on the map, and the
+-- player learns one colour language for both), goes Neon and semi-transparent, and floats a label
+-- with that type's DisplayName. A sealed one is inert dark metal with no label at all.
+RaidConfig.ExitDoorSealedColor = Color3.fromRGB(28, 26, 24)
+RaidConfig.ExitDoorUnlockedTransparency = 0.4
+RaidConfig.ExitDoorLabelHeightOffset = 4 -- studs above the door's top face the label floats
+
+-- Doors the fallback room grows for itself, exactly like the InteractPoint stand-in above, so
+-- physical exits work before a single Room Model has been built in Studio. Three of them, evenly
+-- spread along one edge, inset from the guard rail — one more than any map can currently use, so
+-- the "extras stay sealed" path gets exercised every raid rather than only in authored rooms.
+RaidConfig.FallbackExitDoorCount = 3
+RaidConfig.FallbackExitDoorSize = Vector3.new(16, 18, 2)
+RaidConfig.FallbackExitDoorInset = 10 -- studs in from the room edge, clear of the guard rail
+
 -- How high above a room's own pivot/floor a teleported-in player (and, for Combat rooms, the
 -- enemy spawn ring's center) sits — same idea as PlotConfig.SpawnHeightOffset. Build Room Model
 -- templates with their floor at local Y=0 / PrimaryPart at floor level, same convention

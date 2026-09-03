@@ -58,11 +58,12 @@
 	also Permanent) on its loot-table entry — see NodeConfig.lua's own comment on those tags.
 ]]
 
--- No Players service here anymore — the only thing that used it was a PlayerRemoving handler,
--- since replaced by DataService.PlayerSaving (see the bottom of this file for why).
+-- Players is back (it was removed once, see the git history / DataService.PlayerSaving note
+-- below) — exit doors need Players:GetPlayerFromCharacter to resolve a Touched hit's owner.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerStorage = game:GetService("ServerStorage")
 local Workspace = game:GetService("Workspace")
+local Players = game:GetService("Players")
 
 local RaidConfig = require(ReplicatedStorage.Shared.RaidConfig)
 local NodeConfig = require(ReplicatedStorage.Shared.NodeConfig)
@@ -158,6 +159,35 @@ local function buildFallbackGuardRail(model: Model, origin: Vector3, size: Vecto
 	rail("GuardRailWest", -halfX - GUARD_RAIL_THICKNESS / 2, 0, GUARD_RAIL_THICKNESS, size.Z)
 end
 
+-- Physical exits for the fallback room — see RaidConfig.ExitDoorName's own comment for the full
+-- design (why a Part name + an optional index attribute, why "too few doors" isn't an error). Built
+-- along the room's NORTH edge (negative Z), inset from that edge so they sit clear of
+-- GuardRailNorth rather than clipping into it, and given an explicit ExitDoorIndexAttribute rather
+-- than relying on the X-sort fallback — these ARE laid out left-to-right by construction, but the
+-- attribute is what an authored Room Model actually needs, so the fallback exercises the same path.
+local function buildFallbackExitDoors(model: Model, origin: Vector3, size: Vector3)
+	local doorSize = RaidConfig.FallbackExitDoorSize
+	local count = RaidConfig.FallbackExitDoorCount
+
+	for i = 1, count do
+		local door = Instance.new("Part")
+		door.Name = RaidConfig.ExitDoorName
+		door.Anchored = true
+		door.CanCollide = true
+		door.Material = Enum.Material.Slate
+		door.Color = RaidConfig.ExitDoorSealedColor
+		door.Size = doorSize
+		door:SetAttribute(RaidConfig.ExitDoorIndexAttribute, i)
+
+		-- Evenly spaced and centred across the room's X width; sat on the floor rather than
+		-- floating, since the fallback floor's own top face is origin.Y (buildFallbackRoom offsets
+		-- the floor Part downward by half its own height, not this door's).
+		local localX = size.X * (i / (count + 1) - 0.5)
+		door.CFrame = CFrame.new(origin + Vector3.new(localX, doorSize.Y / 2, -size.Z / 2 + RaidConfig.FallbackExitDoorInset))
+		door.Parent = model
+	end
+end
+
 -- Studs the placeholder interact stand-in sits away from the room's spawn point (see below) — far
 -- enough that reaching it is a real, deliberate walk, not just standing still at spawn.
 local FALLBACK_INTERACT_POINT_OFFSET = 20
@@ -179,6 +209,7 @@ local function buildFallbackRoom(nodeType: string, origin: Vector3): Model
 	floor.Parent = model
 
 	buildFallbackGuardRail(model, origin, size)
+	buildFallbackExitDoors(model, origin, size)
 
 	-- Heal/Shop rooms need a RaidConfig.InteractPointName Part to gate on (see beginInteractGated)
 	-- — without a real authored Room Model, the fallback square had NONE, so Heal/Shop fired
@@ -353,15 +384,200 @@ local activeRaids: { [number]: any } = {}
 
 local enterNode -- forward-declared, mutually referenced by the Combat/Ambush branches, showMapChoice, and onMapCleared
 
-local function showMapChoice(state)
-	local node = state.Map.Nodes[state.CurrentNodeId]
-	RaidMapUpdate:FireClient(state.Player, {
+----------------------------------------------------------------------
+-- Exit doors — the physical replacement for clicking a circle on the map GUI. See
+-- RaidConfig.ExitDoorName's own comment for the full contract these three functions implement.
+-- Declared here (after enterNode's forward-declare, before anything that opens a choice) because
+-- unlockExitDoors has to call enterNode itself the moment a door resolves.
+----------------------------------------------------------------------
+
+-- Every ExitDoorName Part in the room, sorted into branch order. GetDescendants (not GetChildren)
+-- because an authored room is free to nest its doors inside sub-Models for organization; the sort
+-- itself is a strict weak ordering (equal elements never compare true either direction) so
+-- table.sort can never throw on it, per RaidConfig's own numbered-first / X-fallback rule.
+local function collectExitDoors(roomModel: Instance?): { BasePart }
+	if not roomModel then
+		return {}
+	end
+	local doors = {}
+	for _, descendant in ipairs(roomModel:GetDescendants()) do
+		if descendant:IsA("BasePart") and descendant.Name == RaidConfig.ExitDoorName then
+			table.insert(doors, descendant)
+		end
+	end
+	table.sort(doors, function(a, b)
+		local indexA = a:GetAttribute(RaidConfig.ExitDoorIndexAttribute)
+		local indexB = b:GetAttribute(RaidConfig.ExitDoorIndexAttribute)
+		local numberedA = typeof(indexA) == "number"
+		local numberedB = typeof(indexB) == "number"
+		if numberedA and numberedB then
+			return indexA < indexB
+		elseif numberedA ~= numberedB then
+			return numberedA -- numbered doors sort ahead of unnumbered ones, mixed rooms allowed
+		end
+		return a.Position.X < b.Position.X
+	end)
+	return doors
+end
+
+-- Puts every door in the CURRENT room back to inert, sealed state — called the instant a room is
+-- entered (see enterNode) so a door can never be caught mid-fight still looking open/walkable from
+-- whatever choice led here. Also strips the label/prompt an unlock added, rather than leaving them
+-- dangling on a door that's about to look sealed again.
+local function sealExitDoors(state)
+	for _, door in ipairs(collectExitDoors(state.RoomFolder)) do
+		door.CanCollide = true
+		door.Transparency = 0
+		door.Material = Enum.Material.Slate
+		door.Color = RaidConfig.ExitDoorSealedColor
+
+		local label = door:FindFirstChild("ExitLabel")
+		if label then
+			label:Destroy()
+		end
+		local prompt = door:FindFirstChildOfClass("ProximityPrompt")
+		if prompt then
+			prompt:Destroy()
+		end
+	end
+end
+
+-- Only shows if a NodeTypes entry is somehow missing its own Color — every real node type has one,
+-- so this is a "should never actually render" defensive fallback, not a balance number, hence not
+-- in RaidConfig.
+local EXIT_DOOR_FALLBACK_COLOR = Color3.fromRGB(140, 140, 140)
+
+-- Lights up one door per branch out of the current node, in `connections` order (collectExitDoors'
+-- sort decides which physical door is "branch 1", same numbering RaidConfig.ExitDoorName's comment
+-- documents for authors). Returns false — and WARNS instead of erroring — when the room simply
+-- doesn't have enough doors built for the branches on offer here: same "missing content never
+-- strands a run" contract buildRoom's own placeholder fallback follows, just for geometry instead
+-- of a whole Model. An in-progress authored room with only one door still has to be playable, via
+-- the old clickable GUI map for that one node, instead of hanging the player in an unfinished room.
+local function unlockExitDoors(state, connections: { number }): boolean
+	local doors = collectExitDoors(state.RoomFolder)
+	if #doors < #connections then
+		local currentNode = state.Map.Nodes[state.CurrentNodeId]
+		warn(("[RaidRoomService] %s room has %d exit door(s) built but needs %d for its branches — falling back to the clickable map for this choice."):format(
+			currentNode and currentNode.Type or "?", #doors, #connections))
+		return false
+	end
+
+	-- Captures the node this batch of doors belongs to BEFORE connecting — enterNode destroys the
+	-- whole room (doors included) the moment a choice resolves, but a Touched/Triggered connection
+	-- could still be mid-fire; this is the exact stale-prompt guard beginInteractGated uses further
+	-- down this file, for the same reason (this room could already be gone by the time the event
+	-- actually runs).
+	local nodeIdAtEntry = state.CurrentNodeId
+	local fired = false -- guards two doors (or two Touched events in one frame) both resolving
+	local liveConnections = {}
+
+	local function disconnectAll()
+		for _, connection in ipairs(liveConnections) do
+			connection:Disconnect()
+		end
+	end
+
+	for i, childId in ipairs(connections) do
+		local door = doors[i]
+		local destNode = state.Map.Nodes[childId]
+		local typeConfig = destNode and RaidConfig.NodeTypes[destNode.Type]
+		local color = (typeConfig and typeConfig.Color) or EXIT_DOOR_FALLBACK_COLOR
+		local displayName = (typeConfig and typeConfig.DisplayName) or (destNode and destNode.Type) or "?"
+
+		door.Color = color
+		door.Material = Enum.Material.Neon
+		door.Transparency = RaidConfig.ExitDoorUnlockedTransparency
+		-- Solid + a prompt, or open + walk-through — never both at once, per
+		-- ExitDoorUseProximityPrompt's own comment on why this is a config flip, not two features.
+		door.CanCollide = RaidConfig.ExitDoorUseProximityPrompt
+
+		local label = Instance.new("BillboardGui")
+		label.Name = "ExitLabel" -- sealExitDoors finds and destroys it by this name
+		label.AlwaysOnTop = true
+		label.MaxDistance = 200
+		label.Size = UDim2.new(0, 200, 0, 40)
+		label.StudsOffsetWorldSpace = Vector3.new(0, door.Size.Y / 2 + RaidConfig.ExitDoorLabelHeightOffset, 0)
+		label.Parent = door
+
+		local text = Instance.new("TextLabel")
+		text.Size = UDim2.fromScale(1, 1)
+		text.BackgroundTransparency = 1
+		text.Font = Enum.Font.GothamBold
+		text.TextScaled = true
+		text.TextColor3 = color
+		-- Same text shape the map circles already use — see RaidConfig.ExitDoorSealedColor's
+		-- comment on unlocked doors learning the destination type's own colour language.
+		text.Text = (destNode and destNode.Tier) and (displayName .. " · T" .. destNode.Tier) or displayName
+		text.Parent = label
+
+		local function tryEnter()
+			if fired or state.CurrentNodeId ~= nodeIdAtEntry then
+				return
+			end
+			fired = true
+			disconnectAll()
+			enterNode(state, childId)
+		end
+
+		if RaidConfig.ExitDoorUseProximityPrompt then
+			local prompt = Instance.new("ProximityPrompt")
+			prompt.ActionText = "Enter"
+			prompt.ObjectText = displayName
+			prompt.HoldDuration = 0
+			prompt.MaxActivationDistance = RaidConfig.ExitDoorPromptDistance
+			prompt.RequiresLineOfSight = false
+			prompt.Parent = door
+			table.insert(liveConnections, prompt.Triggered:Connect(function(triggeringPlayer)
+				if triggeringPlayer ~= state.Player then
+					return
+				end
+				tryEnter()
+			end))
+		else
+			table.insert(liveConnections, door.Touched:Connect(function(hit)
+				-- Resolve the toucher through Players, not just "any BasePart touched us" — ignores
+				-- dropped tools, projectiles, ragdolled corpses, anything that isn't the player's own
+				-- character. GetPlayerFromCharacter returns nil for a non-character hit.Parent, so
+				-- this also safely no-ops rather than erroring on those.
+				local touchingPlayer = hit.Parent and Players:GetPlayerFromCharacter(hit.Parent)
+				if touchingPlayer ~= state.Player then
+					return
+				end
+				tryEnter()
+			end))
+		end
+	end
+
+	return true
+end
+
+-- Shared by every RaidMapUpdate fire — Nodes/StartNodeId/CurrentNodeId/MapsCleared are identical on
+-- every call, only ReachableIds/ChoicePending/AllowNodeClick actually vary. ChoicePending gates the
+-- client's "Go Back To Base" button (only bail while a choice is actually showing, physical or
+-- GUI); AllowNodeClick is true ONLY in the too-few-doors GUI fallback, since circles are otherwise
+-- decorative now that doors are the real input.
+local function mapUpdatePayload(state, reachableIds: { number }, choicePending: boolean, allowNodeClick: boolean)
+	return {
 		Active = true,
 		Nodes = state.Map.Nodes,
 		StartNodeId = state.Map.StartNodeId,
 		CurrentNodeId = state.CurrentNodeId,
-		ReachableIds = node.Connections,
-	})
+		ReachableIds = reachableIds,
+		ChoicePending = choicePending,
+		AllowNodeClick = allowNodeClick,
+		MapsCleared = state.MapsCleared,
+	}
+end
+
+-- Offers the next choice PHYSICALLY: unlocks one door per branch out of the current node (see
+-- unlockExitDoors above). Only falls back to the old clickable GUI map — AllowNodeClick = true —
+-- when the room doesn't have enough doors built yet for the branches on offer; see
+-- unlockExitDoors' own comment for why that's a warn(), not an error.
+local function showMapChoice(state)
+	local node = state.Map.Nodes[state.CurrentNodeId]
+	local doorsUnlocked = unlockExitDoors(state, node.Connections)
+	RaidMapUpdate:FireClient(state.Player, mapUpdatePayload(state, node.Connections, true, not doorsUnlocked))
 end
 
 -- Reaching a map's dead-end (a leaf — empty Connections, regardless of its Type) — see
@@ -768,6 +984,15 @@ enterNode = function(state, nodeId: number)
 		Tier = node.Tier,
 		DisplayName = typeConfig and typeConfig.DisplayName or node.Type,
 	})
+
+	-- Doors are sealed the instant a room is entered — never left "unlocked" from whatever choice
+	-- led here — and BEFORE the branch chain below, deliberately: the Start branch calls
+	-- showMapChoice, which unlocks doors, so sealing after the chain would immediately undo it.
+	sealExitDoors(state)
+
+	-- The persistent minimap needs to learn where the player is the moment they arrive, not only
+	-- when a choice opens — ReachableIds empty/ChoicePending false here since nothing's offered yet.
+	RaidMapUpdate:FireClient(state.Player, mapUpdatePayload(state, {}, false, false))
 
 	if node.Type == "Start" then
 		showMapChoice(state)
