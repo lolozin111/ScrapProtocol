@@ -359,8 +359,15 @@ CraftingRecipes.Robots = {
 		HP = 120,
 	},
 	ArcTurret = {
-		DisplayName = "Arc Turret",
-		Description = "A stationary cannon with a wide blast radius and a short fuse.",
+		-- "Portable" is doing real work here: TurretConfig.lua has its OWN ArcTurret, a placeable
+		-- base turret, and until this rename both printed the literal string "Arc Turret" — so the
+		-- player met the same name on two unrelated screens with no way to tell which was which.
+		-- The KEY stays ArcTurret on purpose: it is written into profile.DeployedRobots and keys
+		-- EquippedMods/rig art, so renaming it is a saved-profile migration, not a label change.
+		-- The two systems never share a namespace in code, so identical keys are harmless; identical
+		-- DISPLAY names were not.
+		DisplayName = "Portable Arc Turret",
+		Description = "A deployable arc cannon with a wide blast radius and a short fuse.",
 		Tier = 4,
 		Cost = { GoldContacts = 25, SteelPlating = 45 },
 		FireRate = 1, BaseDamage = 12, -- 12 DPS base; splash damage, treat as AoE in WaveService

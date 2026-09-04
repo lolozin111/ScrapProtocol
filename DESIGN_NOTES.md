@@ -2418,7 +2418,7 @@ gets re-proportioned up to 760x520 rather than the panel shrinking under it.
   roll, instant reroll) to guard the rare one, and the confirm already guards the rare one.
 
 **Art needed before Welding A can look like the mockup:** one line-drawing silhouette per robot
-(Scrapbot, Sentry Drone, Iron Guardian, Arc Turret). All 22 existing `UiIconConfig.Icons` keys are
+(Scrapbot, Sentry Drone, Iron Guardian, Portable Arc Turret). All 22 existing `UiIconConfig.Icons` keys are
 filled, so these are additions — upload the PNGs, add the asset IDs there (git-tracked, unlike the
 Studio `ItemIcons` folder). Per the project's own rule, a missing rig silhouette must fall back to a
 generic chassis outline rather than an empty frame. Forge A's chamber needs no art; it is gradients
