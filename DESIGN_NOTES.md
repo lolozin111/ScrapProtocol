@@ -2431,6 +2431,11 @@ the whole project now; this one is the record of the HUD phase-3 round, which is
 and verified in Studio. Phase 00 is now DONE — the raid overhaul is designed (three modes, physical
 exit doors, room variants) and written up on the "Three Ways In" page linked from that section.
 
+**HOLD (2026-09-06).** The user is designing several systems ahead of the build and asked to wait
+for an explicit greenlight before starting any further step of the build order below. Report status
+and stop; "pick up where we left off" is NOT the greenlight. Design work, docs and questions are
+fine.
+
 **Step 1 of its build order is BUILT but NOT YET VERIFIED IN STUDIO** — physical exit doors plus the
 Sector Map, see "Raid Rooms — physical exit doors + the Sector Map" below. Read that before anything
 else. Nothing in that round has been run: there is no Lua toolchain on this machine, so it was
