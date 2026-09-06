@@ -2429,8 +2429,16 @@ and frames.
 **START AT "Road to release" NEAR THE TOP OF THIS FILE, not here.** That section is the live plan for
 the whole project now; this one is the record of the HUD phase-3 round, which is finished, shipped
 and verified in Studio. Phase 00 is now DONE — the raid overhaul is designed (three modes, physical
-exit doors, room variants) and written up on the "Three Ways In" page linked from that section. The
-immediate next action is step 1 of its build order: physical exit doors plus the read-only minimap.
+exit doors, room variants) and written up on the "Three Ways In" page linked from that section.
+
+**Step 1 of its build order is BUILT but NOT YET VERIFIED IN STUDIO** — physical exit doors plus the
+Sector Map, see "Raid Rooms — physical exit doors + the Sector Map" below. Read that before anything
+else. Nothing in that round has been run: there is no Lua toolchain on this machine, so it was
+hand-reviewed only. **Verify it in Studio before building step 2 on top of it** — README section 4
+step 15 is rewritten with exactly what to check, including the deliberate too-few-doors test.
+
+The immediate next action after that verification is step 2: room variant folders (letting
+`RaidRoomModels.Combat` be a Folder of Models picked at random, ~6 lines in `buildRoom`).
 
 The rest of this section is kept as the HUD round's own history.
 

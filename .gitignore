@@ -6,3 +6,7 @@
 /*.rbxl.lock
 
 sourcemap.json
+
+# Exported chat transcripts — reading copies, not project state.
+# The authoritative record is DESIGN_NOTES.md, README.md and the git history.
+/.transcripts/
