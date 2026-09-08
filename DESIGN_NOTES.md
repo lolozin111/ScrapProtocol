@@ -125,7 +125,9 @@ it was a control.
 
 Door contract (full version on the page): a Part named `ExitDoor` (new `RaidConfig.ExitDoorName`,
 following `SpawnPointName`/`InteractPointName` exactly), ordered by an optional numeric `ExitIndex`
-attribute or by local X when unset; doors locked and dark until the encounter resolves; **too few
+attribute or by local X when unset; doors invisible-but-solid until the encounter resolves (changed
+2026-09-08 from a dark slab, at the user's ask — see `RaidConfig.ExitDoorSealedTransparency`, a
+one-number revert); **too few
 doors warns and falls back to the GUI map for that node** (the missing-art rule applied to geometry —
 a half-built room must never strand a run); extras stay sealed; a leaf seals all of them and
 `onMapCleared` fires unchanged; the fallback room grows doors procedurally on its guard rail the same

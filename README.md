@@ -986,9 +986,11 @@ to end:
     `CHOOSE AN EXIT — WALK THROUGH A DOOR`, and that doors in the room light up — one per branch,
     each glowing in its DESTINATION's colour with a floating label naming it ("Combat · T2"). Walk
     into one and confirm you travel there. The circles on the map should NOT respond to clicks;
-    they are a display. In the placeholder room the doors are three dark slabs along one edge that
-    light up when the room clears — with a two-way fork only two of them light, and the third
-    staying sealed is correct, not a bug.
+    they are a display. A sealed door is INVISIBLE but still solid, so during a fight the doorway
+    looks open and you bump into it — that is deliberate (`RaidConfig.ExitDoorSealedTransparency`),
+    since a door you could walk through mid-fight would drop you out of the room into open sky. In
+    the placeholder room there are three doors along one edge; with a two-way fork only two of them
+    appear, and the third staying invisible is correct, not a bug.
 
     Pick a Combat node: you land in a plain grey placeholder room (**you need at least one Model per
     type in `ServerStorage.RaidRoomModels`** — e.g. a Model named `Combat` with a `PrimaryPart` —
@@ -1042,8 +1044,8 @@ to end:
     and the leftmost door is branch 1. Test the safety net deliberately: build a room with only ONE
     `ExitDoor`, walk into a two-way fork there, and confirm the Output window warns and the old
     clickable map comes back for that one choice rather than stranding you — the banner should read
-    `PICK A NODE ON THE MAP` instead. Doors are sealed and dark while a room's fight is running; if
-    you ever see one lit mid-fight, that's a bug.
+    `PICK A NODE ON THE MAP` instead. Doors are invisible while a room's fight is running and only
+    appear once it resolves; if you ever see one lit mid-fight, that's a bug.
 
 16. **Training dummies and damage numbers.** Make sure you're NOT in a wave (dummies are
     deliberately unshootable during one, so they can never steal a shot from a real fight), then

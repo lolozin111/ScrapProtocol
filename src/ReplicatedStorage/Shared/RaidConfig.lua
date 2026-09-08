@@ -273,6 +273,20 @@ RaidConfig.ExitDoorPromptDistance = 12
 -- player learns one colour language for both), goes Neon and semi-transparent, and floats a label
 -- with that type's DisplayName. A sealed one is inert dark metal with no label at all.
 RaidConfig.ExitDoorSealedColor = Color3.fromRGB(28, 26, 24)
+
+-- A sealed door is INVISIBLE by default, not a dark slab — "only make the doors appear once the room
+-- is done and the player can actually go somewhere else." It stays SOLID while invisible, which is
+-- the point: a door you could walk through mid-fight would drop you out of the room into open sky at
+-- Y = 800. So during combat the doorway reads as an opening you cannot pass, and the moment the
+-- encounter resolves the door lights up in its destination's colour.
+--
+-- Set this back to 0 to restore the original dark-slate slab — ExitDoorSealedColor and the Slate
+-- material are still applied underneath, so that is a one-number revert rather than a code change.
+-- Anything between (0.85, say) gives a faint hint of a door instead of nothing at all, if playtesting
+-- says an invisible blocker reads as a bug. Note a room is free to build its own visible shutter
+-- geometry in the frame either way: only the Part NAMED ExitDoorName is ever restyled by
+-- RaidRoomService, so a sibling model beside it is left completely alone.
+RaidConfig.ExitDoorSealedTransparency = 1
 RaidConfig.ExitDoorUnlockedTransparency = 0.4
 RaidConfig.ExitDoorLabelHeightOffset = 4 -- studs above the door's top face the label floats
 

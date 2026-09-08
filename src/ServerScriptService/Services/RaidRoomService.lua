@@ -174,6 +174,10 @@ local function buildFallbackExitDoors(model: Model, origin: Vector3, size: Vecto
 		door.Name = RaidConfig.ExitDoorName
 		door.Anchored = true
 		door.CanCollide = true
+		-- Built already sealed, matching sealExitDoors exactly, so the placeholder room's own doors
+		-- are invisible-until-cleared the same way an authored room's are rather than being the one
+		-- place a dark slab still shows up.
+		door.Transparency = RaidConfig.ExitDoorSealedTransparency
 		door.Material = Enum.Material.Slate
 		door.Color = RaidConfig.ExitDoorSealedColor
 		door.Size = doorSize
@@ -633,8 +637,11 @@ end
 -- dangling on a door that's about to look sealed again.
 local function sealExitDoors(state)
 	for _, door in ipairs(collectExitDoors(state.RoomFolder)) do
+		-- Solid but invisible — see RaidConfig.ExitDoorSealedTransparency's own comment. CanCollide
+		-- stays TRUE precisely because the door is invisible: the doorway has to keep blocking or a
+		-- player walks out of a room mid-fight into open sky.
 		door.CanCollide = true
-		door.Transparency = 0
+		door.Transparency = RaidConfig.ExitDoorSealedTransparency
 		door.Material = Enum.Material.Slate
 		door.Color = RaidConfig.ExitDoorSealedColor
 
