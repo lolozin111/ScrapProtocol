@@ -296,12 +296,55 @@ later and closer to release, covering each enemy type's AI pattern, its state se
 and how each animation fits. Not now; the nine patterns Phase 00 names (three per mode) are the
 input to that conversation.
 
-**Still open / not yet decided:**
-- The Studio contract for a zone (a Part named `SpawnZone`, following `SpawnPointName`'s convention;
-  which attributes carry pool or weight bias).
-- Spawn placement inside a zone needs a downward raycast plus a minimum distance from the player, or
-  enemies materialise inside geometry and on the player's face.
-- Whether `CombatTierComposition` survives at all, or is replaced outright by the mode-keyed pools.
+**THE STUDIO CONTRACT — SETTLED 2026-09-08, STILL NOT BUILT.** Raised by the user mid-way through
+hand-building the first Combat room: they had the geometry but none of the markers, and wanted to
+know what a map needs to FUNCTION before placing any. The full sheet is on the Raid Room Build Sheet
+page (linked in "Road to release"), which now separates markers that are live from markers that are
+agreed-but-unread. What follows is the reasoning, which the page does not carry in full.
+
+**`PlayerSpawn` — a new marker, and the one that actually blocks room authoring.** There is no
+player-entry marker at all today: `teleportPlayerToRoom` (RaidRoomService.lua:261) pivots the
+character to `roomOrigin + Vector3.new(0, RaidConfig.RoomSpawnHeightOffset, 0)`, i.e. 5 studs above
+the model's PIVOT, dead centre, facing an arbitrary direction. That was invisible while every room
+was the 260x260 placeholder square. It stops being invisible the moment rooms grow long on Z the way
+the width budget pushes them to — the player lands in the MIDDLE of the room with half the level
+behind them. Fix is ~6 lines plus a `RaidConfig.PlayerSpawnName` constant: pivot to the marker's full
+CFrame (so it sets FACING as well as position, which the current code cannot express at all), falling
+back to origin+5 when absent. Silent-fallback ladder preserved; every room already built keeps
+working. **Not yet greenlit — it is a code change and the build hold is still in force.**
+
+**`SpawnZone` — decided, point by point:**
+
+1. **Dumb volumes plus an optional `Weight` number attribute** (absent = 1). A zone says WHERE, never
+   WHAT. Per-zone `EnemyTypes` filtering was rejected: it would put composition in the mode-keyed
+   table AND in every room model, which is the two-places-that-drift failure this codebase keeps
+   having (`OreGate`, `ApplyMods`, `MaxDeployedRobots` all exist because of it). Weight is the one
+   thing geometry genuinely knows that config cannot — a big arena should catch more spawns than a
+   side alcove, and only the room knows which is which.
+2. **Points and zones are BOTH honoured in the same room.** Authored `SpawnPoint`s spawn first and
+   COUNT AGAINST the room's enemy budget; zones fill whatever remains. Rejected the simpler "points
+   win outright" and "zones win in Combat/Ambush" because both make a pinned set piece plus a rolled
+   encounter impossible without a second system. Note this supersedes the flat "zones for
+   Combat/Ambush, points for Boss" framing of the 2026-09-07 round — Boss still uses points, but
+   Combat may mix.
+3. **Neither marker present: warn loudly NAMING THE ROOM, then the existing 50-70 stud ring.** The
+   fallback keeps the run alive (missing-art rule); the warn is what makes a half-authored room
+   findable, since a silently-ring-spawning room is indistinguishable from a correct one until you
+   notice enemies appearing through a wall. Chosen over a bare silent fallback for exactly the
+   reason CLAUDE.md gives silent failure its own section.
+4. **Placement inside a zone:** random X/Z within the part's own object space (so a ROTATED zone
+   works as drawn), downward raycast to find the floor, minimum-distance check against the player.
+   A zone that fails every attempt is skipped and warns. There is no "random point inside a part"
+   helper anywhere in the repo today — this sets the precedent, so it wants writing as a shared
+   function, not inline.
+5. **Studio-side, the service force-sets `Transparency = 1`, `CanCollide = false` and
+   `CanQuery = false`** at build time, so the author leaves the zone bright and visible in Studio and
+   it disappears in game. `CanQuery = false` is deliberate and not cosmetic: a query-able invisible
+   volume in front of the player is precisely the "I click and nothing happens" bug CLAUDE.md
+   records, where mouse rays hit a part nobody can see.
+
+**Still open:** whether `CombatTierComposition` survives at all, or is replaced outright by the
+mode-keyed pools (untouched by this round — it belongs with Phase 00 step 3, mode plumbing).
 
 Where it fits: essentially Phase 00 step 3 (mode plumbing) with a spawn-composition layer attached.
 `state.TotalNodesVisited` is already the depth input and already drives loot, so enemy count and
