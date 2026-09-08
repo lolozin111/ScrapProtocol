@@ -155,6 +155,136 @@ automatically. No Model gives a 260x260 concrete square with an invisible guard 
 `(0, 800, 0)`, 600 studs apart, up to 20 concurrent — each alone in its slot, so rotation never
 matters.
 
+### Spawn zones + difficulty curves — DESIGN ROUND, 2026-09-07, NOT BUILT
+
+Raised by the user after building the first Combat room. Nothing here is implemented; this is the
+record of the round so it survives a context reset. **Do not build any of it without a greenlight.**
+
+**The problem, verified against source.** Enemy QUANTITY never scales with run depth.
+`RaidConfig.CombatTierComposition` (RaidConfig.lua:316) is the whole story — tier 1/2/3 give 2-3,
+3-4, 4-5 enemies at 1.0x/1.4x/1.9x strength — and it keys off a node's WITHIN-MAP Tier, not
+`TotalNodesVisited`. So count tops out at 5 forever. A room with authored `SpawnPoint` parts
+bypasses the roll entirely, making count literally constant. Meanwhile
+`GetRunProgressionMultiplier` (RaidConfig.lua:360) is `1 + step * 0.12` — LINEAR AND UNBOUNDED, no
+clamp. Net effect: deep raids are five enemies with ever-larger health bars, and the authored-room
+path the build sheet recommends makes it worse, not better. The user's diagnosis was correct.
+
+**The proposal.** Replace fixed spawn points with spawn ZONES (volumes) for Combat/Ambush. On room
+build, roll a composition from a table keyed by raid mode (the project's standard
+flat-table-of-strategies shape, and already congruent with Phase 00's three modes). Per-type shares
+expressed as a RATIO of a total enemy cap; the total cap grows with `TotalNodesVisited` on a
+flattening curve.
+
+**Agreed after discussion, point by point:**
+
+1. **Zones for Combat/Ambush, points for Boss.** Settled. Boss rooms keep authored `SpawnPoint`
+   placement so a boss lands exactly where built; regular rooms go random. The existing SpawnPoint
+   path is NOT deleted — it stays as the Boss/set-piece tool. The first Combat room already built
+   does not need redoing.
+
+2. **Two different curves, deliberately opposed.** The user's call, and a sharper answer than the
+   "make count the only axis" advice it replaced. QUANTITY grows on a loose log — climbing early,
+   flattening late, so encounters never become unreadable mobs. STRENGTH/HP grows on a LOW
+   EXPONENTIAL — near-flat for a long opening stretch, then moderate, then steep — used deliberately
+   as a SOFT CAP on how far a player can push before a content update raises it.
+   - Caution recorded: a flattening count curve plus an exponential strength curve reconverges on
+     the "few beefy enemies" endgame the round started out trying to avoid. That is acceptable
+     BECAUSE it is the intended wall, but it means the wall's position must be ONE tunable number,
+     and it has to be read against the player power curve, not set in isolation.
+   - Exponential also needs a hard ceiling. The current multiplier is unbounded; exponential reaches
+     absurd/overflowing values much faster than linear. Clamp it.
+
+3. **Server load — the user corrected the premise, and the correction stands.** Max players per
+   server will be 8, not the 20 that `RaidConfig.MaxConcurrentInstances` provisions for, so the
+   worst-case concurrent enemy count is ~8x a per-raid cap, not 20x. `MaxConcurrentInstances = 20`
+   is over-provisioned relative to the real player cap and could simply be lowered to 8.
+   - Longer-term idea (user's, deferred to a future update): render enemy MODELS and animations
+     client-side only, keeping position, orientation and hitboxes server-authoritative. Sound, and
+     compatible with the project's server-authoritative rule as stated. Two notes for whoever picks
+     it up: the real server saving is dropping server-side `Humanoid` instances (expensive state
+     machines), not the models per se — the AI tick cost stays either way; and it is a change to the
+     COMBAT ENGINE CORE (`CombatEncounterService`, `EnemyAI`, `DamagePipeline`), not a small one.
+   - **Do not couple the two.** Ship spawn zones with a conservative cap first; do the rendering
+     optimisation as its own project, after profiling says it is needed.
+   - **RESOLVED — Tier 1 chosen.** See "Enemy rendering tiers" immediately below. Tiers 2 and 3 are
+     recorded but explicitly NOT planned; 8 players does not need them.
+
+4. **Ratio rounding — round-up does not work, use a weighted draw instead.** Rounding every type UP
+   breaks the budget: total 6 with .5/.35/.15 shares gives 3 + 3 + 1 = 7, over cap. Two workable
+   fixes, second preferred:
+   - Largest-remainder: floor everything, then hand leftovers to the biggest fractional parts.
+   - **Treat ratios as WEIGHTS for a draw, and caps as ceilings rather than quotas.** Draw enemies
+     one at a time by weight, skipping any type already at its ceiling, until the total is hit.
+     Rare types get a real chance at low totals, the budget can never be exceeded, and there is no
+     rounding step at all.
+
+**Enemy rendering tiers — TIER 1 AGREED, NOT BUILT (2026-09-07).**
+
+What enemies are today: full `Humanoid` rigs, moved with `Humanoid:MoveTo` (EnemyAI.lua:117), HP in
+`Humanoid.Health`, damage via `TakeDamage` (CombatEncounterService.lua:385). That is the most
+expensive per-NPC shape Roblox offers — a physics-simulated state machine doing per-frame ground
+raycasts, plus automatic CFrame replication on every part of a moving multi-part rig. At 150+
+enemies that is what costs the server, not the AI logic.
+
+- **Tier 1 (AGREED).** Drop the server-side `Humanoid`. One anchored root part per enemy, moved by
+  CFrame from the server; HP moves into the enemy record table. Model stays a real, visible,
+  debuggable instance. ~80% of the win for ~20% of the work.
+- **Tier 2 (recorded, not planned).** Server keeps only an invisible root part; clients build and
+  animate the visual rig locally. Replication drops from ~15 parts per enemy to one.
+- **Tier 3 (recorded, not planned).** No server instances at all — pure data, manual position
+  broadcasts (~15Hz), client-side interpolation. Maximum performance, worst debuggability.
+
+**Why the Tier 1 refactor is smaller than it looks:** this codebase already funnels enemies through
+single chokepoints — one damage application (CombatEncounterService.lua:385), one alive check
+(:358), one spawn path (:264-289), one movement call (EnemyAI.lua:117) — and `EnemyAI.lua` is 121
+lines total. Four places, not a sprawl.
+
+**Everything the user asked for is compatible with Tier 1**, and two things get better:
+
+- **Animations — no Humanoid needed.** `AnimationController` + an `Animator` child plays animations
+  on any rig. Drive it client-side: the server replicates "enemy is now in state X", the client
+  plays the matching track. Zero animation cost on the server.
+- **States (Idle / Combat / Ragdolled, a small set).** Fits the project's standard
+  flat-table-of-strategies convention exactly — a sibling table beside `EnemyAI.Patterns`, one
+  function plus one config entry per state.
+- **Ragdoll gets CHEAPER.** Anchored normally; on death unanchor, add constraints, hand it to
+  physics. Physics cost is paid only for actively ragdolling enemies for a couple of seconds,
+  instead of for every living enemy every frame.
+- **Pathfinding gets POSSIBLE.** `PathfindingService` does not require a Humanoid
+  (`CreatePath` -> `ComputeAsync` -> `GetWaypoints`, then move along the waypoints yourself — which
+  IS Tier 1's movement loop). Today `MoveTo` walks in a STRAIGHT LINE with no navmesh, so enemies
+  already grind into walls; this is a gain, not a regression. Note while building rooms with
+  interior geometry.
+
+**Movement ladder for the pathfinding (the throttling matters).** `ComputeAsync` is expensive and
+yields — 150 enemies pathing once a second would bury the server. Three steps, cheapest first:
+
+1. Raycast at the target. Clear line? Walk straight. This is the common case.
+2. Blocked? Compute a path, follow waypoints, recompute on a ~0.5-1s throttle, STAGGERED across
+   enemies so they never all recompute on one frame.
+3. **Stuck detector** — track ground actually covered; moving but not closing distance forces a
+   recompute. This was the user's own framing ("im moving and moving but i dont get closer, let me
+   make a path around") and it is the cheapest, most effective piece of the three.
+
+Set `AgentRadius`/`AgentHeight` to match enemy size or they clip corners and wedge. The navmesh is
+built from `CanCollide` geometry, so an invisible ring wall is correctly pathed around.
+
+**DEFERRED DESIGN ROUND — per-enemy AI, states and animation.** The user wants a dedicated round,
+later and closer to release, covering each enemy type's AI pattern, its state set, its behaviour,
+and how each animation fits. Not now; the nine patterns Phase 00 names (three per mode) are the
+input to that conversation.
+
+**Still open / not yet decided:**
+- The Studio contract for a zone (a Part named `SpawnZone`, following `SpawnPointName`'s convention;
+  which attributes carry pool or weight bias).
+- Spawn placement inside a zone needs a downward raycast plus a minimum distance from the player, or
+  enemies materialise inside geometry and on the player's face.
+- Whether `CombatTierComposition` survives at all, or is replaced outright by the mode-keyed pools.
+
+Where it fits: essentially Phase 00 step 3 (mode plumbing) with a spawn-composition layer attached.
+`state.TotalNodesVisited` is already the depth input and already drives loot, so enemy count and
+reward would scale off one counter and stay coherent for free.
+
 ### Phase 01 — build the rest
 
 - **Raid overhaul** — Phase 00 settled what it is; see there for the seven-step build order inside it.
