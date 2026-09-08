@@ -52,6 +52,28 @@ independently of any session, and they are the fastest way back into this plan a
 - **Road to release** — this plan, phase by phase: https://claude.ai/code/artifact/c520148b-a3db-4056-b273-7b5cd0e87ac8
 - **Asset Bench** — every missing art/Studio asset with its exact key: https://claude.ai/code/artifact/53fec0c0-7889-4e51-8399-5bbe26fb583b
 - **Three Ways In** — the Phase 00 raid overhaul design, settled: https://claude.ai/code/artifact/bc06cd42-19a8-40d6-9d0a-1c50f5d67648
+- **Raid Room Build Sheet** — the Studio contract a raid Room Model must meet (required PrimaryPart,
+  pivot placement, the X-axis width budget, the `ExitDoor`/`SpawnPoint`/`InteractPoint` part specs,
+  and the silent-fallback ladder), plus a per-room build checklist that persists:
+  https://claude.ai/code/artifact/e83de301-0323-4cca-813e-6efbeb852f31
+
+**STUDIO ART IN PROGRESS (2026-09-08).** The user is building raid Room Models by hand. The first
+Combat room is DONE. Two facts established during that work, both worth keeping:
+
+- **Room width is limited on X only.** `InstanceSlotSpacing` is 600 studs between CONCURRENT raid
+  slots, and slots step along X exclusively — so a room must stay under ~500 wide on X, while Z
+  (depth) and Y (height) are effectively unconstrained. A big room should grow long or tall, never
+  wide. One slot serves a whole run: entering a node destroys the previous room and rebuilds at the
+  same origin, so rooms are never side by side.
+- **Skip fog; use the native skybox.** The user asked about a geometry "sky box". `Lighting.Sky` is
+  already exactly that at infinite distance for zero studs, and a real box would eat the X budget.
+  Note that `EnvironmentFX.client.lua` deliberately force-clears fog/Atmosphere at startup because
+  distance fog was playtested and REJECTED ("hard to see") — do not reintroduce it globally. It runs
+  once, not in a loop, so a per-raid Lighting swap would not fight it. Since raid instances are
+  private to one player, a per-room-type `Lighting.Sky` swap off `RaidRoomUpdate`'s existing
+  `Status = "Entered"` payload is cheap and unbuilt; it would need restoring on all four exit
+  statuses (Extracted/Defeated/Abandoned/MapCleared) plus disconnect, or a player ends up on the
+  overworld under a raid sky.
 
 ### Phase 00 — the gate: what the raid overhaul IS — DESIGNED (2026-09-03)
 
