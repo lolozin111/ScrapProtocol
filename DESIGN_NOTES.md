@@ -25,7 +25,7 @@ already made (numbers, mechanics, sequencing), not just vague direction.
 | Drone companion (4 Drone Cores) | **Built** — unlocks at Research Tier 3, follows you everywhere |
 | Player Test Mode (admin throwaway profile) | **Built** — see "Data safety" section below |
 | HUD phase 3 (all station menus) | **Built and verified** — see "Road to release" below |
-| Raid overhaul | **Designed; step 1 of 7 built** — doors + Sector Map done, see Phase 00 below |
+| Raid overhaul | **Scope cut to one mode for v1 (2026-09-08)** — steps 5-6 deferred post-launch; step 1 built, see Phase 00 below |
 | Enemy AI patterns | **Engine built, one pattern** — `Chaser`, and all six enemies use it |
 | Early-game pacing & onboarding | **Partially built** — item 1 (ore sells for Scrap) shipped in the ore rework; starter objectives (item 2) still planned, not built — see below |
 | Raid shop rework (run-only perks) | **Planned, not built** — half the tag plumbing exists |
@@ -153,9 +153,51 @@ them, AI patterns last because they need three raids to exist):
 3. Mode plumbing — a `RaidMode` on the raid state plus one `RaidConfig.Modes` table of named rules
    (the project's standard flat-table-of-strategies shape).
 4. Salvage Run — cheapest: tagging, carry cap, Extraction as a real room. Almost no new systems.
-5. Gauntlet — a real card pool with real effects plus the run-only perk shop. Biggest content write.
-6. Contract — largest new surface: board, objective tracking, rotation, `Permanent` payouts.
-7. Enemy AI patterns — nine, three per mode.
+5. ~~Gauntlet~~ — **CUT FROM v1 (2026-09-08), first post-launch update.** A real card pool with real
+   effects plus the run-only perk shop. Biggest content write.
+6. ~~Contract~~ — **CUT FROM v1 (2026-09-08), post-launch.** Largest new surface: board, objective
+   tracking, rotation, `Permanent` payouts.
+7. Enemy AI patterns — **three, not nine**, now that only one mode ships. Pick them for VARIETY
+   rather than mode identity (the nine were three-per-mode); worth its own short round once there is
+   a real authored room to fight in.
+
+**SCOPE CUT — one mode at release, 2026-09-08.** The user's call, and the right one. Steps 5 and 6
+become the first post-launch update; v1 ships steps 2, 3, 4 and 7 only. Reasoning worth keeping:
+
+- **Raids already exist and work.** The overhaul makes them better, it does not make them exist, so
+  shipping one mode is not shipping a hole. That is the difference between this cut and cutting a
+  system players would notice missing.
+- **Verified before agreeing, not assumed:** neither currency the cut modes were to own is stranded
+  by it. Cores come from Expedition combat nodes (NodeService.lua:57), cases and Robux; Contraband
+  from base-defense boss waves (WaveService.lua:158) and cases. Gauntlet is not the only door to
+  either.
+- Contract was the single largest unbuilt surface left on the critical path, for no reason. AI
+  patterns drop from nine to three — the step that has been blocked behind "what IS a raid" the
+  longest just got two-thirds smaller.
+- Same character as the PvP recommendation. Both trade release date for a strong first update, and
+  between them there are now two updates' worth of already-designed content.
+
+**Two conditions, or the update costs double:**
+
+1. **Step 3 still gets built**, with exactly ONE entry in `RaidConfig.Modes`. Skipping it means
+   retrofitting a mode axis later through raid state, config, the terminal, loot settlement and AI
+   dispatch. One entry now makes the update purely additive: two more table entries plus content.
+2. **Do NOT ship a NARROWED raid.** "Salvage Run owns the ore axis" only means anything when there
+   are three modes to choose between. With one, it must not stop granting Cores to stay in its lane —
+   it is simply THE raid, plus the stakes layer Salvage Run was going to add (`RunLocked` ore, a carry
+   cap, a physical Extraction room). That layer is the actual prize and it is cheap: `settleRunLoot`
+   is fully built and completely INERT today, because nothing anywhere is tagged `RunLocked`, so
+   pushing deeper risks nothing and extracting protects nothing.
+
+**What the cut strands, and what it does not.** `RaidConfig.CardPool`'s four effectless stubs belong
+to Gauntlet, and cards were surfaced to players in an earlier round — so before release, check
+whether a card UI is visible that does nothing, and either wire a few trivial effects or hide it
+until the update. A visible reward that does nothing is worse than an absent one. The raid shop
+rework is NOT stranded: Salvage Run's shop remit was already "capacity and escape", so
+`NodeConfig.ShopCatalog`'s vending machine still gets replaced on the v1 path.
+
+**Three Ways In stays valid** as the design record for all three modes — nothing about them was
+un-decided, only re-sequenced.
 
 **Five open decisions, each with a recommendation on the page, none blocking steps 1-2:** do the
 modes cost the same Energy (rec: yes, 1 each); are Gauntlet cards lost on EVERY exit including a
@@ -164,6 +206,12 @@ system has to be balanced around it); does Salvage Run's carry cap cover currenc
 is already exempt from `RunLocked` by an earlier explicit decision); where does the Contract board
 live (rec: a third tab on the existing raid terminal, not a new tagged Station — no Studio setup); do
 all three modes unlock at once (rec: Salvage Run first, the other two behind Research Tiers).
+
+**Three of those five are now MOOT FOR v1** by the scope cut above — Energy parity, Gauntlet's cards,
+and the Contract board's home all belong to modes that no longer ship at release, and the unlock
+question answers itself when only one mode exists. They stay recorded because the update has to
+answer them. Only "does Salvage Run's carry cap cover currency" (rec: no) is still live, and it is
+step 4's to settle.
 
 **The Studio authoring contract, answered for the user during the round.** SUPERSEDED IN PART — every
 marker named below is still correct, but this paragraph predates two rounds that added more: `ExitDoor`
@@ -390,7 +438,8 @@ reward would scale off one counter and stay coherent for free.
 
 ### Phase 01 — build the rest
 
-- **Raid overhaul** — Phase 00 settled what it is; see there for the seven-step build order inside it.
+- **Raid overhaul** — Phase 00 settled what it is; see there for the build order inside it, now CUT to
+  four remaining steps for v1 (2, 3, 4, 7) with Gauntlet and Contract deferred post-launch.
   Absorbs the interim raid-map styling pass already written
   up in section B (node panels + Scraps Collected onto HudKit plates, map graph left alone); doing
   that inside the overhaul is cheaper than doing it twice.
