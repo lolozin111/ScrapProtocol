@@ -1013,11 +1013,27 @@ to end:
     raid and returns you home. Try starting a second raid with Energy at 0 (see step 9) and confirm
     a "Not enough Energy" toast instead of teleporting you anywhere.
 
+    **Player spawn marker (optional):** in a Combat Room Model under `ServerStorage.RaidRoomModels`
+    (a Model with a `PrimaryPart`), place a Part named exactly `PlayerSpawn` somewhere in the room and
+    rotate it to face into the space. Enter that room and confirm you land exactly on the Part,
+    facing the direction it points — not the model's own pivot, dead centre and facing wherever the
+    model happens to face.
+
     **Room-authored spawns (optional):** in a Combat or Ambush Room Model, place a Part named exactly
     `SpawnPoint` with a string Attribute named `EnemyType` set to a valid key (e.g. `Raider`) — enter
     that room and confirm exactly that enemy spawns at that Part's position instead of a random
     composition; try a typo'd `EnemyType` too and confirm the Output window warns instead of spawning
     anything there.
+
+    **Spawn zones (optional):** in the same Combat Room Model, add two Parts named exactly
+    `SpawnZone`, sized as boxes, with different number Attributes named `Weight` (e.g. `1` and `3`).
+    Enter the room and confirm enemies appear at random points inside the zones — never within 25
+    studs of you — and that over several tries the higher-weight zone visibly catches more of them.
+    The zones should stay bright and visible while you're building in Studio; that's correct, not a
+    bug — they vanish in game (`Transparency`/`CanCollide`/`CanQuery` are force-set at build time).
+    Then strip the room back to having neither a `SpawnPoint` nor a `SpawnZone` and confirm the
+    Output window warns, naming the room, and enemies fall back to the old procedural spawn ring
+    instead of the room silently doing that.
 
     **Authoring exit doors (needed on every real Room Model):** place Parts named exactly `ExitDoor`,
     one per branch the room can offer — two is enough for any map the generator produces. Which door
@@ -1207,13 +1223,27 @@ and that are easy to get subtly wrong (economy math, save data, purchase handlin
   floor level. (There is no `Extraction` type any more — a branch's dead end is just whichever
   regular type its last node rolled.) Without one, `RaidRoomService.lua` falls back to a plain big
   square per that node type — see `DESIGN_NOTES.md`'s "Raid Rooms" sections and this file's step 15.
-  Inside a Model you can additionally place: `SpawnPoint` Parts with an `EnemyType` string Attribute
-  (Combat/Ambush/Boss) to hand-author exactly what spawns there instead of a random roll; an
-  `InteractPoint` Part (Heal/Shop) to make the room wait for the player to walk up and trigger it;
-  and **`ExitDoor` Parts, one per branch, which are how the player picks where to go next** —
-  optionally ordered by a number Attribute `ExitIndex`, otherwise by world X. A room with fewer
-  `ExitDoor`s than the branches on offer warns and falls back to the old clickable map for that one
-  choice, so an unfinished room can never strand a run.
+  Every marker below is matched by Part **name**, not a `CollectionService` tag — the one exception
+  to this project's otherwise tag-driven world setup, because these markers live inside a Model
+  that's already keyed by node type. Inside a Model you can additionally place: a `PlayerSpawn` Part,
+  which the player is pivoted to on entering that room, using the Part's FULL CFrame (position and
+  facing, not just position) — absent, the player falls back to the model's own pivot plus a fixed
+  height offset, dead centre, facing an arbitrary direction; `SpawnPoint` Parts with an `EnemyType`
+  string Attribute (Combat/Ambush/Boss) to hand-author exactly what spawns there instead of a random
+  roll; `SpawnZone` Parts (Combat/Ambush) — volumes rather than points, sized and rotated however you
+  draw the Part, with an optional number Attribute `Weight` (absent or non-positive = 1) setting that
+  zone's share of the room's spawns — enemies land at random points inside a zone's own box, never
+  within 25 studs of the player. `SpawnPoint`s and `SpawnZone`s can coexist in one room: authored
+  points spawn first and count against the room's enemy budget, zones fill whatever remains. A
+  Combat/Ambush room with neither warns (naming the room) instead of silently falling back to the old
+  procedural spawn ring. `SpawnZone` Parts are meant to be left bright and visible in Studio —
+  `RaidRoomService` force-sets `Transparency = 1`/`CanCollide = false`/`CanQuery = false` on them at
+  build time, so they vanish and stop blocking clicks in game without the author having to remember
+  to hide them. Also: an `InteractPoint` Part (Heal/Shop) to make the room wait for the player to
+  walk up and trigger it; and **`ExitDoor` Parts, one per branch, which are how the player picks
+  where to go next** — optionally ordered by a number Attribute `ExitIndex`, otherwise by world X. A
+  room with fewer `ExitDoor`s than the branches on offer warns and falls back to the old clickable
+  map for that one choice, so an unfinished room can never strand a run.
 - Real UI *design* — `MainHud.client.lua` is functional, not styled; treat it as scaffolding
   to reskin once the loop feels right, not a finished screen
 - Sound design, icon, and thumbnail

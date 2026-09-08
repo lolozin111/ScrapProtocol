@@ -208,6 +208,13 @@ local function buildFallbackRoom(nodeType: string, origin: Vector3): Model
 	model.PrimaryPart = floor
 	floor.Parent = model
 
+	-- Marks this room as the placeholder, not an authored one — resolveEnemyPlacements below warns
+	-- when an authored Combat/Ambush room has no SpawnZone/SpawnPoint (a half-built room is a bug
+	-- worth finding), but the placeholder legitimately has neither by design; without this flag that
+	-- warn would fire on literally every raid until real Room Models exist, drowning the one case it
+	-- actually exists to catch.
+	model:SetAttribute("PlaceholderRoom", true)
+
 	buildFallbackGuardRail(model, origin, size)
 	buildFallbackExitDoors(model, origin, size)
 
@@ -258,12 +265,42 @@ local function buildRoom(nodeType: string, origin: Vector3, parentFolder: Instan
 	return model
 end
 
-local function teleportPlayerToRoom(player: Player, roomOrigin: Vector3)
+-- See RaidConfig.PlayerSpawnName's own comment. A Part named exactly that anywhere in `roomModel`
+-- sets BOTH position and facing (the player is pivoted to its full CFrame, not just its Position) —
+-- no RoomSpawnHeightOffset stacked on top, since the author placed the Part exactly where they want
+-- the player to land, and adding an offset would float them above their own marker. Absent (or no
+-- roomModel at all, e.g. mid-teardown), falls back to today's exact origin + height-offset behaviour
+-- unchanged and with no warn — a room legitimately may not have one yet, and the fallback placeholder
+-- room never will.
+local function teleportPlayerToRoom(player: Player, roomOrigin: Vector3, roomModel: Instance?)
 	local character = player.Character
 	if not character then
 		return
 	end
-	character:PivotTo(CFrame.new(roomOrigin + Vector3.new(0, RaidConfig.RoomSpawnHeightOffset, 0)))
+
+	local spawnPart = nil
+	local spawnPartCount = 0
+	if roomModel then
+		for _, descendant in ipairs(roomModel:GetDescendants()) do
+			if descendant:IsA("BasePart") and descendant.Name == RaidConfig.PlayerSpawnName then
+				spawnPartCount += 1
+				if not spawnPart then
+					spawnPart = descendant
+				end
+			end
+		end
+	end
+
+	if spawnPartCount > 1 then
+		warn(("[RaidRoomService] %s has %d %s Parts — using the first found."):format(
+			roomModel:GetFullName(), spawnPartCount, RaidConfig.PlayerSpawnName))
+	end
+
+	if spawnPart then
+		character:PivotTo(spawnPart.CFrame)
+	else
+		character:PivotTo(CFrame.new(roomOrigin + Vector3.new(0, RaidConfig.RoomSpawnHeightOffset, 0)))
+	end
 end
 
 -- Room-authored enemy placement — see RaidConfig.SpawnPointName/SpawnPointEnemyAttribute's own
@@ -288,6 +325,176 @@ local function collectSpawnPoints(roomModel: Model): { { Position: Vector3, Type
 		end
 	end
 	return points
+end
+
+-- Forward-declared for the same reason enterNode is below — resolveEnemyPlacements (right after
+-- collectSpawnZones/placeInZones) needs to call this to draw a type key for each zone-filled
+-- position, but pickRaidSpawnKeys itself isn't defined until further down this file (it also backs
+-- the plain procedural fallback beginCombat/beginAmbush already use).
+local pickRaidSpawnKeys
+
+-- Room-authored spawn volumes — see RaidConfig.SpawnZoneName's own comment for the full contract.
+-- Returns nil if `roomModel` has no SpawnZone Parts at all (same "caller falls back to procedural"
+-- shape collectSpawnPoints above uses), otherwise a list of {Part, Weight} ready for placeInZones.
+local function collectSpawnZones(roomModel: Instance): { { Part: BasePart, Weight: number } }?
+	local zones = nil
+	for _, descendant in ipairs(roomModel:GetDescendants()) do
+		if descendant:IsA("BasePart") and descendant.Name == RaidConfig.SpawnZoneName then
+			zones = zones or {}
+			local weight = descendant:GetAttribute(RaidConfig.SpawnZoneWeightAttribute)
+			if typeof(weight) ~= "number" or weight <= 0 then
+				-- A zero/negative weight must never reach the weighted draw in placeInZones — it
+				-- would either divide by zero (an empty total) or make the zone impossible to land
+				-- on while still contributing nothing to the sum, neither of which is what an author
+				-- setting a bad number actually meant.
+				weight = 1
+			end
+
+			-- Force these here rather than trusting the author to set them in Studio, so the zone can
+			-- stay bright and visible while building the room and still disappear in game.
+			-- CanQuery = false is not cosmetic: an invisible query-able volume in front of the player
+			-- is the exact "I click and nothing happens" bug this project has already hit once, and
+			-- it conveniently keeps the zone itself out of placeInZones' own floor raycast below, for
+			-- free — no per-zone filter entry needed in that RaycastParams.
+			descendant.Transparency = 1
+			descendant.CanCollide = false
+			descendant.CanQuery = false
+			descendant.Anchored = true
+
+			table.insert(zones, { Part = descendant, Weight = weight })
+		end
+	end
+	return zones
+end
+
+-- One random candidate point inside `zone`'s own box, in WORLD space. Offsets are picked in the
+-- part's OBJECT space (its own Size, centred on its own CFrame) and only then transformed by
+-- zone.CFrame — that's what makes a rotated zone work exactly as drawn instead of only an
+-- axis-aligned one. Starts at the TOP face on Y (not centre), since this is meant to be a downward
+-- raycast origin looking for floor beneath it, not a point already floating mid-volume.
+local function randomPointInZone(zone: BasePart): Vector3
+	local offsetX = (math.random() - 0.5) * zone.Size.X
+	local offsetZ = (math.random() - 0.5) * zone.Size.Z
+	local offsetY = zone.Size.Y / 2
+	return (zone.CFrame * CFrame.new(offsetX, offsetY, offsetZ)).Position
+end
+
+-- Weighted-random placement of up to `count` enemies across `zones` (see collectSpawnZones above),
+-- each candidate checked against a downward raycast for real floor and a minimum distance from the
+-- player before it's accepted — see RaidConfig.SpawnZoneMinPlayerDistance/FloorOffset/
+-- MaxPlacementAttempts/RaycastExtraDepth's own comments for what each constant guards against.
+-- Returns however many positions actually resolved, which may be fewer than `count` if a zone keeps
+-- failing (see the per-enemy warn below) — a short encounter beats a stuck one, so this never falls
+-- back to an unchecked position just to hit the count.
+local function placeInZones(zones: { { Part: BasePart, Weight: number } }, player: Player, count: number): { Vector3 }
+	local totalWeight = 0
+	for _, zone in ipairs(zones) do
+		totalWeight += zone.Weight
+	end
+
+	local character = player.Character
+	local characterPosition = character and character:GetPivot().Position
+	local roomModel = zones[1] and zones[1].Part:FindFirstAncestorWhichIsA("Model")
+
+	local raycastParams = RaycastParams.new()
+	raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+	-- Only the player's own character needs excluding here — a player standing in the zone would
+	-- otherwise get raycast-hit and mistaken for floor. The zones themselves need no entry: they're
+	-- already CanQuery = false (collectSpawnZones sets that), which excludes them from any raycast
+	-- automatically.
+	raycastParams.FilterDescendantsInstances = character and { character } or {}
+
+	local positions = {}
+	for _ = 1, count do
+		local placed = false
+		for _attempt = 1, RaidConfig.SpawnZoneMaxPlacementAttempts do
+			-- Re-drawing the zone every attempt (not just once per enemy) means one consistently bad
+			-- zone (e.g. floating over a gap with nothing below it) can't doom this enemy's placement
+			-- on its own — a later attempt can land in a different, better zone entirely.
+			local roll = math.random() * totalWeight
+			local cumulative = 0
+			local chosenZone = zones[#zones]
+			for _, zone in ipairs(zones) do
+				cumulative += zone.Weight
+				if roll <= cumulative then
+					chosenZone = zone
+					break
+				end
+			end
+
+			local candidate = randomPointInZone(chosenZone.Part)
+			local rayResult = Workspace:Raycast(
+				candidate,
+				Vector3.new(0, -(chosenZone.Part.Size.Y + RaidConfig.SpawnZoneRaycastExtraDepth), 0),
+				raycastParams)
+			if rayResult then
+				local position = rayResult.Position + Vector3.new(0, RaidConfig.SpawnZoneFloorOffset, 0)
+				if not characterPosition or (position - characterPosition).Magnitude >= RaidConfig.SpawnZoneMinPlayerDistance then
+					table.insert(positions, position)
+					placed = true
+					break
+				end
+			end
+		end
+		if not placed then
+			warn(("[RaidRoomService] %s couldn't place an enemy in a SpawnZone after %d attempts — skipping it."):format(
+				roomModel and roomModel.Name or "?", RaidConfig.SpawnZoneMaxPlacementAttempts))
+		end
+	end
+	return positions
+end
+
+-- Shared resolver for both beginCombat and each wave of beginAmbush — decides, in priority order,
+-- whether this encounter uses authored SpawnPoints, authored SpawnZones, both, or falls back to the
+-- original procedural composition (returning nil tells the caller to do exactly that, unchanged).
+-- Points and zones COEXIST in one room — see RaidConfig.SpawnZoneName's own comment — so authored
+-- points always count against the room's enemy budget first, and zones only fill whatever's left.
+local function resolveEnemyPlacements(state, count: number): { { Position: Vector3, TypeKey: string } }?
+	local points = state.RoomFolder and collectSpawnPoints(state.RoomFolder)
+	local zones = state.RoomFolder and collectSpawnZones(state.RoomFolder)
+
+	if not points and not zones then
+		-- A half-built Combat/Ambush room (no SpawnZone, no SpawnPoint) still has to be playable via
+		-- the procedural fallback, but that should be findable rather than silently indistinguishable
+		-- from an intentionally-plain room — except the fallback placeholder room, which legitimately
+		-- has neither by design (see buildFallbackRoom's PlaceholderRoom attribute) and would
+		-- otherwise trip this warn on literally every single raid.
+		if state.RoomFolder and not state.RoomFolder:GetAttribute("PlaceholderRoom") then
+			local node = state.Map.Nodes[state.CurrentNodeId]
+			warn(("[RaidRoomService] %s room has no %s or %s Parts — falling back to the procedural spawn ring."):format(
+				node and node.Type or "?", RaidConfig.SpawnZoneName, RaidConfig.SpawnPointName))
+		end
+		return nil
+	end
+
+	if points and not zones then
+		return points -- today's behaviour, unchanged
+	end
+
+	local combined = points and table.clone(points) or {}
+	local remaining = math.max(0, count - #combined)
+	if remaining > 0 then
+		local positions = placeInZones(zones, state.Player, remaining)
+		-- Reuses pickRaidSpawnKeys rather than a second draw, so a zone-filled enemy rolls off the
+		-- exact same weighted, built-model-filtered roster the procedural path already uses — one
+		-- place decides "what can spawn," this only ever decides "where."
+		local typeKeys = pickRaidSpawnKeys(#positions)
+		for i, position in ipairs(positions) do
+			table.insert(combined, { Position = position, TypeKey = typeKeys[i] })
+		end
+	end
+
+	-- Every zone placement can legitimately fail — a zone floating over a gap with no floor beneath
+	-- it, or one packed so close to the entrance that nothing in it ever clears
+	-- SpawnZoneMinPlayerDistance. Handing an EMPTY list back would reach RunRaidCombat's zero-spawn
+	-- path, which does not strand the run (it warns and resolves "Cleared") but DOES hand the player
+	-- a free clear and full loot for a room that never fought back. Falling back to the procedural
+	-- ring instead keeps the encounter real: same missing-content rule the rest of this file follows,
+	-- applied to geometry that turned out to be unusable rather than absent.
+	if #combined == 0 then
+		return nil
+	end
+	return combined
 end
 
 ----------------------------------------------------------------------
@@ -666,7 +873,9 @@ end
 -- even though nothing was actually broken, just missing art. Falls back to the full list if
 -- somehow NONE of them have models yet, so this doesn't hang/error on a totally empty
 -- ServerStorage.EnemyModels — RunRaidCombat's own zero-spawn fallback still catches that case.
-local function pickRaidSpawnKeys(count: number): { string }
+-- Assigns the forward-declared local above (see that declaration's own comment for why) rather than
+-- `local function`, which would otherwise shadow it with a second, still-nil local of the same name.
+pickRaidSpawnKeys = function(count: number): { string }
 	local available = {}
 	for _, key in ipairs(WaveConfig.EnemyTypes) do
 		if CombatEncounterService.HasModelFor(key) then
@@ -721,12 +930,17 @@ local function beginCombat(state, node)
 	local composition = RaidConfig.CombatTierComposition[node.Tier] or RaidConfig.CombatTierComposition[1]
 	local roomCenter = roomEncounterCenter(state)
 
-	-- A room built with RaidConfig.SpawnPointName Parts fully decides its own composition; one
-	-- without falls back to the original procedural roll, unchanged from before this existed.
-	local explicitSpawns = state.RoomFolder and collectSpawnPoints(state.RoomFolder)
+	-- Count is rolled FIRST now, unconditionally — resolveEnemyPlacements needs it up front to know
+	-- how many zone-filled positions (if any) to top authored SpawnPoints up to, not just to size the
+	-- procedural fallback roll the way this used to work.
+	local count = math.random(composition.EnemyCountMin, composition.EnemyCountMax)
+
+	-- A room built with RaidConfig.SpawnPointName/SpawnZoneName Parts decides some or all of its own
+	-- composition (see resolveEnemyPlacements); one with neither falls back to the original
+	-- procedural roll, unchanged from before either of those existed.
+	local explicitSpawns = resolveEnemyPlacements(state, count)
 	local spawnKeys = {}
 	if not explicitSpawns then
-		local count = math.random(composition.EnemyCountMin, composition.EnemyCountMax)
 		spawnKeys = pickRaidSpawnKeys(count)
 	end
 
@@ -799,7 +1013,16 @@ local function beginAmbush(state, node)
 			local waveBonus = math.floor((waveIndex - 1) / 2)
 			local count = math.random(composition.EnemyCountMin + waveBonus, composition.EnemyCountMax + waveBonus)
 			local waveMultiplier = composition.Multiplier * runMultiplier * (1 + (waveIndex - 1) * 0.08)
-			local spawnKeys = pickRaidSpawnKeys(count)
+
+			-- Resolved fresh EVERY wave, deliberately — a room with SpawnZones should give each wave
+			-- of an Ambush its own random placements rather than every wave materialising in the same
+			-- spots, which is what resolving once outside this loop (the way beginCombat resolves
+			-- once for its single encounter) would produce.
+			local explicitSpawns = resolveEnemyPlacements(state, count)
+			local spawnKeys = {}
+			if not explicitSpawns then
+				spawnKeys = pickRaidSpawnKeys(count)
+			end
 
 			local status = CombatEncounterService.RunRaidCombat(state.Player, roomCenter, spawnKeys, waveMultiplier, function(eventStatus, payload)
 				payload = payload or {}
@@ -807,7 +1030,7 @@ local function beginAmbush(state, node)
 				payload.Wave = waveIndex
 				payload.WaveTotal = waveCount
 				RaidRoomUpdate:FireClient(state.Player, payload)
-			end)
+			end, explicitSpawns)
 
 			-- Same "torn down out from under this task" guard beginCombat uses — checked after every
 			-- individual wave, not just once at the end, since a disconnect/abandon could land mid-sequence.
@@ -975,7 +1198,7 @@ enterNode = function(state, nodeId: number)
 	end
 	local origin = slotOrigin(state.SlotIndex)
 	state.RoomFolder = buildRoom(node.Type, origin, state.InstanceFolder)
-	teleportPlayerToRoom(state.Player, origin)
+	teleportPlayerToRoom(state.Player, origin, state.RoomFolder)
 
 	local typeConfig = RaidConfig.NodeTypes[node.Type]
 	RaidRoomUpdate:FireClient(state.Player, {

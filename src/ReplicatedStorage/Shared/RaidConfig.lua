@@ -169,6 +169,17 @@ RaidConfig.RoomModelsFolderName = "RaidRoomModels"
 RaidConfig.FallbackRoomSize = Vector3.new(260, 1, 260)
 RaidConfig.FallbackRoomColor = Color3.fromRGB(80, 80, 88)
 
+-- Player spawn marker — build a Part named exactly this in a Room Model and the player is placed
+-- there on entering that room, pivoted to the Part's full CFrame — so it sets FACING DIRECTION as
+-- well as position, which the previous behaviour could not express at all. Absent, the player
+-- falls back to origin + RoomSpawnHeightOffset on Y, i.e. the model's own pivot, dead centre —
+-- unchanged, so every room already built keeps working. That pivot-centre default was invisible
+-- while every room was the 260x260 placeholder square, but rooms are constrained on X only
+-- (600-stud slot spacing) and therefore grow long on Z, at which point "dead centre" drops the
+-- player in the middle of the level with half of it behind them. Only the first one found is
+-- used; more than one warns.
+RaidConfig.PlayerSpawnName = "PlayerSpawn"
+
 -- Room-authored enemy placement — build a Combat/Ambush Room Model in Studio with Parts named
 -- exactly SpawnPointName, each carrying a string Attribute named SpawnPointEnemyAttribute set to an
 -- enemy type key (one of EnemyConfig.Types/EliteTypes' keys, e.g. "Raider", "Brute",
@@ -179,6 +190,40 @@ RaidConfig.FallbackRoomColor = Color3.fromRGB(80, 80, 88)
 -- found then spawn nothing and throw a warning."
 RaidConfig.SpawnPointName = "SpawnPoint"
 RaidConfig.SpawnPointEnemyAttribute = "EnemyType"
+
+-- Room-authored spawn volumes — build a Part named exactly SpawnZoneName in a Room Model and it
+-- defines a VOLUME, not a point: the Part's own Size and CFrame describe a box, and enemies appear
+-- at random points inside it. Because placement works in the part's OBJECT space, a rotated zone
+-- works exactly as drawn. SpawnZoneWeightAttribute is an optional NUMBER attribute on the zone
+-- (absent, or non-positive, means 1) giving that zone's share of the room's spawns — a big arena at
+-- 3 catches three times what a side alcove at 1 does. Weight is the one thing the geometry knows
+-- that config cannot. A zone deliberately says WHERE, never WHAT. There is no per-zone enemy-type
+-- filter, and that was decided rather than skipped: putting composition in this table AND in every
+-- room model is the two-places-that-drift failure this codebase keeps having (OreGate,
+-- ModConfig.ApplyMods and CraftingRecipes.MaxDeployedRobots all exist because of it). Zones and
+-- SpawnPoints COEXIST in one room: authored points spawn first and count against the room's enemy
+-- budget, zones fill whatever remains. That is what lets one pinned set piece sit inside a rolled
+-- encounter without a second system. Boss rooms are expected to keep using points only.
+-- SpawnZoneMinPlayerDistance (studs) keeps an enemy from materialising in the player's face;
+-- SpawnZoneFloorOffset (studs) is how far above the floor the raycast result is nudged so nothing
+-- spawns embedded in geometry; SpawnZoneMaxPlacementAttempts is how many times one enemy's
+-- placement is retried before it is skipped with a warn; SpawnZoneRaycastExtraDepth (studs) is how
+-- far BELOW the zone's own bottom face the downward floor raycast keeps searching, so a zone
+-- floating above a stepped floor still finds ground. Note that RaidRoomService force-sets
+-- Transparency 1 / CanCollide false / CanQuery false on every zone at build time, so the author
+-- leaves it bright and visible in Studio and it disappears in game — and CanQuery false is not
+-- cosmetic: an invisible query-able volume in front of the player is exactly the "I click and
+-- nothing happens" bug CLAUDE.md documents, and it also conveniently keeps zones out of the floor
+-- raycast. A Combat/Ambush room with neither a SpawnZone nor a SpawnPoint warns (naming the room)
+-- and falls back to the original procedural circle-around-centre spawn, unchanged — the fallback
+-- keeps the run alive, the warn is what makes a half-authored room findable instead of quietly
+-- wrong.
+RaidConfig.SpawnZoneName = "SpawnZone"
+RaidConfig.SpawnZoneWeightAttribute = "Weight"
+RaidConfig.SpawnZoneMinPlayerDistance = 25
+RaidConfig.SpawnZoneFloorOffset = 3
+RaidConfig.SpawnZoneMaxPlacementAttempts = 12
+RaidConfig.SpawnZoneRaycastExtraDepth = 200
 
 -- Heal/Shop interaction — build a Heal or Shop Room Model in Studio with a Part named exactly this
 -- (a ProximityPrompt is created on it automatically if it doesn't already have one) — the player

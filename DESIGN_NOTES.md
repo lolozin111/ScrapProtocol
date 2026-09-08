@@ -165,8 +165,11 @@ is already exempt from `RunLocked` by an earlier explicit decision); where does 
 live (rec: a third tab on the existing raid terminal, not a new tagged Station — no Studio setup); do
 all three modes unlock at once (rec: Salvage Run first, the other two behind Research Tiers).
 
-**The Studio authoring contract, answered for the user during the round** and true TODAY — everything
-except `ExitDoor` is already live, so rooms can be built before any of the above is written.
+**The Studio authoring contract, answered for the user during the round.** SUPERSEDED IN PART — every
+marker named below is still correct, but this paragraph predates two rounds that added more: `ExitDoor`
+shipped 2026-09-03 (step 1), and `PlayerSpawn` + `SpawnZone` shipped 2026-09-08 (see "Spawn zones +
+difficulty curves" below, and the Raid Room Build Sheet page, for the full current contract). Kept
+because the geometry and slot facts at the end of it are the durable part.
 `ServerStorage.RaidRoomModels`, one Model per type named exactly `Start`/`Combat`/`Ambush`/`Heal`/
 `Shop`/`Boss`, each needing a **PrimaryPart** (missing one silently falls back to the placeholder)
 and built centred on the origin since the Model is cloned and `PivotTo`'d there. Inside: `SpawnPoint`
@@ -177,7 +180,7 @@ automatically. No Model gives a 260x260 concrete square with an invisible guard 
 `(0, 800, 0)`, 600 studs apart, up to 20 concurrent — each alone in its slot, so rotation never
 matters.
 
-### Spawn zones + difficulty curves — DESIGN ROUND, 2026-09-07, NOT BUILT
+### Spawn zones + difficulty curves — DESIGN ROUND 2026-09-07; MARKERS BUILT 2026-09-08, CURVES NOT
 
 Raised by the user after building the first Combat room. Nothing here is implemented; this is the
 record of the round so it survives a context reset. **Do not build any of it without a greenlight.**
@@ -296,7 +299,7 @@ later and closer to release, covering each enemy type's AI pattern, its state se
 and how each animation fits. Not now; the nine patterns Phase 00 names (three per mode) are the
 input to that conversation.
 
-**THE STUDIO CONTRACT — SETTLED 2026-09-08, STILL NOT BUILT.** Raised by the user mid-way through
+**THE STUDIO CONTRACT — SETTLED 2026-09-08, BUILT 2026-09-08.** Raised by the user mid-way through
 hand-building the first Combat room: they had the geometry but none of the markers, and wanted to
 know what a map needs to FUNCTION before placing any. The full sheet is on the Raid Room Build Sheet
 page (linked in "Road to release"), which now separates markers that are live from markers that are
@@ -311,7 +314,12 @@ the width budget pushes them to — the player lands in the MIDDLE of the room w
 behind them. Fix is ~6 lines plus a `RaidConfig.PlayerSpawnName` constant: pivot to the marker's full
 CFrame (so it sets FACING as well as position, which the current code cannot express at all), falling
 back to origin+5 when absent. Silent-fallback ladder preserved; every room already built keeps
-working. **Not yet greenlit — it is a code change and the build hold is still in force.**
+working. **Built 2026-09-08, same session, on the user's explicit greenlight.**
+`teleportPlayerToRoom` (RaidRoomService.lua:275) now takes the room model as a parameter and pivots
+the player to a `PlayerSpawn` Part's FULL CFrame when one exists; more than one found warns and uses
+the first; absent (or no room model at all, e.g. mid-teardown), the pre-existing
+origin+`RoomSpawnHeightOffset` fallback is unchanged, with no warn — a room legitimately may not have
+one yet.
 
 **`SpawnZone` — decided, point by point:**
 
@@ -343,8 +351,38 @@ working. **Not yet greenlit — it is a code change and the build hold is still 
    volume in front of the player is precisely the "I click and nothing happens" bug CLAUDE.md
    records, where mouse rays hit a part nobody can see.
 
-**Still open:** whether `CombatTierComposition` survives at all, or is replaced outright by the
-mode-keyed pools (untouched by this round — it belongs with Phase 00 step 3, mode plumbing).
+**Built 2026-09-08, same session, on the user's explicit greenlight** (all in `RaidRoomService.lua`
+unless noted):
+
+- **`beginAmbush` gained authored-spawn support it never had.** `resolveEnemyPlacements` is the
+  shared resolver, called by both `beginCombat` and by EACH WAVE of `beginAmbush` — fresh placements
+  are rolled per wave rather than reusing one set for the whole encounter, so points and zones stay
+  meaningful across a multi-wave fight instead of only applying to the first.
+- **`pickRaidSpawnKeys` became a forward-declared local** (`local pickRaidSpawnKeys`, assigned later
+  in the file as `pickRaidSpawnKeys = function(...)`), because `resolveEnemyPlacements` needs to call
+  it — to draw a type key for each zone-filled position — from above its own definition further down
+  the file. Same pattern the file already used for `enterNode`.
+- **The empty-placement fallback, and why it matters.** If placement into zones (after topping up any
+  authored points) yields zero positions — a zone floating over a gap with no floor beneath it, or one
+  packed so close to the entrance that nothing inside it ever clears `SpawnZoneMinPlayerDistance` —
+  `resolveEnemyPlacements` falls back to the procedural ring rather than handing the caller an empty
+  list. This matters because `RunRaidCombat`'s zero-spawn path does not hang; it warns and resolves as
+  "Cleared" — so an all-zones-failed room would otherwise have paid full loot for a fight that never
+  happened, silently.
+- **The `PlaceholderRoom` attribute, and why the warn needed it.** `buildFallbackRoom` now sets a
+  `PlaceholderRoom` attribute on the placeholder Model, and `resolveEnemyPlacements`'s "neither marker
+  present" warn checks for it before firing. Without that check the warn would fire on literally every
+  single raid that falls back to the placeholder square, since that room legitimately has neither a
+  `SpawnPoint` nor a `SpawnZone` by design — the warn exists to make a half-authored REAL room
+  findable, not to complain about the intentional fallback.
+
+**Still NOT built, still deferred — do not mistake this round for the curve work.** The quantity/
+strength growth curves (loose-log count, low-exponential strength, both described earlier in this
+section) and the mode-keyed composition pools — including whether `CombatTierComposition` survives at
+all or is replaced outright — are untouched. Both belong to Phase 00 step 3, mode plumbing. This round
+shipped marker plumbing only (`PlayerSpawn`, `SpawnZone`) against today's `CombatTierComposition`
+budget, unchanged — a hand-authored room still draws from the same 2-3/3-4/4-5-enemy, 1.0x/1.4x/1.9x
+tiers it always has; only WHERE those enemies land is new.
 
 Where it fits: essentially Phase 00 step 3 (mode plumbing) with a spawn-composition layer attached.
 `state.TotalNodesVisited` is already the depth input and already drives loot, so enemy count and
