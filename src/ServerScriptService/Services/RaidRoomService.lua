@@ -120,8 +120,9 @@ local function slotOrigin(slotIndex: number): Vector3
 end
 
 ----------------------------------------------------------------------
--- Room construction — one named Model per type in ServerStorage.RaidRoomModels, falling back to a
--- plain big square if that type has no Model built yet. See RaidConfig's own comment on this.
+-- Room construction — one named entry per type in ServerStorage.RaidRoomModels (a Model, or a
+-- Folder of Models to pick a variant from), falling back to a plain big square if that type has
+-- nothing usable built yet. See RaidConfig's own comment on this.
 ----------------------------------------------------------------------
 
 -- Same "low guard rail around the edge" idea MineShaftService.lua's buildSurfaceGuardRail already
@@ -245,23 +246,74 @@ local function buildFallbackRoom(nodeType: string, origin: Vector3): Model
 	return model
 end
 
+-- Resolves one entry of ServerStorage.RaidRoomModels into an actual room template, or nil if that
+-- type has nothing usable built yet (caller falls back to the placeholder square).
+--
+-- A Model is the template, used directly — unchanged, so every room already built keeps working.
+-- A FOLDER is a VARIANT SET: one random Model child is picked per node. buildRoom looks up exactly
+-- ONE thing per node type, so a fifteen-node map otherwise walks through the identical box a dozen
+-- times; this turns "make the map pretty" into as many small Studio jobs as wanted instead of one
+-- big one. Backwards compatible by construction — neither branch knows about the other.
+--
+-- Variants without a PrimaryPart are SKIPPED rather than picked and then fallen back on, so one
+-- half-built variant can't drop a fraction of runs into the placeholder square at random — which
+-- would present as an intermittent, unreproducible "sometimes the room is the grey box". They warn
+-- by name instead, since a variant that simply never appears is otherwise invisible.
+local function pickRoomTemplate(entry: Instance?): Model?
+	if entry == nil then
+		return nil
+	end
+
+	if entry:IsA("Model") then
+		return entry.PrimaryPart and entry or nil
+	end
+
+	if not entry:IsA("Folder") then
+		return nil
+	end
+
+	local variants = {}
+	local skipped = {}
+	for _, child in ipairs(entry:GetChildren()) do
+		if child:IsA("Model") then
+			if child.PrimaryPart then
+				table.insert(variants, child)
+			else
+				table.insert(skipped, child.Name)
+			end
+		end
+	end
+
+	if #skipped > 0 then
+		warn(("[RaidRoomService] %s: variant Model(s) %s have no PrimaryPart and were skipped."):format(
+			entry:GetFullName(), table.concat(skipped, ", ")))
+	end
+
+	if #variants == 0 then
+		return nil
+	end
+	return variants[math.random(1, #variants)]
+end
+
 -- Builds (and returns) the room Model for `nodeType` at `origin`, parented into `parentFolder`.
 -- Doesn't need to be told a rotation — every room is generated fresh at its own isolated slot
 -- origin, so there's nothing to line up against.
 local function buildRoom(nodeType: string, origin: Vector3, parentFolder: Instance): Model
 	local typeConfig = RaidConfig.NodeTypes[nodeType]
 	local roomModelsFolder = ServerStorage:FindFirstChild(RaidConfig.RoomModelsFolderName)
-	local template = typeConfig and roomModelsFolder and roomModelsFolder:FindFirstChild(typeConfig.RoomFolder)
+	local entry = typeConfig and roomModelsFolder and roomModelsFolder:FindFirstChild(typeConfig.RoomFolder)
+	local template = pickRoomTemplate(entry)
 
 	local model
-	if template and template:IsA("Model") and template.PrimaryPart then
+	if template then
 		model = template:Clone()
 		model:PivotTo(CFrame.new(origin))
 	else
-		if not (template and template:IsA("Model")) then
-			warn(("[RaidRoomService] No %q Model found in ServerStorage.%s (or it's missing a PrimaryPart) — using a plain placeholder room."):format(
-				typeConfig and typeConfig.RoomFolder or nodeType, RaidConfig.RoomModelsFolderName))
-		end
+		-- Fires for a missing entry AND for a present-but-unusable one (a Model with no PrimaryPart, a
+		-- variant Folder with no usable Model in it). The message always claimed to cover the
+		-- PrimaryPart case; it now actually does, which matters most while rooms are being authored.
+		warn(("[RaidRoomService] No usable %q room Model found in ServerStorage.%s (missing, or missing a PrimaryPart) — using a plain placeholder room."):format(
+			typeConfig and typeConfig.RoomFolder or nodeType, RaidConfig.RoomModelsFolderName))
 		model = buildFallbackRoom(nodeType, origin)
 	end
 

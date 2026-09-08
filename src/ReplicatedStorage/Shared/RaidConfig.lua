@@ -70,7 +70,9 @@
 
 	ROOMS — each node, once entered, clones a Model out of ServerStorage.RaidRoomModels[nodeType]
 	(RaidRoomService.lua) — same "folder of same-named things, no code changes needed" convention as
-	ServerStorage.EnemyModels / ReplicatedStorage.BaseTemplates. No Model built yet for a type? A
+	ServerStorage.EnemyModels / ReplicatedStorage.BaseTemplates. That entry may also be a FOLDER of
+	Models, in which case one is picked at random per node (see RoomModelsFolderName below). No Model
+	built yet for a type? A
 	plain big square (RaidConfig.FallbackRoomSize) stands in, same placeholder-first spirit as
 	everywhere else in this project. Combat/Ambush Room Models can additionally place Parts named
 	RaidConfig.SpawnPointName carrying a RaidConfig.SpawnPointEnemyAttribute string Attribute (an
@@ -155,11 +157,18 @@ RaidConfig.NodeTypes = {
 	},
 }
 
--- Folder in ServerStorage holding one Model directly per node type above, named to match RoomFolder
--- exactly (e.g. ServerStorage.RaidRoomModels.Combat) — same "one named thing per key, no code
--- changes needed" convention as ReplicatedStorage.BaseTemplates. Missing folder, or a type with no
--- Model built yet — falls back to FallbackRoomSize, same "functional before art" spirit as
--- everywhere else in this project.
+-- Folder in ServerStorage holding one entry per node type above, named to match RoomFolder exactly
+-- (e.g. ServerStorage.RaidRoomModels.Combat) — same "one named thing per key, no code changes
+-- needed" convention as ReplicatedStorage.BaseTemplates. Missing folder, or a type with no Model
+-- built yet — falls back to FallbackRoomSize, same "functional before art" spirit as everywhere
+-- else in this project.
+--
+-- That entry may be EITHER a Model (used directly) OR a Folder of Models, in which case it is a
+-- VARIANT SET and one child is picked at random per node — so a fifteen-node map stops walking
+-- through the identical box a dozen times, and adding variety becomes another small Studio job
+-- rather than one big one. Purely additive: a single Model entry behaves exactly as it always has.
+-- Every variant still needs its own PrimaryPart; ones without are skipped and warned about by name
+-- (RaidRoomService.pickRoomTemplate) rather than intermittently dropping a run into the placeholder.
 RaidConfig.RoomModelsFolderName = "RaidRoomModels"
 -- Sized generously (260x260, up from an original 50x50) — "make the area much bigger" — since it's
 -- the ONLY thing standing in for a real Combat/Ambush/Shop/Heal map today, and a cramped fallback

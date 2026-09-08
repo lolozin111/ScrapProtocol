@@ -995,8 +995,11 @@ to end:
     Pick a Combat node: you land in a plain grey placeholder room (**you need at least one Model per
     type in `ServerStorage.RaidRoomModels`** — e.g. a Model named `Combat` with a `PrimaryPart` —
     for real rooms; with none placed, the fallback square is expected, not a bug — it's a big
-    260x260 floor with an invisible edge barrier, not a visible wall) and a small panel shows an
-    Enemies bar ticking as you fight (same real combat engine as base defense — your equipped
+    260x260 floor with an invisible edge barrier, not a visible wall; you can also drop several
+    Combat Models inside a `Combat` Folder instead of one loose Model — each needs its own
+    `PrimaryPart` and its own full set of markers — and re-entering Combat nodes across a run
+    should then show different rooms, picked at random) and a small panel shows an Enemies bar
+    ticking as you fight (same real combat engine as base defense — your equipped
     gun/robots work here too). Clear it and confirm a "Room cleared!" toast naming whatever loot
     dropped, and that the map's "you are here" marker stays put until you actually walk through a
     door. Pick a Heal node: confirms an instant "Fully healed." message and a **Continue** button.
@@ -1220,11 +1223,17 @@ and that are easy to get subtly wrong (economy math, save data, purchase handlin
   actually holdable. Without one, `WeaponToolService.lua` auto-builds a plain gray placeholder box
   Tool so equipping still works end-to-end — swap in the real thing whenever the art exists, no
   code changes needed.
-- **Raid Room models.** Same convention again: one Model per node type (`Start`/`Combat`/`Shop`/
+- **Raid Room models.** Same convention again: one entry per node type (`Start`/`Combat`/`Shop`/
   `Heal`/`Ambush`/`Boss`) inside `ServerStorage.RaidRoomModels`, each with a `PrimaryPart` set at
   floor level. (There is no `Extraction` type any more — a branch's dead end is just whichever
-  regular type its last node rolled.) Without one, `RaidRoomService.lua` falls back to a plain big
-  square per that node type — see `DESIGN_NOTES.md`'s "Raid Rooms" sections and this file's step 15.
+  regular type its last node rolled.) That entry can now be either a single Model, used directly
+  exactly as before, or a **Folder of Models** — a variant set, one child picked at random every
+  time a node of that type is entered, so you can drop several Combat rooms in a `Combat` Folder
+  instead of building one room and reusing it for the whole map. Every variant needs its own
+  `PrimaryPart` and its own full set of markers (see below) — markers aren't shared across
+  variants, since each is found by descendant search of whichever Model actually got cloned.
+  Without a usable entry, `RaidRoomService.lua` falls back to a plain big square per that node
+  type — see `DESIGN_NOTES.md`'s "Raid Rooms" sections and this file's step 15.
   Every marker below is matched by Part **name**, not a `CollectionService` tag — the one exception
   to this project's otherwise tag-driven world setup, because these markers live inside a Model
   that's already keyed by node type. Inside a Model you can additionally place: a `PlayerSpawn` Part,

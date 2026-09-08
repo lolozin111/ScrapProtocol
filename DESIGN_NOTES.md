@@ -25,7 +25,7 @@ already made (numbers, mechanics, sequencing), not just vague direction.
 | Drone companion (4 Drone Cores) | **Built** — unlocks at Research Tier 3, follows you everywhere |
 | Player Test Mode (admin throwaway profile) | **Built** — see "Data safety" section below |
 | HUD phase 3 (all station menus) | **Built and verified** — see "Road to release" below |
-| Raid overhaul | **Scope cut to one mode for v1 (2026-09-08)** — steps 5-6 deferred post-launch; step 1 built AND VERIFIED in Studio 2026-09-08, see Phase 00 below |
+| Raid overhaul | **Scope cut to one mode for v1 (2026-09-08)** — steps 5-6 deferred post-launch; step 1 built AND VERIFIED in Studio 2026-09-08, step 2 (room variant folders) BUILT 2026-09-08, not yet verified in Studio, see Phase 00 below |
 | Enemy AI patterns | **Engine built, one pattern** — `Chaser`, and all six enemies use it |
 | Early-game pacing & onboarding | **Partially built** — item 1 (ore sells for Scrap) shipped in the ore rework; starter objectives (item 2) still planned, not built — see below |
 | Raid shop rework (run-only perks) | **Planned, not built** — half the tag plumbing exists |
@@ -133,11 +133,18 @@ a half-built room must never strand a run); extras stay sealed; a leaf seals all
 `onMapCleared` fires unchanged; the fallback room grows doors procedurally on its guard rail the same
 way it already grows an `InteractPoint`.
 
-**Decision 3 — room variants.** `buildRoom` looks up ONE Model per node type, so a fifteen-node map
-walks through the identical box a dozen times. `RaidRoomModels.Combat` may now be a **Folder of
-Models** instead of a Model, one picked at random per node — backwards compatible by construction (a
-Model is used directly, a Folder picks a random Model child), roughly six lines, and it turns "make
-the map pretty" into as many small Studio jobs as wanted instead of one big one.
+**Decision 3 — room variants. BUILT (2026-09-08).** `buildRoom` used to look up ONE Model per node
+type, so a fifteen-node map walked through the identical box a dozen times. `RaidRoomModels.<Type>`
+may now be a **Folder of Models** instead of a Model, one picked at random per node — backwards
+compatible by construction (a Model is used directly, a Folder picks a random Model child), and it
+turns "make the map pretty" into as many small Studio jobs as wanted instead of one big one. One
+refinement past the original sketch: `pickRoomTemplate` (`RaidRoomService.lua`, just above
+`buildRoom`) skips any variant Model that has no `PrimaryPart` rather than picking it and falling
+back to the placeholder — picking-then-falling-back would have made a half-built variant an
+intermittent, unreproducible "sometimes the room is the grey box" instead of a room that simply
+never gets picked. Skipped variants are warned about by name so they don't go unnoticed. A Folder
+where every child lacks a `PrimaryPart` returns nil, same as an empty Folder — `buildRoom` falls
+back to the placeholder square exactly as it always has for a missing/unusable entry.
 
 **What none of this touches**, worth stating because "overhaul" reads like a rewrite: `GenerateMap`'s
 tree + retry, chaptered maps, `onMapCleared`, instancing and the slot free-list, `RunRaidCombat`,
@@ -152,7 +159,9 @@ them, AI patterns last because they need three raids to exist):
 1. ~~Physical exit doors + read-only minimap~~ — **BUILT (2026-09-03), VERIFIED IN STUDIO
    (2026-09-08)**, see "Raid Rooms — physical
    exit doors + the Sector Map" below.
-2. Room variant folders — small, independent, unblocks Studio art.
+2. ~~Room variant folders~~ — **BUILT (2026-09-08), NOT YET VERIFIED IN STUDIO** — small,
+   independent, unblocks Studio art. See "Decision 3 — room variants" above and
+   `RaidRoomService.lua`'s `pickRoomTemplate`.
 3. Mode plumbing — a `RaidMode` on the raid state plus one `RaidConfig.Modes` table of named rules
    (the project's standard flat-table-of-strategies shape).
 4. Salvage Run — cheapest: tagging, carry cap, Extraction as a real room. Almost no new systems.
@@ -222,8 +231,11 @@ shipped 2026-09-03 (step 1), and `PlayerSpawn` + `SpawnZone` shipped 2026-09-08 
 difficulty curves" below, and the Raid Room Build Sheet page, for the full current contract). Kept
 because the geometry and slot facts at the end of it are the durable part.
 `ServerStorage.RaidRoomModels`, one Model per type named exactly `Start`/`Combat`/`Ambush`/`Heal`/
-`Shop`/`Boss`, each needing a **PrimaryPart** (missing one silently falls back to the placeholder)
-and built centred on the origin since the Model is cloned and `PivotTo`'d there. Inside: `SpawnPoint`
+`Shop`/`Boss` — or, since the room-variants build, a Folder of such Models, see "Decision 3 — room
+variants" above. Each needs a **PrimaryPart** and is built centred on the origin, since the Model is
+cloned and `PivotTo`'d there. (This paragraph used to say a missing `PrimaryPart` falls back to the
+placeholder SILENTLY. It no longer does: `pickRoomTemplate` warns, naming the offender, before
+falling back.) Inside: `SpawnPoint`
 Parts with a String attribute `EnemyType` from `Scavenger`/`Raider`/`Brute`/`ScrapCrawler`/
 `SentinelDrone`/`VoidwakenHulk` (unrecognised spawns nothing and warns; none at all falls back to the
 random 50-70 stud ring), and an `InteractPoint` Part on Heal/Shop which gets a ProximityPrompt added
@@ -2820,9 +2832,13 @@ branch and the colour/label matched the destination; `PlayerSpawn` places and FA
 zone's `Weight` visibly favouring the heavier zone over many runs, the duplicate-`PlayerSpawn` warn,
 and the no-markers warn. README section 4 step 15 covers all of them.
 
-**Step 2 is therefore UNBLOCKED** — room variant folders (letting `RaidRoomModels.Combat` be a Folder
-of Models picked at random, ~6 lines in `buildRoom`). It is still one of the seven build-order steps,
-so the design-phase hold above still applies to it: do not start it without an explicit greenlight.
+**Step 2 is BUILT (2026-09-08), NOT YET VERIFIED IN STUDIO** — room variant folders
+(`RaidRoomModels.<Type>` may now be a Folder of Models picked at random per node, via
+`pickRoomTemplate` in `RaidRoomService.lua`; see "Decision 3 — room variants" above for the full
+writeup, including the PrimaryPart-skipping refinement). **Step 3 (mode plumbing — a `RaidMode` on
+the raid state plus one `RaidConfig.Modes` entry) is now the next build-order step.** It is still one
+of the seven build-order steps, so the design-phase hold above still applies to it: do not start it
+without an explicit greenlight.
 
 The rest of this section is kept as the HUD round's own history.
 
