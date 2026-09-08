@@ -25,7 +25,7 @@ already made (numbers, mechanics, sequencing), not just vague direction.
 | Drone companion (4 Drone Cores) | **Built** — unlocks at Research Tier 3, follows you everywhere |
 | Player Test Mode (admin throwaway profile) | **Built** — see "Data safety" section below |
 | HUD phase 3 (all station menus) | **Built and verified** — see "Road to release" below |
-| Raid overhaul | **Scope cut to one mode for v1 (2026-09-08)** — steps 5-6 deferred post-launch; step 1 built, see Phase 00 below |
+| Raid overhaul | **Scope cut to one mode for v1 (2026-09-08)** — steps 5-6 deferred post-launch; step 1 built AND VERIFIED in Studio 2026-09-08, see Phase 00 below |
 | Enemy AI patterns | **Engine built, one pattern** — `Chaser`, and all six enemies use it |
 | Early-game pacing & onboarding | **Partially built** — item 1 (ore sells for Scrap) shipped in the ore rework; starter objectives (item 2) still planned, not built — see below |
 | Raid shop rework (run-only perks) | **Planned, not built** — half the tag plumbing exists |
@@ -149,7 +149,8 @@ what that table was built to be.
 **Build order inside the overhaul** (dependency order — doors first because all three modes need
 them, AI patterns last because they need three raids to exist):
 
-1. ~~Physical exit doors + read-only minimap~~ — **BUILT (2026-09-03)**, see "Raid Rooms — physical
+1. ~~Physical exit doors + read-only minimap~~ — **BUILT (2026-09-03), VERIFIED IN STUDIO
+   (2026-09-08)**, see "Raid Rooms — physical
    exit doors + the Sector Map" below.
 2. Room variant folders — small, independent, unblocks Studio art.
 3. Mode plumbing — a `RaidMode` on the raid state plus one `RaidConfig.Modes` table of named rules
@@ -2807,14 +2808,21 @@ the six weapon families `Salvage`/`Flamethrowers`/`Bows`/`Snipers`/`GrenadeLaunc
 16 images covering every ore, every refined material and all 18 weapons, since `HudKit.getItemIcon`
 now falls back from an item key to the weapon's `Family`.
 
-**Step 1 of its build order is BUILT but NOT YET VERIFIED IN STUDIO** — physical exit doors plus the
-Sector Map, see "Raid Rooms — physical exit doors + the Sector Map" below. Read that before anything
-else. Nothing in that round has been run: there is no Lua toolchain on this machine, so it was
-hand-reviewed only. **Verify it in Studio before building step 2 on top of it** — README section 4
-step 15 is rewritten with exactly what to check, including the deliberate too-few-doors test.
+**Step 1 of its build order is BUILT AND VERIFIED IN STUDIO (2026-09-08)** — physical exit doors plus
+the Sector Map, see "Raid Rooms — physical exit doors + the Sector Map" below. The user built the
+first authored Combat room and ran it. Confirmed WITH THEIR OWN EYES, not inferred: doors stay sealed
+and invisible through the fight then appear on clear; walking through one actually travels to that
+branch and the colour/label matched the destination; `PlayerSpawn` places and FACES the player; and
+`SpawnZone` puts enemies inside the volumes, on the floor, never on top of the player.
 
-The immediate next action after that verification is step 2: room variant folders (letting
-`RaidRoomModels.Combat` be a Folder of Models picked at random, ~6 lines in `buildRoom`).
+**Still unexercised, so do not record these as verified:** the map GUI being genuinely read-only
+(circles not responding to clicks), the deliberate too-few-doors fallback to the clickable map, a
+zone's `Weight` visibly favouring the heavier zone over many runs, the duplicate-`PlayerSpawn` warn,
+and the no-markers warn. README section 4 step 15 covers all of them.
+
+**Step 2 is therefore UNBLOCKED** — room variant folders (letting `RaidRoomModels.Combat` be a Folder
+of Models picked at random, ~6 lines in `buildRoom`). It is still one of the seven build-order steps,
+so the design-phase hold above still applies to it: do not start it without an explicit greenlight.
 
 The rest of this section is kept as the HUD round's own history.
 
