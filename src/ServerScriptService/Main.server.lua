@@ -29,6 +29,8 @@ require(Services.SmeltService)
 require(Services.WaveService)
 require(Services.ShopService)
 require(Services.NodeService)
+require(Services.SellService)  -- Shop station's sell side; reads OreConfig/RefinedOreConfig
+	-- SellPrice fields, so it belongs near the other Shop-facing service (TurretShopService, below).
 require(Services.ExpeditionService)
 require(Services.AutoMinerService)
 require(Services.MineShaftService)
@@ -83,7 +85,7 @@ do
 	for _, name in ipairs({
 		"DataService", "RateLimiter", "PlayerActivityService", "PlayerSpeed", "PlotService", "BaseService",
 		"StationService", "AdminService", "RaidEnergyService", "MiningService", "CraftingService",
-		"ForgeService", "SmeltService", "WaveService", "ShopService", "NodeService",
+		"ForgeService", "SmeltService", "WaveService", "ShopService", "NodeService", "SellService",
 		"ExpeditionService", "AutoMinerService", "MineShaftService", "RaidRoomService",
 		"TurretShopService", "TurretService", "TrainingDummyService",
 		"BlackMarketService", "HackerService", "DroneService",

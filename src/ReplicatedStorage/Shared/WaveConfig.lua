@@ -17,6 +17,15 @@ WaveConfig.RewardPayoutCap = 30       -- waves beyond this still count for the l
                                        -- for whatever future pacing mechanic wants a "past this
                                        -- point, stop scaling" cap, same as before.
 
+-- Scrap paid out for CLEARING a wave (not the old GetScrapReward/GetCoresReward below, which are
+-- still dead/unused — see their own comment). wave N pays Base + PerWave * N Scrap. Data, not a
+-- function, per direct request — WaveService reads WaveConfig.ScrapReward.Base and .PerWave
+-- directly and does the multiply itself.
+WaveConfig.ScrapReward = {
+	Base = 10,
+	PerWave = 3,
+}
+
 WaveConfig.EnemyTypes = { "Raider", "Scavenger", "Brute" }
 
 function WaveConfig.GetEnemyCount(waveNumber: number): number

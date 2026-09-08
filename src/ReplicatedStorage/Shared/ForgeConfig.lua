@@ -74,16 +74,16 @@ ForgeConfig.ForgeTiers = {
 	{ Name = "Masterwork Forge", Bonus = 60 },
 }
 ForgeConfig.ForgeTierCosts = {
-	[2] = { CopperWire = 40, GoldContacts = 10 },
-	[3] = { SteelPlating = 50, GoldContacts = 25 },
-	[4] = { GoldContacts = 60, VoidiumShard = 5 },
+	[2] = { Scrap = 300, CopperOre = 20 },
+	[3] = { Scrap = 700, GoldOre = 25, CopperCoil = 8 },
+	[4] = { Scrap = 1500, PlatinumOre = 50, VoidiumShard = 5 },
 }
 
 -- Consumable, craftable at the Forge (CraftLuckPotion remote). Burned automatically on the very
 -- next ForgeWeapon roll once the player opts in client-side — see ForgeService.ForgeWeapon's
 -- usePotion parameter. Stacks additively with ForgeTiers' permanent Bonus for that one roll only.
 ForgeConfig.LuckPotion = {
-	Cost = { GoldContacts = 20, CopperWire = 15 },
+	Cost = { PlatinumOre = 20, CopperOre = 15 },
 	Bonus = 40,
 }
 
@@ -93,6 +93,10 @@ ForgeConfig.LuckPotion = {
 ForgeConfig.Pity = {
 	Threshold = 15,
 	MinRarity = "Rare",
+	-- Used in place of Threshold while a profile still has NewbiePity set (a one-time first-timer
+	-- flag) — a new player hits the guaranteed Rare in 5 rolls instead of 15, once. Config only;
+	-- a service reads profile.NewbiePity and picks this over Threshold.
+	NewbieThreshold = 5,
 }
 
 -- A roll lands in profile.ForgeOutput (the Crucible's output tray), not straight into your

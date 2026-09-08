@@ -46,14 +46,14 @@ CaseConfig.RarityOrder = { "Common", "Rare", "Epic", "Legendary", "Mythical" }
 CaseConfig.Pools = {
 	Common = {
 		{ Kind = "Currency", Key = "Scrap", Min = 150, Max = 400, Weight = 40 },
-		{ Kind = "Ore", Key = "ScrapIron", Min = 40, Max = 120, Weight = 30 },
-		{ Kind = "Ore", Key = "CopperWire", Min = 25, Max = 80, Weight = 25 },
-		{ Kind = "Ore", Key = "SteelPlating", Min = 15, Max = 45, Weight = 15 },
+		{ Kind = "Ore", Key = "IronOre", Min = 40, Max = 120, Weight = 30 },
+		{ Kind = "Ore", Key = "CopperOre", Min = 25, Max = 80, Weight = 25 },
+		{ Kind = "Ore", Key = "GoldOre", Min = 15, Max = 45, Weight = 15 },
 	},
 
 	Rare = {
 		{ Kind = "Currency", Key = "Cores", Min = 15, Max = 45, Weight = 40 },
-		{ Kind = "Ore", Key = "GoldContacts", Min = 10, Max = 30, Weight = 25 },
+		{ Kind = "Ore", Key = "PlatinumOre", Min = 10, Max = 30, Weight = 25 },
 		{ Kind = "Refined", Key = "SteelIngot", Min = 8, Max = 25, Weight = 20 },
 		{ Kind = "Refined", Key = "CopperCoil", Min = 8, Max = 25, Weight = 20 },
 	},
@@ -70,7 +70,7 @@ CaseConfig.Pools = {
 		-- a reward, and the reveal says so.
 		{ Kind = "DroneCore", Key = "Scavenger", Weight = 11 },
 		{ Kind = "DroneCore", Key = "Recon", Weight = 11 },
-		{ Kind = "Refined", Key = "HardenedPlate", Min = 15, Max = 40, Weight = 16 },
+		{ Kind = "Refined", Key = "PlatinumBar", Min = 15, Max = 40, Weight = 16 },
 		{ Kind = "Refined", Key = "GoldBar", Min = 10, Max = 30, Weight = 16 },
 		{ Kind = "Ore", Key = "VoidiumShard", Min = 5, Max = 18, Weight = 9 },
 		{ Kind = "Currency", Key = "Contraband", Min = 1, Max = 3, Weight = 5 },

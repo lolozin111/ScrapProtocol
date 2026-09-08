@@ -14,10 +14,11 @@
 	once is always at least as time-efficient as doing it in small batches, without making batch
 	size irrelevant.
 
-	Refined materials aren't spendable anywhere yet — CraftingRecipes.lua/ModConfig.lua's Cost
-	tables would need to start requiring them as inputs for that, which is a deliberately separate,
-	larger follow-up. For now this just gives smelting somewhere to go: it accumulates and shows up
-	in the Inventory panel's Materials tab (see MainHud.client.lua's renderInvMaterials).
+	Refined materials ARE spendable: several Cost tables already require them (CraftingRecipes'
+	Minigun, several TurretConfig types, ResearchConfig's upper tiers, DroneConfig's Support core),
+	and as of the ore rework they also sell for Scrap at the Hub Shop's Sell tab — see the
+	SellPrice field below and SellService.lua. They still accumulate in the Inventory panel's
+	Materials tab (see MainHud.client.lua's renderInvMaterials).
 ]]
 
 local RefinedOreConfig = {}
@@ -25,36 +26,45 @@ local RefinedOreConfig = {}
 -- RefineRatio = how many units of the raw ore it takes to produce ONE unit of the refined
 -- material. Common/early ores cost more raw material per refined unit (they're plentiful, so
 -- that's fine); rarer ores refine close to 1:1 since you won't have much of them to spare.
+--
+-- SellPrice is Scrap paid per unit when selling to the Shop — anchored above the raw ore's own
+-- SellPrice (see OreConfig.Ores) since refining is work, and below whatever the Shop would charge
+-- to buy the refined material back.
 RefinedOreConfig.Ores = {
-	ScrapIron = {
+	IronOre = {
 		RefinedKey = "SteelIngot",
 		DisplayName = "Steel Ingot",
-		Description = "Scrap Iron, melted down and poured into a clean ingot. Denser and more useful than the raw scrap it came from.",
+		Description = "Iron ore, melted down and poured into a clean ingot. Denser and more useful than the rock it came from.",
 		RefineRatio = 3,
+		SellPrice = 5,
 	},
-	CopperWire = {
+	CopperOre = {
 		RefinedKey = "CopperCoil",
 		DisplayName = "Copper Coil",
-		Description = "Salvaged wiring stripped, melted, and re-wound into a uniform coil — none of the corrosion or kinks of the raw stuff.",
+		Description = "Copper ore smelted and drawn out into uniform coil stock — none of the corrosion or kinks of the raw seam.",
 		RefineRatio = 3,
+		SellPrice = 9,
 	},
-	SteelPlating = {
-		RefinedKey = "HardenedPlate",
-		DisplayName = "Hardened Plate",
-		Description = "Steel plating re-forged and tempered. Heavier work than Scrap Iron, but the payoff is worth it.",
-		RefineRatio = 2,
-	},
-	GoldContacts = {
+	GoldOre = {
 		RefinedKey = "GoldBar",
 		DisplayName = "Gold Bar",
-		Description = "Corroded gold contacts, refined down to a small, dense bar. Nothing wasted.",
+		Description = "Gold ore refined down to a small, dense bar. Nothing wasted.",
 		RefineRatio = 2,
+		SellPrice = 15,
+	},
+	PlatinumOre = {
+		RefinedKey = "PlatinumBar",
+		DisplayName = "Platinum Bar",
+		Description = "Platinum ore refined into a bar that shrugs off heat and acid alike. The good stuff.",
+		RefineRatio = 2,
+		SellPrice = 27,
 	},
 	VoidiumShard = {
 		RefinedKey = "VoidiumCore",
 		DisplayName = "Voidium Core",
 		Description = "Whatever a Voidium Shard actually is, refining it doesn't make it any less unsettling to hold. Refines almost 1:1 — there's no fat to trim off something like this.",
 		RefineRatio = 1,
+		SellPrice = 30,
 	},
 }
 

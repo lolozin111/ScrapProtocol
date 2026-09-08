@@ -309,7 +309,7 @@ currencyStrip.energyMax = Hud.new("TextLabel", {
 -- normal play now. The full breakdown (plus Scrap/Cores again for a complete picture) lives in
 -- the Inventory panel's Materials tab instead — see InventoryPanel.lua. ORE_DISPLAY_ORDER itself
 -- is kept here (and passed into InventoryPanel.new's context) since the Materials tab still needs it.
-local ORE_DISPLAY_ORDER = { "ScrapIron", "CopperWire", "SteelPlating", "GoldContacts" }
+local ORE_DISPLAY_ORDER = { "IronOre", "CopperOre", "GoldOre", "PlatinumOre" }
 
 local function refreshCurrency()
 	currencyStrip.scrap.Text = tostring(Hud.profile.Scrap or 0)
@@ -1261,6 +1261,115 @@ local function renderBlueprintsRow()
 end
 
 ----------------------------------------------------------------------
+-- Sell tab (Hub Shop) — StationConfig.Types.Shop's second tab, alongside Blueprints. Turns spare
+-- ore/refined material into Scrap through Remotes.SellOre; SellService.lua is the sole authority
+-- on whether an item is sellable and what it pays out — the OreConfig/RefinedOreConfig prices
+-- shown here are the same numbers it charges, so the preview can't advertise a total the server
+-- won't honour, but what actually gets reported as earned always comes back from the InvokeServer
+-- result (result.Payout), never a client-side owned*price multiply.
+--
+-- Only ONE button per row (Sell All) — HudKit.makeRow has room for exactly one, and adding a
+-- second (e.g. a fixed "Sell 10") would mean hand-building a whole new row shape just for this
+-- tab, which the row-shape idiom this file follows everywhere else says not to do.
+----------------------------------------------------------------------
+
+local function renderSellRow()
+	-- Same order as the Inventory panel's Materials tab (ORE_DISPLAY_ORDER), with anything
+	-- OreConfig has that table doesn't (currently just Voidium Shard, trimmed from
+	-- ORE_DISPLAY_ORDER for the old currency readout — see that variable's own comment) appended
+	-- after rather than silently dropped if a future ore is added to config but not to that list.
+	local sellOrder = table.clone(ORE_DISPLAY_ORDER)
+	do
+		local seen = {}
+		for _, key in ipairs(sellOrder) do
+			seen[key] = true
+		end
+		local extras = {}
+		for key in pairs(OreConfig.Ores) do
+			if not seen[key] then
+				table.insert(extras, key)
+			end
+		end
+		table.sort(extras)
+		for _, key in ipairs(extras) do
+			table.insert(sellOrder, key)
+		end
+	end
+
+	local anyRows = false
+
+	-- Raw ore first.
+	for _, oreKey in ipairs(sellOrder) do
+		local oreData = OreConfig.Ores[oreKey]
+		local owned = (Hud.profile.OreCounts or {})[oreKey] or 0
+		if oreData and oreData.SellPrice and owned > 0 then
+			anyRows = true
+			Hud.makeRow(
+				oreData.DisplayName,
+				("You have %d · %d Scrap each"):format(owned, oreData.SellPrice),
+				"Sell All",
+				function()
+					-- Re-read at click time rather than closing over `owned`: the count can move
+					-- (another sell, a mine, a smelt job consuming it) between this row being drawn
+					-- and the button actually being pressed.
+					local currentOwned = (Hud.profile.OreCounts or {})[oreKey] or 0
+					if currentOwned <= 0 then
+						return
+					end
+					local result = Remotes.SellOre:InvokeServer(oreKey, currentOwned)
+					if not result.Success then
+						Hud.showFailure("Sell failed", result.Reason)
+					else
+						Hud.showToast(("Sold %d %s for %d Scrap."):format(result.Amount, oreData.DisplayName, result.Payout), 4)
+						renderCraftList()
+					end
+				end
+			).Parent = listFrame
+		end
+	end
+
+	-- Refined material second, walked in the same ore-key order so Steel Ingot still follows Iron
+	-- Ore, Copper Coil follows Copper Ore, etc.
+	for _, oreKey in ipairs(sellOrder) do
+		local refinedData = RefinedOreConfig.Ores[oreKey]
+		if refinedData and refinedData.SellPrice then
+			local owned = (Hud.profile.RefinedOreCounts or {})[refinedData.RefinedKey] or 0
+			if owned > 0 then
+				anyRows = true
+				Hud.makeRow(
+					refinedData.DisplayName,
+					("You have %d · %d Scrap each"):format(owned, refinedData.SellPrice),
+					"Sell All",
+					function()
+						local currentOwned = (Hud.profile.RefinedOreCounts or {})[refinedData.RefinedKey] or 0
+						if currentOwned <= 0 then
+							return
+						end
+						local result = Remotes.SellOre:InvokeServer(refinedData.RefinedKey, currentOwned)
+						if not result.Success then
+							Hud.showFailure("Sell failed", result.Reason)
+						else
+							Hud.showToast(("Sold %d %s for %d Scrap."):format(result.Amount, refinedData.DisplayName, result.Payout), 4)
+							renderCraftList()
+						end
+					end
+				).Parent = listFrame
+			end
+		end
+	end
+
+	-- An empty sell list of every ore at "0" is noise, not information — one short line instead.
+	if not anyRows then
+		Hud.makeRow(
+			"Nothing to sell",
+			"Mine some ore, or refine it at the Forge, then come back.",
+			"OK",
+			function() end
+		).Parent = listFrame
+	end
+end
+
+----------------------------------------------------------------------
 -- Turrets tab (Welding Station) — assembling a turret from a blueprint you've bought.
 --
 -- Buying a blueprint used to hand you a finished turret outright, which meant one currency bought
@@ -1377,6 +1486,9 @@ renderCraftList = function()
 		return
 	elseif currentTab == "Blueprints" then
 		renderBlueprintsRow()
+		return
+	elseif currentTab == "Sell" then
+		renderSellRow()
 		return
 	elseif currentTab == "Cases" then
 		renderCasesRow()
@@ -1603,7 +1715,7 @@ local TILE_SIZE = inventoryPanel.TILE_SIZE
 
 -- All 5 raw ores can be smelted — unlike ORE_DISPLAY_ORDER (trimmed for the old currency readout,
 -- see that variable's own comment), this includes VoidiumShard.
-local SMELT_ORE_ORDER = { "ScrapIron", "CopperWire", "SteelPlating", "GoldContacts", "VoidiumShard" }
+local SMELT_ORE_ORDER = { "IronOre", "CopperOre", "GoldOre", "PlatinumOre", "VoidiumShard" }
 
 -- Which raw ore is picked but not yet started (nil = nothing picked, showing the "click to pick"
 -- icon instead) and how much of it. Purely client-side UI state until StartSmelt actually

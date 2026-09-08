@@ -23,10 +23,13 @@
 	(WallHP/WallMaxHP/Shield/EnemiesRemaining/EnemiesTotal) fired by CombatEncounterService itself
 	roughly once a second, instead of this file computing a fake HP-pool percentage.
 
-	REWORKED AGAIN (Base Defense & Turrets phase round 2, direct instruction): base defense no
-	longer grants Scrap or Cores at all — WaveConfig.GetScrapReward/GetCoresReward are defined but
-	unused now. Every 5th wave (WaveConfig.EliteWaveInterval/IsEliteWave, cadence unchanged) is a
-	BOSS wave that guarantees one CoreItem (profile.CoreItems — see RewardTables
+	REWORKED AGAIN (Base Defense & Turrets phase round 2, direct instruction): base defense granted
+	no Scrap or Cores at all for a while — WaveConfig.GetScrapReward/GetCoresReward were defined but
+	unused. PARTIALLY REVERSED since: tier upgrades are now Scrap-priced, so a wave clear pays a
+	small Scrap trickle (Base + PerWave * wave from WaveConfig.ScrapReward, not the old dead
+	GetScrapReward function — that one stays dead and unused on purpose). Cores are still zero.
+	Every 5th wave (WaveConfig.EliteWaveInterval/IsEliteWave, cadence unchanged) is a BOSS wave that
+	guarantees one CoreItem (profile.CoreItems — see RewardTables
 	.CoreKeyForMilestone/DataService.AddCoreItem) plus a good chance at a small utility item;
 	regular waves only get the small "here and there" chance. See RewardTables.lua's own header for
 	the full reasoning — this file just calls it and applies whatever it rolls.
@@ -121,10 +124,27 @@ local function runWaves(player: Player)
 				break
 			end
 		else
-			-- wave cleared — NO Scrap/Cores anymore (direct instruction, see RewardTables.lua's own
-			-- header). Boss waves (every EliteWaveInterval-th) guarantee one CoreItem plus a good
-			-- chance at a utility item; regular waves only get the small "here and there" chance.
+			-- wave cleared — Cores stay at zero (still direct instruction, see RewardTables.lua's
+			-- own header), but Scrap now trickles in from WaveConfig.ScrapReward (tier upgrades got
+			-- repriced in Scrap; this is the "small trickle" side of that, not a reversal of the
+			-- no-Cores decision). Boss waves (every EliteWaveInterval-th) guarantee one CoreItem plus
+			-- a good chance at a utility item; regular waves only get the small "here and there" chance.
 			DataService.SetHighestWave(player, wave)
+
+			-- Guarded read: this is small config-owned arithmetic, but an error here is worse than a
+			-- skipped reward — it would throw inside runWaves' loop and strand activeRuns/
+			-- activeEncounters for this player (same reason every other step in this branch avoids
+			-- touching anything that can nil-index). No RewardPayoutCap here on purpose: that cap
+			-- belongs to the old dead GetScrapReward/GetCoresReward path, and this trickle is small
+			-- enough that capping it would just be a rule with no effect.
+			local scrapReward = WaveConfig.ScrapReward
+			if scrapReward and scrapReward.Base and scrapReward.PerWave then
+				local scrapAmount = scrapReward.Base + scrapReward.PerWave * wave
+				DataService.AddCurrency(player, "Scrap", scrapAmount)
+				DataService.PushWallet(player)
+			else
+				warn("[WaveService] WaveConfig.ScrapReward missing or malformed — skipping wave-clear Scrap trickle")
+			end
 
 			local coreGrant = nil
 			local bonusLoot

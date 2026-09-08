@@ -71,7 +71,7 @@ local function rollOreType(distance: number): string
 			return oreKey
 		end
 	end
-	return next(weights) or "ScrapIron" -- fallback, should be unreachable
+	return next(weights) or "IronOre" -- fallback, should be unreachable
 end
 
 ----------------------------------------------------------------------

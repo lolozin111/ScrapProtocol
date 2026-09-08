@@ -3,9 +3,13 @@
 	Base-defense wave rewards. REWORKED (Base Defense & Turrets phase round 2, direct instruction):
 	"this wave defense system will not reward the player with scraps or stuff like that, it will
 	only reward the core stuff, and maybe some utility items here and there." WaveConfig
-	.GetScrapReward/GetCoresReward are no longer called by anything — base defense grants NO
-	Scrap/Cores at all now, only CoreItems (profile.CoreItems, see DataService.lua) and, on a
+	.GetScrapReward/GetCoresReward are still called by nothing, and this table still grants no
+	currency of its own — only CoreItems (profile.CoreItems, see DataService.lua) and, on a
 	chance, a small utility item.
+
+	PARTIALLY REVERSED by the ore rework: tier upgrades are Scrap-priced now, so WaveService pays
+	a small Scrap trickle on a wave clear, read straight from WaveConfig.ScrapReward rather than
+	rolled through this table. Cores are still zero, and the old dead reward functions stay dead.
 
 	Every 5th wave (WaveConfig.EliteWaveInterval, unchanged cadence) is now a full BOSS wave rather
 	than "one elite unit joins the regular crowd" in spirit — the underlying spawn mechanism didn't

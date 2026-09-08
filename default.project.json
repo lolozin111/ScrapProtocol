@@ -32,6 +32,7 @@
         "GetProfile": { "$className": "RemoteFunction" },
         "InteractHeal": { "$className": "RemoteFunction" },
         "BuyOutpostItem": { "$className": "RemoteFunction" },
+        "SellOre": { "$className": "RemoteFunction" },
         "StartOutpostRaid": { "$className": "RemoteEvent" },
         "OutpostUpdate": { "$className": "RemoteEvent" },
         "RegenerateExpedition": { "$className": "RemoteEvent" },

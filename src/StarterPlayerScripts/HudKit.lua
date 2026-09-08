@@ -23,6 +23,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 
+local CraftingRecipes = require(ReplicatedStorage.Shared.CraftingRecipes)
 local RaidEnergyConfig = require(ReplicatedStorage.Shared.RaidEnergyConfig)
 local UiIconConfig = require(ReplicatedStorage.Shared.UiIconConfig)
 local Wallet = require(ReplicatedStorage.Shared.Wallet)
@@ -287,7 +288,19 @@ end
 
 function HudKit.getItemIcon(key: string): string?
 	local _, image = resolveIcon(ItemIcons, key)
-	return image
+	if image then
+		return image
+	end
+	-- Weapon icons are per-FAMILY, not per-weapon (one "Snipers" icon covers every sniper), so
+	-- the set is 6 assets instead of 17. Fall back to the weapon's Family icon on an exact miss;
+	-- a per-weapon icon still wins if one is ever added, since the exact-key lookup ran first.
+	local recipe = CraftingRecipes.Weapons[key]
+	local family = recipe and recipe.Family
+	if not family then
+		return nil
+	end
+	local _, familyImage = resolveIcon(ItemIcons, family)
+	return familyImage
 end
 
 -- Same lookup, against ReplicatedStorage.UiIcons instead of ItemIcons — for chrome/buttons/panel

@@ -90,8 +90,10 @@ StationConfig.Types = {
 	},
 	Shop = {
 		DisplayName = "Hub Shop",
-		Tabs = { "Blueprints" }, -- rotating Turret blueprint stock — see TurretConfig
-			-- .GetRotatingStock/TurretShopService.lua.
+		Tabs = { "Blueprints", "Sell" }, -- rotating Turret blueprint stock — see TurretConfig
+			-- .GetRotatingStock/TurretShopService.lua. Sell converts raw ore and refined material
+			-- back into Scrap at their config SellPrice — see SellService.lua; tier upgrades are
+			-- Scrap-priced now, so this is the main way mining pays for them.
 		DefaultTab = "Blueprints",
 		NotThereMessage = "You need to be at the Hub Shop to do that.",
 		-- Deliberately NOT gated behind PlotService.IsPlayerInOwnPlot by any of its remote handlers

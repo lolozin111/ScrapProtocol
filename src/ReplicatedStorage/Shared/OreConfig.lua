@@ -27,9 +27,9 @@ OreConfig.ToolTiers = {
 -- there's no entry for it). Tune freely — these just need to feel like a fair use of the ore
 -- you'd have gathered by the time you're bumping into that tier's MinToolTier gate.
 OreConfig.ToolTierCosts = {
-	[2] = { ScrapIron = 50, CopperWire = 20 },
-	[3] = { CopperWire = 45, SteelPlating = 35 },
-	[4] = { SteelPlating = 60, GoldContacts = 20, SteelIngot = 12 }, -- refined: see RefinedOreConfig
+	[2] = { Scrap = 200, IronOre = 15 },
+	[3] = { Scrap = 450, IronOre = 40, CopperOre = 25 },
+	[4] = { Scrap = 900, GoldOre = 40, PlatinumOre = 20, SteelIngot = 10 }, -- refined: see RefinedOreConfig
 }
 
 -- Ores: BaseYield is how much you get per hit at ToolTier 1 before the multiplier.
@@ -38,40 +38,52 @@ OreConfig.ToolTierCosts = {
 -- survives this many successful mines before going empty, then comes back after this many
 -- seconds. Common ore takes more hits and comes back faster; rarer ore is the opposite, so
 -- scarcity actually means something the further out you go.
+--
+-- SellPrice is Scrap paid per unit when selling to the Shop (NodeConfig.ShopCatalog does the
+-- buying side) — anchored below what the Shop charges to buy the same ore back, so selling and
+-- immediately rebuying is always a loss.
 OreConfig.Ores = {
-	ScrapIron = {
-		DisplayName = "Scrap Iron",
-		Description = "Common scrap metal — the backbone of almost everything you'll build.",
+	IronOre = {
+		DisplayName = "Iron Ore",
+		Description = "Common iron ore, streaked through almost every wall down here. The backbone of everything you'll build.",
 		BaseYield = 3,
 		MinWaveUnlock = 0,
 		MaxHits = 8,
 		RespawnSeconds = 15,
+		SellPrice = 1,
 	},
-	CopperWire = {
-		DisplayName = "Copper Wire",
-		Description = "Salvaged wiring, stripped and coiled. Essential for anything electronic.",
+	CopperOre = {
+		DisplayName = "Copper Ore",
+		Description = "Green-veined copper ore. Smelts down into the conductor behind anything electrical.",
 		BaseYield = 2,
 		MinWaveUnlock = 0,
 		MaxHits = 7,
 		RespawnSeconds = 20,
+		SellPrice = 2,
 	},
-	SteelPlating = {
-		DisplayName = "Steel Plating",
-		Description = "Heavier armor plate — harder to cut loose, but worth the extra swing.",
+	-- Gold and Platinum trade gate slots in this rework so the value ladder reads
+	-- Iron -> Copper -> Gold -> Platinum -> Voidium: GoldOre keeps the mining stats that used to
+	-- belong to the key "SteelPlating" (the stats stay with the SLOT, not the metal), and
+	-- PlatinumOre keeps the stats that used to belong to "GoldContacts" below.
+	GoldOre = {
+		DisplayName = "Gold Ore",
+		Description = "Soft yellow ore in thin seams. Worth more to a buyer than to a builder.",
 		BaseYield = 1,
 		MinWaveUnlock = 0,       -- physically minable early, but nodes require ToolTier >= 2 (see MiningService)
 		MinToolTier = 2,
 		MaxHits = 5,
 		RespawnSeconds = 35,
+		SellPrice = 5,
 	},
-	GoldContacts = {
-		DisplayName = "Gold Contacts",
-		Description = "Corroded gold-plated contacts pulled from old circuit boards. Rare and valuable.",
+	PlatinumOre = {
+		DisplayName = "Platinum Ore",
+		Description = "A dense, pale ore that dulls a blade fast. Rare enough that most crews never see a seam.",
 		BaseYield = 1,
 		MinWaveUnlock = 5,       -- locked until the player has cleared wave 5 at least once
 		MinToolTier = 3,
 		MaxHits = 3,
 		RespawnSeconds = 60,
+		SellPrice = 9,
 	},
 	VoidiumShard = {
 		DisplayName = "Voidium Shard",
@@ -81,6 +93,7 @@ OreConfig.Ores = {
 		MinToolTier = 4,
 		MaxHits = 2,
 		RespawnSeconds = 120,
+		SellPrice = 20,
 	},
 }
 

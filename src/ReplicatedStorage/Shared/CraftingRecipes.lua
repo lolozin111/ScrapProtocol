@@ -51,7 +51,7 @@ CraftingRecipes.Weapons = {
 		Projectile = "Pistol", -- see ProjectileConfig.lua
 		Family = "Salvage",
 		Tier = 1,
-		Cost = { ScrapIron = 25 },
+		Cost = { IronOre = 25 },
 		FireRate = 2, BaseDamage = 6, -- 12 DPS base, same as before the FireRate/BaseDamage split
 	},
 	ScrapSMG = {
@@ -60,7 +60,7 @@ CraftingRecipes.Weapons = {
 		Projectile = "SMG", -- see ProjectileConfig.lua
 		Family = "Salvage",
 		Tier = 2,
-		Cost = { ScrapIron = 40, CopperWire = 20 },
+		Cost = { IronOre = 40, CopperOre = 20 },
 		FireRate = 6, BaseDamage = 3, -- 18 DPS base
 	},
 	RailRifle = {
@@ -69,7 +69,7 @@ CraftingRecipes.Weapons = {
 		Projectile = "Rail", -- see ProjectileConfig.lua
 		Family = "Salvage",
 		Tier = 3,
-		Cost = { SteelPlating = 35, CopperWire = 25 },
+		Cost = { GoldOre = 35, CopperOre = 25 },
 		FireRate = 2, BaseDamage = 13, -- 26 DPS base
 	},
 	ArcCannon = {
@@ -78,7 +78,7 @@ CraftingRecipes.Weapons = {
 		Projectile = "Arc", -- see ProjectileConfig.lua
 		Family = "Salvage",
 		Tier = 4,
-		Cost = { GoldContacts = 20, SteelPlating = 50 },
+		Cost = { PlatinumOre = 20, GoldOre = 50 },
 		FireRate = 1, BaseDamage = 38, -- 38 DPS base
 	},
 	-- VoidiumLauncher (Tier 5) — add once Voidium mining ships post-MVP.
@@ -98,7 +98,7 @@ CraftingRecipes.Weapons = {
 		Projectile = "Flame",
 		Family = "Flamethrowers",
 		Tier = 3,
-		Cost = { SteelPlating = 45, CopperWire = 40 },
+		Cost = { GoldOre = 45, CopperOre = 40 },
 		FireRate = 8, BaseDamage = 3, -- 24 DPS on contact; the Burn is where the real damage is
 		-- No IntervalSeconds: Burn is this gun's damage, so it refreshes on every hit and stops the
 		-- moment you stop firing. That is the intended feel — sustained pressure, not a fire-and-forget
@@ -112,7 +112,7 @@ CraftingRecipes.Weapons = {
 		Projectile = "IceFlame",
 		Family = "Flamethrowers",
 		Tier = 4,
-		Cost = { SteelPlating = 50, GoldContacts = 20, CopperCoil = 15 },
+		Cost = { GoldOre = 50, PlatinumOre = 20, CopperCoil = 15 },
 		FireRate = 8, BaseDamage = 2, -- weaker than the regular thrower on purpose; it pays in control
 		-- Frostbite already slows on its own and escalates to a Stun at 2 stacks (StatusConfig), so
 		-- "slows down enemies, applies frostbite every 2 seconds, stunned at two stacks" is entirely
@@ -126,7 +126,7 @@ CraftingRecipes.Weapons = {
 		Projectile = "PoisonFlame",
 		Family = "Flamethrowers",
 		Tier = 4,
-		Cost = { SteelPlating = 45, GoldContacts = 25, VoidiumShard = 8 },
+		Cost = { GoldOre = 45, PlatinumOre = 25, VoidiumShard = 8 },
 		FireRate = 7, BaseDamage = 2,
 		-- Five seconds per stack, five stacks: a full ramp takes 25 seconds of sustained fire, and
 		-- Poison's own duration means it drains away if you stop. Fully stacked it out-damages the
@@ -155,7 +155,7 @@ CraftingRecipes.Weapons = {
 		Projectile = "Bow",
 		Family = "Bows",
 		Tier = 2,
-		Cost = { ScrapIron = 45, CopperWire = 15 },
+		Cost = { IronOre = 45, CopperOre = 15 },
 		FireRate = 1.2, BaseDamage = 20, -- 24 DPS on body shots, 60 if every arrow finds a head
 		HeadshotMultiplier = 2.5, -- the whole point of the family: body damage is mediocre on purpose
 	},
@@ -165,7 +165,7 @@ CraftingRecipes.Weapons = {
 		Projectile = "Longbow",
 		Family = "Bows",
 		Tier = 3,
-		Cost = { SteelPlating = 40, CopperWire = 30 },
+		Cost = { GoldOre = 40, CopperOre = 30 },
 		FireRate = 0.8, BaseDamage = 34, -- 27 DPS single-target, far more into a crowd (Pierce 4)
 		HeadshotMultiplier = 2.2,
 	},
@@ -176,7 +176,7 @@ CraftingRecipes.Weapons = {
 		Projectile = "ExplosiveArrow",
 		Family = "Bows",
 		Tier = 4,
-		Cost = { SteelPlating = 45, GoldContacts = 25, CopperCoil = 20 },
+		Cost = { GoldOre = 45, PlatinumOre = 25, CopperCoil = 20 },
 		FireRate = 1.1, BaseDamage = 16, -- low on impact; the arrows are a bank, not a payment
 		HeadshotMultiplier = 1.8,
 		Behavior = "ExplosiveArrow",
@@ -193,7 +193,7 @@ CraftingRecipes.Weapons = {
 		Projectile = "StringedArrow",
 		Family = "Bows",
 		Tier = 5,
-		Cost = { GoldContacts = 40, VoidiumShard = 12, CopperCoil = 25 },
+		Cost = { PlatinumOre = 40, VoidiumShard = 12, CopperCoil = 25 },
 		FireRate = 1.3, BaseDamage = 18,
 		HeadshotMultiplier = 1.8,
 		Behavior = "StringedArrow",
@@ -213,7 +213,7 @@ CraftingRecipes.Weapons = {
 		Projectile = "Sniper",
 		Family = "Snipers",
 		Tier = 3,
-		Cost = { SteelPlating = 55, GoldContacts = 15 },
+		Cost = { GoldOre = 55, PlatinumOre = 15 },
 		FireRate = 0.5, BaseDamage = 90, -- 45 DPS, but delivered in one hit — burst, not sustain
 		HeadshotMultiplier = 1, -- "amazing damage (no matter if headshot)" — no bonus by design
 		WieldSpeedMultiplier = 0.55, -- the stated drawback: carrying it slows you right down
@@ -225,7 +225,7 @@ CraftingRecipes.Weapons = {
 		Projectile = "QuickSniper",
 		Family = "Snipers",
 		Tier = 3,
-		Cost = { SteelPlating = 35, CopperWire = 35 },
+		Cost = { GoldOre = 35, CopperOre = 35 },
 		FireRate = 1.6, BaseDamage = 30, -- 48 DPS, spread over enough shots to correct your aim
 		HeadshotMultiplier = 1,
 		Penetration = 6,
@@ -243,7 +243,7 @@ CraftingRecipes.Weapons = {
 		Projectile = "Grenade",
 		Family = "GrenadeLaunchers",
 		Tier = 4,
-		Cost = { SteelPlating = 55, GoldContacts = 20, HardenedPlate = 12 },
+		Cost = { GoldOre = 55, PlatinumOre = 20, PlatinumBar = 12 },
 		-- 55 DPS against ONE target and far more into a group — the "crazy AOE damage" the spec asks
 		-- for lives in the radius, not in this number. Slow enough that a miss genuinely costs you.
 		FireRate = 0.7, BaseDamage = 78,
@@ -260,7 +260,7 @@ CraftingRecipes.Weapons = {
 		Projectile = "StickyGrenade",
 		Family = "GrenadeLaunchers",
 		Tier = 5,
-		Cost = { GoldContacts = 35, HardenedPlate = 20, VoidiumShard = 10 },
+		Cost = { PlatinumOre = 35, PlatinumBar = 20, VoidiumShard = 10 },
 		FireRate = 0.7, BaseDamage = 55, -- less damage than the regular launcher, per the spec
 		Explosion = {
 			Radius = 20,
@@ -281,7 +281,7 @@ CraftingRecipes.Weapons = {
 		Projectile = "Trailblazer",
 		Family = "Snipers",
 		Tier = 4,
-		Cost = { SteelPlating = 50, GoldContacts = 30, HardenedPlate = 15 },
+		Cost = { GoldOre = 50, PlatinumOre = 30, PlatinumBar = 15 },
 		FireRate = 0.5, BaseDamage = 62, -- less than the Longshot, per the spec; the trail makes it up
 		HeadshotMultiplier = 1,
 		Penetration = 10,
@@ -300,7 +300,7 @@ CraftingRecipes.Weapons = {
 		Projectile = "Sniper",
 		Family = "Snipers",
 		Tier = 5,
-		Cost = { GoldContacts = 45, VoidiumShard = 15, HardenedPlate = 20 },
+		Cost = { PlatinumOre = 45, VoidiumShard = 15, PlatinumBar = 20 },
 		FireRate = 0.6, BaseDamage = 80,
 		HeadshotMultiplier = 1,
 		Penetration = 10,
@@ -325,7 +325,7 @@ CraftingRecipes.Weapons = {
 		Projectile = "Minigun",
 		Family = "Miniguns",
 		Tier = 4,
-		Cost = { SteelPlating = 60, GoldContacts = 25, SteelIngot = 10 },
+		Cost = { GoldOre = 60, PlatinumOre = 25, SteelIngot = 10 },
 		FireRate = 12, BaseDamage = 4, -- 48 DPS, the highest sustained in the game and the least burst
 		-- Deliberately left plain. The user's spec says so outright ("i dont have that many ideas for
 		-- the minigun at the moment") — so this is an honest placeholder stat line to revisit, not an
@@ -338,7 +338,7 @@ CraftingRecipes.Robots = {
 		DisplayName = "Scrapbot",
 		Description = "A wobbly chassis stitched from scrap with a single trigger-happy arm.",
 		Tier = 1,
-		Cost = { ScrapIron = 30 },
+		Cost = { IronOre = 30 },
 		FireRate = 2, BaseDamage = 2, -- 4 DPS base
 		HP = 40,
 	},
@@ -346,7 +346,7 @@ CraftingRecipes.Robots = {
 		DisplayName = "Sentry Drone",
 		Description = "Light, fast, and built to spray fire before it gets torn apart.",
 		Tier = 2,
-		Cost = { CopperWire = 25, ScrapIron = 20 },
+		Cost = { CopperOre = 25, IronOre = 20 },
 		FireRate = 3.5, BaseDamage = 2, -- 7 DPS base
 		HP = 25,
 	},
@@ -354,7 +354,7 @@ CraftingRecipes.Robots = {
 		DisplayName = "Iron Guardian",
 		Description = "Slow and heavily plated — built to take hits so you don't have to.",
 		Tier = 3,
-		Cost = { SteelPlating = 40, CopperWire = 20 },
+		Cost = { GoldOre = 40, CopperOre = 20 },
 		FireRate = 1, BaseDamage = 5, -- 5 DPS base
 		HP = 120,
 	},
@@ -369,7 +369,7 @@ CraftingRecipes.Robots = {
 		DisplayName = "Portable Arc Turret",
 		Description = "A deployable arc cannon with a wide blast radius and a short fuse.",
 		Tier = 4,
-		Cost = { GoldContacts = 25, SteelPlating = 45 },
+		Cost = { PlatinumOre = 25, GoldOre = 45 },
 		FireRate = 1, BaseDamage = 12, -- 12 DPS base; splash damage, treat as AoE in WaveService
 		HP = 60,
 	},

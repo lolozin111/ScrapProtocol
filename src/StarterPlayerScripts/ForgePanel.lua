@@ -827,7 +827,13 @@ function ForgePanel.new(context: ForgePanelContext)
 		-- The REAL odds, from ForgeConfig.RollChances — the same weights ForgeService.rollRarity
 		-- walks. A pity-forced roll passes the floor, so the bar collapses to the outcomes actually
 		-- still possible rather than continuing to advertise a Common it can no longer produce.
-		local pityForced = (Hud.profile.ForgePityCounter or 0) >= ForgeConfig.Pity.Threshold
+		--
+		-- Threshold has to be picked the same way ForgeService picks it server-side: a NewbiePity
+		-- profile is on the shorter NewbieThreshold until its first guaranteed Rare, or this gauge
+		-- would read out of a different number than the roll actually honours. Mirrors the `and`/`or`
+		-- fallback in ForgeService.ForgeWeapon so a missing NewbieThreshold can't compare against nil.
+		local pityThreshold = (Hud.profile.NewbiePity and ForgeConfig.Pity.NewbieThreshold) or ForgeConfig.Pity.Threshold
+		local pityForced = (Hud.profile.ForgePityCounter or 0) >= pityThreshold
 		local luck = ForgeConfig.LuckPoints(Hud.profile, usePotion)
 		local chances = ForgeConfig.RollChances(
 			luck,
@@ -891,8 +897,10 @@ function ForgePanel.new(context: ForgePanelContext)
 		------------------------------------------------------------------
 		-- Same number profile.ForgePityCounter always held; the point of calling it heat is that a
 		-- gauge on the machine is something a player reads without being told what pity means.
-		local pityCount = math.min(Hud.profile.ForgePityCounter or 0, ForgeConfig.Pity.Threshold)
-		local heatAlpha = pityCount / math.max(ForgeConfig.Pity.Threshold, 1)
+		-- pityThreshold (above) already accounts for NewbiePity, so a new player's gauge fills to
+		-- the real, shorter bar instead of quietly lying about how close the guarantee is.
+		local pityCount = math.min(Hud.profile.ForgePityCounter or 0, pityThreshold)
+		local heatAlpha = pityCount / math.max(pityThreshold, 1)
 
 		Hud.new("TextLabel", {
 			BackgroundTransparency = 1,
@@ -927,7 +935,7 @@ function ForgePanel.new(context: ForgePanelContext)
 			Font = Hud.FONT.Mono,
 			Position = UDim2.new(1, 0, 0, HEAT_Y),
 			Size = UDim2.fromOffset(44, 12),
-			Text = ("%d / %d"):format(pityCount, ForgeConfig.Pity.Threshold),
+			Text = ("%d / %d"):format(pityCount, pityThreshold),
 			TextColor3 = Hud.COLOR.Text,
 			TextSize = 11,
 			TextXAlignment = Enum.TextXAlignment.Right,

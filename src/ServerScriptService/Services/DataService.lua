@@ -99,11 +99,15 @@ local function defaultProfile()
 		Contraband = 0,       -- Black Market premium currency. Earned from raid extracts and boss
 			-- waves (see BlackMarketService.Income), or bought with Robux as a grind skip. Buys the
 			-- premium-odds case lines — see CaseConfig. Routed by Wallet like any other currency.
-		OreCounts = {
-			ScrapIron = 0,
-			CopperWire = 0,
-			SteelPlating = 0,
-			GoldContacts = 0,
+		OreCounts = { -- keys must match OreConfig.Ores exactly. Gold and Platinum trade gate slots in
+			-- that rework, and the mining stats stayed with the SLOT, not the metal: the key that used
+			-- to be SteelPlating (tool tier 2, 5 hits, 35s respawn) is now GoldOre, and the key that
+			-- used to be GoldContacts (tool tier 3, wave 5, 3 hits, 60s respawn) is now PlatinumOre.
+			-- See migrateOreKeyRename below for the one-time carry-over of old saves' amounts.
+			IronOre = 0,
+			CopperOre = 0,
+			GoldOre = 0,
+			PlatinumOre = 0,
 			VoidiumShard = 0,
 		},
 		ToolTier = 1,
@@ -234,6 +238,11 @@ local function defaultProfile()
 			-- again on rejoin), so without this a network hiccup between the grant and the
 			-- acknowledgement double-grants the product. Bounded FIFO — see MAX_HANDLED_PURCHASES.
 		Energy = RaidEnergyConfig.MaxEnergy, -- starts full so a fresh player isn't stuck waiting — see RaidEnergyService
+		NewbiePity = true,      -- while true, the Forge uses ForgeConfig.Pity.NewbieThreshold (5)
+			-- instead of Pity.Threshold (15), so a first-timer's guaranteed Rare comes early. Flips
+			-- false the first time pity resets — see ForgeService.ForgeWeapon. Deliberately given to
+			-- every existing save too (backfillMissingFields hands it to anyone missing it), granting
+			-- current players one boosted run each; that's intended, not an oversight.
 	}
 end
 
@@ -282,6 +291,38 @@ local function migrateLegacyWeapons(profile)
 				Rarity = "Common",
 				Affixes = {},
 			})
+		end
+	end
+	return profile
+end
+
+-- One-time carry-over for the ore key rename (OreConfig.Ores was renamed to
+-- IronOre/CopperOre/GoldOre/PlatinumOre; VoidiumShard is unchanged). ADDS each old key's amount
+-- into the new key rather than overwriting, because the new key may already hold a value on a
+-- fresh or partially-migrated profile, then deletes the old key so it doesn't sit around orphaned.
+-- Self-guarding the same way migrateLegacyWeapons is: it only touches anything when at least one
+-- old key is actually present in profile.OreCounts, so it is a permanent no-op after the first
+-- pass and safe to call unconditionally on every load forever. Also carries RefinedOreCounts'
+-- HardenedPlate -> PlatinumBar for the same reason, if that table has the old key.
+local RENAMED_ORE_KEYS = {
+	ScrapIron = "IronOre",
+	CopperWire = "CopperOre",
+	SteelPlating = "GoldOre",   -- stats stayed with the SLOT, not the metal — see OreConfig.Ores
+	GoldContacts = "PlatinumOre", -- same
+}
+local function migrateOreKeyRename(profile)
+	for oldKey, newKey in pairs(RENAMED_ORE_KEYS) do
+		local amount = profile.OreCounts[oldKey]
+		if amount ~= nil then
+			profile.OreCounts[newKey] = (profile.OreCounts[newKey] or 0) + amount
+			profile.OreCounts[oldKey] = nil
+		end
+	end
+	if profile.RefinedOreCounts then
+		local amount = profile.RefinedOreCounts.HardenedPlate
+		if amount ~= nil then
+			profile.RefinedOreCounts.PlatinumBar = (profile.RefinedOreCounts.PlatinumBar or 0) + amount
+			profile.RefinedOreCounts.HardenedPlate = nil
 		end
 	end
 	return profile
@@ -418,6 +459,7 @@ local function tryAcquireProfile(userId: number)
 
 			local profile = backfillMissingFields(envelope.Data or defaultProfile())
 			profile = migrateLegacyWeapons(profile)
+			profile = migrateOreKeyRename(profile)
 			profile = migrateBaseTierToResearch(profile)
 			acquired = profile
 
@@ -561,7 +603,7 @@ function DataService.TrySpendCoreItem(player: Player, coreKey: string, amount: n
 	return true
 end
 
--- costTable example: { Scrap = 120, ScrapIron = 25, SteelIngot = 5 }. Keys may be "Scrap"/"Cores",
+-- costTable example: { Scrap = 120, IronOre = 25, SteelIngot = 5 }. Keys may be "Scrap"/"Cores",
 -- a raw ore key, a REFINED material key (RefinedOreConfig, e.g. "SteelIngot"), or a CoreItem key
 -- ("CoreT1") — Wallet.BucketFor works out which profile field each one lives in.
 --

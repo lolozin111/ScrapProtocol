@@ -87,8 +87,8 @@ MineShaftConfig.WallColor = Color3.fromRGB(58, 50, 44)
 -- the 30-40 range on purpose) so filler never fully disappears; Ore and Hazard both climb with
 -- depth. The shallowest band was tuned down from an earlier 60/40 split — that felt like too much
 -- ore too early — to 80% Rock / 20% Ore total, which combined with the 75/25 split in
--- OreWeightBands below works out to roughly 15% of all shallow blocks being Scrap Iron and 5%
--- being Copper Wire.
+-- OreWeightBands below works out to roughly 15% of all shallow blocks being Iron Ore and 5%
+-- being Copper Ore.
 --
 -- Zone boundaries (MaxDepth) are spaced 40 levels apart on purpose — an earlier version had them
 -- only 4-5 levels apart, which meant the ore mix and the rest of the mine's whole "feel" shifted
@@ -107,15 +107,15 @@ MineShaftConfig.KindWeightBands = {
 -- ResourceZoneConfig.OreWeightBands, just keyed by depth instead of distance. Does NOT override
 -- OreConfig's MinToolTier/MinWaveUnlock gates — a deep cell can roll ore you can't mine yet,
 -- which is the point: a concrete reason to come back once you've upgraded. The shallowest band is
--- Scrap Iron / Copper Wire only (no Steel Plating yet) — see the KindWeightBands comment above for
+-- Iron Ore / Copper Ore only (no Gold Ore yet) — see the KindWeightBands comment above for
 -- how this 75/25 split combines with that band's 20% overall Ore rate. Same MaxDepth boundaries as
 -- KindWeightBands above, so the "what kind of ore" shift and the "how much ore at all" shift both
 -- land on the same checkpoints as you dig.
 MineShaftConfig.OreWeightBands = {
-	{ MaxDepth = 40, Weights = { ScrapIron = 75, CopperWire = 25 } },
-	{ MaxDepth = 80, Weights = { ScrapIron = 25, CopperWire = 30, SteelPlating = 35, GoldContacts = 10 } },
-	{ MaxDepth = 120, Weights = { ScrapIron = 10, CopperWire = 20, SteelPlating = 30, GoldContacts = 30, VoidiumShard = 10 } },
-	{ MaxDepth = math.huge, Weights = { ScrapIron = 5, CopperWire = 10, SteelPlating = 20, GoldContacts = 35, VoidiumShard = 30 } },
+	{ MaxDepth = 40, Weights = { IronOre = 75, CopperOre = 25 } },
+	{ MaxDepth = 80, Weights = { IronOre = 25, CopperOre = 30, GoldOre = 35, PlatinumOre = 10 } },
+	{ MaxDepth = 120, Weights = { IronOre = 10, CopperOre = 20, GoldOre = 30, PlatinumOre = 30, VoidiumShard = 10 } },
+	{ MaxDepth = math.huge, Weights = { IronOre = 5, CopperOre = 10, GoldOre = 20, PlatinumOre = 35, VoidiumShard = 30 } },
 }
 
 MineShaftConfig.RockMaxHits = 3          -- filler is quick to clear — it's an obstacle, not a resource
@@ -138,10 +138,10 @@ MineShaftConfig.BedrockColor = Color3.fromRGB(20, 18, 16)
 -- Cosmetic only — same ore keys/colors the old ring zone had, kept here directly rather than
 -- reused from ResourceZoneConfig since that file is retired (see DESIGN_NOTES.md).
 MineShaftConfig.OreColors = {
-	ScrapIron = Color3.fromRGB(150, 138, 120),
-	CopperWire = Color3.fromRGB(184, 115, 51),
-	SteelPlating = Color3.fromRGB(140, 148, 155),
-	GoldContacts = Color3.fromRGB(212, 175, 55),
+	IronOre = Color3.fromRGB(150, 138, 120),
+	CopperOre = Color3.fromRGB(184, 115, 51),
+	GoldOre = Color3.fromRGB(140, 148, 155),
+	PlatinumOre = Color3.fromRGB(212, 175, 55),
 	VoidiumShard = Color3.fromRGB(120, 70, 190),
 }
 
@@ -223,8 +223,8 @@ MineShaftConfig.SuitTiers = {
 	{ Name = "Rebreather Rig", ProtectsAgainst = "Heat (-1 Tier) + Toxic Air (-1 Tier)", Protection = { Heat = 1, ToxicAir = 1 } },
 }
 MineShaftConfig.SuitTierCosts = {
-	[2] = { CopperWire = 40, SteelPlating = 20 },
-	[3] = { SteelPlating = 50, GoldContacts = 25 },
+	[2] = { Scrap = 250, IronOre = 20 },
+	[3] = { Scrap = 600, CopperOre = 30, GoldOre = 15 },
 }
 
 ----------------------------------------------------------------------

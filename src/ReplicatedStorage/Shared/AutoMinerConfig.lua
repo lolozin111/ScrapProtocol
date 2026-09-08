@@ -10,13 +10,13 @@
 
 local AutoMinerConfig = {}
 
-AutoMinerConfig.Cost = { ScrapIron = 60, CopperWire = 15 } -- "built of scraps and iron"
+AutoMinerConfig.Cost = { IronOre = 60, CopperOre = 15 } -- "built of scraps and iron"
 
-AutoMinerConfig.OreKey = "ScrapIron"    -- what it produces — kept to the most basic ore on purpose, so it
+AutoMinerConfig.OreKey = "IronOre"      -- what it produces — kept to the most basic ore on purpose, so it
                                          -- can't be used to skip past the tool-tier/wave-unlock gates on
                                          -- the rarer stuff.
 AutoMinerConfig.TickSeconds = 60        -- how often it produces a batch
-AutoMinerConfig.BaseYieldPerTick = 3    -- without the game pass: ~3 Scrap Iron/minute passively
+AutoMinerConfig.BaseYieldPerTick = 3    -- without the game pass: ~3 Iron Ore/minute passively
 AutoMinerConfig.GamePassMultiplier = 2  -- with the AutoMiner game pass: doubles the tick yield (mirrors
                                          -- this game's existing "DoubleScrap" 2x framing elsewhere)
 AutoMinerConfig.MaxOwned = 1            -- MVP: one per player. Add a slot game pass later (mirroring

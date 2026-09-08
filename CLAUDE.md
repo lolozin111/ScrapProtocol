@@ -110,8 +110,12 @@ the same `resolveIcon` lookup the pre-existing `getItemIcon` uses (chrome/button
 inventory item art, kept as separate folders so their naming can't collide); `applyIcon` also copies
 `ImageRectOffset`/`ImageRectSize` off the template instance, so a future move from separate image
 assets to one sprite atlas needs no code change at any call site — just set the rect on the Studio
-template. All of this is additive: every pre-existing `HudKit` export kept its name, signature, and
-behavior.
+template. `getItemIcon` itself gained a fallback the same rework added: on an exact item-key miss it
+now checks the item's `Family` (`CraftingRecipes.Weapons[key].Family`) and looks that up in
+`ItemIcons` instead — so the 18 weapons across 6 families need only 6 family icons, not 18
+per-weapon ones, and an exact per-weapon icon still wins if one is ever added, since the exact-key
+lookup runs first. All of this is additive: every pre-existing `HudKit` export kept its name,
+signature, and behavior.
 
 **To write profile data on disconnect, connect to `DataService.PlayerSaving`, never to
 `Players.PlayerRemoving`.** `PlayerRemoving` handlers fire in connection order, connections are made
@@ -131,9 +135,12 @@ miss: an unguarded nil call inside a tick loop throws and strands the run's stat
 **Server-authoritative everywhere.** The client only ever reports intent ("I hit this node",
 "I clicked this station") over a Remote; the server (mostly `StationService`/`PlotService` for
 where-gating, then the owning service for the actual legality/amount) decides whether it's
-legal and computes any reward. Never trust a client-supplied amount. A rejected action should
-never fail silently — see the `MineFailed`/toast/warn conventions used throughout for surfacing
-*why* something was blocked, not just declining it.
+legal and computes any reward. Never trust a client-supplied amount — `SellService.lua`'s `SellOre`
+is the clean example: the client sends only an item key and a quantity, and the server re-derives
+which bucket the key lives in, how much the player actually holds, and the payout, rejecting a
+malformed amount outright rather than clamping it into something superficially valid. A rejected
+action should never fail silently — see the `MineFailed`/toast/warn conventions used throughout for
+surfacing *why* something was blocked, not just declining it.
 
 **World setup is tag-driven, not hardcoded.** Systems key off `CollectionService` tags placed
 on Parts/Models in Studio (`Plot`, `Station` + `StationType`, `OreNode` + `OreType`, `Node` +

@@ -32,16 +32,31 @@ no manual copy-pasting scripts into Studio.
 
 - **Mining** — tag any Part or Model in your map with the `OreNode` tag (Studio's Tag Editor,
   `CollectionService`) and give it a child `StringValue` named `OreType` set to one of the
-  keys in `OreConfig.lua` (e.g. `ScrapIron`). A ProximityPrompt appears automatically and
+  keys in `OreConfig.lua` (e.g. `IronOre`). A ProximityPrompt appears automatically and
   mining Just Works, gated by tool tier and wave-unlock as configured — a rejected attempt now
   always explains itself via a `MineFailed` warning in the Output window instead of just doing
   nothing. Every node **depletes**: it survives `OreConfig.Ores[key].MaxHits` hits, then goes
   empty (dimmed, prompt disabled) for `RespawnSeconds` before coming back — tracked via
   `HitsRemaining`/`Depleted` Attributes that `MiningService.lua` initializes automatically the
   first time a node is ever mined, so this applies to hand-placed nodes too, no Studio edits
-  needed. Tool tier — which gates Steel Plating and above — only ever goes up via the
+  needed. Tool tier — which gates Gold Ore and above — only ever goes up via the
   Workbench's **Tools** tab (`UpgradeTool`, costs in `OreConfig.ToolTierCosts`); there was no
   way to raise it before, which is why those ores were unreachable.
+
+  **The raw ore keys were renamed, and Gold/Platinum swapped gate slots — re-tag every existing
+  `OreNode` by hand.** Raw material used to be named like a manufactured good (`ScrapIron`,
+  `CopperWire`, `SteelPlating`, `GoldContacts`, `HardenedPlate`) even though it's dug out of a wall,
+  not built — and Steel sat on both sides of the refining line, since raw `ScrapIron` smelted
+  *into* `SteelIngot` while `SteelPlating` was a separate thing you mined. The keys are now
+  `IronOre`, `CopperOre`, `GoldOre`, `PlatinumOre`, and `PlatinumBar` (`VoidiumShard` didn't need to
+  change). Gold and Platinum deliberately **traded** gate slots rather than mapping name-for-name,
+  so the ladder reads Iron → Copper → Gold → Platinum → Voidium: **an old `SteelPlating` node's
+  `OreType` becomes `GoldOre`, not `PlatinumOre`** (the mining stats stayed with the SLOT, not the
+  metal), and an old `GoldContacts` node becomes `PlatinumOre`. Saved profiles migrate their stored
+  ore counts automatically (`DataService.migrateOreKeyRename`) — **hand-placed `OreNode` tags in
+  Studio do not**, and a stale `OreType` value is this repo's signature silent-failure mode: the
+  node still shows a prompt and still lets you swing at it, it just grants zero ore, with no
+  warning anywhere.
 - **Mine shaft (voxel grid)** — `MineShaftService.lua` builds a real 3D grid of mineable blocks
   (`MineShaftConfig.GridWidth` x `GridLength`, 32x32 by default) starting from a Part tagged
   `MineShaftStart`. **This anchor needs genuinely open air underneath it** — put it up on a
@@ -186,13 +201,27 @@ no manual copy-pasting scripts into Studio.
   player's cloned base, so nobody can walk into someone else's base and use their gear. A loose
   `Station` block placed directly in the world (not part of any base Model — i.e. what
   placeholder-block testing looks like right now) has no owner and stays open to everyone.
-- **World stations** — two station types live OUT in the world instead of inside a base plot:
-  **`BlackMarket`** (buys sealed cases) and **`Hacker`** (opens them). Tag them exactly like a base
-  station — a Part or Model tagged `Station` with a child `StringValue` named `StationType` — but
-  place them somewhere shared and NOT inside a `BaseTemplates` Model. They deliberately don't check
-  `PlotService.IsPlayerInOwnPlot`, because they aren't anyone's property; the same distance check
-  (`StationConfig.InteractDistance`) still applies, so you do have to walk up to them. Like the Hub
-  Shop, one of each anywhere on the map serves the whole server.
+- **World stations** — three station types live OUT in the world instead of inside a base plot:
+  **`BlackMarket`** (buys sealed cases), **`Hacker`** (opens them), and **`Shop`** (the Hub Shop —
+  **Blueprints** tab, rotating turret blueprint stock, same rotation mechanic as the Black Market's
+  case stock; **Sell** tab, converting raw ore/refined material back into Scrap, see "Selling"
+  below). Tag them exactly like a base station — a Part or Model tagged `Station` with a child
+  `StringValue` named `StationType` — but place them somewhere shared and NOT inside a
+  `BaseTemplates` Model. They deliberately don't check `PlotService.IsPlayerInOwnPlot`, because they
+  aren't anyone's property; the same distance check (`StationConfig.InteractDistance`) still
+  applies, so you do have to walk up to them. One of each anywhere on the map serves the whole
+  server.
+- **Selling** — `SellService.lua` (the `SellOre` RemoteFunction), the other half of the Hub Shop:
+  raw ore (`OreConfig.Ores[key].SellPrice`) and refined material (`RefinedOreConfig.Ores[key]
+  .SellPrice`, looked up via `RefinedOreConfig.ByRefinedKey`) both sell for Scrap, anchored below
+  whatever the Shop charges to buy the same thing back (`NodeConfig.ShopCatalog`) so selling and
+  immediately rebuying is always a loss. The client sends only an item key and an amount — every
+  other number (which bucket the key lives in, how much you actually hold, the payout) is
+  re-derived server-side, same "never trust a client-supplied amount" rule as everywhere else.
+  Gated to the Hub Shop (`StationType = "Shop"`) and rate-limited through `RateLimiter`. The UI is
+  `renderSellRow()` (`MainHud.client.lua`) — one row per item you actually hold at least one of,
+  with a **Sell All** button, and a "Nothing to sell" placeholder row when you hold nothing
+  sellable yet.
 
 - **Crafting** — call the `CraftItem` RemoteFunction from a UI button with a tree name
   (`"Robots"` or `"Mods"` — **not** `"Weapons"` anymore, see "Forge" below) and a recipe key from
@@ -261,7 +290,12 @@ no manual copy-pasting scripts into Studio.
   not a flat guarantee of exactly Rare. It is the chamber's **HEAT** gauge, and it resets to empty
   the moment any roll, forced or not, lands Rare+. When it is full the odds bar collapses to the
   outcomes still possible and its caption reads `ODDS · FORCED`, rather than continuing to advertise
-  a Common the roll can no longer produce.
+  a Common the roll can no longer produce. **A first-time player's copy of this gauge is shorter**:
+  `profile.NewbiePity` (defaults `true`, and is backfilled onto every existing save too, on
+  purpose — one boosted run each) drops the threshold to `ForgeConfig.Pity.NewbieThreshold` (5)
+  until pity resets even once, at which point the flag flips permanently to `false` and the Forge
+  goes back to the normal 15-roll threshold for that player. The HEAT gauge reads whichever
+  threshold actually applies, so it never advertises a number the roll doesn't honour.
 
   *(Both of these used to be a pity bar and a square Potion button docked in a strip under the plate,
   with the bottom action row hiding itself to avoid them on short viewports. The strip is gone —
@@ -280,7 +314,7 @@ no manual copy-pasting scripts into Studio.
   states: click the centered icon to open a popup grid into your raw ore inventory (only ores
   you own at least one legal batch of are listed), pick one and a quantity readout, a "Reset," and
   four bulk-add buttons (`+1`/`+10`/`+100`/`MAX` — each ADDS BATCHES, i.e. `RefineRatio`-sized
-  steps: 3:1 for Scrap Iron/Copper Wire, 2:1 for Steel Plating/Gold Contacts, 1:1 for Voidium
+  steps: 3:1 for Iron Ore/Copper Ore, 2:1 for Gold Ore/Platinum Ore, 1:1 for Voidium
   Shard, so the quantity is always a legal multiple) plus a "Smelt" button appear, and once you hit
   it a live countdown/progress bar takes over until the batch finishes. Batch time is
   `RefinedOreConfig.ComputeSmeltSeconds(quantity) = BaseSeconds + LogSecondsPerOre * math.log
@@ -374,10 +408,14 @@ no manual copy-pasting scripts into Studio.
   **Icons** (optional — everything works without them, just shows a plain colored tile with the
   item's name as text): add an `ImageLabel`, `ImageButton`, or `Decal` inside
   `ReplicatedStorage.ItemIcons` (an empty Folder, already in `default.project.json`), named EXACTLY
-  like the item's key (e.g. `PipePistol`, `ScrapIron`, `SpeedCoil`, or the literal `Scrap`/`Cores`
+  like the item's key (e.g. `PipePistol`, `IronOre`, `SpeedCoil`, or the literal `Scrap`/`Cores`
   for the two currencies), and set its Image/Texture property via Studio's normal asset picker.
   Only that one property is read — nothing else about the instance matters, so any leftover
-  default size/position on it is harmless. **Descriptions** live in code: `CraftingRecipes.lua`'s
+  default size/position on it is harmless. **Weapon icons are per-family, not per-weapon**: an
+  exact miss on a weapon's own key (e.g. `PipePistol`) falls back to its `CraftingRecipes.Weapons
+  [key].Family` (e.g. `Salvage`) before giving up, so 6 family icons cover all 18 weapons — an
+  exact per-weapon icon still wins if one is ever added, since the exact-key lookup runs first.
+  **Descriptions** live in code: `CraftingRecipes.lua`'s
   Weapons/Robots entries and `OreConfig.lua`'s Ores entries each have a `Description` field
   (`ModConfig.lua`'s mods already did) — edit those directly to change the flavor text shown in
   the detail panel. A sibling empty Folder, `ReplicatedStorage.UiIcons`, also exists in
@@ -387,7 +425,7 @@ no manual copy-pasting scripts into Studio.
   `icon` yet), so it's an empty foundation today, not a feature you can click through.
 - **Auto-Miner** — `AutoMinerService.lua` handles a one-time-craftable "Mini Particle
   Accelerator" (Workbench → Auto-Miner tab, cost in `AutoMinerConfig.lua`) that passively grants
-  a small amount of Scrap Iron on a timer for every player who's built one, whether they're
+  a small amount of Iron Ore on a timer for every player who's built one, whether they're
   actively playing or not. Deliberately modest — it's meant to supplement mining, not replace
   the reason to do it — and the pre-scaffolded `AutoMiner` game pass (`ShopConfig.GamePasses`)
   simply doubles the tick rate rather than making it a must-buy. MVP-scoped as pure data, same
@@ -403,9 +441,14 @@ no manual copy-pasting scripts into Studio.
   equip a weapon from the Inventory panel — that puts a real Tool in your hotbar
   (`WeaponToolService.lua`), which you pick up like any Roblox tool; `CombatClient.client.lua`
   fires it (click-and-hold, camera raycast, `RequestFireWeapon` remote) only while it's actually
-  held. See `DESIGN_NOTES.md`'s "Combat Engine" section (including the "first playtest revisions"
-  sub-section) for the full writeup, including what's deliberately still deferred (raid Combat
-  Outposts still use the old placeholder; deployed robots are still abstract, no physical model).
+  held. Clearing a wave now also pays a small **Scrap trickle** — `WaveConfig.ScrapReward.Base` (10)
+  `+ .PerWave` (3) `* wave`, since tier upgrades are Scrap-priced now and this is the "mining and
+  raiding pay for it" loop's base-defense half. Cores are still zero on a regular wave clear —
+  that part of "no Scrap or Cores from base defense" stands — only a BOSS wave (every 5th) still
+  guarantees a Core. See `DESIGN_NOTES.md`'s "Combat Engine" section (including the "first playtest
+  revisions" sub-section) for the full writeup, including what's deliberately still deferred (raid
+  Combat Outposts still use the old placeholder; deployed robots are still abstract, no physical
+  model).
 - **Data & saving** — every player's Scrap, Cores, ore counts, crafted items, and highest wave
   autosave every two minutes and on leave. Swap `DataService.lua` for
   [ProfileService](https://github.com/MadStudioRoblox/ProfileService) before you have real
@@ -608,7 +651,7 @@ no manual copy-pasting scripts into Studio.
   |---|---|
   | `/admin [on\|off]` | Toggle your own admin shortcuts. `off` lets you experience the game as a normal player — note this disables the grants below too, deliberately. |
   | `/givemats [n]` | **Everything a craft can ask for, in one go**: Scrap, Cores, Contraband, every ore, every refined material, and 10 of each boss Core. `n` defaults to 500 and scales per category (Scrap gets 40x, since the top Research tier alone wants 12,000). This is the one you want before a testing session. |
-| `/give <what> [n]` | One specific thing: Scrap, Cores, Contraband, any ore, any refined material, or `CoreT1`. Defaults to 100. **Partial names work** — `/give copper` finds Copper Wire, `/give void` finds Voidium Shard. An ambiguous fragment lists what it matched instead of failing. |
+| `/give <what> [n]` | One specific thing: Scrap, Cores, Contraband, any ore, any refined material, or `CoreT1`. Defaults to 100. **Partial names work** — `/give copper` finds Copper Ore, `/give void` finds Voidium Shard. An ambiguous fragment lists what it matched instead of failing. |
   | `/giveturret [Type]` | Mints an unplaced turret and unlocks its blueprint. |
   | `/giveultimate [Key]` | Grants an Ultimate mod — otherwise only obtainable from Black Market cases. |
   | `/givecase [Key] [n]` | Grants sealed cases, so the decode flow is testable without buying. |
@@ -688,7 +731,9 @@ to end:
    yet.
 3. Place a Part in the workspace, tag it `OreNode` (Studio's Tag Editor, top ribbon under
    **Model** or via `CollectionService`), and add a child `StringValue` named `OreType` with
-   value `ScrapIron`.
+   value `IronOre`. (Upgrading an existing test place instead of starting fresh? See the
+   **Mining** bullet above — every ore key was renamed, and a stale `OreType` value grants zero
+   ore with no error.)
 4. Play, walk up to it, hold the ProximityPrompt to mine — the Scrap/ore count updates live.
    (Mining ordinary ore nodes works anywhere on the map, not just at your base.)
 5. Click your `Crafting`-tagged Station — the menu should open titled **Workbench**, showing only
@@ -724,11 +769,12 @@ to end:
    `have / need` if you cannot.
 
    In the chamber, the odds bar should read `71 / 28 / 0 / 0 / 0`-ish at zero luck (grey/green
-   dominating) and **HEAT** should read `0 / 15`. Press the big **Forge** lever: the ring should
-   sweep for about half a second reading **ROLLING**, then the **output tray** should fill with a
-   card bordered in the roll's rarity colour, naming the weapon and listing its affixes (most rolls
-   say "No bonus affixes" — Common rolls none by design, see `ForgeConfig.AffixCountByRarity`). HEAT
-   ticks to `1 / 15`.
+   dominating) and **HEAT** should read `0 / 5` — a fresh profile starts with `NewbiePity` set, so
+   the guaranteed Rare arrives at 5 rolls instead of the usual 15 (see the Forge bullet above).
+   Press the big **Forge** lever: the ring should sweep for about half a second reading
+   **ROLLING**, then the **output tray** should fill with a card bordered in the roll's rarity
+   colour, naming the weapon and listing its affixes (most rolls say "No bonus affixes" — Common
+   rolls none by design, see `ForgeConfig.AffixCountByRarity`). HEAT ticks to `1 / 5`.
 
    **The tray is the new part.** Roll again without collecting and confirm the tray simply
    overwrites — that is intended. Press **Collect** and confirm it toasts, empties the tray back to
@@ -737,17 +783,22 @@ to end:
    an empty tray is refused with "Nothing in the tray", and that walking away from the Forge and
    pressing Collect gives you the "You need to be at your Forge" rejection.
 
-   Craft a **Luck Potion** from the button under the input bay (costs Copper Wire + Gold Contacts)
+   Craft a **Luck Potion** from the button under the input bay (costs Copper Ore + Platinum Ore —
+   see `ForgeConfig.LuckPotion.Cost`; Gold and Platinum swapped gate slots in the ore rename, so
+   this is NOT the same pairing as "Copper Wire + Gold Contacts" used to look like)
    and confirm the additive slot's count goes to `x1`. Click the slot itself — it should switch from
    a dashed empty socket to a filled, accent-edged one reading "Luck Potion — armed", the odds bar
    should visibly shift toward the better rarities, and `burns 1 potion` should appear under the
    Forge lever. Roll once and confirm the count drops to `x0` and the slot disarms itself, since the
    toggle is one-shot.
 
-   Forge about 15 more (any type) without landing Rare or better — HEAT fills to `15 / 15`, its
+   Forge about 5 more (any type) without landing Rare or better — HEAT fills to `5 / 5`, its
    caption turns green, and the odds caption should read `ODDS · FORCED` with Common and Uncommon
    collapsed to `0`. The next roll is then guaranteed at least Rare, and HEAT snaps back to empty
-   (any roll that naturally lands Rare+ before then resets it early too).
+   (any roll that naturally lands Rare+ before then resets it early too). That guaranteed Rare also
+   permanently clears `NewbiePity` — Forge another 5-ish rolls afterward without landing Rare and
+   confirm HEAT now climbs past `5` toward the normal `15 / 15` cap instead of forcing again at 5;
+   this profile is on the standard threshold for good from here on.
 
    Finally, the **discard confirmation**: get an Epic or better into the tray (`/giveweapon` will not
    do it — just reroll, or temporarily lower `ForgeConfig.DiscardConfirmMinRarity` to `"Common"` to
@@ -761,12 +812,12 @@ to end:
 7. While still at the **Forge**, click its **Smelting** tab — a square panel should appear showing
    a centered clickable icon (plain "Select\nOre" placeholder text until you add an icon) and the
    prompt "Select Ore to Smelt". Click it — a popup should open titled **Select Ore**, showing a
-   grid tile for every raw ore you own at least one full batch of (e.g. 3+ Scrap Iron, since it
-   refines 3:1). Pick **Scrap Iron** — the popup closes and the square panel now shows "Scrap Iron
+   grid tile for every raw ore you own at least one full batch of (e.g. 3+ Iron Ore, since it
+   refines 3:1). Pick **Iron Ore** — the popup closes and the square panel now shows "Iron Ore
    (owned N)", a `3 ore` readout with a small **Reset** button beside it, a row of **+1**/**+10**/
    **+100**/**MAX** buttons, an estimated output/time readout (`-> 1 Steel Ingot · 0:46`), and a
    **Smelt** button that wasn't there before you picked an ore. Click **+10** and confirm the
-   quantity jumps by 10 BATCHES (30 raw ore, since Scrap Iron refines 3:1), not by 10 raw ore; click
+   quantity jumps by 10 BATCHES (30 raw ore, since Iron Ore refines 3:1), not by 10 raw ore; click
    **MAX** and confirm it jumps straight to the largest multiple of 3 you can afford without going
    over; click **Reset** and confirm it drops back to the smallest legal batch (3). Confirm the "->
    N Steel Ingot" count and estimated time keep pace with whichever quantity you land on, and that
@@ -774,7 +825,7 @@ to end:
    estimate at quantity 3 vs. a much bigger one via **+100**/**MAX** if you have that much ore).
    Click **Smelt** — the stepper/buttons should be replaced immediately by a countdown ("Ready in
    M:SS") and a filling
-   progress bar, and your Scrap Iron count (Materials tab) should already be down by the amount you
+   progress bar, and your Iron Ore count (Materials tab) should already be down by the amount you
    fed in. Try clicking the Smelting tab's icon while a job is running — nothing should let you
    start a second one (there's no picker to reopen; the panel is showing the countdown, not the
    picker state). Wait for it to finish (or reduce `RefinedOreConfig.SmeltTime.BaseSeconds`
@@ -869,10 +920,10 @@ to end:
    already open). (NOTE: this replaces the old scattered-ring zone — `ResourceZoneService.lua` no
    longer runs; see `DESIGN_NOTES.md`.)
 12. Open **Workbench → Auto-Miner** (near your `Crafting` Station) and click **Build** (costs
-    Scrap Iron + Copper Wire). Once built, the row switches to showing the passive rate (e.g.
-    `+3 Scrap Iron every 60s`); wait a tick or two and confirm your Scrap Iron count ticks up on
+    Iron Ore + Copper Ore). Once built, the row switches to showing the passive rate (e.g.
+    `+3 Iron Ore every 60s`); wait a tick or two and confirm your Iron Ore count ticks up on
     its own, whether or not you're actively mining.
-13. Open **Welding Station → Mods** and craft a mod (e.g. Speed Coil, costs Copper Wire). Switch
+13. Open **Welding Station → Mods** and craft a mod (e.g. Speed Coil, costs Copper Ore). Switch
     back to the **Robots** tab and click the **SLOT 1** card on your Scrapbot's rig — a **popup
     should open** listing every mod you currently own (each prefixed with its rarity, e.g.
     `[Common] Speed Coil`) plus a "None" option. Click Speed Coil — the popup closes, the card
@@ -892,7 +943,7 @@ to end:
     rather than rows. Since you haven't added anything to `ReplicatedStorage.ItemIcons` yet, every
     tile should show as a plain colored square with the item's name as text instead of a blank
     square — that's the expected no-icon fallback, not a bug. Click the **Materials** tab, then
-    click the **Scrap Iron** tile — a detail panel should pop up to the right of the Inventory
+    click the **Iron Ore** tile — a detail panel should pop up to the right of the Inventory
     showing its name, description, and "You have: N" matching the count that's now missing from
     the trimmed-down top-left readout; click the **X** on the detail panel to close just that
     panel (the Inventory itself should stay open). Switch to **Weapons** and click a tile you
@@ -1090,6 +1141,21 @@ to end:
     profile actually loads. Rejoin one final time and confirm your real save comes back completely
     intact — Scrap, inventory, and base tier all exactly where you left them before you first
     toggled this on, and the button back to a plain **TEST MODE: OFF** with no marker.
+23. **Hub Shop — Sell tab.** Place a Part somewhere out in the world (NOT inside your base, same
+    convention as the Black Market/Hacker Machine above), tag it `Station`, and give it a child
+    `StringValue` named `StationType` set to `Shop`. Click it — the menu opens titled **Hub Shop**,
+    landing on **Blueprints** (rotating turret blueprint stock); switch to the **Sell** tab. With
+    nothing sold yet it should show one line, "Nothing to sell — mine some ore, or refine it at the
+    Forge, then come back," not a full price list of everything at zero. Mine a little Iron Ore
+    (or open the Forge's Smelting tab and turn some into Steel Ingot first) and reopen the Sell tab
+    — a row should now read "You have N · 1 Scrap each" for Iron Ore (Steel Ingot sells at 5 Scrap
+    each — see `OreConfig.Ores`/`RefinedOreConfig.Ores` for every other price). Press **Sell All**
+    and confirm a toast reads "Sold N Iron Ore for N Scrap.", the row disappears (or drops to the
+    tab's empty state if it was the only thing you had), and your Scrap readout updates
+    immediately — no extra click needed to see the new total. Walk away from the Shop and, from the
+    same still-open panel, try selling something else you're still holding: confirm it's rejected
+    with "You need to be at the Hub Shop to do that" instead of silently doing nothing, then walk
+    back and confirm it works again.
 
 ## 5. Environment effects (optional polish)
 

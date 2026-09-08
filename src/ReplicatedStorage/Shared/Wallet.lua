@@ -79,7 +79,7 @@ function Wallet.DisplayName(key: string): string
 	return (ore and ore.DisplayName) or key
 end
 
--- Formats a whole cost table as "120 Scrap, 40 Scrap Iron, 5 Steel Ingot".
+-- Formats a whole cost table as "120 Scrap, 40 Iron Ore, 5 Steel Ingot".
 --
 -- Sorted rather than left in pairs() order: an unordered cost line reshuffles between renders,
 -- which reads as a flicker/bug in a list that refreshes as often as the craft menus do.

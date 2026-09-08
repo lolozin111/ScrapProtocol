@@ -66,8 +66,8 @@ end
 -- Case-insensitive lookup of whatever the player typed against a set of real keys, so /give cores
 -- and /give Cores both work. Returns the CANONICAL key, since that's what the profile is keyed by.
 -- Resolves a typed fragment to one key. Three passes, narrowest first: exact, then prefix, then
--- substring. Exact HAS to win outright — "scrap" must mean the Scrap currency and not be treated as
--- an ambiguous prefix of ScrapIron.
+-- substring. Exact HAS to win outright — "scrap" must mean the Scrap currency and not fall through
+-- to a prefix/substring match against some other key that happens to start the same way.
 --
 -- Returns (key) on a clean match, or (nil, candidates) when a fragment matched several things, so
 -- the caller can say which rather than "unknown". Typing the full CamelCase key for every material
@@ -89,7 +89,7 @@ local function resolveKey(input: string, candidates: { string }): (string?, { st
 	end
 
 	-- Only falls back to substring when nothing started with the fragment, so "gold" still prefers
-	-- GoldContacts over matching in the middle of something else.
+	-- GoldOre over matching in the middle of something else.
 	if #matches == 0 then
 		for _, key in ipairs(candidates) do
 			if key:lower():find(lowered, 1, true) then

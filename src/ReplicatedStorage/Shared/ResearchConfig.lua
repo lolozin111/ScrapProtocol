@@ -90,7 +90,7 @@ ResearchConfig.Tiers = {
 		RequiredWave = 5,
 		WallHP = 300,
 		FootprintHalfSize = Vector3.new(25.5, 30, 25.5),
-		Cost = { Scrap = 400, ScrapIron = 100, CopperWire = 50 },
+		Cost = { Scrap = 400, IronOre = 100, CopperOre = 50 },
 		CoreRequirement = { Key = "CoreT1", Amount = 1 },
 	},
 	{
@@ -99,7 +99,7 @@ ResearchConfig.Tiers = {
 		RequiredWave = 10,
 		WallHP = 550,
 		FootprintHalfSize = Vector3.new(27, 30, 27),
-		Cost = { Scrap = 1200, SteelPlating = 150, CopperWire = 80, SteelIngot = 20 },
+		Cost = { Scrap = 1200, GoldOre = 150, CopperOre = 80, SteelIngot = 20 },
 		CoreRequirement = { Key = "CoreT2", Amount = 1 },
 	},
 	{
@@ -108,7 +108,7 @@ ResearchConfig.Tiers = {
 		RequiredWave = 15,
 		WallHP = 900,
 		FootprintHalfSize = Vector3.new(28.5, 30, 28.5),
-		Cost = { Scrap = 3000, GoldContacts = 60, HardenedPlate = 30 },
+		Cost = { Scrap = 3000, PlatinumOre = 60, PlatinumBar = 30 },
 		CoreRequirement = { Key = "CoreT3", Amount = 1 },
 	},
 	{
@@ -117,7 +117,7 @@ ResearchConfig.Tiers = {
 		RequiredWave = 20,
 		WallHP = 1400,
 		FootprintHalfSize = Vector3.new(30, 30, 30),
-		Cost = { Scrap = 6500, GoldContacts = 150, GoldBar = 25 },
+		Cost = { Scrap = 6500, PlatinumOre = 150, GoldBar = 25 },
 		CoreRequirement = { Key = "CoreT4", Amount = 1 },
 	},
 	{

@@ -31,7 +31,7 @@ local TurretConfig = {}
 --   CraftCost      Scrap + raw ore, paid at the Welding Station for EACH turret you build.
 --                  This is the real gate: you have to go mine for it. The upper half of the
 --                  roster also wants REFINED materials (RefinedOreConfig — Steel Ingot, Copper
---                  Coil, Hardened Plate, Gold Bar, Voidium Core), which means smelting the ore
+--                  Coil, Platinum Bar, Gold Bar, Voidium Core), which means smelting the ore
 --                  first. That is what makes the Forge's Smelting tab worth using: refined
 --                  materials are the "you did the extra processing step" tier of input, and they
 --                  gate the good turrets rather than being an alternative to raw ore.
@@ -53,7 +53,7 @@ TurretConfig.Types = {
 		DisplayName = "Pulse Turret",
 		Description = "Cheap and quick — rapid, light hits, short range. Good against thin swarms.",
 		BlueprintCost = { Scrap = 250 },
-		CraftCost = { Scrap = 120, ScrapIron = 40, CopperWire = 15 },
+		CraftCost = { Scrap = 120, IronOre = 40, CopperOre = 15 },
 		Range = 40, FireRate = 3.0, BaseDamage = 4, AOE = 1, -- AOE = how many nearest-in-range
 			-- targets it hits per shot; 1 = single-target.
 		ParticleColor = Color3.fromRGB(120, 200, 255),
@@ -62,7 +62,7 @@ TurretConfig.Types = {
 		DisplayName = "Flak Turret",
 		Description = "Wide burst radius, hits several enemies at once — thin the crowd, not the boss.",
 		BlueprintCost = { Scrap = 450 },
-		CraftCost = { Scrap = 200, ScrapIron = 60, CopperWire = 30 },
+		CraftCost = { Scrap = 200, IronOre = 60, CopperOre = 30 },
 		Range = 38, FireRate = 1.1, BaseDamage = 7, AOE = 3,
 		ParticleColor = Color3.fromRGB(255, 170, 90),
 	},
@@ -70,7 +70,7 @@ TurretConfig.Types = {
 		DisplayName = "Sniper Turret",
 		Description = "Long range, heavy single-target damage, slow to fire.",
 		BlueprintCost = { Scrap = 700 },
-		CraftCost = { Scrap = 320, SteelPlating = 35, CopperWire = 40, SteelIngot = 10 },
+		CraftCost = { Scrap = 320, GoldOre = 35, CopperOre = 40, SteelIngot = 10 },
 		Range = 75, FireRate = 0.55, BaseDamage = 24, AOE = 1,
 		ParticleColor = Color3.fromRGB(255, 80, 80),
 	},
@@ -78,7 +78,7 @@ TurretConfig.Types = {
 		DisplayName = "Arc Turret",
 		Description = "Crackling mid-range arc that jumps between nearby enemies.",
 		BlueprintCost = { Scrap = 850 },
-		CraftCost = { Scrap = 400, SteelPlating = 45, SteelIngot = 15, CopperCoil = 10 },
+		CraftCost = { Scrap = 400, GoldOre = 45, SteelIngot = 15, CopperCoil = 10 },
 		Range = 48, FireRate = 1.6, BaseDamage = 9, AOE = 4,
 		ParticleColor = Color3.fromRGB(150, 220, 255),
 	},
@@ -86,7 +86,7 @@ TurretConfig.Types = {
 		DisplayName = "Mortar Turret",
 		Description = "Very long range, huge splash, very slow — set up far back and let it work.",
 		BlueprintCost = { Scrap = 1100 },
-		CraftCost = { Scrap = 520, GoldContacts = 20, HardenedPlate = 12 },
+		CraftCost = { Scrap = 520, PlatinumOre = 20, PlatinumBar = 12 },
 		Range = 95, FireRate = 0.35, BaseDamage = 30, AOE = 5,
 		ParticleColor = Color3.fromRGB(200, 140, 60),
 	},
@@ -94,7 +94,7 @@ TurretConfig.Types = {
 		DisplayName = "Rail Turret",
 		Description = "Punishing single-target damage at real range — the premium sniper.",
 		BlueprintCost = { Scrap = 1400 },
-		CraftCost = { Scrap = 650, GoldContacts = 35, GoldBar = 8, VoidiumCore = 2 },
+		CraftCost = { Scrap = 650, PlatinumOre = 35, GoldBar = 8, VoidiumCore = 2 },
 		Range = 65, FireRate = 0.8, BaseDamage = 34, AOE = 1,
 		ParticleColor = Color3.fromRGB(180, 255, 200),
 	},

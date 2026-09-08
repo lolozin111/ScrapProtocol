@@ -171,12 +171,22 @@ Remotes.ForgeWeapon.OnServerInvoke = function(player: Player, weaponKey: string,
 	-- ("Threshold rolls in a row without landing MinRarity forces the NEXT roll"). Incrementing
 	-- first made it fire one roll early: the 15th roll was forced rather than the 16th.
 	local pityFloorIndex = rarityIndex(ForgeConfig.Pity.MinRarity)
-	local pityForced = (profile.ForgePityCounter or 0) >= ForgeConfig.Pity.Threshold
+	-- NewbiePity (see DataService.defaultProfile) lowers the threshold for a brand-new profile —
+	-- a faster first guaranteed Rare so a new player's opening rolls aren't all junk. The `and`
+	-- short-circuits to the normal Threshold whenever NewbieThreshold isn't set, so a missing
+	-- config value can't leave the comparison against nil.
+	local pityThreshold = (profile.NewbiePity and ForgeConfig.Pity.NewbieThreshold) or ForgeConfig.Pity.Threshold
+	local pityForced = (profile.ForgePityCounter or 0) >= pityThreshold
 	profile.ForgePityCounter = (profile.ForgePityCounter or 0) + 1
 
 	local rarity = rollRarity(luckPoints, pityForced and pityFloorIndex or nil)
 	if rarityIndex(rarity) >= pityFloorIndex then
 		profile.ForgePityCounter = 0
+		-- One-time boost: the first guaranteed Rare a NewbiePity player lands puts them on the
+		-- normal 15-roll pity for good — NewbiePity never gets set back to true.
+		if profile.NewbiePity then
+			profile.NewbiePity = false
+		end
 	end
 
 	local affixes = rollAffixes(rarity)
@@ -209,6 +219,11 @@ Remotes.ForgeWeapon.OnServerInvoke = function(player: Player, weaponKey: string,
 		-- rules. It cannot be nil on THIS path, but every ForgeOutput broadcast is written the same way
 		-- so the one that DOES clear it can never be the odd one out.
 		ForgeOutput = profile.ForgeOutput or false,
+		-- Same `or false` reasoning: this is also the broadcast that can clear NewbiePity (the roll
+		-- above just landed the one-time guaranteed Rare), so it has to be written the same way as
+		-- every other roll's broadcast or the clearing one would be the odd one out and the client
+		-- would keep showing the newbie threshold forever.
+		NewbiePity = profile.NewbiePity or false,
 	})
 
 	return { Success = true, Weapon = instance }

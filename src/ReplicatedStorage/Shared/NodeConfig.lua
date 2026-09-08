@@ -36,9 +36,9 @@ NodeConfig.CombatTiers = {
 		DamagePerSecond = 3,
 		CooldownSeconds = 45,
 		Loot = {
-			{ Kind = "Ore", OreKey = "ScrapIron", Min = 15, Max = 30, Chance = 1.0 },
+			{ Kind = "Ore", OreKey = "IronOre", Min = 15, Max = 30, Chance = 1.0 },
 			{ Kind = "Currency", CurrencyKey = "Scrap", Min = 5, Max = 15, Chance = 1.0 },
-			{ Kind = "Ore", OreKey = "CopperWire", Min = 5, Max = 10, Chance = 0.4 },
+			{ Kind = "Ore", OreKey = "CopperOre", Min = 5, Max = 10, Chance = 0.4 },
 		},
 	},
 	[2] = {
@@ -47,7 +47,7 @@ NodeConfig.CombatTiers = {
 		DamagePerSecond = 4,
 		CooldownSeconds = 75,
 		Loot = {
-			{ Kind = "Ore", OreKey = "SteelPlating", Min = 10, Max = 20, Chance = 1.0 },
+			{ Kind = "Ore", OreKey = "GoldOre", Min = 10, Max = 20, Chance = 1.0 },
 			{ Kind = "Currency", CurrencyKey = "Scrap", Min = 15, Max = 30, Chance = 1.0 },
 			{ Kind = "Currency", CurrencyKey = "Cores", Min = 1, Max = 3, Chance = 0.5 },
 		},
@@ -58,7 +58,7 @@ NodeConfig.CombatTiers = {
 		DamagePerSecond = 8,
 		CooldownSeconds = 120,
 		Loot = {
-			{ Kind = "Ore", OreKey = "GoldContacts", Min = 5, Max = 12, Chance = 1.0 },
+			{ Kind = "Ore", OreKey = "PlatinumOre", Min = 5, Max = 12, Chance = 1.0 },
 			{ Kind = "Currency", CurrencyKey = "Cores", Min = 3, Max = 8, Chance = 1.0 },
 			{ Kind = "Currency", CurrencyKey = "Scrap", Min = 30, Max = 60, Chance = 1.0 },
 		},
@@ -73,7 +73,7 @@ NodeConfig.CombatTiers = {
 ----------------------------------------------------------------------
 
 NodeConfig.BossLoot = {
-	{ Kind = "Ore", OreKey = "GoldContacts", Min = 10, Max = 20, Chance = 1.0 },
+	{ Kind = "Ore", OreKey = "PlatinumOre", Min = 10, Max = 20, Chance = 1.0 },
 	{ Kind = "Currency", CurrencyKey = "Cores", Min = 5, Max = 12, Chance = 1.0 },
 	{ Kind = "Currency", CurrencyKey = "Scrap", Min = 50, Max = 90, Chance = 1.0 },
 }
@@ -90,19 +90,19 @@ NodeConfig.HealCooldownSeconds = 20 -- free, but not spammable mid-raid
 
 NodeConfig.ShopCatalog = {
 	ScrapBundle = {
-		DisplayName = "Scrap Iron Bundle",
+		DisplayName = "Iron Ore Bundle",
 		CostCurrency = "Scrap", CostAmount = 40,
-		Grant = { Kind = "Ore", OreKey = "ScrapIron", Amount = 25 },
+		Grant = { Kind = "Ore", OreKey = "IronOre", Amount = 25 },
 	},
 	CopperBundle = {
-		DisplayName = "Copper Wire Bundle",
+		DisplayName = "Copper Ore Bundle",
 		CostCurrency = "Scrap", CostAmount = 60,
-		Grant = { Kind = "Ore", OreKey = "CopperWire", Amount = 20 },
+		Grant = { Kind = "Ore", OreKey = "CopperOre", Amount = 20 },
 	},
 	SteelBundle = {
-		DisplayName = "Steel Plating Bundle",
+		DisplayName = "Gold Ore Bundle",
 		CostCurrency = "Scrap", CostAmount = 90,
-		Grant = { Kind = "Ore", OreKey = "SteelPlating", Amount = 15 },
+		Grant = { Kind = "Ore", OreKey = "GoldOre", Amount = 15 },
 	},
 	InstantCraftToken = {
 		DisplayName = "Instant Craft Token",
@@ -110,9 +110,9 @@ NodeConfig.ShopCatalog = {
 		Grant = { Kind = "Currency", CurrencyKey = "InstantCraftTokens", Amount = 1 },
 	},
 	GoldCache = {
-		DisplayName = "Gold Contacts Cache",
+		DisplayName = "Platinum Ore Cache",
 		CostCurrency = "Cores", CostAmount = 10,
-		Grant = { Kind = "Ore", OreKey = "GoldContacts", Amount = 8 },
+		Grant = { Kind = "Ore", OreKey = "PlatinumOre", Amount = 8 },
 	},
 }
 

@@ -167,7 +167,7 @@ local function rollOreForDepth(depth: number): string
 			return oreKey
 		end
 	end
-	return next(weights) or "ScrapIron" -- fallback, should be unreachable
+	return next(weights) or "IronOre" -- fallback, should be unreachable
 end
 
 -- Returns "Rock", "Hazard", "Bedrock", or ("Ore", oreKey). Bedrock is a hard floor past

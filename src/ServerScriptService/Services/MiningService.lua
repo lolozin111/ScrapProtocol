@@ -5,7 +5,7 @@
 	Never let the client tell the server how much ore to grant.
 
 	Expects ore nodes in the workspace to be Parts/Models tagged with a StringValue named
-	"OreType" whose value matches a key in OreConfig.Ores (e.g. "ScrapIron"). Tag your map's
+	"OreType" whose value matches a key in OreConfig.Ores (e.g. "IronOre"). Tag your map's
 	ore nodes this way in Studio — no code changes needed to add more nodes. ResourceZoneService
 	builds nodes the same way procedurally, so everything below applies equally to both.
 
@@ -19,7 +19,7 @@
 
 	Tool tiers: MineNode is a fire-and-forget RemoteEvent, so a rejected attempt used to fail
 	completely silently client-side — the player just saw nothing happen with no way to know
-	why. A blocked-by-tool-tier ore (e.g. Steel Plating needs ToolTier 2) was ALSO, until now,
+	why. A blocked-by-tool-tier ore (e.g. Gold Ore needs ToolTier 2) was ALSO, until now,
 	permanently unreachable regardless, because nothing ever raised a player's ToolTier past the
 	starting 1 — see UpgradeTool below, the fix for both problems at once.
 ]]

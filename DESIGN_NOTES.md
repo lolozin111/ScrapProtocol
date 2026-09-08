@@ -14,6 +14,7 @@ already made (numbers, mechanics, sequencing), not just vague direction.
 | Base (crafting process, mods, tiers, turrets) | **Built** — see below (crafting process' "cute" animation step still not started) |
 | Research level (progression tiers) | **Built** — see below |
 | Main shop (rotating stock, geode/extractor) | **Superseded** by the Black Market — same flow |
+| Selling (raw ore/refined material -> Scrap) | **Built** — Hub Shop's Sell tab, `SellService.lua` — see "Session context" below |
 | Black Market & Hacker Machine | **Built** — dealer, cases, decode, Contraband. Gun variants + tools still to come |
 | Ultimate mods (Mythical passives, 4th slot) | **Built** — all 6 |
 | Status effects (bleed/poison/burn/stun/slow/frostbite/shred) | **Built** — see "Combat infrastructure" |
@@ -26,7 +27,7 @@ already made (numbers, mechanics, sequencing), not just vague direction.
 | HUD phase 3 (all station menus) | **Built and verified** — see "Road to release" below |
 | Raid overhaul | **Designed; step 1 of 7 built** — doors + Sector Map done, see Phase 00 below |
 | Enemy AI patterns | **Engine built, one pattern** — `Chaser`, and all six enemies use it |
-| Early-game pacing & onboarding | **Planned, not built** — see below |
+| Early-game pacing & onboarding | **Partially built** — item 1 (ore sells for Scrap) shipped in the ore rework; starter objectives (item 2) still planned, not built — see below |
 | Raid shop rework (run-only perks) | **Planned, not built** — half the tag plumbing exists |
 | PvP base invasion | **Recommended cut from v1** — see "Road to release" below |
 
@@ -284,17 +285,17 @@ one block at a time. `GridWidth`/`GridLength` is still the first knob to turn in
   **Ore** (an actual resource, rarer ore more common with depth — `OreWeightBands`, same shape as
   the old ring zone's distance bands), and a few, more often the deeper you go, **Lava pockets**
   (mine one through and it bursts for real damage instead of a reward, no warning in its label
-  first). Rock is floored (30-40% even in the deepest band) so filler never fully disappears even
-  very deep, per the explicit ask. Depth 1-4's Ore rate was tuned down after testing — 40% Ore
-  felt like too much too early — to 80% Rock / 20% Ore total, split 75/25 Scrap Iron/Copper Wire
-  (no Steel Plating that shallow), landing on roughly the requested "80% rock, 15% iron, 5%
-  copper."
+  first). Rock is floored at 38% even in the deepest band (the four bands run 80/50/42/38% Rock)
+  so filler never fully disappears even very deep, per the explicit ask. Depth 1-4's Ore rate was
+  tuned down after testing — 40% Ore felt like too much too early — to 80% Rock / 20% Ore total,
+  split 75/25 Iron Ore/Copper Ore (no Gold Ore that shallow), landing on roughly the requested
+  "80% rock, 15% iron, 5% copper."
 - Interaction is a `ClickDetector` (matching the Expedition nodes), not the hold-style
   `ProximityPrompt` ore mining uses — a prompt on a block directly under the player's own feet
   fails its line-of-sight check and silently never fires, which is what broke mining entirely on
   the first pass.
-- Separately, ambient environmental hazards past a depth threshold — currently Heat (depth 6+)
-  and Toxic Air (depth 12+), `MineShaftConfig.HazardTypes` — deal periodic damage. This is the
+- Separately, ambient environmental hazards past a depth threshold — currently Heat (depth 25+)
+  and Toxic Air (depth 38+), `MineShaftConfig.HazardTypes` — deal periodic damage. This is the
   "go deep, but you need to be equipped for it" layer from the original ask, and it's a separate
   risk from Lava pockets ("the air down here is dangerous" vs. "you dug into an active pocket").
   **Reworked into 3 Tiers per hazard type**, damage roughly doubling each Tier (Heat: 4/8/16,
@@ -333,6 +334,22 @@ one block at a time. `GridWidth`/`GridLength` is still the first knob to turn in
   first generation and reused, not rebuilt, so resets don't stack duplicate geometry on top of
   themselves). Keeps the mine from turning into an ever-growing swiss-cheese sprawl of old
   tunnels and gives everyone a reason to come back to a fresh one.
+- **Raw ore keys renamed, and Gold/Platinum swapped gate slots.** `OreConfig.Ores` used to name raw
+  material like a manufactured good — `ScrapIron`, `CopperWire`, `SteelPlating`, `GoldContacts`,
+  `HardenedPlate` — even though every one of those is dug out of a wall, not built. Steel was the
+  worst offender: raw `ScrapIron` smelted *into* `SteelIngot` at the Forge while `SteelPlating` was
+  a completely separate thing you mined, so "Steel" meant two unrelated items depending on which
+  system you were reading. Renamed to `IronOre`/`CopperOre`/`GoldOre`/`PlatinumOre`/`PlatinumBar`
+  (`VoidiumShard` was already honestly named and is unchanged). Gold and Platinum deliberately
+  **swapped** gate slots rather than mapping name-for-name, so the value ladder reads
+  Iron -> Copper -> Gold -> Platinum -> Voidium: `GoldOre` now carries the mining stats
+  (`MinToolTier = 2`, 5 hits, 35s respawn) that used to belong to the key `SteelPlating`, and
+  `PlatinumOre` carries the stats (`MinToolTier = 3`, wave-5 gate, 3 hits, 60s respawn) that used to
+  belong to `GoldContacts` — the stats stayed with the SLOT, not the metal. Only a saved profile's
+  `OreCounts`/`RefinedOreCounts` migrate automatically, one-time and self-guarding, same shape as
+  `migrateLegacyWeapons` (`DataService.migrateOreKeyRename`); a hand-placed `OreNode`'s `OreType`
+  `StringValue` in Studio does not, and does not error on a stale value either — it just grants
+  nothing (see "Known interim decisions" below).
 
 ## Base
 
@@ -674,12 +691,24 @@ Several distinct pieces bundled under "the base":
     `refreshPotionButton` up in the Forge tab section, since `setForgeWidgetsVisible` (defined
     there) needs to reach a Frame that isn't actually created until the "Bottom action buttons"
     section much further down.
+- **Newbie Pity — BUILT (ore rework).** A first-time player's guaranteed Rare used to take the same
+  15-roll drought as everyone else's — a long dry spell before you've even learned what the Forge is
+  for. `ForgeConfig.Pity.NewbieThreshold = 5` plus a new `profile.NewbiePity` flag (defaults `true`
+  in `defaultProfile()`) put a brand-new profile's pity floor at 5 rolls instead of 15 until pity
+  actually resets for that player once; `ForgeService.ForgeWeapon` picks `NewbieThreshold` over
+  `Threshold` with an `and`/`or` that falls back to the normal `Threshold` if `NewbiePity` is ever
+  missing, and flips the flag to `false` for good the moment pity resets — so the shorter fuse only
+  ever fires once per player. `backfillMissingFields` hands `NewbiePity = true` to every
+  already-existing save too, deliberately: current players get one boosted run each rather than
+  being excluded by an accident of when their save was created. `ForgePanel.lua`'s HEAT gauge mirrors
+  the identical `and`/`or` check so the bar can never read a different threshold than the roll
+  actually honours.
 - **Ore smelting (separate Forge mechanic) — BUILT.** A second, independent thing the Forge does
   alongside weapon Forging: the Forge's new `"Smelting"` tab (`StationConfig.Types.Forge.Tabs` is
   now `{ "Weapons", "Smelting" }`) turns raw ore into refined material, one job at a time per
   player. Config lives in the new `RefinedOreConfig.lua`: `Ores[oreKey] = { RefinedKey,
-  DisplayName, Description, RefineRatio }` (raw ore consumed per 1 refined unit — 3:1 for Scrap
-  Iron/Copper Wire, 2:1 for Steel Plating/Gold Contacts, 1:1 for Voidium Shard, all easy to
+  DisplayName, Description, RefineRatio }` (raw ore consumed per 1 refined unit — 3:1 for Iron
+  Ore/Copper Ore, 2:1 for Gold Ore/Platinum Ore, 1:1 for Voidium Shard, all easy to
   rebalance) plus `ByRefinedKey` (a reverse index built once at load time, since UI code looks
   things up by `RefinedKey` more often than by the raw ore key) and `SmeltTime = { BaseSeconds,
   LogSecondsPerOre, TickSeconds }` behind the batch-time formula, `ComputeSmeltSeconds(quantity)`:
@@ -727,14 +756,18 @@ Several distinct pieces bundled under "the base":
   zero) — exactly what that function's own pre-existing comment anticipated, no new Inventory tab
   needed.
 
-  Deliberately still out of scope: rewiring `CraftingRecipes.lua`/`ModConfig.lua`'s `Cost` tables
+  ~~Deliberately still out of scope: rewiring `CraftingRecipes.lua`/`ModConfig.lua`'s `Cost` tables
   to actually require refined materials as crafting inputs. Right now refined materials accumulate
-  and display but aren't spendable anywhere — that's its own follow-up task.
+  and display but aren't spendable anywhere — that's its own follow-up task.~~ RESOLVED by later
+  work — see "Half-built reward loops" below: several `TurretConfig`/`ResearchConfig`/
+  `OreConfig.ToolTierCosts` entries now price in refined materials, and the ore rework's Hub Shop
+  Sell tab (`SellService.lua`) gives them a sink even where nothing prices in them directly.
 
   **Numbers I picked myself, worth a playtest before treating as final:** the exact RefineRatios
-  (3:1/3:1/2:1/2:1/1:1), the refined-material names (Steel Ingot/Copper Coil/Hardened Plate/Gold
-  Bar/Voidium Core), and the time-formula constants (`BaseSeconds = 20`, `LogSecondsPerOre = 24` —
-  a 3-Scrap-Iron batch takes ~20 + 24*ln(3) ≈ 46s total, a 300-Scrap-Iron batch takes
+  (3:1/3:1/2:1/2:1/1:1), the refined-material names (Steel Ingot/Copper Coil/Gold Bar/Platinum
+  Bar/Voidium Core — renamed from Hardened Plate along with the raw-ore rename above, see the
+  Mining zone section), and the time-formula constants (`BaseSeconds = 20`, `LogSecondsPerOre = 24` —
+  a 3-Iron-Ore batch takes ~20 + 24*ln(3) ≈ 46s total, a 300-Iron-Ore batch takes
   ~20 + 24*ln(300) ≈ 157s total, i.e. only ~3.3x longer for 100x the ore, ~0.52s per ore vs. ~15.5s
   per ore for the small batch — batch time still climbs at a real pace instead of flattening out
   almost immediately, per direct feedback that the original `LogSecondsPerOre = 8` made "the
@@ -1891,7 +1924,7 @@ as "I want the Longbow." The ladder length is not what makes a game read as unfi
 What IS a problem is the opening. A brand-new player currently:
 
 1. spawns with **0 Scrap, 0 ore, and no weapon**
-2. must mine ~9 hits of Scrap Iron to afford a Pipe Pistol
+2. must mine ~9 hits of Iron Ore to afford a Pipe Pistol
 3. forges and equips it
 4. can only THEN raid — and **raiding is the only source of Scrap in the game**, since base defense
    was deliberately changed to grant none (see RewardTables.lua)
@@ -1902,19 +1935,27 @@ of the game — sits behind a mining errand.
 
 ### The plan
 
-**1. Ore sells for Scrap.** Makes mining pay the currency everything is priced in, without reversing
-the "waves grant no Scrap" decision. Also turns ore into a choice (sell it, or keep it to craft with)
-rather than a one-way input.
+~~**1. Ore sells for Scrap.**~~ BUILT, by the ore rework — `SellService.lua`/the `SellOre`
+RemoteFunction, a new **Sell** tab on the Hub Shop (`StationConfig.Types.Shop.Tabs`), a new
+`SellPrice` field on `OreConfig.Ores`/`RefinedOreConfig.Ores`. Makes mining pay the currency
+everything is priced in, without reversing the "waves grant no Scrap" decision (still true for a
+regular wave clear; see the Wave defense rework note above the "Half-built reward loops" section).
+Also turns ore into a real choice (sell it, or keep it to craft/smelt with) rather than a one-way
+input, and gives refined materials a sink even where nothing prices in them directly.
 
-> **Pricing constraint — do not skip this.** Shop nodes already SELL ore for Scrap
-> (`NodeConfig.ShopCatalog`): 25 Scrap Iron for 40, 20 Copper Wire for 60, 15 Steel Plating for 90.
-> If the sell price exceeds the buy price there is an infinite-Scrap loop that never touches mining.
-> Ceilings are 1.6 / 3.0 / 6.0 Scrap per unit respectively; half the buy rate is the convention and
-> reads as fair. At 0.8 per Scrap Iron a full node (3 ore/hit x 8 hits) is ~19 Scrap.
+The **pricing constraint** below held: `SellPrice` on every ore is below its `NodeConfig
+.ShopCatalog` buy-back rate (Iron Ore sells at 1, buys in a 25-for-40 bundle = 1.6/unit; Copper Ore
+sells at 2, buys at 3.0/unit; Gold Ore sells at 5, buys at 6.0/unit) — not exactly "half the buy
+rate" per unit for Copper/Gold, but sell always undercuts buy, so there's no infinite-Scrap loop.
+**Where selling happens** was answered too: the Hub Shop's new Sell tab, the cheaper option this
+note already flagged, not a dedicated "Scrapper" station.
 
-Open: WHERE selling happens. Hub Shop Sell tab is cheapest (station already exists). A dedicated
-"Scrapper" station is more thematic and gives a reason to walk somewhere, at the cost of another
-Studio prop and another `StationType`. Undecided.
+> Original framing, kept for the reasoning: Shop nodes already SELL ore for Scrap
+> (`NodeConfig.ShopCatalog`): 25 Iron Ore for 40, 20 Copper Ore for 60, 15 Gold Ore for 90 (renamed
+> from Scrap Iron/Copper Wire/Steel Plating along with the rest of `OreConfig` — see the Mining zone
+> section). If the sell price exceeds the buy price there is an infinite-Scrap loop that never
+> touches mining. Ceilings are 1.6 / 3.0 / 6.0 Scrap per unit respectively; half the buy rate was the
+> proposed convention. At 0.8 per Iron Ore a full node (3 ore/hit x 8 hits) is ~19 Scrap.
 
 **2. Starter objectives, NOT a scripted tutorial.** The stated goal was a first-minute tutorial
 covering mine / Forge / Welding / Workbench. A guided step-by-step needs step tracking, forced
@@ -1924,7 +1965,7 @@ needs anyway. Sketch:
 
 | Objective | Reward |
 |---|---|
-| Mine 20 Scrap Iron | +100 Scrap |
+| Mine 20 Iron Ore | +100 Scrap |
 | Sell ore | +50 Scrap |
 | Forge a weapon | +75 Scrap |
 | Craft anything at the Welding Station | +100 Scrap |
@@ -2008,6 +2049,18 @@ suggested) of whatever the raider actually got from the invasion.
   retired — replaced by `MineShaftService.lua`'s dig-down shafts, see the Mining zone section
   above. The files are left on disk for reference/rollback but are no longer required by
   `Main.server.lua`; don't re-enable or tune them.
+- The raw-ore rename (`ScrapIron`->`IronOre`, `CopperWire`->`CopperOre`, `SteelPlating`->`GoldOre`,
+  `GoldContacts`->`PlatinumOre`, `HardenedPlate`->`PlatinumBar`) only migrates saved profile data —
+  every hand-placed `OreNode`'s `OreType` `StringValue` in Studio still needs re-tagging by hand, and
+  Gold/Platinum swapped gate slots, so an old `SteelPlating` node becomes `GoldOre`, not the more
+  obvious `PlatinumOre`. A stale `OreType` doesn't error; the node just grants nothing forever. If a
+  node in an existing test place "stops working" after this change, re-tagging it is the fix, not a
+  bug in `MiningService`.
+- `profile.NewbiePity` is deliberately one-shot per player, including the one-time `true` every
+  already-existing save was backfilled with — it is not supposed to come back once it flips to
+  `false`. A fresh **Player Test Mode** profile does get it again, because that profile runs
+  `defaultProfile()` from scratch each time; that's a side effect of Test Mode being a throwaway
+  profile, not evidence the flag is resetting somewhere it shouldn't.
 
 ## Research level — BUILT
 
@@ -2199,11 +2252,13 @@ restatement of anything already documented.
   a different request in the same message). **Unconfirmed** whether "effects" meant real gameplay
   effects (a genuine gap, worth a follow-up type-differentiator later) or was loosely gesturing at
   the visual burst that did ship — flag before treating the 6 turret types as fully varied.
-- **Hub Shop "buy/sell" — only buy shipped.** The original ask described the Hub as somewhere
-  players "can go and buy/sell what they want." `TurretShopService.lua` only has
-  `BuyTurretBlueprint` — there's no sell-back path for turrets, blueprints, or anything else.
-  Whether that half was a deliberate scope cut or just hasn't been gotten to yet was never actually
-  discussed — **unconfirmed**, don't assume it's intentionally out of scope.
+- ~~**Hub Shop "buy/sell" — only buy shipped.**~~ HALF-RESOLVED by the ore rework. The original ask
+  described the Hub as somewhere players "can go and buy/sell what they want." `TurretShopService.lua`
+  still only has `BuyTurretBlueprint` — there's still no sell-back path for turrets or blueprints —
+  but the Hub Shop station gained a second tab, **Sell** (`StationConfig.Types.Shop.Tabs`), backed by
+  new `SellService.lua`/the `SellOre` RemoteFunction: raw ore and refined material both sell back for
+  Scrap at a `SellPrice` field on `OreConfig.Ores`/`RefinedOreConfig.Ores`. Whether turret/blueprint
+  sell-back is still wanted is **unconfirmed** — don't assume it's intentionally out of scope either.
 - ~~**An earlier recommendation was superseded, not built**~~ — REVERSED SINCE. The idea noted
   here (a blueprint unlocking a craft-with-materials step rather than minting the turret directly)
   is what the game does now: the user asked for it explicitly — "I want the turrets, at least when
@@ -2358,12 +2413,16 @@ there is none right now, which is the only reason that round shipped as a flat p
 - **Tool mods are not multi-slot.** `profile.EquippedTool` holds ONE key; `ToolModConfig.Tools` has
   exactly three (Split-Head Pick, Featherweight Pick, Prospector's Pick) and they are sideways
   choices, not a collection. Workbench B drew a chip row with an empty `+` slot. It is a pick-one.
-- **Auto-Miner is not an upgrade track.** One-time craftable (`AutoMinerConfig.Cost` = 60 ScrapIron +
-  15 CopperWire), `MaxOwned = 1`, yields `BaseYieldPerTick` 3 ScrapIron every `TickSeconds` 60. The
+- **Auto-Miner is not an upgrade track.** One-time craftable (`AutoMinerConfig.Cost` = 60 IronOre +
+  15 CopperOre), `MaxOwned = 1`, yields `BaseYieldPerTick` 3 IronOre every `TickSeconds` 60. The
   tab is a build-it / own-it state, not levels. The mockup invented "Level 4 -> 5" and a cost.
+  (Amounts unchanged by the ore rework — only the key names moved, `ScrapIron`->`IronOre` and
+  `CopperWire`->`CopperOre`.)
 - **Base tiers live in `ResearchConfig.Tiers`, not BaseConfig**, and there are SIX: Scrap Workbench,
   Reinforced Workshop, Fortified Bunker, Bastion, Citadel, Foundry. T2->T3 costs Scrap 1200 +
-  SteelPlating 150 + CopperWire 80 + SteelIngot 20. Turret slots by tier are 2/4/5/7/8/10
+  GoldOre 150 + CopperOre 80 + SteelIngot 20 (same amounts as before the rename — `SteelPlating`
+  became `GoldOre`, `CopperWire` became `CopperOre`; `SteelIngot` was already a refined-material
+  key and didn't move). Turret slots by tier are 2/4/5/7/8/10
   (`TurretConfig.GetSlotCount`), so "+1 slot" is right for T2->T3 only by coincidence.
 - **Robot mod slots are never locked.** `EquippedMods[itemKey][slotIndex]`, slotIndex 1..3, and
   `CraftingService` checks only the range — an empty slot means you have not fitted a mod, not that
