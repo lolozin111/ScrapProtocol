@@ -2495,6 +2495,34 @@ for an explicit greenlight before starting any further step of the build order b
 and stop; "pick up where we left off" is NOT the greenlight. Design work, docs and questions are
 fine.
 
+**ORE REWORK — SHIPPED 2026-09-07, commit de1e11b, PARTIALLY VERIFIED.** Raw ores renamed
+(`ScrapIron`->`IronOre`, `CopperWire`->`CopperOre`, `SteelPlating`->`GoldOre`,
+`GoldContacts`->`PlatinumOre`, `HardenedPlate`->`PlatinumBar`); Gold and Platinum traded gate slots
+so the value ladder reads Iron -> Copper -> Gold -> Platinum -> Voidium, with the mining stats
+staying on the SLOT. Tool/Suit/Forge tiers repriced as Scrap + a ramping ore component, new
+`SellService`/Sell tab on the Hub Shop, a small wave-clear Scrap trickle (partially reversing the
+old "base defense grants no Scrap or Cores" instruction — Cores are still zero), and one-shot newbie
+forge pity (`profile.NewbiePity`, 5 rolls instead of 15, cleared permanently on first reset).
+
+CONFIRMED IN STUDIO: the Hub Shop station and its Sell tab both appear. NOT yet exercised: mining an
+ore end to end, an actual sell, the wallet update, or the `0 / 5` pity gauge on a fresh profile —
+README section 4 steps 3, 6 and the new step 23 cover exactly those. No ore-node re-tagging was
+needed and none should be attempted: this place has ZERO instances tagged `OreNode` and mines via
+`MineShaftStart`, so shaft blocks pick their ore from `MineShaftConfig` at runtime.
+
+Sell prices and the tier ladders are UNPLAYTESTED, and the user expects to rebalance after
+playtesting. All of it is pure config — `SellPrice` on OreConfig/RefinedOreConfig,
+`OreConfig.ToolTierCosts`, `MineShaftConfig.SuitTierCosts`, `ForgeConfig.ForgeTierCosts`,
+`WaveConfig.ScrapReward` — and no service reads a number directly, so retuning never touches
+behaviour.
+
+ICONS are the user's active workstream (6 of 99 done). `ReplicatedStorage.ItemIcons` is EMPTY, so
+there is nothing to rename; the names the resolver expects are `IronOre`/`CopperOre`/`GoldOre`/
+`PlatinumOre`/`VoidiumShard`, `SteelIngot`/`CopperCoil`/`GoldBar`/`PlatinumBar`/`VoidiumCore`, and
+the six weapon families `Salvage`/`Flamethrowers`/`Bows`/`Snipers`/`GrenadeLaunchers`/`Miniguns` —
+16 images covering every ore, every refined material and all 18 weapons, since `HudKit.getItemIcon`
+now falls back from an item key to the weapon's `Family`.
+
 **Step 1 of its build order is BUILT but NOT YET VERIFIED IN STUDIO** — physical exit doors plus the
 Sector Map, see "Raid Rooms — physical exit doors + the Sector Map" below. Read that before anything
 else. Nothing in that round has been run: there is no Lua toolchain on this machine, so it was
