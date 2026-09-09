@@ -27,6 +27,8 @@ already made (numbers, mechanics, sequencing), not just vague direction.
 | HUD phase 3 (all station menus) | **Built and verified** — see "Road to release" below |
 | Raid overhaul | **Scope cut to one mode for v1 (2026-09-08)** — steps 5-6 deferred post-launch; step 1 built AND VERIFIED in Studio 2026-09-08, step 2 (room variant folders) BUILT 2026-09-08, not yet verified in Studio, see Phase 00 below |
 | Enemy AI patterns | **Engine built, one pattern** — `Chaser`, and all six enemies use it |
+| Voidium infestation (lore + the raid boss) | **Designed 2026-09-08, nothing built** — see "The Voidium infestation" below |
+| Animation pass | **Deferred post-launch (2026-09-08)** — attack tell only at release; see Phase 01 |
 | Early-game pacing & onboarding | **Partially built** — item 1 (ore sells for Scrap) shipped in the ore rework; starter objectives (item 2) still planned, not built — see below |
 | Raid shop rework (run-only perks) | **Planned, not built** — half the tag plumbing exists |
 | PvP base invasion | **Recommended cut from v1** — see "Road to release" below |
@@ -450,6 +452,87 @@ tiers it always has; only WHERE those enemies land is new.
 Where it fits: essentially Phase 00 step 3 (mode plumbing) with a spawn-composition layer attached.
 `state.TotalNodesVisited` is already the depth input and already drives loot, so enemy count and
 reward would scale off one counter and stay coherent for free.
+
+### The Voidium infestation — LORE ROUND 2026-09-08. NOTHING BUILT.
+
+Raised by the user while thinking about what the raid Boss should be. This is fiction and scoping,
+not a build; no code exists for any of it. Recorded because it is the input step 7 (enemy AI
+patterns) has been waiting on — what enemies DO follows from what they ARE.
+
+**The finding the round started from.** `RaidConfig.BossComposition` (RaidConfig.lua:394) is 1-2
+enemies at 2.6x drawn from `EnemyConfig.EliteTypes`, and `EliteTypes` has exactly ONE entry. So every
+Boss room today is one or two `VoidwakenHulk`s, and they are also what elite waves spawn in base
+defense. **There is no boss identity — there is a pool of one.**
+
+**What was already written, and is now load-bearing.** `EnemyConfig.lua`'s header defines two
+factions: **Construct** (scavenged security drones and automation gone haywire — "the nastier ones
+are Voidium-corrupted") and **Rebel** (Mad-Max raiders, explicitly unrelated). `VoidwakenHulk` is
+built on `ConstructBase`. The Forge already treats Voidium Shard as "not from around here, handle
+carefully". So Voidium was ALREADY the thing that makes machines dangerous before this round.
+
+**Decision 1 — Voidium infests hosts, it does not birth creatures.** The user's opening idea was
+creatures BORN from Voidium, which would have made the Hulk genuinely alive. Settled instead on a
+reading that keeps everything already written true: Voidium gets into MACHINES near the surface (every
+Construct; the Hulk is what happens when it gets all the way in), and deeper down it stops needing a
+host. The Hulk's own line — "Whatever Voidium did to this one" — presumes a "this one" existed
+first, so corruption is the reading the config already commits to. Framing Voidium as a PROCESS with
+stages rather than a species is also more useful, because stages are levels.
+
+**Decision 2 — the raid boss is a Voidium BLOOM, not another humanoid.** A stationary/anchored
+crystalline mass that spawns corrupted Constructs while the player breaks it. Four reasons, in order
+of weight:
+
+1. It is not the Hulk. Otherwise the Boss room is the elite you already fight, larger.
+2. **It is the only boss shape that works with three AI patterns.** The scope cut took step 7 from
+   nine patterns to three. A stationary spawner is a completely different fight from `Chaser`
+   without needing a fourth pattern — the adds do the chasing.
+3. **It is buildable with the art that exists.** There is no `VoidwakenHulk` rig in
+   `ServerStorage.EnemyModels` yet, and a crystalline mass is geometry and material rather than an
+   animated character rig. Congruent with the animation deferral above.
+4. It closes the loop the ore ladder already implies: Voidium Shard is the top ore and refines to
+   Voidium Core for the best gear, so the player is harvesting the infestation and putting it in
+   their gun. That was latent in the config, not invented here.
+
+**Decision 3 — the raid boss is MECHANICALLY the boss but LORE-WISE a minor thing.** The user's
+call, and the sharpest part of the round. The bigger bosses are reserved for events and post-launch
+updates. Mechanically nothing changes: it stays in `EliteTypes`, `BossComposition`'s 1-2 at 2.6x is
+the right shape. What it buys:
+
+- **It solves the repetition problem.** You fight a Boss room every map. If the raid boss were the
+  apex of the world you would kill the biggest thing alive weekly and it would stop meaning anything
+  by the third run. A local bloom recurring is just what an infestation does.
+- **It keeps escalation room.** An apex raid boss forces every future event boss to top it, which is
+  power-creep and name inflation from day one.
+- It retro-justifies the Hulk: a corrupted Construct implies something nearby doing the corrupting,
+  and that something is now what you fight at the end of the map.
+
+The resulting ladder — three rungs built, one deliberately undefined:
+
+| Rung | What | State |
+|---|---|---|
+| Trash | Constructs and Rebels | 5 types built |
+| Elite | `VoidwakenHulk` | built; what a bloom makes of what it finds |
+| Raid boss | the bloom | DESIGNED, not built, unnamed |
+| Event bosses | whatever seeds blooms | undefined ON PURPOSE |
+
+**Two things to settle before any of it is built:**
+
+1. **`EliteTypes` is one pool serving three jobs** — raid Boss rooms (`pickBossSpawnKeys`,
+   RaidRoomService.lua:954), base-defense elite waves (CombatEncounterService.lua:191), and authored
+   `SpawnPoint` markers (RaidConfig.lua:194, which accepts any `Types`/`EliteTypes` key). Adding the
+   bloom to `EliteTypes` therefore also starts spawning it at the player's plot on elite waves, which
+   is odd if blooms grow in raid sectors. Cheapest fix is a `BossEligible`/`WaveEligible` flag or a
+   separate pool — decided once, before the entry exists, not retrofitted. This is the same
+   one-table-three-questions drift shape `OreGate`/`ApplyMods`/`MaxDeployedRobots` all exist because
+   of.
+2. **The Boss node's `DisplayName` is currently `"Boss"`**, and exit doors plus the Sector Map both
+   render the destination type's DisplayName — so the door announces exactly the significance
+   Decision 3 says it should not have. `"Bloom"`/`"Growth"`/`"Infestation"` reads as a place rather
+   than a title fight. One config string, no code. Held until the lore settles, because the word IS
+   the lore.
+
+**Still open:** the bloom has no name, and the event-boss tier is intentionally blank. The user is
+still thinking about both. Do not invent either.
 
 ### Phase 01 — build the rest
 
@@ -2881,6 +2964,23 @@ branch and the colour/label matched the destination; `PlayerSpawn` places and FA
 (circles not responding to clicks), the deliberate too-few-doors fallback to the clickable map, a
 zone's `Weight` visibly favouring the heavier zone over many runs, the duplicate-`PlayerSpawn` warn,
 and the no-markers warn. README section 4 step 15 covers all of them.
+
+**STUDIO ART IS THE USER'S ACTIVE WORKSTREAM (2026-09-08/09).** They are hand-building EIGHT raid
+rooms — 2 Combat (one pre-existing), 2 Ambush, and one each of Start, Boss, Heal, Shop — ticking
+them off on the Raid Room Build Sheet page as they go. Those eight double as step 2's Studio
+verification. Combat/Ambush go in a Folder (variants); the other four stay a loose Model.
+
+**ICON KEYS: the Asset Bench had FIVE STALE ONES and they are now fixed on the page.** The ore rework
+renamed them and the Bench was never updated, so any icon drawn to the old names resolves to nothing
+(`resolveIcon`, HudKit.lua:276, matches the ImageLabel's NAME inside `ReplicatedStorage.ItemIcons`).
+Old -> new: `ScrapIron`->`IronOre`, `CopperWire`->`CopperOre`, `SteelPlating`->`GoldOre`,
+`GoldContacts`->`PlatinumOre`, `HardenedPlate`->`PlatinumBar`. **The middle two are a RE-MAPPING, not
+a rename** — Gold and Platinum traded gate slots in the rework, so art drawn as `SteelPlating` now
+sits in the slot called `GoldOre`. The user said they had already drawn some of these; fixing them is
+a rename of the instance, never a redraw. Also corrected on the Bench the same day: weapon icons are
+SIX family icons not 18 (`HudKit.getItemIcon` falls back to `CraftingRecipes.Weapons[key].Family`),
+deployed robots need NO world model, `ServerStorage.DroneModels` is undeclared in
+`default.project.json`, and the rooms list was missing `Start` and `Ambush`.
 
 **Step 2 is BUILT (2026-09-08), NOT YET VERIFIED IN STUDIO** — room variant folders
 (`RaidRoomModels.<Type>` may now be a Folder of Models picked at random per node, via
