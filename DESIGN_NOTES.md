@@ -28,6 +28,7 @@ already made (numbers, mechanics, sequencing), not just vague direction.
 | Raid overhaul | **Scope cut to one mode for v1 (2026-09-08)** — steps 5-6 deferred post-launch; step 1 built AND VERIFIED in Studio 2026-09-08, step 2 (room variant folders) BUILT 2026-09-08, not yet verified in Studio, see Phase 00 below |
 | Enemy AI patterns | **Engine built, one pattern** — `Chaser`, and all six enemies use it |
 | Voidium infestation (lore + the raid boss) | **Designed 2026-09-08, nothing built** — see "The Voidium infestation" below |
+| Boss escort (spawn zones in the Boss room) | **Designed 2026-09-09, nothing built** — blocked on the spawn-zone curves; see "Boss escort" below |
 | Animation pass | **Deferred post-launch (2026-09-08)** — attack tell only at release; see Phase 01 |
 | Early-game pacing & onboarding | **Partially built** — item 1 (ore sells for Scrap) shipped in the ore rework; starter objectives (item 2) still planned, not built — see below |
 | Raid shop rework (run-only perks) | **Planned, not built** — half the tag plumbing exists |
@@ -533,6 +534,72 @@ The resulting ladder — three rungs built, one deliberately undefined:
 
 **Still open:** the bloom has no name, and the event-boss tier is intentionally blank. The user is
 still thinking about both. Do not invent either.
+
+### Boss escort — spawn zones in the Boss room — DESIGN ROUND 2026-09-09. NOTHING BUILT.
+
+Raised by the user: can a Boss room carry a spawn ZONE as well as its authored `SpawnPoint`, so the
+first few boss nodes are the bloom alone and deeper ones are bloom + minions? Yes — and it needs
+almost no new machinery, because the 2026-09-07/08 spawn round already decided points and zones are
+both honoured in the same room (see "Spawn zones + difficulty curves" above, agreed point 2).
+
+**Decision 1 — the Boss room is one authored `SpawnPoint` plus zones, and the escort needs no
+"activate at node N" flag.** Points spawn first and count against the room's enemy budget; zones fill
+whatever remains. So at shallow depth the budget is consumed by the bloom's point and the zones fill
+nothing — the boss-alone opening falls out of the existing curve rather than being switched on. A
+per-zone activation attribute was explicitly REJECTED: it would put encounter scaling in the room
+model as well as in config, which is the two-places-that-drift failure `OreGate`/`ApplyMods`/
+`MaxDeployedRobots` all exist because of. Geometry says WHERE, config says HOW MANY.
+
+**Decision 2 — `BossComposition` drops to exactly one.** `RaidConfig.BossComposition`
+(RaidConfig.lua:394) currently rolls `EnemyCountMin = 1, EnemyCountMax = 2`. The bloom is a single
+set-piece (see "The Voidium infestation", Decision 2), so this becomes `1, 1` and the room is
+authored with ONE point. Left at 1-2 it would need two authored points and half of all boss rooms
+would leave one unused.
+
+**Decision 3 — minions are FEWER, not weaker.** The offset is on the QUANTITY curve only. A minion at
+a given depth is exactly as tough as a regular Combat enemy at that depth: same roster
+(`EnemyConfig.Types`, NOT `EliteTypes`), same run-progression strength multiplier. What they do not
+get is the bloom's `BossComposition.Multiplier` of 2.6 — two multipliers live in the room, one for
+the bloom and one for the escort. Sharing it would mean every added body is an added ELITE body and
+the room's difficulty jumps far past what its enemy count suggests. Drawing the escort from
+`EliteTypes` was rejected for the same reason: a bloom flanked by two Hulks is just a second boss
+fight.
+
+**Decision 4 — the offset is a FRACTION of the Combat count, not a subtraction.** The user's call
+after both were laid out:
+
+- Subtraction (`combatCount - 3`) keeps a constant gap forever, so deep boss rooms end up with nearly
+  a full Combat room's worth of minions PLUS a boss — boss rooms get relatively heavier with depth.
+- Fraction keeps the room's shape proportional at every depth.
+
+The expression, one tunable:
+
+```
+minions = math.max(0, math.floor(combatCount * RaidConfig.BossMinionFraction) - 1)
+```
+
+The `-1` is STRUCTURAL, not a knob. A pure fraction does not produce the boss-alone opening the round
+started from: shallow Combat rolls ~2, and `floor(2 * 0.6)` is 1, so the very first boss node would
+already have an escort. With the `-1`: shallow resolves to 0 (bloom alone), `combatCount = 6`
+resolves to 2. Do not "simplify" it away.
+
+`RaidConfig.BossMinionFraction = 0.6` as a first guess, to sit beside `BossComposition`. It is the
+single number to move in playtesting; the shape around it should not need touching.
+
+**Decision 5 — the min-distance check widens to cover placed spawns, not just the player.** The spawn
+round already specifies a minimum-distance test against the player when placing inside a zone. A
+Boss-room zone that overlaps the arena would otherwise drop a Scavenger inside the bloom. Testing
+against anything already spawned in the room is nearly free at these counts and is the difference
+between an escort and a pile.
+
+**Explicitly PARKED — minions arriving mid-fight at boss HP thresholds.** Raised in passing and worth
+building eventually, but it is the Ambush multi-wave mechanism, not this one: count here is decided
+ONCE at room build from `totalNodesVisited`, the same input Combat rooms use. Folding a second
+trigger into the boss room would make it two systems at once. Separate build, later.
+
+**Depends on:** the spawn-zone curves themselves, which are DESIGNED but NOT BUILT (see "Spawn zones
++ difficulty curves" above — markers built 2026-09-08, curves not). There is no `combatCount` curve
+to take a fraction OF until that lands, so this cannot be built first.
 
 ### Phase 01 — build the rest
 
