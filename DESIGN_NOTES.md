@@ -647,6 +647,54 @@ Every number above — `HP`, `Defense`, `SlamWindup`, `SlamDamage` (42), `SlamRa
 and the Hulk's new 340 HP — is unplaytested config the user expects to rebalance once this is
 actually run in Studio. None of it should be read as tuned or final.
 
+### Burrower enemy — DEFERRED TO A POST-LAUNCH UPDATE (raised and shelved 2026-09-09)
+
+Raised by the user while planning the Scavenger's model: an enemy with mechanical claws that digs
+underground and resurfaces near the player, which would also justify why it is fast. Explored, then
+**deliberately shelved by the user for a future content update** rather than built — recorded here so
+the reasoning is not re-derived from scratch next time it comes up.
+
+**Why it did NOT go on the Scavenger.** Burrowing is a watch-that-one mechanic and the Scavenger is
+bulk chaff — `WaveConfig.GetEnemyCount` is `5 + floor(wave * 1.5)`, so eight or more are on the field
+by wave 2 and the roster is only three types deep. Eight simultaneous burrowers is noise, not
+tension. The mechanic wants its own low-count enemy. This was the user's own call after the tension
+was raised.
+
+**The lore question, and how it was settled.** A clawed digging creature initially looked like it
+reopened Decision 1 above ("Voidium infests hosts, it does not birth creatures"). It does not, on the
+user's reading: the claws are **mechanical, scavenged and strapped on**, which is exactly the Rebel
+faction brief in `EnemyConfig.lua`'s header — everything a Rebel wears was taken off something else.
+A Rebel wielding a digging rig torn off a Construct reinforces the faction rather than straining it.
+That reading stands whether or not the burrow mechanic is ever built, and it is also just a better
+Scavenger prop than the "improvised weapon" the art direction originally called for: it gives the
+crowd a CONSTANT (every Scavenger has the claw) while leaving the rest of the body free to vary, and
+it explains why the game's weakest enemy is dangerous at all — the claw is the threat, the person
+swinging it is 18 HP.
+
+**Three things already worked out, for whenever it is built:**
+
+1. **It would be the third `EnemyAI.Patterns` entry** — one function plus one config entry, no
+   dispatch change, same as `Slam` was.
+2. **It reads differently per mode, and that is fine — see `Slam`'s precedent.** In a raid the player
+   IS the damage sink, so surfacing next to them is a straightforward ambush. In base defense
+   enemies target the WALL, not the player, so "surface near the player" has no target — but
+   surfacing PAST the player's turret coverage is a real flank, since turrets have range and the
+   whole approach is what the defenses are built along. Do not branch on mode; let
+   `context.TargetPosition` mean what it already means.
+3. **The one hazard, and it is a bug this file has already recorded once.** `isEnemyAlive` is
+   `Health > 0 and PrimaryPart ~= nil` (CombatEncounterService.lua), and its comment records a real
+   incident where an enemy that was alive but untargetable meant **the wave never ended**. So a
+   burrowed state must be a FLAG on the enemy record — never removing `PrimaryPart`, destroying
+   parts, or unparenting the Model — and the resurface must run off a guaranteed timer, not a
+   condition that can fail to fire. An alive, unkillable, underground enemy is that exact bug again.
+
+**Also noted:** `EnemyConfig.ScrapCrawler` ("a maintenance drone with its safety governor long since
+fried. Erratic, not smart.") is defined, never spawned, Construct faction, 22 HP, speed 14 — it was
+floated as the natural home for this and is still sitting unused in the config. Adding any unused
+type to the live roster is one string in `WaveConfig.EnemyTypes`, currently
+`{ "Raider", "Scavenger", "Brute" }`.
+
+
 ### Boss escort — spawn zones in the Boss room — DESIGN ROUND 2026-09-09. NOTHING BUILT.
 
 Raised by the user: can a Boss room carry a spawn ZONE as well as its authored `SpawnPoint`, so the
