@@ -644,8 +644,9 @@ no manual copy-pasting scripts into Studio.
 - **Admin dev shortcuts** — `AdminConfig.lua` auto-detects the place's owner (via
   `game.CreatorId`, which works automatically in Studio when you're testing as yourself; add your
   UserId to `AdminUserIds` too if the game ends up owned by a Group). Admins win any Combat raid
-  instantly, and get a set of chat commands for testing things without grinding the systems
-  upstream of them:
+  instantly, never run out of Energy (expeditions and raid rooms are both free — the display just
+  stays pinned at full), and get a set of chat commands for testing things without grinding the
+  systems upstream of them:
 
   | Command | What it does |
   |---|---|
@@ -885,9 +886,11 @@ to end:
    Scrap/ore you've earned; click the Heal node any time
    your HP is low. Raid a 6th time with Energy at 0 and you should get a "Not enough Energy"
    warning in Output instead of the raid starting. (If you're testing as the place's owner, raids
-   resolve as an instant win with no Energy spent — see "Admin dev shortcuts" above. Add a
-   teammate's UserId to `AdminConfig.AdminUserIds` if you want them to see normal combat while
-   you test as admin, or vice versa.)
+   resolve as an instant win and Energy never drains — see "Admin dev shortcuts" above. To see
+   the real Energy ceiling as yourself, either type `/admin off` or turn TEST MODE on and rejoin;
+   infinite Energy is off in a test session. Add a teammate's UserId to
+   `AdminConfig.AdminUserIds` if you want them to see normal combat while you test as admin, or
+   vice versa.)
 10. Place one more Part near your base, tag it `ExpeditionStart` (whichever way its front face
    points is the lane direction), and tag a second Part near it `ExpeditionLever`. Press Play —
    the lane area should be **empty** at first, nothing spawns on its own anymore. Hold the

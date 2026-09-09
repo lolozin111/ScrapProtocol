@@ -48,7 +48,6 @@ local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
 
 local ExpeditionConfig = require(ReplicatedStorage.Shared.ExpeditionConfig)
-local AdminConfig = require(ReplicatedStorage.Shared.AdminConfig)
 local RaidEnergyService = require(script.Parent.RaidEnergyService)
 local RateLimiter = require(script.Parent.RateLimiter)
 
@@ -397,7 +396,8 @@ end
 -- not per Combat node inside the run (see NodeService's StartOutpostRaid, which no longer touches
 -- Energy at all). Pulling the lever IS "starting an exploration," so this is the one true charge
 -- point; whatever Combat/Shop/Heal rows end up in that run are already paid for. Admins skip the
--- cost same as everywhere else (see AdminConfig.lua).
+-- cost same as everywhere else — that bypass lives inside RaidEnergyService.HasInfiniteEnergy
+-- now, not here, so raid rooms get it too and a Player Test Session correctly does not.
 Remotes.RegenerateExpedition.OnServerEvent:Connect(function(player: Player, lever: Instance)
 	if typeof(lever) ~= "Instance" or not CollectionService:HasTag(lever, LEVER_TAG) then
 		return
@@ -421,7 +421,7 @@ Remotes.RegenerateExpedition.OnServerEvent:Connect(function(player: Player, leve
 		return
 	end
 
-	if not AdminConfig.IsAdmin(player) and not RaidEnergyService.TrySpendEnergy(player) then
+	if not RaidEnergyService.TrySpendEnergy(player) then
 		Remotes.OutpostUpdate:FireClient(player, { Status = "NoEnergy" })
 		return
 	end

@@ -1,8 +1,13 @@
 --[[
 	AdminConfig.lua
 	Tiny admin/owner check used to gate developer-only shortcuts (right now: instantly winning
-	Combat raids with no Energy cost instead of playing out the timed simulation — see
-	NodeService.lua's runRaid).
+	Combat raids instead of playing out the timed simulation — see NodeService.lua's runRaid —
+	and infinite Energy, via RaidEnergyService.HasInfiniteEnergy).
+
+	Infinite Energy is the one shortcut that is ALSO conditioned on not being in a Player Test
+	Session (DataService.IsTestSession): test mode exists to see the game as a new player does,
+	and an Energy ceiling you can never hit would hide exactly the pacing problems it is meant
+	to surface. Everything else here stays on in a test session.
 
 	Two ways to count as admin:
 	  1. You're testing in Studio (or any server) as the account that owns this place. Detected

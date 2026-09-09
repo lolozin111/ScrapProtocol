@@ -2757,8 +2757,12 @@ suggested) of whatever the raider actually got from the invasion.
 
 - `AdminConfig.lua` — the game's owner (auto-detected via `game.CreatorId`, or an explicit
   `AdminUserIds` list for Group-owned games/teammates) gets dev-only shortcuts: raids resolve as
-  an instant win with no Energy cost, no gear/cooldown checks. Purely a testing aid, not a player
-  feature.
+  an instant win, no gear/cooldown checks, and Energy is effectively infinite
+  (`RaidEnergyService.HasInfiniteEnergy` — every spend path returns true without deducting, and
+  the regen loop keeps the number pinned at `MaxEnergy` so the HUD doesn't read as stuck). Purely
+  a testing aid, not a player feature. Infinite Energy is the one shortcut that Player Test Mode
+  turns back OFF: a test session exists to see the game as a new player does, and an unreachable
+  Energy ceiling would hide exactly the pacing problem it's there to surface.
 - Expedition start/end is currently lever-pull-to-start, "Return to Base" button-to-end. This is
   a deliberate placeholder for a real teleport-to-a-separate-instance flow, not the final design.
 - `ResourceZoneService.lua`/`ResourceZoneConfig.lua` (the old scattered-ring ore layout) are

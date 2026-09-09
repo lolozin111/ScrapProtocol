@@ -21,6 +21,7 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local AdminConfig = require(ReplicatedStorage.Shared.AdminConfig)
 local RaidEnergyConfig = require(ReplicatedStorage.Shared.RaidEnergyConfig)
 local DataService = require(script.Parent.DataService)
 
@@ -28,10 +29,39 @@ local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 
 local RaidEnergyService = {}
 
+-- Infinite Energy for admins, EXCEPT while they're in a Player Test Session — the whole point of
+-- test mode is to see the game the way a new player does, and a resource ceiling you can't hit is
+-- exactly the kind of thing that would hide a pacing problem. So the shortcut is deliberately the
+-- one thing test mode turns back off.
+--
+-- Lives here rather than at each call site so every spend path honours it identically. It used to
+-- be an `AdminConfig.IsAdmin(player) and` guard inline in ExpeditionService's lever handler, which
+-- (a) didn't apply to raid rooms and (b) stayed on inside a test session.
+function RaidEnergyService.HasInfiniteEnergy(player: Player): boolean
+	return AdminConfig.IsAdmin(player) and not DataService.IsTestSession(player)
+end
+
+-- Snaps an infinite-Energy player back to full and tells their HUD. Without this the number in
+-- the currency strip would just sit at whatever it was when the shortcut kicked in — technically
+-- harmless, since nothing is ever deducted, but it reads as broken.
+local function refill(player: Player, profile): boolean
+	if profile.Energy >= RaidEnergyConfig.MaxEnergy then
+		return false
+	end
+	profile.Energy = RaidEnergyConfig.MaxEnergy
+	Remotes.InventoryUpdate:FireClient(player, { Energy = profile.Energy })
+	return true
+end
+
 function RaidEnergyService.TrySpendEnergy(player: Player, amount: number?): boolean
 	local profile = DataService.Get(player)
 	if not profile then
 		return false
+	end
+
+	if RaidEnergyService.HasInfiniteEnergy(player) then
+		refill(player, profile)
+		return true
 	end
 
 	local cost = amount or RaidEnergyConfig.EnergyPerExpedition
@@ -57,14 +87,32 @@ end
 
 -- Shared regen loop. Only tops players up to MaxEnergy — anything above that (from a drink) just
 -- sits there until spent, it doesn't get topped up further by this.
+--
+-- Ticks far more often than RegenIntervalSeconds so an infinite-Energy admin's display catches up
+-- promptly (joining, or flipping /admin back on mid-session, would otherwise leave them reading a
+-- stale low number for minutes). Ordinary regen still only lands every RegenIntervalSeconds — the
+-- accumulator below is what keeps the two rates independent.
+local REGEN_POLL_SECONDS = 2
+
 task.spawn(function()
+	local sinceRegen = 0
 	while true do
-		task.wait(RaidEnergyConfig.RegenIntervalSeconds)
+		local dt = task.wait(REGEN_POLL_SECONDS)
+		sinceRegen += dt
+		local regenTick = sinceRegen >= RaidEnergyConfig.RegenIntervalSeconds
+		if regenTick then
+			sinceRegen = 0
+		end
+
 		for _, player in ipairs(Players:GetPlayers()) do
 			local profile = DataService.Get(player)
-			if profile and profile.Energy < RaidEnergyConfig.MaxEnergy then
-				profile.Energy += 1
-				Remotes.InventoryUpdate:FireClient(player, { Energy = profile.Energy })
+			if profile then
+				if RaidEnergyService.HasInfiniteEnergy(player) then
+					refill(player, profile)
+				elseif regenTick and profile.Energy < RaidEnergyConfig.MaxEnergy then
+					profile.Energy += 1
+					Remotes.InventoryUpdate:FireClient(player, { Energy = profile.Energy })
+				end
 			end
 		end
 	end
