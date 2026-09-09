@@ -281,6 +281,15 @@ flattening curve.
      into `RunRaidCombat` with the same nil-fallback `beginCombat` uses — but it is a CODE change
      and is NOT done. Until it lands, author the marker (it costs nothing and is the right one) but
      do not tune its position.
+   - **FIXED 2026-09-09, points only.** `beginBoss` now calls `collectSpawnPoints` directly and
+     passes the result as `RunRaidCombat`'s `explicitSpawns`, so an authored Boss room spawns its
+     boss exactly where the Part sits. Deliberately NOT `resolveEnemyPlacements`: that path's
+     zone-filled enemies would inherit `composition.Multiplier` (2.6x), making every zone-added body
+     an elite body — the exact failure Decision 3 of the Boss escort round names. Zones in a Boss
+     room stay inert BY DESIGN until the escort build gives minions their own multiplier and roster.
+     Note the consequence: with points authored, the points decide the count (one Part, one enemy)
+     and the `BossComposition` roll only sizes the procedural fallback — so a one-point Boss room is
+     now a reliable single-boss fight without waiting on `EnemyCountMax` dropping to 1.
 
 2. **Two different curves, deliberately opposed.** The user's call, and a sharper answer than the
    "make count the only axis" advice it replaced. QUANTITY grows on a loose log — climbing early,

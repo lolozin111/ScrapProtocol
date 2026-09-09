@@ -212,10 +212,10 @@ RaidConfig.SpawnPointEnemyAttribute = "EnemyType"
 -- ModConfig.ApplyMods and CraftingRecipes.MaxDeployedRobots all exist because of it). Zones and
 -- SpawnPoints COEXIST in one room: authored points spawn first and count against the room's enemy
 -- budget, zones fill whatever remains. That is what lets one pinned set piece sit inside a rolled
--- encounter without a second system. NOTE: Boss rooms honour NEITHER marker today — beginBoss calls
--- RunRaidCombat with no explicitSpawns argument at all (unlike beginCombat and the Ambush loop, which
--- both go through resolveEnemyPlacements), so an authored Boss room spawns procedurally around the
--- room centre no matter what is placed in it. Boss rooms are INTENDED to use points only.
+-- encounter without a second system. Boss rooms use POINTS ONLY: beginBoss calls collectSpawnPoints
+-- directly rather than resolveEnemyPlacements, because a zone-filled enemy there would inherit
+-- BossComposition.Multiplier and every zone-added body would be an elite one. A SpawnZone in a Boss
+-- room is therefore inert by design until the escort build lands.
 -- SpawnZoneMinPlayerDistance (studs) keeps an enemy from materialising in the player's face;
 -- SpawnZoneFloorOffset (studs) is how far above the floor the raycast result is nudged so nothing
 -- spawns embedded in geometry; SpawnZoneMaxPlacementAttempts is how many times one enemy's

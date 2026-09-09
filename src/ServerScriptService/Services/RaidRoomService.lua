@@ -1196,7 +1196,21 @@ local function beginBoss(state, node)
 	local roomCenter = roomEncounterCenter(state)
 	local runMultiplier = RaidConfig.GetRunProgressionMultiplier(state.TotalNodesVisited)
 	local count = math.random(composition.EnemyCountMin, composition.EnemyCountMax)
-	local spawnKeys = pickBossSpawnKeys(count)
+
+	-- Authored placement for Boss rooms — collectSpawnPoints DIRECTLY, deliberately NOT the full
+	-- resolveEnemyPlacements point+zone path beginCombat/beginAmbush use. A zone-filled enemy here
+	-- would inherit `multiplier` below, i.e. composition.Multiplier (2.6x), so every body a zone
+	-- added would be an ELITE body and the room's difficulty would jump far past what its enemy
+	-- count suggests — see DESIGN_NOTES "Boss escort", Decision 3. Zones in a Boss room therefore
+	-- stay inert until the escort build gives minions their own multiplier and their own roster.
+	-- Points only, as the 2026-09-07 round always intended and this path never actually did.
+	-- With points authored, THEY decide the count (one Part, one enemy) and the BossComposition
+	-- roll above only sizes the procedural fallback, exactly as in beginCombat.
+	local explicitSpawns = state.RoomFolder and collectSpawnPoints(state.RoomFolder)
+	local spawnKeys = {}
+	if not explicitSpawns then
+		spawnKeys = pickBossSpawnKeys(count)
+	end
 	local multiplier = composition.Multiplier * runMultiplier
 
 	task.spawn(function()
@@ -1204,7 +1218,7 @@ local function beginBoss(state, node)
 			payload = payload or {}
 			payload.Status = "Boss" .. eventStatus -- "BossStart" / "BossTick" / "BossEnd"
 			RaidRoomUpdate:FireClient(state.Player, payload)
-		end)
+		end, explicitSpawns)
 
 		if activeRaids[state.Player.UserId] ~= state then
 			return
