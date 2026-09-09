@@ -191,7 +191,7 @@ RaidConfig.PlayerSpawnName = "PlayerSpawn"
 
 -- Room-authored enemy placement — build a Combat/Ambush Room Model in Studio with Parts named
 -- exactly SpawnPointName, each carrying a string Attribute named SpawnPointEnemyAttribute set to an
--- enemy type key (one of EnemyConfig.Types/EliteTypes' keys, e.g. "Raider", "Brute",
+-- enemy type key (one of EnemyConfig.Types/EliteTypes/BossTypes' keys, e.g. "Raider", "Brute",
 -- "ScrapCrawler"). RaidRoomService.beginCombat looks for these first and spawns exactly what's
 -- placed, at the exact positions placed, instead of its own random composition — a room with none
 -- falls back to that original procedural roll unchanged. A SpawnPoint with a missing or
@@ -396,9 +396,9 @@ RaidConfig.CombatTierComposition = {
 }
 
 -- Boss composition — deliberately its own tiny table, not reused from CombatTierComposition above.
--- A Boss room is meant to be one or two genuinely tough EliteTypes enemies (see
--- RaidRoomService.pickBossSpawnKeys, drawing from EnemyConfig.EliteTypes instead of the normal
--- roster), not just "more of the regular enemies."
+-- A Boss room is meant to be one or two genuinely tough BossTypes enemies (see
+-- RaidRoomService.pickBossSpawnKeys, drawing from EnemyConfig.BossTypes, which is boss-only and
+-- read from nowhere else), not just "more of the regular enemies."
 RaidConfig.BossComposition = { EnemyCountMin = 1, EnemyCountMax = 2, Multiplier = 2.6 }
 
 RaidConfig.AmbushChance = 0.16 -- flat probability a non-forced-Heal, non-Shop regular node is an

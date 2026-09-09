@@ -33,7 +33,7 @@
 	                "Buy" (repeatable) and "Continue" RaidRoomActions.
 	  Boss       -> RaidConfig.GenerateMap already picked which nodes are Boss (see that file's
 	                placeBossNodes) — this just runs one tougher RunRaidCombat encounter off
-	                RaidConfig.BossComposition/EnemyConfig.EliteTypes (beginBoss below). Cleared
+	                RaidConfig.BossComposition/EnemyConfig.BossTypes (beginBoss below). Cleared
 	                fully heals the player, grants NodeConfig.BossLoot, and offers a rarity-weighted
 	                card pick (RaidConfig.RollCardChoices) BEFORE advancing — the player has to
 	                actually choose (RaidRoomAction "ChooseCard") before the map moves on. Defeated
@@ -951,18 +951,23 @@ pickRaidSpawnKeys = function(count: number): { string }
 	return keys
 end
 
--- Same idea as pickRaidSpawnKeys above, but for Boss encounters — draws from EnemyConfig.EliteTypes
+-- Same idea as pickRaidSpawnKeys above, but for Boss encounters — draws from EnemyConfig.BossTypes
 -- instead of the normal roster (see RaidConfig.BossComposition's own comment on why), filtered down
 -- to built models the same way.
+--
+-- This used to read EnemyConfig.EliteTypes, which was the same table CombatEncounterService's wave
+-- elite pick drew from — so the raid's terminal encounter was also a routine spawn every fifth
+-- wave, and a boss stopped reading as one. BossTypes is boss-only and read from here and nowhere
+-- else; the wave side keeps EliteTypes to itself.
 local function pickBossSpawnKeys(count: number): { string }
 	local available = {}
-	for key in pairs(EnemyConfig.EliteTypes) do
+	for key in pairs(EnemyConfig.BossTypes) do
 		if CombatEncounterService.HasModelFor(key) then
 			table.insert(available, key)
 		end
 	end
 	if #available == 0 then
-		for key in pairs(EnemyConfig.EliteTypes) do
+		for key in pairs(EnemyConfig.BossTypes) do
 			table.insert(available, key)
 		end
 	end
@@ -1186,7 +1191,7 @@ end
 
 -- Boss — RaidConfig.GenerateMap's placeBossNodes already decided which nodes are Boss; this just
 -- runs one tougher RunRaidCombat encounter (RaidConfig.BossComposition, drawing from
--- EnemyConfig.EliteTypes via pickBossSpawnKeys instead of the normal roster). Clearing it fully
+-- EnemyConfig.BossTypes via pickBossSpawnKeys instead of the normal roster). Clearing it fully
 -- heals the player and offers a rarity-weighted card pick BEFORE advancing — "once the boss fight
 -- clears, you get healed, and you roll some cards with buffs... pretty roguelike" — the player has
 -- to actually choose (see RaidRoomAction's "ChooseCard" handler below) before the map moves on.

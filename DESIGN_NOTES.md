@@ -26,8 +26,8 @@ already made (numbers, mechanics, sequencing), not just vague direction.
 | Player Test Mode (admin throwaway profile) | **Built** — see "Data safety" section below |
 | HUD phase 3 (all station menus) | **Built and verified** — see "Road to release" below |
 | Raid overhaul | **Scope cut to one mode for v1 (2026-09-08)** — steps 5-6 deferred post-launch; step 1 built AND VERIFIED in Studio 2026-09-08, step 2 (room variant folders) BUILT 2026-09-08, not yet verified in Studio, see Phase 00 below |
-| Enemy AI patterns | **Engine built, one pattern** — `Chaser`, and all six enemies use it |
-| Voidium infestation (lore + the raid boss) | **Designed 2026-09-08, nothing built** — see "The Voidium infestation" below |
+| Enemy AI patterns | **Engine built, two patterns** — `Chaser` (six enemy types) and, shipped 2026-09-09, `Slam` (`Siegebreaker` only — a telegraphed wind-up/impact cycle, see "The Voidium infestation" below) |
+| Voidium infestation (lore + the raid boss) | **Partially built 2026-09-09** — `EliteTypes`/`BossTypes` split into separate pools and `Siegebreaker` shipped as the new elite; the bloom itself (the actual raid boss per Decision 2 below) is still designed, not built — see "The Voidium infestation" below |
 | Boss escort (spawn zones in the Boss room) | **Designed 2026-09-09, nothing built** — blocked on the spawn-zone curves; see "Boss escort" below |
 | Animation pass | **Deferred post-launch (2026-09-08)** — attack tell only at release; see Phase 01 |
 | Early-game pacing & onboarding | **Partially built** — item 1 (ore sells for Scrap) shipped in the ore rework; starter objectives (item 2) still planned, not built — see below |
@@ -240,7 +240,8 @@ cloned and `PivotTo`'d there. (This paragraph used to say a missing `PrimaryPart
 placeholder SILENTLY. It no longer does: `pickRoomTemplate` warns, naming the offender, before
 falling back.) Inside: `SpawnPoint`
 Parts with a String attribute `EnemyType` from `Scavenger`/`Raider`/`Brute`/`ScrapCrawler`/
-`SentinelDrone`/`VoidwakenHulk` (unrecognised spawns nothing and warns; none at all falls back to the
+`SentinelDrone`/`Siegebreaker`/`VoidwakenHulk` (any key in EnemyConfig's
+Types/EliteTypes/BossTypes; unrecognised spawns nothing and warns; none at all falls back to the
 random 50-70 stud ring), and an `InteractPoint` Part on Heal/Shop which gets a ProximityPrompt added
 automatically. No Model gives a 260x260 concrete square with an invisible guard rail. Rooms build at
 `(0, 800, 0)`, 600 studs apart, up to 20 concurrent — each alone in its slot, so rotation never
@@ -473,16 +474,23 @@ Where it fits: essentially Phase 00 step 3 (mode plumbing) with a spawn-composit
 `state.TotalNodesVisited` is already the depth input and already drives loot, so enemy count and
 reward would scale off one counter and stay coherent for free.
 
-### The Voidium infestation — LORE ROUND 2026-09-08. NOTHING BUILT.
+### The Voidium infestation — LORE ROUND 2026-09-08. Pool split + `Siegebreaker` SHIPPED 2026-09-09; the bloom itself still NOTHING BUILT.
 
-Raised by the user while thinking about what the raid Boss should be. This is fiction and scoping,
-not a build; no code exists for any of it. Recorded because it is the input step 7 (enemy AI
-patterns) has been waiting on — what enemies DO follows from what they ARE.
+Raised by the user while thinking about what the raid Boss should be. This started as fiction and
+scoping, not a build — no code existed for any of it at the time. Recorded because it is the input
+step 7 (enemy AI patterns) has been waiting on — what enemies DO follows from what they ARE. One
+piece of it stopped being fiction on 2026-09-09: see "Two things to settle before any of it is
+built," item 1, now RESOLVED, and the new "Siegebreaker — design rationale" subsection below. The
+bloom itself (Decision 2) is still unbuilt.
 
-**The finding the round started from.** `RaidConfig.BossComposition` (RaidConfig.lua:394) is 1-2
-enemies at 2.6x drawn from `EnemyConfig.EliteTypes`, and `EliteTypes` has exactly ONE entry. So every
-Boss room today is one or two `VoidwakenHulk`s, and they are also what elite waves spawn in base
-defense. **There is no boss identity — there is a pool of one.**
+**The finding the round started from, and the state as of 2026-09-08 (now fixed — read on).**
+`RaidConfig.BossComposition` (RaidConfig.lua:394) was 1-2 enemies at 2.6x drawn from
+`EnemyConfig.EliteTypes`, and `EliteTypes` had exactly ONE entry. So every Boss room was one or two
+`VoidwakenHulk`s, and they were also what elite waves spawned in base defense. **There was no boss
+identity — there was a pool of one.** This is the exact problem item 1 below was raised to solve,
+and it is now solved: `BossComposition` reads a new `EnemyConfig.BossTypes` table instead, holding
+only `VoidwakenHulk`; `EliteTypes` now holds a different entry, `Siegebreaker`, built for this
+session. The two pools cannot cross-contaminate any more — see that item for the mechanics.
 
 **What was already written, and is now load-bearing.** `EnemyConfig.lua`'s header defines two
 factions: **Construct** (scavenged security drones and automation gone haywire — "the nastier ones
@@ -516,7 +524,13 @@ of weight:
 **Decision 3 — the raid boss is MECHANICALLY the boss but LORE-WISE a minor thing.** The user's
 call, and the sharpest part of the round. The bigger bosses are reserved for events and post-launch
 updates. Mechanically nothing changes: it stays in `EliteTypes`, `BossComposition`'s 1-2 at 2.6x is
-the right shape. What it buys:
+the right shape. **CORRECTION 2026-09-09 — "it stays in `EliteTypes`" is no longer literally
+true.** The user's later call the same day (item 1 below, RESOLVED) moved `VoidwakenHulk` into a
+new `BossTypes` table and put a different enemy, `Siegebreaker`, in `EliteTypes` instead — so the
+Hulk is no longer what a base-defense elite wave spawns. Nothing about the LORE point here changes:
+the Hulk still fills the boss slot, `BossComposition`'s shape (1-2 at 2.6x) is untouched, and this
+decision's actual claim — mechanically-boss, lore-wise-minor — still holds. What moved is only
+which enemy sits in which pool. What it buys:
 
 - **It solves the repetition problem.** You fight a Boss room every map. If the raid boss were the
   apex of the world you would kill the biggest thing alive weekly and it would stop meaning anything
@@ -526,7 +540,8 @@ the right shape. What it buys:
 - It retro-justifies the Hulk: a corrupted Construct implies something nearby doing the corrupting,
   and that something is now what you fight at the end of the map.
 
-The resulting ladder — three rungs built, one deliberately undefined:
+The resulting ladder as ORIGINALLY DESIGNED in this round — three rungs built, one deliberately
+undefined:
 
 | Rung | What | State |
 |---|---|---|
@@ -535,16 +550,48 @@ The resulting ladder — three rungs built, one deliberately undefined:
 | Raid boss | the bloom | DESIGNED, not built, unnamed |
 | Event bosses | whatever seeds blooms | undefined ON PURPOSE |
 
+**RECONCILIATION 2026-09-09 — read this honestly, not smoothed over.** The table above is what this
+round intended: the bloom as the real raid boss, the Hulk as the elite beneath it (Decision 2,
+reason 1 — "It is not the Hulk. Otherwise the Boss room is the elite you already fight, larger.").
+That is NOT what shipped. The user's separate call today, ahead of the bloom existing, moved the
+Hulk into the boss slot and put a new enemy, `Siegebreaker`, in the elite slot instead (item 1
+below, RESOLVED). The ladder as it actually stands right now:
+
+| Rung | What | State |
+|---|---|---|
+| Trash | Constructs and Rebels | 5 types built |
+| Elite | `Siegebreaker` | built 2026-09-09 — see "Siegebreaker — design rationale" below |
+| Raid boss | `VoidwakenHulk` | built; holding the boss slot until the bloom exists |
+| Event bosses | whatever seeds blooms | undefined ON PURPOSE |
+
+Read `EnemyConfig.BossTypes` as **"whatever currently occupies the boss slot,"** not as "the boss."
+Today that's the Hulk, filling in early. When the bloom ships, the more likely shape is `BossTypes`
+gaining a SECOND entry (the bloom) rather than replacing the Hulk outright — a Boss room could then
+roll either, or the bloom specifically at deeper stages — but that is a future decision, not one
+made here; do not assume it before it's discussed.
+
+**The art consequence is real and worth stating plainly:** whoever designs/models `VoidwakenHulk`
+should NOT treat it as the final word on what a raid Boss room looks or feels like. Decision 2's
+whole point was that the actual raid boss should not just be "the elite you already fought, but
+bigger" — that reasoning didn't go away just because the Hulk is filling the slot early. Build the
+Hulk knowing a mechanically and visually different boss is still coming behind it. Enemy art
+direction (covers both `Siegebreaker` and `VoidwakenHulk`):
+https://claude.ai/code/artifact/4089f017-a2e1-4012-973a-1e394c58f05f
+
 **Two things to settle before any of it is built:**
 
-1. **`EliteTypes` is one pool serving three jobs** — raid Boss rooms (`pickBossSpawnKeys`,
-   RaidRoomService.lua:954), base-defense elite waves (CombatEncounterService.lua:191), and authored
-   `SpawnPoint` markers (RaidConfig.lua:194, which accepts any `Types`/`EliteTypes` key). Adding the
-   bloom to `EliteTypes` therefore also starts spawning it at the player's plot on elite waves, which
-   is odd if blooms grow in raid sectors. Cheapest fix is a `BossEligible`/`WaveEligible` flag or a
-   separate pool — decided once, before the entry exists, not retrofitted. This is the same
-   one-table-three-questions drift shape `OreGate`/`ApplyMods`/`MaxDeployedRobots` all exist because
-   of.
+1. ~~**`EliteTypes` is one pool serving three jobs**~~ — RESOLVED 2026-09-09. Took the separate-pool
+   option this item itself named as the cheapest fix: `EnemyConfig.BossTypes` (EnemyConfig.lua:174)
+   is a new table, read only by `RaidRoomService.pickBossSpawnKeys` (RaidRoomService.lua:962);
+   `EnemyConfig.EliteTypes` is read only by the base-defense elite pick
+   (`CombatEncounterService.pickSpawnKeys`, line 183) and by authored `SpawnPoint` markers, unaffected
+   by the split since `RaidConfig.lua:194`'s comment already covered any `Types`/`EliteTypes`/
+   `BossTypes` key. `VoidwakenHulk` moved into `BossTypes`; `Siegebreaker` is a brand-new type built
+   to refill `EliteTypes` rather than leaving it empty. `getEnemyTypeData`
+   (`CombatEncounterService.lua:209`) now falls through all three tables in one lookup, shared by
+   every spawn path — wave, raid, boss, and authored point alike — so nothing had to special-case
+   which pool an enemy came from. See "Siegebreaker — design rationale" below for what the new type
+   actually is and why it is not just the Hulk under a different name.
 2. **The Boss node's `DisplayName` is currently `"Boss"`**, and exit doors plus the Sector Map both
    render the destination type's DisplayName — so the door announces exactly the significance
    Decision 3 says it should not have. `"Bloom"`/`"Growth"`/`"Infestation"` reads as a place rather
@@ -553,6 +600,52 @@ The resulting ladder — three rungs built, one deliberately undefined:
 
 **Still open:** the bloom has no name, and the event-boss tier is intentionally blank. The user is
 still thinking about both. Do not invent either.
+
+### Siegebreaker — design rationale (SHIPPED 2026-09-09, NOT verified in Studio)
+
+Full spec: https://claude.ai/code/artifact/152b056a-bfd6-454d-923a-04e312e6ffa9
+
+The new elite that refills `EliteTypes` now that `VoidwakenHulk` moved out (item 1 above,
+RESOLVED). Two rungs, two identities, deliberately not the same axis:
+
+- **Elite = armour.** `Siegebreaker`'s `Defense` is 45 (`EnemyConfig.EliteTypes.Siegebreaker`,
+  EnemyConfig.lua) against a Construct base of 12 and the Hulk's own 28 — the most heavily
+  defended thing in the game. A player fighting one watches their own damage numbers drop and has
+  to change weapon or target rather than just out-DPSing it, which is a different pressure than
+  "this one has more HP." Its HP, 140, is unremarkable on purpose.
+- **Boss = mass.** `VoidwakenHulk` out-bulks it on raw HP instead — 340 base
+  (`EnemyConfig.BossTypes.VoidwakenHulk`), which then also eats `RaidConfig.BossComposition`'s
+  2.6x multiplier (884) before the run's own strength scaling is even applied. Its own `Defense`
+  (28) is lower than the Siegebreaker's. The split is deliberate: elite tests whether you can get
+  through something, boss tests whether you can out-damage something before it out-damages you.
+
+**The slam replaces contact damage, it does not stack on it.** `Siegebreaker`'s `ContactDamage` is
+0 — `EnemyAI.Patterns.Slam` (EnemyAI.lua) is a three-state idle/wind-up/impact cycle instead of the
+flat per-tick `Chaser` hit, and it is the ONLY damage the type deals. Stacking a heavy telegraphed
+hit on top of a normal contact cooldown would read as unfair damage from something standing next to
+you rather than a single readable blow; replacing it keeps the telegraph honest — the red disc
+growing under the model, holding for `SlamWindup` (0.9s) before the hit lands on a `SlamCooldown`
+(3.5s) cycle, timed from IMPACT rather than from wind-up start specifically so a future tuning pass
+shortening the tell can't silently shorten the real cooldown as a side effect.
+
+**The key mechanic, and the one future session should not "fix":** the impact's radius check
+(`(context.TargetPosition - enemy.SlamCentre).Magnitude <= enemy.SlamRadius`, `SlamRadius` = 14
+studs) is deliberately MODE-AGNOSTIC. `context.TargetPosition` is already documented (EnemyAI.lua's
+own header) as "just a point in space to defend" — the plot's fixed anchor in a wave, the player's
+own live position in a raid — and `Slam` reuses that one check unmodified in both. The wall cannot
+move, so in base defense the same check is an unavoidable heavy hit on a long, readable cadence,
+which is fine, it is a wall. A raid player CAN walk out of the 14-stud circle during the 0.9s
+wind-up they were just shown, so the identical check is a genuine, learnable dodge there. **Do not
+split this into a wave-branch and a raid-branch "to make it fair"** — the fairness difference IS
+the point, and it already falls out of what `TargetPosition` means in each mode without this
+pattern ever needing to know which mode it is running in. `EnemyAI.lua`'s own inline comment on the
+impact branch says the same thing, for the same reason a design note should say it too: this is the
+kind of "obviously asymmetric, therefore surely a bug" shape that gets "fixed" by someone who hasn't
+read why it's asymmetric on purpose.
+
+Every number above — `HP`, `Defense`, `SlamWindup`, `SlamDamage` (42), `SlamRadius`, `SlamCooldown`,
+and the Hulk's new 340 HP — is unplaytested config the user expects to rebalance once this is
+actually run in Studio. None of it should be read as tuned or final.
 
 ### Boss escort — spawn zones in the Boss room — DESIGN ROUND 2026-09-09. NOTHING BUILT.
 
@@ -3051,6 +3144,33 @@ fine.
   zones there would inherit the 2.6x boss multiplier). NOT yet verified in Studio: run a raid to a
   Boss node and check the Hulk lands on the authored Part rather than the room centre.
 - `549da86` — **shipped**: `AmbushWaveMax` 7 -> 8, plus the marker firing-rules table.
+
+**SESSION OF 2026-09-09, separately — the elite/boss pool split, `Siegebreaker` shipped. NONE OF
+THIS IS VERIFIED IN STUDIO.** `EnemyConfig.EliteTypes` and a new `EnemyConfig.BossTypes` table are
+now two separate pools instead of one table serving both jobs — see "The Voidium infestation"
+section above, item 1 (now RESOLVED) and "Siegebreaker — design rationale" for the full mechanics
+and the honest reconciliation with the earlier bloom-as-boss lore round. In short: `VoidwakenHulk`
+moved into `BossTypes` and its HP went 220 -> 340; a new type, `Siegebreaker`, was built to refill
+`EliteTypes`; `EnemyAI.Patterns.Slam` is a new, second AI pattern (the first was `Chaser`, alone,
+since the combat engine shipped) — a telegraphed wind-up/impact cycle whose radius check is
+deliberately mode-agnostic (wall in a wave, player in a raid).
+
+**Nothing here has been run in Studio, and it cannot fully work yet even if it were.** Two brand
+new Model names are required in `ServerStorage.EnemyModels` — `Siegebreaker` and `VoidwakenHulk` —
+and NEITHER exists there yet. Until they're built: `Siegebreaker` will not spawn on an elite wave
+at all, because — worth recording, it is a real asymmetry, not a guess — the base-defense elite
+pick (`CombatEncounterService.pickSpawnKeys`) does NOT filter its draw by
+`CombatEncounterService.HasModelFor` the way the boss picker
+(`RaidRoomService.pickBossSpawnKeys`) and the regular raid picker (`pickRaidSpawnKeys`) both do; it
+picks blind from `EliteTypes` and lets `spawnEnemy` warn-and-skip on the miss, which reads as "the
+elite wave spawned nothing extra" rather than an error. `VoidwakenHulk` in a Boss room is better
+protected — `pickBossSpawnKeys` DOES filter by `HasModelFor` first — but falls back to drawing
+unfiltered from `BossTypes` anyway if literally nothing in the pool has a model (RaidRoomService.lua
+~969), so a Boss room with no `VoidwakenHulk` Model built will still attempt the spawn and then hit
+the same warn-and-skip path in `spawnEnemy`, which is indistinguishable from "the boss room spawned
+nothing" without checking the Output window. Next session: build both Models (Humanoid +
+PrimaryPart, same convention as every other enemy), THEN clear four waves to reach an elite wave and
+separately run a raid to a Boss node, per README section 4 steps 15 and 24.
 
 The user has finished AUTHORING the raid room Models in Studio and walked the whole room-authoring
 contract; a checklist page of that contract exists as an Artifact (search the gallery for "Raid Room

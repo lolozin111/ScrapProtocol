@@ -847,10 +847,18 @@ to end:
    **Start Defense** — the wave panel appears showing your base's **Wall HP**/Shield and a live
    enemies-remaining count. This is real combat now: enemies spawn in a ring outside your base and
    walk INWARD toward it — they're attacking the wall, not you, so your own HP doesn't move.
-   **You need at least one Model in `ServerStorage.EnemyModels`** matching an
-   `EnemyConfig.Types[key].ModelName` (e.g. `Scavenger`) with a `Humanoid` + `PrimaryPart` for
-   anything to actually spawn — with none placed, a wave will look like it clears instantly
-   (nothing spawned, so nothing to fight) rather than erroring. With your gun held, click-and-hold
+   **You need a Model in `ServerStorage.EnemyModels` for each type you want to see spawn.** Only
+   five type keys are ever picked automatically: **`Scavenger`**, **`Raider`**, **`Brute`** (the
+   regular wave-defense roster, `WaveConfig.EnemyTypes`), **`Siegebreaker`** (the elite pick on
+   every `WaveConfig.EliteWaveInterval`-th wave — 5 — from `EnemyConfig.EliteTypes`; see step 24)
+   and **`VoidwakenHulk`** (raid Boss rooms only, drawn from the separate `EnemyConfig.BossTypes`
+   pool; see step 15). Each of those five names is the exact, literal Model name
+   `CombatEncounterService.lua` looks for — build (or drop in a placeholder dummy) a Model under
+   that name, and give it both a `Humanoid` **and** a `PrimaryPart`; both are hard requirements,
+   not just recommended — a model missing either one is rejected with a `warn()` and skipped
+   rather than spawned, which looks identical to nothing having spawned at all. With none placed,
+   a wave will look like it clears instantly (nothing spawned, so nothing to fight) rather than
+   erroring. With your gun held, click-and-hold
    left mouse to fire at whatever your camera is pointed at — including at nothing. Shots are real
    travelling projectiles, so you should SEE a round leave the gun and fly; watch one hit a wall and
    stop, then land one on an enemy and confirm a white damage number floats off it (gold on a
@@ -1008,6 +1016,19 @@ to end:
     Pick an Ambush node (rarer — you may need a couple of raids before one shows up): confirms the
     same panel but prefixed **"Wave X/Y"**, with a toast after each wave and another fight starting a
     couple of seconds later, for however many waves got rolled.
+
+    Pick a Boss node (every map guarantees `RaidConfig.BossMinPerMap`-`BossMaxPerMap` of them — 1
+    to 2 — and never one shallower than stage `RaidConfig.BossMinStageIndex` (3), so it won't be
+    the very first or second node on a map): confirms the same Enemies-bar panel, but the thing
+    spawning is drawn from `EnemyConfig.BossTypes` — today a single entry, `VoidwakenHulk` — a
+    separate pool from the one an elite wave in base defense draws from (they used to be the same
+    table; see `DESIGN_NOTES.md`'s "Voidium infestation" section for why they split, 2026-09-09).
+    You need a `VoidwakenHulk` Model in `ServerStorage.EnemyModels` (same `Humanoid` +
+    `PrimaryPart` requirement as every other enemy — see step 8) for it to actually appear. It's
+    scaled hard on top of that: base HP is 340 (`EnemyConfig.BossTypes.VoidwakenHulk.HP`,
+    unplaytested, expect it to move) times `RaidConfig.BossComposition.Multiplier` (2.6) — 884 —
+    before the run's own strength multiplier is even applied, so expect it to noticeably outlast a
+    Combat-node fight.
 
     The **Go Back To Base** button (top-centre) should appear ONLY while a choice is actually live —
     i.e. exactly while that banner is pulsing. Confirm it is gone during a fight, gone while a Heal
@@ -1177,6 +1198,33 @@ to end:
     same still-open panel, try selling something else you're still holding: confirm it's rejected
     with "You need to be at the Hub Shop to do that" instead of silently doing nothing, then walk
     back and confirm it works again.
+24. **The Siegebreaker's Slam (elite-wave attack pattern, shipped 2026-09-09, none of this
+    verified in Studio yet).** Build a `Siegebreaker` Model in `ServerStorage.EnemyModels` (same
+    `Humanoid` + `PrimaryPart` requirement as every other enemy — see step 8), then click **Start
+    Defense** and clear waves 1 through 4 in a row without stopping — wave 5
+    (`WaveConfig.EliteWaveInterval`) is the earliest elite wave, and an elite wave adds exactly one
+    extra, tougher unit on top of the normal spawn (`EnemyConfig.EliteTypes`, currently just
+    `Siegebreaker`). Watch for it: it's the one enemy that stops and stands still with a
+    **growing red disc under it and a red tint across its whole model** — that's the wind-up
+    telegraph (`EnemyAI.Patterns.Slam`), and it holds for `SlamWindup` (0.9 seconds, unplaytested,
+    expect this number to move) while the disc grows to full size before the hit lands. A
+    Siegebreaker never chips the wall on approach — its `ContactDamage` is 0, the slam replaces its
+    melee entirely rather than stacking on top of it — so the ONLY damage you should ever see from
+    one is on that telegraphed cadence, roughly every `SlamCooldown` (3.5 seconds) once it starts.
+    Confirm the wall's HP actually drops each time the disc fills. Base hit is `SlamDamage` = 42
+    (also unplaytested, also scaled by the same wave multiplier as everything else).
+
+    **The dodge only exists in a raid — nothing spawns a Siegebreaker into one on its own.**
+    `EnemyConfig.EliteTypes` is only ever drawn from by the base-defense elite pick
+    (`CombatEncounterService.pickSpawnKeys`); no raid picker reads it. To see the other half of the
+    mechanic, author one in: in a Combat or Ambush Room Model, place a `SpawnPoint` Part with its
+    `EnemyType` Attribute set to `Siegebreaker` instead of the `Raider` example in step 15's
+    "Room-authored spawns." Enter that room, let it wind up, and this time **walk out of the red
+    disc before it fills** — `SlamRadius` is 14 studs — and confirm you take no damage at all when
+    it lands; stand inside the disc on a second attempt instead and confirm you do take the hit.
+    This is the exact same function resolving both times — `context.TargetPosition` is the wall's
+    fixed point in a wave and your own live position in a raid — so the wall can never dodge and
+    you always can, by design, not as two separate code paths.
 
 ## 5. Environment effects (optional polish)
 
@@ -1213,8 +1261,9 @@ and that are easy to get subtly wrong (economy math, save data, purchase handlin
   a shortlist of what to model)
 - **Enemy character models.** The combat engine's AI/damage/spawn logic is built and real (see
   "Wave defense" above and `DESIGN_NOTES.md`'s "Combat Engine" section) — what's still missing is
-  the actual R15 rigs. Every key in `EnemyConfig.Types`/`EnemyConfig.EliteTypes` has a
-  `ModelName` field; build (or place a placeholder dummy for) a Model with that exact name inside
+  the actual R15 rigs. Every key in `EnemyConfig.Types`/`EnemyConfig.EliteTypes`/
+  `EnemyConfig.BossTypes` has a `ModelName` field; build (or place a placeholder dummy for) a
+  Model with that exact name inside
   `ServerStorage.EnemyModels`, R15 "blocky" style specifically (not R6, not Rthro — see that
   section for why), with a `Humanoid` and a `PrimaryPart` set. A type whose model is missing just
   skips spawning that one enemy (with a `warn()`), it won't error the whole wave.

@@ -124,14 +124,58 @@ EnemyConfig.Types = {
 
 -- Elite-only pool, spawned on top of the normal pool on elite waves (see WaveConfig
 --.IsEliteWave/EliteWaveInterval) — noticeably tougher, not just a bigger number of normal
--- enemies. VoidwakenHulk's flavor plants the seed for a future "boss-only drop" reward hook (see
+-- enemies.
+--
+-- This pool USED to hold VoidwakenHulk, which meant the raid's terminal encounter was also a
+-- routine wave spawn every fifth wave: one table was serving two pickers
+-- (CombatEncounterService's elite pick and RaidRoomService.pickBossSpawnKeys). Bosses now live in
+-- EnemyConfig.BossTypes below and the two pickers read one table each, so a boss can never leak
+-- into a wave again.
+--
+-- Siegebreaker's identity is ARMOUR, not mass — Defense 45 against a Construct base of 12 and the
+-- Hulk's own 28 makes it the most heavily defended thing in the game, so a player watches their
+-- damage numbers drop and has to change weapon or target. The Hulk out-bulks it on raw HP instead.
+-- That split is deliberate: elite = armour, boss = mass.
+EnemyConfig.EliteTypes = {
+	Siegebreaker = defineEnemy(ConstructBase, {
+		DisplayName = "Siegebreaker",
+		Description = "Built to walk into a wall until the wall stops being one.",
+		HP = 140,
+		-- Zero on purpose: the Slam pattern below replaces contact damage rather than stacking on
+		-- top of it. One telegraphed hit on a long cycle is readable; a heavy hit layered over a
+		-- normal contact cooldown just reads as unfair damage from something standing next to you.
+		ContactDamage = 0,
+		MoveSpeed = 9,       -- slow enough that a raid player can always walk out of the slam radius
+		ContactRange = 8,    -- bulkier reach than the Construct default 6
+		Defense = 45,
+		ModelName = "Siegebreaker",
+
+		-- Selects EnemyAI.Patterns.Slam. Every other type in this file uses the faction default
+		-- "Chaser"; this is the second pattern the game has ever had.
+		AIPattern = "Slam",
+
+		-- Slam cycle. SlamCooldown is measured from IMPACT, not from the start of the wind-up, so
+		-- the visible tell can never be compressed by wave scaling.
+		SlamWindup = 0.9,    -- seconds of telegraph before the hit lands
+		SlamDamage = 42,     -- base; scaled by the wave/run multiplier like ContactDamage would be
+		SlamRadius = 14,     -- studs. Only discriminates in raids — see below.
+		SlamCooldown = 3.5,  -- seconds from impact to the next wind-up
+	}),
+}
+
+-- Boss-only pool. Read by RaidRoomService.pickBossSpawnKeys and by nothing else — a key in here
+-- will NEVER appear in a wave. Stats are base numbers: the raid applies
+-- RaidConfig.BossComposition.Multiplier (2.6) on top of the run multiplier, so treat these as
+-- considerably smaller than what a player actually meets in a Boss room.
+--
+-- VoidwakenHulk's flavor plants the seed for a future "boss-only drop" reward hook (see
 -- DESIGN_NOTES.md's Base Defense / Research Level notes) — that drop itself isn't built yet,
 -- deliberately deferred to whenever Research Level ships.
-EnemyConfig.EliteTypes = {
+EnemyConfig.BossTypes = {
 	VoidwakenHulk = defineEnemy(ConstructBase, {
 		DisplayName = "Voidwaken Hulk",
 		Description = "Whatever Voidium did to this one, it didn't make it slower.",
-		HP = 220,
+		HP = 340,
 		ContactDamage = 22,
 		MoveSpeed = 10,
 		AttackCooldown = 1.6,

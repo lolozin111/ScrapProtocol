@@ -177,6 +177,9 @@ end
 -- Picks which enemy type keys to spawn this wave: WaveConfig.GetEnemyCount(waveNumber) normal
 -- types drawn from WaveConfig.EnemyTypes, plus exactly one EliteTypes pick on an elite wave (a
 -- single tougher unit joining the crowd — "mini-boss," not "every enemy is now a mini-boss").
+-- EnemyConfig.EliteTypes is the ONLY pool this function ever draws from beyond WaveConfig.EnemyTypes
+-- — EnemyConfig.BossTypes is a separate pool read only by RaidRoomService.pickBossSpawnKeys, so a
+-- boss (VoidwakenHulk) can never turn up as a regular wave's elite pick.
 local function pickSpawnKeys(waveNumber: number, isElite: boolean): { string }
 	local keys = {}
 	local normalCount = WaveConfig.GetEnemyCount(waveNumber)
@@ -198,13 +201,18 @@ local function pickSpawnKeys(waveNumber: number, isElite: boolean): { string }
 	return keys
 end
 
+-- Checks all three pools — normal, elite, AND boss. VoidwakenHulk used to live in EliteTypes (see
+-- EnemyConfig.lua's own header comment on why it moved to the new BossTypes table); this lookup
+-- has to follow it there or every raid boss spawn silently returns nil here, which spawnEnemy's
+-- caller reads as "no typeData" and just skips the spawn — a boss room that quietly spawns
+-- nothing, not an error anyone would see.
 local function getEnemyTypeData(typeKey: string)
-	return EnemyConfig.Types[typeKey] or EnemyConfig.EliteTypes[typeKey]
+	return EnemyConfig.Types[typeKey] or EnemyConfig.EliteTypes[typeKey] or EnemyConfig.BossTypes[typeKey]
 end
 
 -- Exported so callers OUTSIDE this file (RaidRoomService, validating a room-authored SpawnPoint's
 -- EnemyType Attribute before ever calling RunRaidCombat) can check a key without duplicating
--- getEnemyTypeData's own Types/EliteTypes lookup logic here and there.
+-- getEnemyTypeData's own Types/EliteTypes/BossTypes lookup logic here and there.
 function CombatEncounterService.IsValidEnemyType(typeKey: string): boolean
 	return getEnemyTypeData(typeKey) ~= nil
 end
@@ -272,19 +280,7 @@ local function spawnEnemy(typeKey: string, typeData, spawnPosition: Vector3, mul
 	humanoid.MaxHealth = typeData.HP * multiplier
 	humanoid.Health = humanoid.MaxHealth
 
-	-- Housekeeping only, not gameplay logic — the tick loop still finds out about a death by
-	-- polling Health each tick (see RunWave), same as everywhere else in this codebase avoids
-	-- event-driven state in favor of simple polling. This just clears the corpse out a couple
-	-- seconds later instead of leaving it sitting in the world for the rest of the wave.
-	humanoid.Died:Connect(function()
-		task.delay(2, function()
-			if model.Parent then
-				model:Destroy()
-			end
-		end)
-	end)
-
-	return {
+	local record = {
 		Model = model,
 		Humanoid = humanoid,
 		TypeKey = typeKey,
@@ -304,7 +300,46 @@ local function spawnEnemy(typeKey: string, typeData, spawnPosition: Vector3, mul
 		AIPattern = typeData.AIPattern,
 		LastAttackTime = 0,
 		LastMoveThink = 0,
+		-- Slam cycle fields (EnemyAI.Patterns.Slam) — nil for every type that doesn't set
+		-- AIPattern = "Slam" on its EnemyConfig entry (the faction base templates have no such
+		-- fields, so the metatable __index chain just yields nil for a Chaser-type enemy). That's
+		-- harmless: EnemyAI.Slam is only ever dispatched for a record whose own AIPattern named it,
+		-- so a Scavenger carrying nil SlamWindup/SlamRadius/SlamCooldown never gets asked to read
+		-- them. SlamDamage gets the SAME multiplier treatment as ContactDamage above, guarded
+		-- against nil first since, unlike ContactDamage, most types don't define it at all — an
+		-- unguarded `typeData.SlamDamage * multiplier` would throw on every non-Slam spawn, i.e.
+		-- almost every enemy in the game.
+		SlamWindup = typeData.SlamWindup,
+		SlamDamage = typeData.SlamDamage and typeData.SlamDamage * multiplier or nil,
+		SlamRadius = typeData.SlamRadius,
+		SlamCooldown = typeData.SlamCooldown,
 	}
+
+	-- Housekeeping only, not gameplay logic — the tick loop still finds out about a death by
+	-- polling Health each tick (see RunWave), same as everywhere else in this codebase avoids
+	-- event-driven state in favor of simple polling. This just clears the corpse out a couple
+	-- seconds later instead of leaving it sitting in the world for the rest of the wave.
+	--
+	-- Also the one place a Slam telegraph is guaranteed to get torn down if its enemy dies MID
+	-- WIND-UP from something other than the slam itself (a robot crit, a status DOT, the player's
+	-- own gun). isEnemyAlive drops a dead record out of aliveEnemies before EnemyAI.Patterns ever
+	-- runs again for it, so Slam's own impact-branch cleanup (see EnemyAI.lua) never gets a chance
+	-- to fire — the cylinder would otherwise sit on the ground, orphaned, for the rest of the
+	-- encounter. Hooking it here instead of another poll means it can't outlive its enemy no matter
+	-- how that enemy died.
+	humanoid.Died:Connect(function()
+		if record.SlamTelegraphPart and record.SlamTelegraphPart.Parent then
+			record.SlamTelegraphPart:Destroy()
+			record.SlamTelegraphPart = nil
+		end
+		task.delay(2, function()
+			if model.Parent then
+				model:Destroy()
+			end
+		end)
+	end)
+
+	return record
 end
 
 -- Measures the REAL "close enough to attack the wall" boundary off the player's actual built base
