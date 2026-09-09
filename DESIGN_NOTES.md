@@ -3041,6 +3041,23 @@ for an explicit greenlight before starting any further step of the build order b
 and stop; "pick up where we left off" is NOT the greenlight. Design work, docs and questions are
 fine.
 
+**SESSION OF 2026-09-09 — boss escort designed, three fixes shipped.** In order:
+- `07c7d2d` — the Boss escort design round (zones in the Boss room). Read
+  "Boss escort — spawn zones in the Boss room" for the five decisions. NOT BUILT, and blocked on the
+  spawn-zone quantity curve, which is also still unbuilt.
+- `e26ea41` — corrected two claims that were never true of the code: Boss rooms honouring authored
+  placements, and `InteractPoint` accepting a Model.
+- `8fffb6f` — **shipped**: `beginBoss` now honours authored `SpawnPoint`s (points only, on purpose —
+  zones there would inherit the 2.6x boss multiplier). NOT yet verified in Studio: run a raid to a
+  Boss node and check the Hulk lands on the authored Part rather than the room centre.
+- `549da86` — **shipped**: `AmbushWaveMax` 7 -> 8, plus the marker firing-rules table.
+
+The user has finished AUTHORING the raid room Models in Studio and walked the whole room-authoring
+contract; a checklist page of that contract exists as an Artifact (search the gallery for "Raid Room
+Contract" — it is generated from `RaidConfig.lua`/`RaidRoomService.lua` and goes stale if either
+moves). Nothing is pending on the user's side. Next raid work is the spawn-zone curves, and it needs
+a greenlight.
+
 **ORE REWORK — SHIPPED 2026-09-07, commit de1e11b, PARTIALLY VERIFIED.** Raw ores renamed
 (`ScrapIron`->`IronOre`, `CopperWire`->`CopperOre`, `SteelPlating`->`GoldOre`,
 `GoldContacts`->`PlatinumOre`, `HardenedPlate`->`PlatinumBar`); Gold and Platinum traded gate slots
