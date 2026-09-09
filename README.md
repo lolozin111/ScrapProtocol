@@ -856,7 +856,18 @@ to end:
    `CombatEncounterService.lua` looks for — build (or drop in a placeholder dummy) a Model under
    that name, and give it both a `Humanoid` **and** a `PrimaryPart`; both are hard requirements,
    not just recommended — a model missing either one is rejected with a `warn()` and skipped
-   rather than spawned, which looks identical to nothing having spawned at all. With none placed,
+   rather than spawned, which looks identical to nothing having spawned at all.
+
+   **Each of those five entries can be a Folder of variant Models instead of a single Model**, one
+   picked at random per spawn (`pickEnemyTemplate` in `CombatEncounterService.lua`) — the same
+   option raid rooms already have, and for the same reason: a wave puts eight-plus Scavengers on
+   screen at once, and eight identical clones read as a rendering bug rather than a crowd. Name the
+   **Folder** `Scavenger` and put as many Model children inside it as you like, under any names —
+   only the Folder's name has to match. Variants missing a `PrimaryPart` are skipped rather than
+   picked-and-rejected (so one unfinished variant costs you that variant, not a spawn), and the
+   warning about them fires once per folder rather than once per spawn. A Folder that is empty, or
+   whose every Model lacks a `PrimaryPart`, counts as "no model" everywhere — including the raid
+   pickers, which filter on it. With none placed,
    a wave will look like it clears instantly (nothing spawned, so nothing to fight) rather than
    erroring. With your gun held, click-and-hold
    left mouse to fire at whatever your camera is pointed at — including at nothing. Shots are real

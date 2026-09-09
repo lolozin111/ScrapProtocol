@@ -224,9 +224,67 @@ end
 -- NOTHING for an entire Combat/Ambush wave (spawnEnemy below just warns and skips), which reads to
 -- the player as that wave being silently skipped even though nothing was actually broken, just
 -- missing art.
+-- Keyed by folder full-name so a folder holding a broken variant warns once, not once per spawn.
+-- This is the one place this deliberately diverges from RaidRoomService.pickRoomTemplate, which
+-- warns unguarded: that one runs ONCE per room build, while this runs once per enemy — eight-plus
+-- times on a single wave, every wave — so the same unguarded warn would bury the Output window it
+-- is trying to be noticed in.
+local warnedSkippedVariants = {}
+
+-- ServerStorage.EnemyModels.<ModelName> may be either a single Model or a FOLDER of Model variants,
+-- one picked at random per spawn. Same shape, and the same reasoning, as
+-- RaidRoomService.pickRoomTemplate: the alternative was one enemy Model cloned identically eight
+-- times a wave, which reads as a rendering bug rather than a crowd. Variants let a Scavenger crowd
+-- differ without the spawner knowing anything about what changed.
+--
+-- Variants without a PrimaryPart are skipped rather than picked-and-rejected, so one unfinished
+-- variant in a folder degrades to "that one never appears" instead of randomly costing a spawn —
+-- see spawnEnemy's own PrimaryPart guard below for why a PrimaryPart-less enemy is not merely
+-- cosmetic. Returns nil if there is nothing usable, which every caller treats as "no model yet".
+local function pickEnemyTemplate(entry: Instance?): Model?
+	if entry == nil then
+		return nil
+	end
+
+	if entry:IsA("Model") then
+		return entry.PrimaryPart and entry or nil
+	end
+
+	if not entry:IsA("Folder") then
+		return nil
+	end
+
+	local variants = {}
+	local skipped = {}
+	for _, child in ipairs(entry:GetChildren()) do
+		if child:IsA("Model") then
+			if child.PrimaryPart then
+				table.insert(variants, child)
+			else
+				table.insert(skipped, child.Name)
+			end
+		end
+	end
+
+	if #skipped > 0 and not warnedSkippedVariants[entry:GetFullName()] then
+		warnedSkippedVariants[entry:GetFullName()] = true
+		warn(("[CombatEncounterService] %s: variant Model(s) %s have no PrimaryPart and were skipped. Set one in Studio (see README)."):format(
+			entry:GetFullName(), table.concat(skipped, ", ")))
+	end
+
+	if #variants == 0 then
+		return nil
+	end
+	return variants[math.random(1, #variants)]
+end
+
 function CombatEncounterService.HasModelFor(typeKey: string): boolean
 	local typeData = getEnemyTypeData(typeKey)
-	return typeData ~= nil and EnemyModelsFolder:FindFirstChild(typeData.ModelName) ~= nil
+	-- Deliberately the full pick, not a bare FindFirstChild: an EMPTY variant folder, or one whose
+	-- every Model is missing a PrimaryPart, exists but cannot actually spawn anything. Answering
+	-- "yes" for it would let the raid pickers draw that key and then spawn nothing, which is the
+	-- exact silent-skip this function was written to prevent.
+	return typeData ~= nil and pickEnemyTemplate(EnemyModelsFolder:FindFirstChild(typeData.ModelName)) ~= nil
 end
 
 -- Clones the template named `typeData.ModelName` out of ServerStorage.EnemyModels (FindFirstChild,
@@ -234,11 +292,23 @@ end
 -- same reasoning as MainHud.client.lua's getItemIcon avoiding the "Infinite yield" class of bug).
 -- Returns nil (with a warn()) if the template doesn't exist yet — build one in Studio named
 -- exactly `typeData.ModelName`, any size/rig/proportions, same placeholder-first convention as
--- every other system in this project.
+-- every other system in this project. That entry may be a single Model or a Folder of variants;
+-- pickEnemyTemplate above resolves both and this function never needs to know which it got.
 local function spawnEnemy(typeKey: string, typeData, spawnPosition: Vector3, multiplier: number, parentFolder: Instance, contactRange: number)
-	local template = EnemyModelsFolder:FindFirstChild(typeData.ModelName)
-	if not template then
+	local entry = EnemyModelsFolder:FindFirstChild(typeData.ModelName)
+	if not entry then
 		warn("[CombatEncounterService] No enemy model found for", typeData.ModelName, "— add one to ServerStorage.EnemyModels")
+		return nil
+	end
+
+	-- Split from the nil check above on purpose: "you haven't built it yet" and "you built it but
+	-- it isn't usable" send the person to two completely different places in Studio, and collapsing
+	-- them into one message would have sent someone hunting for a missing model that was sitting
+	-- right there.
+	local template = pickEnemyTemplate(entry)
+	if not template then
+		warn(("[CombatEncounterService] %s exists but has no usable Model — a Model needs its PrimaryPart set, and a Folder needs at least one Model child that has one. Skipping this spawn."):format(
+			entry:GetFullName()))
 		return nil
 	end
 

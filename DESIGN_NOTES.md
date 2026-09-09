@@ -647,6 +647,35 @@ Every number above — `HP`, `Defense`, `SlamWindup`, `SlamDamage` (42), `SlamRa
 and the Hulk's new 340 HP — is unplaytested config the user expects to rebalance once this is
 actually run in Studio. None of it should be read as tuned or final.
 
+### Enemy model variant folders — SHIPPED 2026-09-09, NOT verified in Studio
+
+`ServerStorage.EnemyModels.<ModelName>` may now be either a single Model (as before) or a **Folder
+of Model variants**, one picked at random per spawn — `pickEnemyTemplate` in
+`CombatEncounterService.lua`, deliberately mirroring `RaidRoomService.pickRoomTemplate` rather than
+inventing a second answer to the same question.
+
+**Why.** Raised by the user while planning how to clothe the Rebel rigs. `EnemyModels` was a strict
+`FindFirstChild(ModelName)` lookup, so every Scavenger on the field was the same clone — and
+`WaveConfig.GetEnemyCount` is `5 + floor(wave * 1.5)`, meaning eight-plus identical people by wave 2.
+The art direction had already called for varying their props precisely so a crowd would not read as
+a rendering bug; the loader could not honour that. Rooms got variant folders on 2026-09-08 and
+enemies never did, which was an oversight rather than a decision.
+
+**Two deliberate divergences from `pickRoomTemplate`, both worth keeping:**
+
+1. **The skipped-variant warning is warn-once, keyed by the folder's full name.** `pickRoomTemplate`
+   warns unguarded because it runs ONCE per room build. This runs once per ENEMY — eight-plus times
+   a wave, every wave — so the same unguarded warn would bury the Output window it exists to be
+   noticed in.
+2. **`HasModelFor` runs the full pick, not a bare `FindFirstChild`.** An empty variant folder, or one
+   whose every Model is missing a `PrimaryPart`, exists but cannot spawn anything. Answering "yes"
+   for it would let `pickRaidSpawnKeys`/`pickBossSpawnKeys` draw that key and then spawn nothing —
+   the exact silent skip `HasModelFor` was written to prevent.
+
+`spawnEnemy`'s two failure messages were also split apart: "you haven't built it yet" and "you built
+it but it isn't usable" send someone to two different places in Studio, and the single combined
+message would have sent them hunting for a missing model that was sitting right there.
+
 ### Burrower enemy — DEFERRED TO A POST-LAUNCH UPDATE (raised and shelved 2026-09-09)
 
 Raised by the user while planning the Scavenger's model: an enemy with mechanical claws that digs
