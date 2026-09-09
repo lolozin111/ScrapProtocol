@@ -611,6 +611,32 @@ Boss-room zone that overlaps the arena would otherwise drop a Scavenger inside t
 against anything already spawned in the room is nearly free at these counts and is the difference
 between an escort and a pile.
 
+**Decision 6 — spawn markers are ALWAYS live; nothing about them is proximity-gated.** Confirmed by
+the user 2026-09-09 after misreading the Heal/Shop `InteractPoint` prompt's 12-stud
+`MaxActivationDistance` as applying to spawning: "spawnzones and spawnpoints on raids should never
+have to activate like this, they should be active by design all the time." They already are — no
+spawn marker anywhere consults player distance to decide whether to fire. The one distance number
+near spawning, `SpawnZoneMinPlayerDistance` (25), is a PLACEMENT rejection rule, not an activation
+gate: the zone is always live, it just will not use whichever part of itself the player is standing
+in. Worth recording because the two read alike on a checklist and the distinction is the difference
+between "zone off" and "zone on, minus a corner."
+
+**Decision 7 — the per-marker firing rules, stated plainly.** All four already hold in code or in the
+recorded design; written down because the user set them out as one set and they had never been
+listed together:
+
+| Marker | Room | Fires |
+|---|---|---|
+| `SpawnPoint` | Boss | Once — it is the boss |
+| `SpawnZone` | Boss | Live, but contributes nothing until the `BossMinionFraction` threshold |
+| `SpawnZone` | Combat | Once, count from the quantity curve |
+| `SpawnZone` | Ambush | Once per wave, wave count from run depth |
+
+**Ambush wave soft cap raised to 8 (2026-09-09).** `RaidConfig.AmbushWaveMax` 7 → 8, the user's
+number. `RollAmbushWaveCount(totalNodesVisited)` already climbs toward it with run depth and clamps
+there, so this is purely how far a deep run can push Ambush length. Independent of the unbuilt
+curves — it works today.
+
 **Explicitly PARKED — minions arriving mid-fight at boss HP thresholds.** Raised in passing and worth
 building eventually, but it is the Ambush multi-wave mechanism, not this one: count here is decided
 ONCE at room build from `totalNodesVisited`, the same input Combat rooms use. Folding a second

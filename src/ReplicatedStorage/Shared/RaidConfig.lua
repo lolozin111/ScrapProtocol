@@ -406,7 +406,8 @@ RaidConfig.AmbushChance = 0.16 -- flat probability a non-forced-Heal, non-Shop r
 	-- the tougher variant, "throw in some" per the design ask. First guess, worth a playtest.
 
 RaidConfig.AmbushWaveMin = 2
-RaidConfig.AmbushWaveMax = 7
+RaidConfig.AmbushWaveMax = 8 -- soft cap on how deep a run can push Ambush length (user's call,
+	-- 2026-09-09). RollAmbushWaveCount climbs toward this with run depth and never exceeds it.
 
 ----------------------------------------------------------------------
 -- Run progression — the single curve behind BOTH Ambush's wave count/strength and every
