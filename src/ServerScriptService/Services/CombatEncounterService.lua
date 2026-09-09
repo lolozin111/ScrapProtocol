@@ -232,26 +232,27 @@ end
 local warnedSkippedVariants = {}
 
 -- ServerStorage.EnemyModels.<ModelName> may be either a single Model or a FOLDER of Model variants,
--- one picked at random per spawn. Same shape, and the same reasoning, as
--- RaidRoomService.pickRoomTemplate: the alternative was one enemy Model cloned identically eight
--- times a wave, which reads as a rendering bug rather than a crowd. Variants let a Scavenger crowd
--- differ without the spawner knowing anything about what changed.
+-- one drawn per spawn. Same shape, and the same reasoning, as RaidRoomService.pickRoomTemplate:
+-- the alternative was one enemy Model cloned identically eight times a wave, which reads as a
+-- rendering bug rather than a crowd. Variants let a Scavenger crowd differ without the spawner
+-- knowing anything about what changed.
 --
 -- Variants without a PrimaryPart are skipped rather than picked-and-rejected, so one unfinished
 -- variant in a folder degrades to "that one never appears" instead of randomly costing a spawn —
 -- see spawnEnemy's own PrimaryPart guard below for why a PrimaryPart-less enemy is not merely
--- cosmetic. Returns nil if there is nothing usable, which every caller treats as "no model yet".
-local function pickEnemyTemplate(entry: Instance?): Model?
+-- cosmetic. Returns an empty list if there is nothing usable, which every caller treats as
+-- "no model yet".
+local function collectVariants(entry: Instance?): { Model }
 	if entry == nil then
-		return nil
+		return {}
 	end
 
 	if entry:IsA("Model") then
-		return entry.PrimaryPart and entry or nil
+		return entry.PrimaryPart and { entry } or {}
 	end
 
 	if not entry:IsA("Folder") then
-		return nil
+		return {}
 	end
 
 	local variants = {}
@@ -272,19 +273,88 @@ local function pickEnemyTemplate(entry: Instance?): Model?
 			entry:GetFullName(), table.concat(skipped, ", ")))
 	end
 
+	return variants
+end
+
+-- Shuffled bag ("deck") per variant folder, keyed by the folder's full name so it survives for the
+-- life of the server.
+--
+-- This replaced a plain `variants[math.random(1, #variants)]`, which was correct but did not look
+-- random: independent uniform draws clump, and with 3 variants across the 8-ish spawns of a single
+-- wave, seeing the same model three times in a row is ordinary rather than unlucky. A crowd is
+-- exactly where that clumping is most visible, so a Scavenger wave still read as copy-pasted.
+--
+-- A bag deals every variant once before any repeats, which is what "more random" actually means
+-- when what you are judging is a crowd standing next to itself. The extra guard below also stops a
+-- fresh bag from opening on the variant the previous one closed with, since a back-to-back repeat
+-- across a bag boundary is the one clump a bag alone still permits and the one most likely to be
+-- noticed.
+local variantBags = {}
+
+local function drawVariant(entry: Instance, variants: { Model }): Model
+	if #variants == 1 then
+		return variants[1]
+	end
+
+	local key = entry:GetFullName()
+	local bag = variantBags[key]
+	if bag == nil then
+		bag = { queue = {}, last = nil }
+		variantBags[key] = bag
+	end
+
+	-- Editing the folder in Studio mid-session (deleting a variant, or clearing its PrimaryPart)
+	-- would otherwise leave a stale template sitting in the bag waiting to be cloned. Drop anything
+	-- that is no longer in the caller's freshly-collected list rather than trusting the queue.
+	local usable = {}
+	for _, model in ipairs(variants) do
+		usable[model] = true
+	end
+	for i = #bag.queue, 1, -1 do
+		if not usable[bag.queue[i]] then
+			table.remove(bag.queue, i)
+		end
+	end
+
+	if #bag.queue == 0 then
+		table.move(variants, 1, #variants, 1, bag.queue)
+		for i = #bag.queue, 2, -1 do
+			local j = math.random(1, i)
+			bag.queue[i], bag.queue[j] = bag.queue[j], bag.queue[i]
+		end
+		-- Swap the opener away from whatever the last bag ended on. Safe because #variants > 1
+		-- here, so there is always some other slot to trade with.
+		if bag.queue[1] == bag.last then
+			local j = math.random(2, #bag.queue)
+			bag.queue[1], bag.queue[j] = bag.queue[j], bag.queue[1]
+		end
+	end
+
+	local picked = table.remove(bag.queue, 1)
+	bag.last = picked
+	return picked
+end
+
+-- Convenience wrapper for the one caller that actually spawns something. Kept separate from
+-- collectVariants because HasModelFor below only asks whether a spawn is POSSIBLE, and answering
+-- that through here would burn a draw for a question no enemy was spawned to answer — enough of
+-- them to empty the bag before the wave that reads it ever starts.
+local function pickEnemyTemplate(entry: Instance?): Model?
+	local variants = collectVariants(entry)
 	if #variants == 0 then
 		return nil
 	end
-	return variants[math.random(1, #variants)]
+	return drawVariant(entry :: Instance, variants)
 end
 
 function CombatEncounterService.HasModelFor(typeKey: string): boolean
 	local typeData = getEnemyTypeData(typeKey)
-	-- Deliberately the full pick, not a bare FindFirstChild: an EMPTY variant folder, or one whose
-	-- every Model is missing a PrimaryPart, exists but cannot actually spawn anything. Answering
-	-- "yes" for it would let the raid pickers draw that key and then spawn nothing, which is the
-	-- exact silent-skip this function was written to prevent.
-	return typeData ~= nil and pickEnemyTemplate(EnemyModelsFolder:FindFirstChild(typeData.ModelName)) ~= nil
+	-- Deliberately the full variant collect, not a bare FindFirstChild: an EMPTY variant folder, or
+	-- one whose every Model is missing a PrimaryPart, exists but cannot actually spawn anything.
+	-- Answering "yes" for it would let the raid pickers draw that key and then spawn nothing, which
+	-- is the exact silent-skip this function was written to prevent. Note it collects rather than
+	-- draws — asking whether a spawn is possible must not consume one of drawVariant's bagged picks.
+	return typeData ~= nil and #collectVariants(EnemyModelsFolder:FindFirstChild(typeData.ModelName)) > 0
 end
 
 -- Clones the template named `typeData.ModelName` out of ServerStorage.EnemyModels (FindFirstChild,

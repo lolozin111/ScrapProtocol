@@ -860,13 +860,17 @@ to end:
    rather than spawned, which looks identical to nothing having spawned at all.
 
    **Each of those five entries can be a Folder of variant Models instead of a single Model**, one
-   picked at random per spawn (`pickEnemyTemplate` in `CombatEncounterService.lua`) — the same
+   drawn per spawn (`pickEnemyTemplate` in `CombatEncounterService.lua`) — the same
    option raid rooms already have, and for the same reason: a wave puts eight-plus Scavengers on
    screen at once, and eight identical clones read as a rendering bug rather than a crowd. Name the
    **Folder** `Scavenger` and put as many Model children inside it as you like, under any names —
    only the Folder's name has to match. Variants missing a `PrimaryPart` are skipped rather than
    picked-and-rejected (so one unfinished variant costs you that variant, not a spawn), and the
-   warning about them fires once per folder rather than once per spawn. A Folder that is empty, or
+   warning about them fires once per folder rather than once per spawn. Draws come from a shuffled
+   bag, not an independent roll: every variant in a folder appears once before any of them repeats,
+   and a fresh bag never opens on the variant the last one ended with. Put 3 variants in a folder
+   and an 8-enemy wave will show you all three spread out, never the same one three times in a
+   row — which independent rolls produced in roughly 44% of waves. A Folder that is empty, or
    whose every Model lacks a `PrimaryPart`, counts as "no model" everywhere — including the raid
    pickers, which filter on it. With none placed,
    a wave will look like it clears instantly (nothing spawned, so nothing to fight) rather than

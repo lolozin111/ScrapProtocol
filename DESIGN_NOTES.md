@@ -650,9 +650,9 @@ actually run in Studio. None of it should be read as tuned or final.
 ### Enemy model variant folders — SHIPPED 2026-09-09, NOT verified in Studio
 
 `ServerStorage.EnemyModels.<ModelName>` may now be either a single Model (as before) or a **Folder
-of Model variants**, one picked at random per spawn — `pickEnemyTemplate` in
-`CombatEncounterService.lua`, deliberately mirroring `RaidRoomService.pickRoomTemplate` rather than
-inventing a second answer to the same question.
+of Model variants**, one drawn per spawn — `pickEnemyTemplate` in `CombatEncounterService.lua`,
+deliberately mirroring `RaidRoomService.pickRoomTemplate` rather than inventing a second answer to
+the same question.
 
 **Why.** Raised by the user while planning how to clothe the Rebel rigs. `EnemyModels` was a strict
 `FindFirstChild(ModelName)` lookup, so every Scavenger on the field was the same clone — and
@@ -661,13 +661,38 @@ The art direction had already called for varying their props precisely so a crow
 a rendering bug; the loader could not honour that. Rooms got variant folders on 2026-09-08 and
 enemies never did, which was an oversight rather than a decision.
 
+**Shuffled bag, not an independent roll (added 2026-09-09, after the first Studio look).** The
+first cut was `variants[math.random(1, #variants)]`. Correct, and it still looked repetitive in
+Studio — which is the actual bug, because the whole feature exists to fix an appearance. Independent
+uniform draws clump: with 3 variants over the 8-ish spawns of one wave, ~33% of adjacent pairs match
+and ~44% of waves contain a three-in-a-row. A crowd standing next to itself is exactly where that
+clumping is most visible, so a Scavenger wave still read as copy-pasted.
+
+`drawVariant` now keeps a shuffled bag per folder (keyed by `GetFullName()`, server-lifetime), deals
+every variant once before reshuffling, and swaps the new bag's opener if it matches the previous
+bag's last card — an adjacent repeat across a bag boundary being the one clump a bag alone still
+allows, and the one most likely to be noticed. Both rates drop to zero. The bag is filtered against
+the caller's freshly-collected variant list on every draw, so deleting a variant (or clearing its
+`PrimaryPart`) in Studio mid-session cannot leave a stale template queued for cloning.
+
+This also forced the split of `collectVariants` (what is usable) from `drawVariant` (take one):
+`HasModelFor` asks whether a spawn is POSSIBLE and is called in a loop over every enemy key by
+`pickRaidSpawnKeys`/`pickBossSpawnKeys`. Routing it through the draw would have burned bagged picks
+for a question no enemy was spawned to answer — easily enough to empty the bag before the wave that
+reads it even starts. With a stateless uniform roll that overlap was harmless, which is why the
+first cut got away with a single function.
+
+`RaidRoomService.pickRoomTemplate` was deliberately left on the plain uniform roll: it draws once
+per room build rather than eight-plus times a wave, so there is no crowd to look copy-pasted. Worth
+revisiting if a run's rooms start reading as samey.
+
 **Two deliberate divergences from `pickRoomTemplate`, both worth keeping:**
 
 1. **The skipped-variant warning is warn-once, keyed by the folder's full name.** `pickRoomTemplate`
    warns unguarded because it runs ONCE per room build. This runs once per ENEMY — eight-plus times
    a wave, every wave — so the same unguarded warn would bury the Output window it exists to be
    noticed in.
-2. **`HasModelFor` runs the full pick, not a bare `FindFirstChild`.** An empty variant folder, or one
+2. **`HasModelFor` runs the full variant collect, not a bare `FindFirstChild`.** An empty variant folder, or one
    whose every Model is missing a `PrimaryPart`, exists but cannot spawn anything. Answering "yes"
    for it would let `pickRaidSpawnKeys`/`pickBossSpawnKeys` draw that key and then spawn nothing —
    the exact silent skip `HasModelFor` was written to prevent.
