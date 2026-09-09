@@ -3249,6 +3249,49 @@ nothing" without checking the Output window. Next session: build both Models (Hu
 PrimaryPart, same convention as every other enemy), THEN clear four waves to reach an elite wave and
 separately run a raid to a Boss node, per README section 4 steps 15 and 24.
 
+**SESSION OF 2026-09-09, continued — variant folders shipped, burrower shelved, ENEMY ART STARTED.**
+Three commits, none pushed: `b7b0cf6` (the elite/boss split above), `4a9569a` (the burrower backlog
+entry), `72c8e40` (enemy variant folders). Since the entry above:
+
+- **`ServerStorage.EnemyModels.<ModelName>` may now be a FOLDER of variant Models**, one picked at
+  random per spawn — see "Enemy model variant folders" above. Shipped because every Scavenger on the
+  field was the same clone and `GetEnemyCount` puts eight-plus of them there by wave 2. NOT verified
+  in Studio. The single-Model form still works unchanged; nothing needs migrating.
+- **A burrowing enemy was designed and deliberately shelved by the user** for a post-launch update —
+  see "Burrower enemy" above. The mechanical-claws prop it produced is still wanted on the Scavenger
+  even though the burrow mechanic is not being built.
+- **The user has BUILT the Scavenger models in Studio** — the first enemy art in the project. That is
+  the only enemy model that exists. `Raider`, `Brute`, `Siegebreaker` and `VoidwakenHulk` are all
+  still missing, and the consequences of each being missing are spelled out in the entry above.
+
+**ENEMY ART IS THE USER'S ACTIVE WORKSTREAM.** Build order agreed: Raider next (duplicate a finished
+Scavenger — same R15 skeleton, straighten the posture, widen the shoulders, swap the shirt, give it a
+real gun), then Brute, then Siegebreaker, then VoidwakenHulk. The art direction for all five —
+scale lineup, the Rebel/Construct material split, and which tool to build each one in — is on the
+"Enemy Silhouettes" Artifact: https://claude.ai/code/artifact/4089f017-a2e1-4012-973a-1e394c58f05f
+The Siegebreaker's own spec page is https://claude.ai/code/artifact/152b056a-bfd6-454d-923a-04e312e6ffa9
+
+**Four Studio findings from that session, worth not relearning:**
+
+1. **`ServerStorage.EnemyModels` content is NOT in this repo.** Rojo only syncs `src/`, and the folder
+   is declared empty in `default.project.json` to be filled by hand. Every enemy rig the user builds
+   lives in the place file alone — git is not backing it up.
+2. **Layered clothing ("3D shirts") needs `WrapTarget` objects on the rig's body parts.** A default
+   Rig Builder rig may have none, in which case the clothing silently renders nowhere with no error.
+   Test with a `WrapTarget` count over the rig's descendants — a working R15 body has 15, one per
+   part. If it has none, copy a real avatar character out of Workspace during Play and use that as
+   the base rig instead.
+3. **Toolbox "clothing" is usually not clothing.** A mesh grabbed from the Toolbox comes back from
+   `MarketplaceService:GetProductInfo` as `AssetTypeId 39` (`SolidModel`), and `ApplyDescription`
+   accepts it and silently ignores it — returning success, changing nothing. For a static NPC the
+   answer is to `WeldConstraint` the mesh to the relevant body part, which is cheaper at runtime than
+   layered clothing anyway and loses nothing on a rig that is never animated.
+4. **`HumanoidDescription` has no `ShirtAccessory`/`JacketAccessory` properties.** Layered clothing
+   goes through `desc:GetAccessories(true)` / `desc:SetAccessories(t, true)`. The named `*Accessory`
+   properties that DO exist are the classic rigid slots — `HairAccessory` among them, which is why
+   hair is a one-line change and a 3D shirt is not.
+
+
 The user has finished AUTHORING the raid room Models in Studio and walked the whole room-authoring
 contract; a checklist page of that contract exists as an Artifact (search the gallery for "Raid Room
 Contract" — it is generated from `RaidConfig.lua`/`RaidRoomService.lua` and goes stale if either
