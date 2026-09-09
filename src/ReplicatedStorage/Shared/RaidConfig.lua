@@ -212,7 +212,10 @@ RaidConfig.SpawnPointEnemyAttribute = "EnemyType"
 -- ModConfig.ApplyMods and CraftingRecipes.MaxDeployedRobots all exist because of it). Zones and
 -- SpawnPoints COEXIST in one room: authored points spawn first and count against the room's enemy
 -- budget, zones fill whatever remains. That is what lets one pinned set piece sit inside a rolled
--- encounter without a second system. Boss rooms are expected to keep using points only.
+-- encounter without a second system. NOTE: Boss rooms honour NEITHER marker today — beginBoss calls
+-- RunRaidCombat with no explicitSpawns argument at all (unlike beginCombat and the Ambush loop, which
+-- both go through resolveEnemyPlacements), so an authored Boss room spawns procedurally around the
+-- room centre no matter what is placed in it. Boss rooms are INTENDED to use points only.
 -- SpawnZoneMinPlayerDistance (studs) keeps an enemy from materialising in the player's face;
 -- SpawnZoneFloorOffset (studs) is how far above the floor the raycast result is nudged so nothing
 -- spawns embedded in geometry; SpawnZoneMaxPlacementAttempts is how many times one enemy's
@@ -241,8 +244,13 @@ RaidConfig.SpawnZoneRaycastExtraDepth = 200
 -- with a part... so later on I can put an actual NPC in there or a model in there and make it
 -- usable." RaidRoomService.buildFallbackRoom drops in its own small stand-in Part named this way
 -- for Heal/Shop specifically, so the gate applies even before a real Room Model exists — swap it
--- out for an NPC/real model later just by naming that Part/Model the same way in an authored Room
--- Model; an authored room that genuinely doesn't have one yet falls back to firing immediately, so
+-- out for an NPC/real machine later by putting a BasePart named this way in an authored Room Model
+-- at the NPC's feet (Transparency 1 / CanCollide false if the visual is the NPC itself). It must be
+-- a BASEPART and a DIRECT CHILD of the Room Model: beginInteractGated uses FindFirstChild plus an
+-- IsA("BasePart") test, NOT the GetDescendants sweep SpawnPointName/SpawnZoneName/PlayerSpawnName
+-- all use — so a Model named this, or a Part nested one Folder deep, is not found and the room
+-- fires immediately with no warn. An authored room that genuinely doesn't have one yet falls back
+-- to firing immediately too, so
 -- a work-in-progress room is never blocked on art that isn't built. One shared name for both node
 -- types since they use the exact same mechanic; RaidRoomService already knows which action a given
 -- room is for from its own node.Type.

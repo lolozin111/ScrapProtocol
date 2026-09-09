@@ -272,6 +272,15 @@ flattening curve.
    placement so a boss lands exactly where built; regular rooms go random. The existing SpawnPoint
    path is NOT deleted — it stays as the Boss/set-piece tool. The first Combat room already built
    does not need redoing.
+   - **CORRECTION 2026-09-09 — this was never true of the CODE, only of the intent.** `beginBoss`
+     (RaidRoomService.lua:1203) calls `RunRaidCombat` with NO `explicitSpawns` argument; only
+     `beginCombat` (:1000) and the Ambush wave loop (:1080) route through `resolveEnemyPlacements`.
+     So a Boss room ignores authored `SpawnPoint`s AND `SpawnZone`s alike and spawns procedurally
+     around the room centre. Found while writing the room-authoring checklist, after two rounds of
+     notes had repeated the claim. The fix is small — pass `resolveEnemyPlacements(state, count)`
+     into `RunRaidCombat` with the same nil-fallback `beginCombat` uses — but it is a CODE change
+     and is NOT done. Until it lands, author the marker (it costs nothing and is the right one) but
+     do not tune its position.
 
 2. **Two different curves, deliberately opposed.** The user's call, and a sharper answer than the
    "make count the only axis" advice it replaced. QUANTITY grows on a loose log — climbing early,
@@ -399,8 +408,9 @@ one yet.
    COUNT AGAINST the room's enemy budget; zones fill whatever remains. Rejected the simpler "points
    win outright" and "zones win in Combat/Ambush" because both make a pinned set piece plus a rolled
    encounter impossible without a second system. Note this supersedes the flat "zones for
-   Combat/Ambush, points for Boss" framing of the 2026-09-07 round — Boss still uses points, but
-   Combat may mix.
+   Combat/Ambush, points for Boss" framing of the 2026-09-07 round — Boss is still INTENDED to use
+   points, but Combat may mix. (Boss honours neither marker in code today — see the correction under
+   point 1 of the 2026-09-07 round above.)
 3. **Neither marker present: warn loudly NAMING THE ROOM, then the existing 50-70 stud ring.** The
    fallback keeps the run alive (missing-art rule); the warn is what makes a half-authored room
    findable, since a silently-ring-spawning room is indistinguishable from a correct one until you
@@ -596,6 +606,10 @@ between an escort and a pile.
 building eventually, but it is the Ambush multi-wave mechanism, not this one: count here is decided
 ONCE at room build from `totalNodesVisited`, the same input Combat rooms use. Folding a second
 trigger into the boss room would make it two systems at once. Separate build, later.
+
+**Also depends on `beginBoss` reading authored placements at all**, which it does not — see the
+2026-09-09 correction under "Spawn zones + difficulty curves" point 1. The escort has nowhere to be
+placed until that one-line-ish fix lands, since zones in a Boss room are read by nothing.
 
 **Depends on:** the spawn-zone curves themselves, which are DESIGNED but NOT BUILT (see "Spawn zones
 + difficulty curves" above — markers built 2026-09-08, curves not). There is no `combatCount` curve
