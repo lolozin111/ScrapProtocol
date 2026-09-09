@@ -489,8 +489,20 @@ reward would scale off one counter and stay coherent for free.
     cooldown, so with no tell the player takes damage from something that appears to be standing next
     to them. That is READABILITY, not polish — the difference between "that hurt" and "why did that
     hurt". It does not have to be an animation, but it has to be something.
-  - **Robots (4) and the drone companion (1).** Model with a separate welded moving part — wheels,
-    rotors — spun CLIENT-SIDE, no animation and no rigging at all. See the next bullet.
+  - **Deployed robots (4) need NO MODEL AT ALL** — corrected 2026-09-08, having first been written
+    up here wrongly. They are deliberately ABSTRACT: no physical Model, no position, targeting and
+    damage are nearest-to-player and instant. Stated independently in two headers
+    (`CombatEncounterService.lua`'s SCOPE NOTE and `RobotBehaviors.lua`'s). Turrets are the physical
+    deployable system; robots are stat contributors that never appear in the world. Anyone scoping
+    art from this list must not queue four robot models.
+  - **The drone companion is ONE model, not four.** `DroneService.lua:81` looks up
+    `ServerStorage.DroneModels.Drone` — a single hardcoded name shared by all four Drone Cores.
+    Note `DroneModels` is NOT declared in `default.project.json` the way `EnemyModels`/
+    `RaidRoomModels`/`TurretModels` are, so it has to be created by hand in Studio; absent, the
+    drone falls back to a tinted box plus a warn. Also note `buildBody` sets every descendant part
+    `Anchored = true` (plus `CanCollide`/`CanQuery` false, the latter so the drone can never stop
+    the player's own projectiles), so a rotor cannot be driven by a physics constraint — how its
+    spin is driven needs deciding rather than assuming.
   - **Turrets (6).** Model plus a fire effect. Emplacements do not animate.
 
   **Cosmetic spin is not an animation, and must not be server-side.** A wheel or rotor is a part
