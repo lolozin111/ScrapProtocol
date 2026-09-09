@@ -467,8 +467,46 @@ reward would scale off one counter and stay coherent for free.
   passes a different point — that file does not change.
 - **Raid shop rework** — already specced further down this file (run-only perks instead of ore
   bundles); half the tag plumbing exists.
-- **Animations** — enemy attacks, robot fire, and the crafting "cute" step that has been open since
-  the base phase.
+- **Animations — SCOPED DOWN AND DEFERRED (2026-09-08).** Enemy attacks, robot fire, and the
+  crafting "cute" step that has been open since the base phase. The user asked whether to hold the
+  animation pass entirely and ship something free, upgrading it post-launch. Agreed, because
+  animating now is guaranteed rework rather than risk: the clip set an enemy needs is a function of
+  what it DOES, and that is undecided on purpose — the three AI patterns are step 7 of the raid
+  overhaul (unbuilt) and the per-enemy states round is deliberately deferred to closer to release
+  (see "DEFERRED DESIGN ROUND" above). Animate a `Chaser` today, make it an Artillery unit in step 7,
+  throw the clips away. **The prerequisite is named, so this is a schedulable deferral, not a vague
+  one:** the states round unblocks it, and Phase 02's feature freeze is what catches it if it slips.
+
+  **The agreed release floor, per rig class:**
+
+  - **Enemies (6 built + the raid boss = 7).** Model plus ONE attack animation. Only the four
+    humanoid rigs (`Scavenger`/`Raider`/`Brute`/`VoidwakenHulk`) really need a clip; `ScrapCrawler`,
+    `SentinelDrone` and the boss can tell with an effect (lunge, scale pop, colour flash, particle
+    burst) instead. Locomotion comes free from Roblox's default R15 set. **Death needs no clip ever**
+    — it is ragdoll, which the Tier 1 rendering section already plans and which gets CHEAPER under
+    Tier 1 (physics paid only for the couple of seconds something is actually toppling).
+  - **The attack tell is the one thing NOT shippable at zero.** Enemies deal contact damage on a
+    cooldown, so with no tell the player takes damage from something that appears to be standing next
+    to them. That is READABILITY, not polish — the difference between "that hurt" and "why did that
+    hurt". It does not have to be an animation, but it has to be something.
+  - **Robots (4) and the drone companion (1).** Model with a separate welded moving part — wheels,
+    rotors — spun CLIENT-SIDE, no animation and no rigging at all. See the next bullet.
+  - **Turrets (6).** Model plus a fire effect. Emplacements do not animate.
+
+  **Cosmetic spin is not an animation, and must not be server-side.** A wheel or rotor is a part
+  rotating forever: a `HingeConstraint` set to Motor, or (better here, and the recommendation) a
+  plain CFrame spin in `EnvironmentFX.client.lua`, which is already the world-visuals client script.
+  A server-side spin replicates a CFrame every frame for every robot, drone and turret on the map —
+  precisely the cost the Tier 1 refactor exists to remove — and nothing about a spinning wheel is
+  server-authoritative, so there is no reason to pay it. For rotors, a spinning part plus a
+  semi-transparent blur disc reads better than actual spinning blades and is free.
+
+  **Modelling constraint that follows, and it has to be known BEFORE the models are built:** moving
+  parts must be SEPARATE parts welded on, never merged into the body — a wheel baked into the
+  chassis cannot turn. Likewise the four humanoid enemies need real Motor6D joints if they are to
+  carry an attack clip. **Rigs are safe against the Tier 1 refactor**: Tier 1 drops the server-side
+  `Humanoid` and drives clips through an `AnimationController` instead, which is a change to the
+  DRIVING CODE, not to the art — any rig with a normal Motor6D hierarchy plays either way.
 - **Turret models** and **the mine's visual pass** — art; both also on the Asset Bench.
 - **PvP base invasion — DECIDE. Recommendation: cut from v1.** It is the one remaining item that adds
   a whole new CLASS of exploit surface (player-vs-player state, griefing, offline raids) precisely
