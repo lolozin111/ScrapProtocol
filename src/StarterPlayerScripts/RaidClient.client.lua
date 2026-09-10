@@ -4,14 +4,19 @@
 	button, the docked Sector Map, and a small in-room status panel for whichever node type is
 	currently active.
 
-	THE MAP IS NO LONGER THE CONTROL. It began as a centred overlay you clicked a circle on to pick
-	the next room ("not pretty pretty, but like smth with circles... and those lines path connecting
-	each other"). Choosing a path is a physical act in the world now — a cleared room unlocks
-	ExitDoor Parts and you walk through the one you want (RaidConfig.ExitDoorName,
-	RaidRoomService.unlockExitDoors) — so the map became a permanent read-only readout docked to the
-	right: where you are, where you have been, what is reachable. It still accepts a click in exactly
-	one case, when the server sets AllowNodeClick because a room did not have enough doors built for
-	the branches it owed; that is the never-strand-a-run fallback.
+	THE MAP IS THE CONTROL AGAIN (2026-09-09). It began as a centred overlay you clicked a circle on
+	to pick the next room ("not pretty pretty, but like smth with circles... and those lines path
+	connecting each other"). For a while the choice was a physical act in the world instead — a
+	cleared room unlocked ExitDoor Parts and you walked through the one you wanted — and the map
+	demoted itself to a read-only readout. That reversed: the map reads better and fits the flow of
+	the game, so clicking a circle is the input once more.
+
+	What survived the reversal is the PANEL, not the old overlay. The map stays docked right for the
+	whole raid as a permanent readout of where you are, where you have been and what is reachable;
+	it simply accepts clicks on reachable circles again, and un-collapses itself the moment a room
+	finishes so the choice cannot go unnoticed. Doors are switched off at
+	RaidConfig.ExitDoorsEnabled, NOT deleted — authored ExitDoor Parts stay in their rooms, sealed
+	solid and invisible, and flipping that one flag brings the whole physical path back.
 
 	Deliberately its OWN ScreenGui/file rather than bolted onto MainHud.client.lua — that file is
 	already a large, single-purpose debug HUD for the base-building loop; this is a separate system
@@ -420,18 +425,20 @@ end
 local updateRaidButtons
 
 ----------------------------------------------------------------------
--- Sector map — the raid's PERSISTENT minimap, docked right.
+-- Sector map — the raid's persistent, docked-right map panel.
 --
--- This used to be the raid's control surface: a big centred overlay that opened when a room
--- cleared, and you clicked a circle to pick where to go. That input moved into the world (see
--- RaidConfig.ExitDoorName and RaidRoomService.unlockExitDoors — a cleared room unlocks physical
--- doors and you walk through one), so this panel's whole job changed. It is now a READ-ONLY
--- orientation display that stays up for the entire raid: where you are, where you have been, what
--- is reachable from here, how deep the chapter goes.
+-- The raid's control surface, and a permanent one. It began as a big centred overlay that opened
+-- when a room cleared and closed the moment you clicked a circle; then the input moved into the
+-- world (physical ExitDoors) and this became a read-only readout; then the input came back here
+-- (2026-09-09, RaidConfig.ExitDoorsEnabled = false).
 --
--- It stays clickable in exactly ONE case: the server sets AllowNodeClick when a room did not have
--- enough ExitDoor Parts for the branches it needed to offer. That is the never-strand-a-run
--- fallback, and it is the reason this file still holds a ChooseRaidNode call at all.
+-- The panel kept the SECOND round's shape rather than reverting to the overlay, and that is the
+-- point: it is up for the entire raid showing where you are, where you have been, what is reachable
+-- and how deep the chapter goes — AND it takes the click. The old overlay could only be one of
+-- those two things at a time.
+--
+-- allowNodeClick still comes from the server rather than being assumed here, so the physical-door
+-- design remains one config flip away without touching this file.
 --
 -- The tree draws TOP-TO-BOTTOM here, not left-to-right like the old overlay: stage is Y and lane
 -- is X. A docked panel is tall and narrow, and a map that can reach 14 stages deep has room to
@@ -475,13 +482,27 @@ local MAP = {
 	Unvisited = Color3.fromRGB(96, 88, 78),
 }
 
+-- Where the panel docks in each state, and the reason it is TWO anchors rather than one.
+--
+-- Collapsing used to change Size only, leaving AnchorPoint at (1, 0.5) and Position pinned to the
+-- vertical centre — so the collapsed bar shrank around its own middle and stayed floating at
+-- right-CENTRE, which is not where a minimised panel belongs. Anchoring the collapsed state to the
+-- top instead (1, 0) makes it retreat into the top-right corner the way minimising implies.
+--
+-- Top-right is free for the whole raid: the Start button lives there but is hidden while inRaid,
+-- the run-currency panel is top-left, Go Back To Base is top-centre and Extract is bottom-right.
+local MAP_EXPANDED_ANCHOR = Vector2.new(1, 0.5)
+local MAP_EXPANDED_POSITION = UDim2.new(1, -16, 0.5, -24)
+local MAP_COLLAPSED_ANCHOR = Vector2.new(1, 0)
+local MAP_COLLAPSED_POSITION = UDim2.new(1, -16, 0, 16)
+
 -- NOTE THE ORDER: HudKit.plate returns (surface, shell), surface first — the thing you parent
 -- content into is what a caller almost always wants, and the shell is only needed afterwards to
 -- move/resize/hide the panel as a whole. `props` above is applied to the SHELL.
 local mapSurface, mapFrame = Hud.plate({
 	Name = "SectorMap",
-	AnchorPoint = Vector2.new(1, 0.5),
-	Position = UDim2.new(1, -16, 0.5, -24),
+	AnchorPoint = MAP_EXPANDED_ANCHOR,
+	Position = MAP_EXPANDED_POSITION,
 	Size = UDim2.new(0, MAP_PANEL_SIZE.X, 0, MAP_PANEL_SIZE.Y),
 	Visible = false,
 	Parent = screenGui,
@@ -545,9 +566,10 @@ local collapseButton = new("TextButton", {
 	Parent = mapHeader,
 }, { corner(4), stroke(COLOR.Line, 1) })
 
--- The choice banner. Doors are the actual control now, so this exists to answer "why is nothing
--- happening" — it is the one place the map says the room is waiting on the player rather than the
--- other way round.
+-- The choice banner — the one place the map says the room is waiting on the PLAYER rather than the
+-- other way round. It mattered most while doors were the control (the map could not say "your move"
+-- at all); it still earns its place now that clicking is back, because the panel is permanent and
+-- otherwise looks identical whether or not a choice is live.
 local mapBanner = new("Frame", {
 	Name = "Banner",
 	BackgroundColor3 = COLOR.AccentDark,
@@ -739,15 +761,25 @@ for order, typeKey in ipairs(LEGEND_ORDER) do
 	end
 end
 
-collapseButton.MouseButton1Click:Connect(function()
-	collapsed = not collapsed
+-- Pulled out of the button's own handler so the RaidMapUpdate handler can force the panel open
+-- when a choice opens — the map is the input device again (see this file's header), and a choice
+-- the player cannot see is indistinguishable from the run having stalled.
+local function setMapCollapsed(value: boolean)
+	collapsed = value
 	mapCanvas.Visible = not collapsed
 	mapLegend.Visible = not collapsed
 	mapBanner.Visible = not collapsed
 	collapseButton.Text = collapsed and "+" or "—"
+	-- Anchor AND position move, not just Size — see MAP_COLLAPSED_ANCHOR's comment.
+	mapFrame.AnchorPoint = collapsed and MAP_COLLAPSED_ANCHOR or MAP_EXPANDED_ANCHOR
+	mapFrame.Position = collapsed and MAP_COLLAPSED_POSITION or MAP_EXPANDED_POSITION
 	mapFrame.Size = collapsed
 		and UDim2.new(0, MAP_PANEL_SIZE.X, 0, MAP_HEADER_HEIGHT + 22)
 		or UDim2.new(0, MAP_PANEL_SIZE.X, 0, MAP_PANEL_SIZE.Y)
+end
+
+collapseButton.MouseButton1Click:Connect(function()
+	setMapCollapsed(not collapsed)
 end)
 
 -- Draws a connector between two canvas-local points using a rotated Frame — Roblox GUI has no line
@@ -981,9 +1013,9 @@ local function redrawMap(payload)
 				})
 			end
 
-			-- Clickable ONLY in the too-few-ExitDoors fallback. Normally the doors in the room are
-			-- the control and this panel is a readout, so wiring the click unconditionally would put
-			-- two competing ways to leave a room on screen at once.
+			-- Server-driven rather than assumed: with ExitDoorsEnabled false this is true for every
+			-- choice, but the flag can put physical doors back, and then wiring the click
+			-- unconditionally would put two competing ways to leave a room on screen at once.
 			if allowNodeClick and isReachable then
 				circle.MouseButton1Click:Connect(function()
 					ChooseRaidNode:FireServer(id)
@@ -1077,6 +1109,11 @@ RaidMapUpdate.OnClientEvent:Connect(function(payload)
 	-- to bring the Extract button back; the position update fires mid-room and must not claim that.
 	if payload.ChoicePending then
 		inCombat = false
+		-- The room is done and the map is now the only way onward, so it opens itself rather than
+		-- waiting for the player to notice a collapsed bar. Deliberately one-way: it never
+		-- re-collapses on its own, so a player who wants it out of the way during the next room
+		-- collapses it once and it stays that way until the next choice actually needs them.
+		setMapCollapsed(false)
 	end
 	redrawMap(payload)
 	mapFrame.Visible = true

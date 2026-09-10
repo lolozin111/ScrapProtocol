@@ -999,24 +999,34 @@ to end:
     orange **Start Raid** button, top-right. You should teleport somewhere new immediately (a
     private area, high in the sky, invisible from your base) and land in an Entry room.
 
-    **The Sector Map** docks to the right of the screen and stays there for the whole raid — it is
-    a readout, not a control. Confirm it shows an angular panel headed `SECTOR MAP` with a `CH 1`
+    **The Sector Map** docks to the right of the screen and stays there for the whole raid, and it
+    is both the readout AND the control. Confirm it shows an angular panel headed `SECTOR MAP` with a `CH 1`
     chip, a tree of coloured circles running top-to-bottom (orange=Combat, dark red=Ambush,
     red=Boss, green=Heal, blue=Shop), a legend along the bottom, and a banner under the header. The
     node you are standing in is the biggest one, ringed in white and labelled; the ones you could go
     to next are labelled in orange; everything else is a plain dot. As you move, confirm the trail
     behind you fills in — visited nodes go solid and the edges you actually walked turn warm gold —
     and that the `— / +` button in the header collapses the panel to just its title bar and back.
+    **Collapsed, it should sit in the TOP-RIGHT corner, not floating at right-centre** — that was a
+    bug (the collapse changed `Size` only, so the bar shrank around its own middle), fixed
+    2026-09-09.
 
-    **Choosing a path is physical now.** Clear a room and confirm the banner starts pulsing
-    `CHOOSE AN EXIT — WALK THROUGH A DOOR`, and that doors in the room light up — one per branch,
-    each glowing in its DESTINATION's colour with a floating label naming it ("Combat · T2"). Walk
-    into one and confirm you travel there. The circles on the map should NOT respond to clicks;
-    they are a display. A sealed door is INVISIBLE but still solid, so during a fight the doorway
-    looks open and you bump into it — that is deliberate (`RaidConfig.ExitDoorSealedTransparency`),
-    since a door you could walk through mid-fight would drop you out of the room into open sky. In
-    the placeholder room there are three doors along one edge; with a two-way fork only two of them
-    appear, and the third staying invisible is correct, not a bug.
+    **Choosing a path is clicking a circle on the map** (reverted 2026-09-09 from the physical
+    exit-door version — see `DESIGN_NOTES.md`'s "Decision 2", which is kept as the record of the
+    design that is now switched off). Clear a room and confirm three things: the map
+    **un-collapses itself** if you had it minimised, the banner starts pulsing
+    `PICK A NODE ON THE MAP`, and the reachable circles are clickable while every other circle is
+    not. Click one and confirm you travel there.
+
+    **Exit doors are OFF, not removed.** `RaidConfig.ExitDoorsEnabled` is `false`, so any `ExitDoor`
+    Part authored into a room Model stays sealed for the whole raid: INVISIBLE but still solid, so
+    during a fight the doorway looks open and you bump into it. That is deliberate
+    (`RaidConfig.ExitDoorSealedTransparency`) — a door you could walk through mid-fight would drop
+    you out of the room into open sky. The placeholder room still builds three of them along one
+    edge; all three staying invisible for the entire run is correct, not a bug. Flip
+    `ExitDoorsEnabled` to `true` to get the physical-door design back in full: doors light up one
+    per branch in their destination's colour with a floating label, the banner reads
+    `CHOOSE AN EXIT — WALK THROUGH A DOOR`, and the map circles stop responding to clicks.
 
     Pick a Combat node: you land in a plain grey placeholder room (**you need at least one Model per
     type in `ServerStorage.RaidRoomModels`** — e.g. a Model named `Combat` with a `PrimaryPart` —

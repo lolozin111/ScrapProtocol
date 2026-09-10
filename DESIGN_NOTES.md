@@ -117,6 +117,24 @@ content chores into three coherent reasons to enter a raid.
   length, reward tagged `Permanent` so completing banks it even on a bad exit. Rewards specialisation
   and prep. Patterns: `Defender`, `Runner`, `Sapper`.
 
+> **REVERSED 2026-09-09 — the map choice went back ON the screen.** The user's call, after seeing
+> both in Studio: *"the map looks way better rn, and it fits the flow of the game."* Clicking a
+> circle is the input again. The rest of Decision 2 below is kept verbatim as the record of why the
+> physical version was built and how it works, because it was NOT deleted — it is switched off at
+> `RaidConfig.ExitDoorsEnabled = false`, and flipping that one word restores every part of it.
+> `unlockExitDoors` and its label/prompt/Touched machinery stay intact in `RaidRoomService` for
+> exactly that reason.
+>
+> What the reversal did NOT undo: the map is still the docked, persistent Sector Map panel, not the
+> old centred overlay. It is a readout AND a control now — the overlay could only ever be one at a
+> time, which is what made it worth replacing in the first place. Authored `ExitDoor` Parts stay in
+> their room Models, sealed solid and invisible by `sealExitDoors` on every node entry, so nobody
+> has to strip geometry out of a room that already has it. Two additions came with it: the panel
+> un-collapses itself whenever a choice opens (a choice the player cannot see reads as a stalled
+> run), and collapsing now retreats to the TOP-right instead of hanging at right-centre — the
+> collapse used to change `Size` alone while `AnchorPoint` stayed `(1, 0.5)`, so the bar shrank
+> around its own middle and never moved.
+
 **Decision 2 — the map choice comes off the screen.** Also the user's, and the second half of what
 they meant by "overhaul". Today a cleared room calls `showMapChoice`, the GUI map opens and you click
 a circle. Instead the room's **exit doors unlock** — one per branch, each taking its destination
@@ -2202,8 +2220,9 @@ validates.
   than only in authored rooms.
 
 **The map became the Sector Map** (`RaidClient.client.lua`) — docked right, persistent for the whole
-raid, read-only. It is the one part of that file that has had its reskin, because it is now on screen
-for the entire run rather than for the few seconds a choice was open.
+raid. It is the one part of that file that has had its reskin, because it is now on screen for the
+entire run rather than for the few seconds a choice was open. (It was read-only when written; since
+the 2026-09-09 reversal above it takes the click again, while keeping the docked persistent shape.)
 
 - **On HudKit's angular plate**, with a `raid_map_backdrop` art slot in `UiIconConfig` — a full-bleed
   background image rather than a glyph, the only entry of its kind there. Scrimmed hard (0.72 plus a

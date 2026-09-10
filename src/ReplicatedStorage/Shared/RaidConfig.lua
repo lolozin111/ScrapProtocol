@@ -271,11 +271,29 @@ RaidConfig.InteractPointName = "InteractPoint"
 -- door is branch 1. Mixed (some set, some not) puts the numbered ones first, in order.
 --
 -- TOO FEW DOORS for the branches on offer is NOT an error the player ever sees: RaidRoomService
--- warns and re-opens the old clickable map GUI for that one node instead. Same missing-art rule
+-- warns and re-opens the clickable map GUI for that one node instead. Same missing-art rule
 -- the rest of the project follows, applied to geometry — a half-built room must never be able to
--- strand a run with no way forward.
+-- strand a run with no way forward. (Moot while ExitDoorsEnabled is false, since the map is then
+-- the input for every node, but it is the safety net the moment doors are switched back on.)
 RaidConfig.ExitDoorName = "ExitDoor"
 RaidConfig.ExitDoorIndexAttribute = "ExitIndex"
+
+-- MASTER SWITCH for the whole physical-door mechanic, and currently OFF (user's call, 2026-09-09).
+--
+-- Navigation went back to picking the next room on the Sector Map — the map reads better and fits
+-- the flow of the game — which reverses "Decision 2 — the map choice comes off the screen" in
+-- DESIGN_NOTES. Everything the door path needs is still here and still correct; this flag is the
+-- only thing standing between the two designs, so going back is a one-word edit rather than a
+-- rewrite. That is why unlockExitDoors and its label/prompt/Touched machinery were left intact in
+-- RaidRoomService rather than deleted.
+--
+-- With this false, RaidRoomService.showMapChoice skips unlockExitDoors entirely and always sends
+-- AllowNodeClick = true, so the map circles are the input. Doors authored into a room Model are NOT
+-- removed and NOT ignored — sealExitDoors still runs on every node entry, which leaves them solid
+-- but invisible (ExitDoorSealedTransparency). Solid matters: a doorway that stopped blocking would
+-- let a player walk out of a room mid-fight into open sky. So an authored room keeps its geometry
+-- and simply never shows a door as a usable exit.
+RaidConfig.ExitDoorsEnabled = false
 
 -- Walk through, don't press a button — "to choose where to go is gonna be a physical thing." A
 -- sealed door is solid; an unlocked one drops CanCollide and you pass straight through it. Flip

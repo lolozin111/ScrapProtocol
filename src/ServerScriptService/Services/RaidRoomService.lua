@@ -822,9 +822,13 @@ end
 
 -- Shared by every RaidMapUpdate fire — Nodes/StartNodeId/CurrentNodeId/MapsCleared are identical on
 -- every call, only ReachableIds/ChoicePending/AllowNodeClick actually vary. ChoicePending gates the
--- client's "Go Back To Base" button (only bail while a choice is actually showing, physical or
--- GUI); AllowNodeClick is true ONLY in the too-few-doors GUI fallback, since circles are otherwise
--- decorative now that doors are the real input.
+-- client's "Go Back To Base" button (only bail while a choice is actually showing) and, since
+-- 2026-09-09, also tells the client to un-collapse the Sector Map — the map is the input device
+-- again, and a choice the player cannot see reads as a stalled run.
+--
+-- AllowNodeClick is now true for every choice while RaidConfig.ExitDoorsEnabled is false. It used to
+-- be true ONLY in the too-few-doors fallback, back when doors were the real input and the circles
+-- were decorative.
 local function mapUpdatePayload(state, reachableIds: { number }, choicePending: boolean, allowNodeClick: boolean)
 	return {
 		Active = true,
@@ -838,13 +842,20 @@ local function mapUpdatePayload(state, reachableIds: { number }, choicePending: 
 	}
 end
 
--- Offers the next choice PHYSICALLY: unlocks one door per branch out of the current node (see
--- unlockExitDoors above). Only falls back to the old clickable GUI map — AllowNodeClick = true —
--- when the room doesn't have enough doors built yet for the branches on offer; see
--- unlockExitDoors' own comment for why that's a warn(), not an error.
+-- Offers the next choice. Which INPUT that uses is RaidConfig.ExitDoorsEnabled's call:
+--
+--   false (today) — the Sector Map is the input. unlockExitDoors is never called, so any doors
+--     authored into the room stay exactly as sealExitDoors left them on entry: solid, invisible,
+--     unlabelled, no prompt. AllowNodeClick goes out true and the player clicks a circle.
+--   true — the original physical design: one door per branch lights up in its destination's colour,
+--     and the clickable map comes back only for a room without enough doors built (unlockExitDoors
+--     returns false, which is a warn(), never an error — see its own comment).
+--
+-- Short-circuit order matters: with the flag off, unlockExitDoors is not called at all, so a room
+-- missing doors cannot warn about geometry nothing is asking for any more.
 local function showMapChoice(state)
 	local node = state.Map.Nodes[state.CurrentNodeId]
-	local doorsUnlocked = unlockExitDoors(state, node.Connections)
+	local doorsUnlocked = RaidConfig.ExitDoorsEnabled and unlockExitDoors(state, node.Connections) or false
 	RaidMapUpdate:FireClient(state.Player, mapUpdatePayload(state, node.Connections, true, not doorsUnlocked))
 end
 
