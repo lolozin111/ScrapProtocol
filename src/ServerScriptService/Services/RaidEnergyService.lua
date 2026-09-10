@@ -21,9 +21,9 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local AdminConfig = require(ReplicatedStorage.Shared.AdminConfig)
 local RaidEnergyConfig = require(ReplicatedStorage.Shared.RaidEnergyConfig)
 local DataService = require(script.Parent.DataService)
+local DevShortcuts = require(script.Parent.DevShortcuts)
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 
@@ -37,8 +37,12 @@ local RaidEnergyService = {}
 -- Lives here rather than at each call site so every spend path honours it identically. It used to
 -- be an `AdminConfig.IsAdmin(player) and` guard inline in ExpeditionService's lever handler, which
 -- (a) didn't apply to raid rooms and (b) stayed on inside a test session.
+--
+-- The admin-and-not-testing test itself moved to DevShortcuts once a second shortcut needed the
+-- same two-part answer — kept as a named function here anyway, because "does this player have
+-- infinite Energy" is what the spend paths below actually mean.
 function RaidEnergyService.HasInfiniteEnergy(player: Player): boolean
-	return AdminConfig.IsAdmin(player) and not DataService.IsTestSession(player)
+	return DevShortcuts.Active(player)
 end
 
 -- Snaps an infinite-Energy player back to full and tells their HUD. Without this the number in

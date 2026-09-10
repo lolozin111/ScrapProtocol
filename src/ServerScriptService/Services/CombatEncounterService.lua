@@ -68,6 +68,7 @@ local GroundEffectService = require(script.Parent.GroundEffectService)
 local WeaponBehaviors = require(script.Parent.WeaponBehaviors)
 local DroneService = require(script.Parent.DroneService)
 local ProjectileConfig = require(ReplicatedStorage.Shared.ProjectileConfig)
+local DevShortcuts = require(script.Parent.DevShortcuts)
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 local RequestFireWeapon = Remotes.RequestFireWeapon
@@ -669,7 +670,20 @@ function CombatEncounterService.RunWave(player: Player, waveNumber: number, opts
 
 	local isElite = opts and opts.IsElite or false
 	local multiplier = WaveConfig.GetEnemyMultiplier(waveNumber)
-	local spawnKeys = pickSpawnKeys(waveNumber, isElite)
+
+	-- Dev shortcut: an admin outside a Player Test Session gets an elite in EVERY wave, not only
+	-- every WaveConfig.EliteWaveInterval-th, so a newly-built elite Model can be looked at on wave 1
+	-- instead of after clearing four waves in one unbroken run.
+	--
+	-- Deliberately applied to the SPAWN LIST ONLY, not to `isElite` itself. That flag is also what
+	-- WaveService reads to decide boss-wave loot (a guaranteed CoreItem), and forcing it would quietly
+	-- turn a testing aid into an economy exploit — real Cores, on a real profile, every wave.
+	local forceElite = DevShortcuts.Active(player)
+	if forceElite and not isElite then
+		print(("[Admin] %s — forcing an elite into wave %d (dev shortcut; normally only every %d waves). Loot is unchanged."):format(
+			player.Name, waveNumber, WaveConfig.EliteWaveInterval))
+	end
+	local spawnKeys = pickSpawnKeys(waveNumber, isElite or forceElite)
 
 	local playerFolder = Instance.new("Folder")
 	playerFolder.Name = tostring(player.UserId)

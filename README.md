@@ -645,8 +645,8 @@ no manual copy-pasting scripts into Studio.
   `game.CreatorId`, which works automatically in Studio when you're testing as yourself; add your
   UserId to `AdminUserIds` too if the game ends up owned by a Group). Admins win any Combat raid
   instantly, never run out of Energy (expeditions and raid rooms are both free — the display just
-  stays pinned at full), and get a set of chat commands for testing things without grinding the
-  systems upstream of them:
+  stays pinned at full), get a **guaranteed elite in every fight** (see below), and get a set of
+  chat commands for testing things without grinding the systems upstream of them:
 
   | Command | What it does |
   |---|---|
@@ -1249,7 +1249,17 @@ to end:
     of which is far worse. `GetCombatTierForStage` puts stages 1-2 at Tier 1, so head deeper than
     the second node before expecting one. Ambush nodes deliberately never roll elites.
 
-    To see it on demand instead of waiting on a 20-35% roll, author one in: in a Combat or Ambush
+    **As an admin you do not have to wait for any of this.** While `AdminConfig.IsAdmin` applies to
+    you and you are NOT in a Player Test Session, every fight is forced to include an elite: every
+    raid Combat room, every wave of every Ambush (which normally rolls none at all), and every base
+    defense wave rather than only every 5th. Each one prints a `[Admin]` line to Output naming it as
+    the forced spawn, specifically so a forced elite is never mistaken for proof that the real
+    `EliteChance` roll works. **To test the actual roll, turn the shortcut off** — type `/admin off`,
+    or switch Player Test Mode on and rejoin — then run Tier 2/3 Combat rooms and count. Defense-wave
+    loot is deliberately NOT forced along with the spawn: a forced elite wave still pays regular-wave
+    rewards, so the shortcut cannot quietly become a Core farm.
+
+    To see it on demand without admin, author one in: in a Combat or Ambush
     Room Model, place a `SpawnPoint` Part with its `EnemyType` Attribute set to `Siegebreaker`
     instead of the `Raider` example in step 15's "Room-authored spawns" — an authored room states
     its own composition and ignores `EliteChance` entirely. Enter that room, let it wind up, and this time **walk out of the red

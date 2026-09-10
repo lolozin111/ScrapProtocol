@@ -69,6 +69,7 @@ local RaidConfig = require(ReplicatedStorage.Shared.RaidConfig)
 local NodeConfig = require(ReplicatedStorage.Shared.NodeConfig)
 local WaveConfig = require(ReplicatedStorage.Shared.WaveConfig)
 local EnemyConfig = require(ReplicatedStorage.Shared.EnemyConfig)
+local DevShortcuts = require(script.Parent.DevShortcuts)
 local DataService = require(script.Parent.DataService)
 local RaidEnergyService = require(script.Parent.RaidEnergyService)
 local CombatEncounterService = require(script.Parent.CombatEncounterService)
@@ -500,12 +501,48 @@ local function placeInZones(zones: { { Part: BasePart, Weight: number } }, playe
 	return positions
 end
 
+-- Guarantees an elite is somewhere in an already-resolved placement list, for the admin dev
+-- shortcut only. AUTHORED SpawnPoints are the reason this exists: a room that names its own
+-- composition never reaches pickRaidSpawnKeys, so the forced-elite shortcut would silently do
+-- nothing in exactly the rooms most likely to be hand-built for testing — the "I click and nothing
+-- happens" shape this codebase keeps getting bitten by. Overriding one authored entry is a real
+-- liberty to take with a room author's intent, which is why it is gated on the shortcut and nothing
+-- else, and why it announces itself in Output.
+--
+-- Idempotent: if the list already contains an elite (the zone-fill path routes through
+-- pickRaidSpawnKeys, which with eliteChance = 1 has already put one there), this does nothing
+-- rather than adding a second.
+local function ensureEliteInPlacements(state, placements): boolean
+	for _, entry in ipairs(placements) do
+		if EnemyConfig.EliteTypes[entry.TypeKey] then
+			return false
+		end
+	end
+
+	local elites = {}
+	for key in pairs(EnemyConfig.EliteTypes) do
+		if CombatEncounterService.HasModelFor(key) then
+			table.insert(elites, key)
+		end
+	end
+	if #elites == 0 or #placements == 0 then
+		return false
+	end
+
+	local index = math.random(1, #placements)
+	local replaced = placements[index].TypeKey
+	placements[index].TypeKey = elites[math.random(1, #elites)]
+	print(("[Admin] %s — dev shortcut overrode an authored SpawnPoint (%s -> %s) to force an elite."):format(
+		state.Player.Name, tostring(replaced), placements[index].TypeKey))
+	return true
+end
+
 -- Shared resolver for both beginCombat and each wave of beginAmbush — decides, in priority order,
 -- whether this encounter uses authored SpawnPoints, authored SpawnZones, both, or falls back to the
 -- original procedural composition (returning nil tells the caller to do exactly that, unchanged).
 -- Points and zones COEXIST in one room — see RaidConfig.SpawnZoneName's own comment — so authored
 -- points always count against the room's enemy budget first, and zones only fill whatever's left.
-local function resolveEnemyPlacements(state, count: number, eliteChance: number?): { { Position: Vector3, TypeKey: string } }?
+local function resolveEnemyPlacements(state, count: number, eliteChance: number?, forceElite: boolean?): { { Position: Vector3, TypeKey: string } }?
 	local points = state.RoomFolder and collectSpawnPoints(state.RoomFolder)
 	local zones = state.RoomFolder and collectSpawnZones(state.RoomFolder)
 
@@ -524,7 +561,10 @@ local function resolveEnemyPlacements(state, count: number, eliteChance: number?
 	end
 
 	if points and not zones then
-		return points -- today's behaviour, unchanged
+		if forceElite then
+			ensureEliteInPlacements(state, points)
+		end
+		return points -- otherwise today's behaviour, unchanged
 	end
 
 	local combined = points and table.clone(points) or {}
@@ -551,6 +591,9 @@ local function resolveEnemyPlacements(state, count: number, eliteChance: number?
 	-- applied to geometry that turned out to be unusable rather than absent.
 	if #combined == 0 then
 		return nil
+	end
+	if forceElite then
+		ensureEliteInPlacements(state, combined)
 	end
 	return combined
 end
@@ -1050,10 +1093,23 @@ local function beginCombat(state, node)
 	-- A room built with RaidConfig.SpawnPointName/SpawnZoneName Parts decides some or all of its own
 	-- composition (see resolveEnemyPlacements); one with neither falls back to the original
 	-- procedural roll, unchanged from before either of those existed.
-	local explicitSpawns = resolveEnemyPlacements(state, count, composition.EliteChance)
+	-- Dev shortcut: an admin outside a Player Test Session gets a guaranteed elite in every raid
+	-- fight, so a newly-built elite Model can be seen in a raid without rerolling a 20-35% chance
+	-- until it happens. Prints, deliberately — the shortcut exists to test the ENEMY, and an admin
+	-- who forgot it was on could otherwise read a forced spawn as proof the EliteChance roll works.
+	-- /admin off, or Player Test Mode, turns it back into the real roll.
+	local eliteChance = composition.EliteChance
+	local forceElite = DevShortcuts.Active(state.Player)
+	if forceElite then
+		eliteChance = 1
+		print(("[Admin] %s — forcing an elite into this Combat room (dev shortcut, not the %d%% roll)."):format(
+			state.Player.Name, math.floor((composition.EliteChance or 0) * 100 + 0.5)))
+	end
+
+	local explicitSpawns = resolveEnemyPlacements(state, count, eliteChance, forceElite)
 	local spawnKeys = {}
 	if not explicitSpawns then
-		spawnKeys = pickRaidSpawnKeys(count, composition.EliteChance)
+		spawnKeys = pickRaidSpawnKeys(count, eliteChance)
 	end
 
 	task.spawn(function()
@@ -1113,6 +1169,18 @@ local function beginAmbush(state, node)
 	local runMultiplier = RaidConfig.GetRunProgressionMultiplier(state.TotalNodesVisited)
 	local roomCenter = roomEncounterCenter(state)
 
+	-- Ambush normally rolls NO elites at all (see the wave loop below for why). The dev shortcut is
+	-- the one exception: "any combat scenario" is the point of it, and an Ambush is several fights
+	-- in a row, so it is the fastest place to look at a new elite Model repeatedly. Rolled once for
+	-- the whole node rather than per wave so the log line does not repeat 2-8 times.
+	local eliteChance = nil
+	local forceElite = DevShortcuts.Active(state.Player)
+	if forceElite then
+		eliteChance = 1
+		print(("[Admin] %s — forcing an elite into every wave of this Ambush (dev shortcut; Ambush normally rolls none)."):format(
+			state.Player.Name))
+	end
+
 	task.spawn(function()
 		local tierData = NodeConfig.CombatTiers[node.Tier]
 
@@ -1131,15 +1199,16 @@ local function beginAmbush(state, node)
 			-- spots, which is what resolving once outside this loop (the way beginCombat resolves
 			-- once for its single encounter) would produce.
 			--
-			-- No elite chance passed, deliberately: an Ambush is already the tougher variant (2-8
-			-- waves, each ramping, any single loss failing the whole raid), and dropping a slam unit
-			-- into an arbitrary wave of one would compound two difficulty spikes that were tuned
-			-- independently. Combat rooms are the scoped home for elites; revisit for Ambush only
-			-- with its own number, not by reusing the Combat one.
-			local explicitSpawns = resolveEnemyPlacements(state, count)
+			-- eliteChance is nil for a real player, deliberately: an Ambush is already the tougher
+			-- variant (2-8 waves, each ramping, any single loss failing the whole raid), and dropping
+			-- a slam unit into an arbitrary wave of one would compound two difficulty spikes that
+			-- were tuned independently. Combat rooms are the scoped home for elites; revisit for
+			-- Ambush only with its own number, not by reusing the Combat one. It is non-nil only for
+			-- the admin dev shortcut set above.
+			local explicitSpawns = resolveEnemyPlacements(state, count, eliteChance, forceElite)
 			local spawnKeys = {}
 			if not explicitSpawns then
-				spawnKeys = pickRaidSpawnKeys(count)
+				spawnKeys = pickRaidSpawnKeys(count, eliteChance)
 			end
 
 			local status = CombatEncounterService.RunRaidCombat(state.Player, roomCenter, spawnKeys, waveMultiplier, function(eventStatus, payload)
