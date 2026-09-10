@@ -643,6 +643,38 @@ impact branch says the same thing, for the same reason a design note should say 
 kind of "obviously asymmetric, therefore surely a bug" shape that gets "fixed" by someone who hasn't
 read why it's asymmetric on purpose.
 
+**Raids could not actually spawn one until 2026-09-09 (second pass) — fixed.** The paragraph above
+was written describing a raid dodge that nothing could reach. When the elite/boss pools were split
+earlier the same day, `pickBossSpawnKeys` moved off `EliteTypes` onto the new `BossTypes`, and no
+raid path was left reading `EliteTypes` at all: Combat rooms, Ambush waves and zone fill all draw
+from `pickRaidSpawnKeys` → `WaveConfig.EnemyTypes` (`Raider`/`Scavenger`/`Brute`), and Boss rooms
+draw from `BossTypes` (`VoidwakenHulk`). So the Siegebreaker existed only on elite waves, and the
+key mechanic documented above was unreachable. Fallout from the split, not a decision — there was
+never a working state to notice the loss from, because the type was created in that same commit.
+
+Fixed by adding `EliteChance` to `RaidConfig.CombatTierComposition` (0 / 0.20 / 0.35 by Tier) and an
+elite substitution step in `pickRaidSpawnKeys`. Four things worth not re-litigating:
+
+- **It substitutes rather than adds**, diverging from the wave side, which adds one elite on top of
+  the normal count. A wave is 8+ enemies; a raid room is 2-5, so the same "one more unit" is a much
+  bigger spike there. Substituting also keeps `count` honest as the room's enemy budget, which
+  `resolveEnemyPlacements` relies on to know how many zone positions to top authored SpawnPoints up
+  to.
+- **Tier 1 is zero** — `GetCombatTierForStage` puts stages 1-2 there, and the opening rooms should
+  stay legible while a player is still reading the map.
+- **No unfiltered fallback for the elite draw.** The normal roster falls back to the unfiltered list
+  so a raid is never empty; an elite is a bonus threat, so "no built model yet" simply means no
+  elite rather than a key that warns and skips inside `spawnEnemy`, silently costing the room an
+  enemy. This is also why the change is safe to ship before the `Siegebreaker` Model exists.
+- **Ambush deliberately passes no chance.** It is already the tougher variant (2-8 ramping waves,
+  any single loss failing the raid); stacking a slam unit onto that compounds two curves tuned
+  independently. If Ambush should get elites later it gets its OWN number, not a reuse of the
+  Combat one.
+
+Authored `SpawnPoint` Parts remain the way to pin a Siegebreaker into a specific room by hand
+(`RaidConfig.SpawnPointEnemyAttribute` accepts `EliteTypes` keys) and are untouched by any of this —
+a room that states its own composition still gets exactly what it asked for.
+
 Every number above — `HP`, `Defense`, `SlamWindup`, `SlamDamage` (42), `SlamRadius`, `SlamCooldown`,
 and the Hulk's new 340 HP — is unplaytested config the user expects to rebalance once this is
 actually run in Studio. None of it should be read as tuned or final.

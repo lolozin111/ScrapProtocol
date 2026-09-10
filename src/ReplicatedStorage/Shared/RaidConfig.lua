@@ -389,10 +389,30 @@ end
 -- reads this to build its spawn list. Deliberately its OWN small table rather than reusing
 -- WaveConfig.GetEnemyCount/GetEnemyMultiplier — those are tuned for an ENDLESS base-defense ladder
 -- (wave 1, 2, 3, ... forever), a different curve than a single bounded raid room ever needs.
+--
+-- EliteChance is the per-ROOM probability that one of the rolled enemies is swapped for an
+-- EnemyConfig.EliteTypes pick (RaidRoomService.pickRaidSpawnKeys) rather than a normal-roster one.
+-- Three things about it are deliberate:
+--
+--   1. It SUBSTITUTES, it does not add. Base defense's elite wave adds one extra unit on top of the
+--      normal count (CombatEncounterService.pickSpawnKeys) because a wave is 8+ enemies and one more
+--      barely moves the count. A raid room is 2-5, so adding a 140 HP / 45 Defense slam unit on top
+--      would be a far bigger spike than the same line of code means in a wave. Substituting keeps
+--      `count` honest as the room's enemy budget — which resolveEnemyPlacements also relies on to
+--      know how many zone-filled positions to top authored SpawnPoints up to.
+--   2. At most one per room, by construction — it is a single roll that replaces a single slot.
+--   3. Tier 1 is zero. The first two stages of a map should stay legible while a player is still
+--      reading the room, and GetCombatTierForStage puts stages 1-2 in Tier 1.
+--
+-- Rooms that author their own composition via SpawnPointName Parts are untouched by this: they
+-- already say exactly what they want, elites included (see SpawnPointEnemyAttribute above, which
+-- accepts EliteTypes keys). Ambush nodes deliberately pass 0 — see beginAmbush.
+--
+-- Numbers are a first guess, unplaytested.
 RaidConfig.CombatTierComposition = {
-	[1] = { EnemyCountMin = 2, EnemyCountMax = 3, Multiplier = 1.0 },
-	[2] = { EnemyCountMin = 3, EnemyCountMax = 4, Multiplier = 1.4 },
-	[3] = { EnemyCountMin = 4, EnemyCountMax = 5, Multiplier = 1.9 },
+	[1] = { EnemyCountMin = 2, EnemyCountMax = 3, Multiplier = 1.0, EliteChance = 0 },
+	[2] = { EnemyCountMin = 3, EnemyCountMax = 4, Multiplier = 1.4, EliteChance = 0.20 },
+	[3] = { EnemyCountMin = 4, EnemyCountMax = 5, Multiplier = 1.9, EliteChance = 0.35 },
 }
 
 -- Boss composition — deliberately its own tiny table, not reused from CombatTierComposition above.

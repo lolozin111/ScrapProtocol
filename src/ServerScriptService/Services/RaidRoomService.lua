@@ -505,7 +505,7 @@ end
 -- original procedural composition (returning nil tells the caller to do exactly that, unchanged).
 -- Points and zones COEXIST in one room — see RaidConfig.SpawnZoneName's own comment — so authored
 -- points always count against the room's enemy budget first, and zones only fill whatever's left.
-local function resolveEnemyPlacements(state, count: number): { { Position: Vector3, TypeKey: string } }?
+local function resolveEnemyPlacements(state, count: number, eliteChance: number?): { { Position: Vector3, TypeKey: string } }?
 	local points = state.RoomFolder and collectSpawnPoints(state.RoomFolder)
 	local zones = state.RoomFolder and collectSpawnZones(state.RoomFolder)
 
@@ -534,7 +534,9 @@ local function resolveEnemyPlacements(state, count: number): { { Position: Vecto
 		-- Reuses pickRaidSpawnKeys rather than a second draw, so a zone-filled enemy rolls off the
 		-- exact same weighted, built-model-filtered roster the procedural path already uses — one
 		-- place decides "what can spawn," this only ever decides "where."
-		local typeKeys = pickRaidSpawnKeys(#positions)
+		-- eliteChance rides along for the same reason the roster does: a zone-filled room and a
+		-- procedural one should roll the same encounter, differing only in WHERE things stand.
+		local typeKeys = pickRaidSpawnKeys(#positions, eliteChance)
 		for i, position in ipairs(positions) do
 			table.insert(combined, { Position = position, TypeKey = typeKeys[i] })
 		end
@@ -934,7 +936,7 @@ end
 -- ServerStorage.EnemyModels — RunRaidCombat's own zero-spawn fallback still catches that case.
 -- Assigns the forward-declared local above (see that declaration's own comment for why) rather than
 -- `local function`, which would otherwise shadow it with a second, still-nil local of the same name.
-pickRaidSpawnKeys = function(count: number): { string }
+pickRaidSpawnKeys = function(count: number, eliteChance: number?): { string }
 	local available = {}
 	for _, key in ipairs(WaveConfig.EnemyTypes) do
 		if CombatEncounterService.HasModelFor(key) then
@@ -948,6 +950,36 @@ pickRaidSpawnKeys = function(count: number): { string }
 	for _ = 1, count do
 		table.insert(keys, available[math.random(1, #available)])
 	end
+
+	-- Elite substitution. EnemyConfig.EliteTypes was previously unreachable from a raid by any
+	-- procedural path: pickBossSpawnKeys used to read EliteTypes, and when the elite/boss pools were
+	-- split on 2026-09-09 so a boss could never leak into a WAVE, boss rooms moved onto BossTypes and
+	-- nothing was left reading EliteTypes on the raid side. That was fallout from the split rather
+	-- than a decision — EnemyAI.Patterns.Slam's whole design turns on a raid player being able to
+	-- walk out of the telegraphed circle (see that file, and DESIGN_NOTES' "Siegebreaker — design
+	-- rationale"), which nothing could ever exercise while no raid spawned one.
+	--
+	-- Rolled HERE rather than at the call sites because this function is already the single place
+	-- that decides "what can spawn" for both the procedural ring and zone-filled placements (see
+	-- resolveEnemyPlacements' own comment on why it reuses this rather than drawing separately).
+	--
+	-- Unlike the normal roster above, there is deliberately NO fall back to the unfiltered list when
+	-- no elite has a built model: the roster fallback exists so a raid is never empty, but an elite
+	-- is a bonus threat, and spawning a key with no Model would just warn and skip inside spawnEnemy,
+	-- silently costing the room one enemy. No model yet simply means no elite — the room rolls out
+	-- as an ordinary one.
+	if #keys > 0 and eliteChance and eliteChance > 0 and math.random() <= eliteChance then
+		local elites = {}
+		for key in pairs(EnemyConfig.EliteTypes) do
+			if CombatEncounterService.HasModelFor(key) then
+				table.insert(elites, key)
+			end
+		end
+		if #elites > 0 then
+			keys[math.random(1, #keys)] = elites[math.random(1, #elites)]
+		end
+	end
+
 	return keys
 end
 
@@ -958,7 +990,12 @@ end
 -- This used to read EnemyConfig.EliteTypes, which was the same table CombatEncounterService's wave
 -- elite pick drew from — so the raid's terminal encounter was also a routine spawn every fifth
 -- wave, and a boss stopped reading as one. BossTypes is boss-only and read from here and nowhere
--- else; the wave side keeps EliteTypes to itself.
+-- else.
+--
+-- EliteTypes is NOT raid-exclusive-to-waves as a result, and never was meant to be: Combat rooms
+-- draw from it through pickRaidSpawnKeys' EliteChance substitution (see above). What the split
+-- bought is one-directional — a BOSS can never turn up in a wave or an ordinary room. An elite
+-- turning up in a Combat room is the intended shape, not a leak.
 local function pickBossSpawnKeys(count: number): { string }
 	local available = {}
 	for key in pairs(EnemyConfig.BossTypes) do
@@ -1002,10 +1039,10 @@ local function beginCombat(state, node)
 	-- A room built with RaidConfig.SpawnPointName/SpawnZoneName Parts decides some or all of its own
 	-- composition (see resolveEnemyPlacements); one with neither falls back to the original
 	-- procedural roll, unchanged from before either of those existed.
-	local explicitSpawns = resolveEnemyPlacements(state, count)
+	local explicitSpawns = resolveEnemyPlacements(state, count, composition.EliteChance)
 	local spawnKeys = {}
 	if not explicitSpawns then
-		spawnKeys = pickRaidSpawnKeys(count)
+		spawnKeys = pickRaidSpawnKeys(count, composition.EliteChance)
 	end
 
 	task.spawn(function()
@@ -1082,6 +1119,12 @@ local function beginAmbush(state, node)
 			-- of an Ambush its own random placements rather than every wave materialising in the same
 			-- spots, which is what resolving once outside this loop (the way beginCombat resolves
 			-- once for its single encounter) would produce.
+			--
+			-- No elite chance passed, deliberately: an Ambush is already the tougher variant (2-8
+			-- waves, each ramping, any single loss failing the whole raid), and dropping a slam unit
+			-- into an arbitrary wave of one would compound two difficulty spikes that were tuned
+			-- independently. Combat rooms are the scoped home for elites; revisit for Ambush only
+			-- with its own number, not by reusing the Combat one.
 			local explicitSpawns = resolveEnemyPlacements(state, count)
 			local spawnKeys = {}
 			if not explicitSpawns then

@@ -1232,12 +1232,17 @@ to end:
     Confirm the wall's HP actually drops each time the disc fills. Base hit is `SlamDamage` = 42
     (also unplaytested, also scaled by the same wave multiplier as everything else).
 
-    **The dodge only exists in a raid — nothing spawns a Siegebreaker into one on its own.**
-    `EnemyConfig.EliteTypes` is only ever drawn from by the base-defense elite pick
-    (`CombatEncounterService.pickSpawnKeys`); no raid picker reads it. To see the other half of the
-    mechanic, author one in: in a Combat or Ambush Room Model, place a `SpawnPoint` Part with its
-    `EnemyType` Attribute set to `Siegebreaker` instead of the `Raider` example in step 15's
-    "Room-authored spawns." Enter that room, let it wind up, and this time **walk out of the red
+    **The dodge only exists in a raid, so test that half separately.** Raid Combat rooms now roll a
+    Siegebreaker on their own: `RaidConfig.CombatTierComposition[Tier].EliteChance` is 0 at Tier 1,
+    0.20 at Tier 2 and 0.35 at Tier 3 (all unplaytested), and on a hit it SUBSTITUTES one of the
+    room's rolled enemies rather than adding an extra — so a Tier 3 room is still 4-5 enemies, one
+    of which is far worse. `GetCombatTierForStage` puts stages 1-2 at Tier 1, so head deeper than
+    the second node before expecting one. Ambush nodes deliberately never roll elites.
+
+    To see it on demand instead of waiting on a 20-35% roll, author one in: in a Combat or Ambush
+    Room Model, place a `SpawnPoint` Part with its `EnemyType` Attribute set to `Siegebreaker`
+    instead of the `Raider` example in step 15's "Room-authored spawns" — an authored room states
+    its own composition and ignores `EliteChance` entirely. Enter that room, let it wind up, and this time **walk out of the red
     disc before it fills** — `SlamRadius` is 14 studs — and confirm you take no damage at all when
     it lands; stand inside the disc on a second attempt instead and confirm you do take the hit.
     This is the exact same function resolving both times — `context.TargetPosition` is the wall's
