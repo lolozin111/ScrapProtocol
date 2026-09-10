@@ -24,6 +24,7 @@
 	  CombatEncounterService.RunWave       — every defense wave is forced to include an elite.
 ]]
 
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local AdminConfig = require(ReplicatedStorage.Shared.AdminConfig)
@@ -31,11 +32,46 @@ local DataService = require(script.Parent.DataService)
 
 local DevShortcuts = {}
 
+-- Last answer announced per userId, so the log below fires on CHANGE rather than on every call.
+-- Every call would be thousands of lines (this is asked per raid room and per wave); once per
+-- session would miss "/admin off", which legitimately flips the answer mid-session.
+local lastAnnounced = {}
+
+-- Says out loud whether shortcuts are on, and WHICH half of the test turned them off.
+--
+-- Added because the silence was the problem: a shortcut gated on this simply does nothing when the
+-- answer is false, and "nothing happened" is identical whether you are not an admin, you typed
+-- /admin off, or Player Test Mode is on — three different fixes behind one symptom. This is the
+-- same reason Main.server.lua shouts about unloaded services rather than letting a dead
+-- OnServerInvoke yield forever.
+local function announce(player: Player, isAdmin: boolean, testSession: boolean, active: boolean)
+	if lastAnnounced[player.UserId] == active then
+		return
+	end
+	lastAnnounced[player.UserId] = active
+
+	if active then
+		print(("[DevShortcuts] %s — ON. Infinite Energy, forced elites in every fight."):format(player.Name))
+	elseif not isAdmin then
+		print(("[DevShortcuts] %s — OFF: not counting as an admin right now (AdminConfig.IsAdmin is false; did you type /admin off?)."):format(player.Name))
+	elseif testSession then
+		print(("[DevShortcuts] %s — OFF: you are in a Player Test Session. That is deliberate — turn TEST MODE off and rejoin to get shortcuts back."):format(player.Name))
+	end
+end
+
 function DevShortcuts.Active(player: Player): boolean
 	if not player then
 		return false
 	end
-	return AdminConfig.IsAdmin(player) and not DataService.IsTestSession(player)
+	local isAdmin = AdminConfig.IsAdmin(player)
+	local testSession = DataService.IsTestSession(player)
+	local active = isAdmin and not testSession
+	announce(player, isAdmin, testSession, active)
+	return active
 end
+
+Players.PlayerRemoving:Connect(function(player)
+	lastAnnounced[player.UserId] = nil
+end)
 
 return DevShortcuts

@@ -537,6 +537,60 @@ local function ensureEliteInPlacements(state, placements): boolean
 	return true
 end
 
+-- Did an elite actually end up in what we are about to spawn? Two shapes because the two paths
+-- produce two shapes: authored/zone placements are {Position, TypeKey} records, the procedural path
+-- is a flat list of keys.
+local function placementsHaveElite(placements): boolean
+	for _, entry in ipairs(placements) do
+		if EnemyConfig.EliteTypes[entry.TypeKey] then
+			return true
+		end
+	end
+	return false
+end
+
+local function keysHaveElite(keys: { string }): boolean
+	for _, key in ipairs(keys) do
+		if EnemyConfig.EliteTypes[key] then
+			return true
+		end
+	end
+	return false
+end
+
+-- Exactly one of the two lists is real for any given encounter: an authored/zone room resolves
+-- placements and leaves spawnKeys empty, a procedural one does the reverse. Spelled out as a branch
+-- rather than an `and/or` chain because reading it wrong here would misreport the very thing this is
+-- here to diagnose.
+local function forcedEliteLanded(explicitSpawns, spawnKeys: { string }): boolean
+	if explicitSpawns then
+		return placementsHaveElite(explicitSpawns)
+	end
+	return keysHaveElite(spawnKeys)
+end
+
+-- Reports what the admin dev shortcut ACTUALLY did, after the fact.
+--
+-- This replaced a print fired BEFORE the substitution, which announced "forcing an elite" whether or
+-- not one landed. Every path that places an elite quietly declines when no EliteTypes key has a
+-- usable Model — correct for a random roll (an elite is a bonus; see pickRaidSpawnKeys) and wrong
+-- for an explicit dev request, where silence is indistinguishable from the shortcut not working at
+-- all. The failure branch names the exact ServerStorage path it looked for and the exact requirement,
+-- because "it didn't spawn" has three completely different fixes depending on which of those is off.
+local function reportForcedElite(state, landed: boolean, where: string)
+	if landed then
+		print(("[Admin] %s — dev shortcut forced an elite into this %s."):format(state.Player.Name, where))
+		return
+	end
+
+	local expected = {}
+	for key, data in pairs(EnemyConfig.EliteTypes) do
+		table.insert(expected, ("%s -> ServerStorage.EnemyModels.%s"):format(key, tostring(data.ModelName)))
+	end
+	warn(("[Admin] %s — dev shortcut wanted an elite in this %s and could not place one: no EliteTypes entry has a usable Model. Looked for: %s. A Model needs its PrimaryPart set; a Folder needs at least one Model child that has one. Name must match EXACTLY."):format(
+		state.Player.Name, where, table.concat(expected, ", ")))
+end
+
 -- Shared resolver for both beginCombat and each wave of beginAmbush — decides, in priority order,
 -- whether this encounter uses authored SpawnPoints, authored SpawnZones, both, or falls back to the
 -- original procedural composition (returning nil tells the caller to do exactly that, unchanged).
@@ -1102,14 +1156,17 @@ local function beginCombat(state, node)
 	local forceElite = DevShortcuts.Active(state.Player)
 	if forceElite then
 		eliteChance = 1
-		print(("[Admin] %s — forcing an elite into this Combat room (dev shortcut, not the %d%% roll)."):format(
-			state.Player.Name, math.floor((composition.EliteChance or 0) * 100 + 0.5)))
 	end
 
 	local explicitSpawns = resolveEnemyPlacements(state, count, eliteChance, forceElite)
 	local spawnKeys = {}
 	if not explicitSpawns then
 		spawnKeys = pickRaidSpawnKeys(count, eliteChance)
+	end
+
+	-- Checked AFTER the list exists, never before — see reportForcedElite.
+	if forceElite then
+		reportForcedElite(state, forcedEliteLanded(explicitSpawns, spawnKeys), "Combat room")
 	end
 
 	task.spawn(function()
@@ -1177,8 +1234,6 @@ local function beginAmbush(state, node)
 	local forceElite = DevShortcuts.Active(state.Player)
 	if forceElite then
 		eliteChance = 1
-		print(("[Admin] %s — forcing an elite into every wave of this Ambush (dev shortcut; Ambush normally rolls none)."):format(
-			state.Player.Name))
 	end
 
 	task.spawn(function()
@@ -1209,6 +1264,12 @@ local function beginAmbush(state, node)
 			local spawnKeys = {}
 			if not explicitSpawns then
 				spawnKeys = pickRaidSpawnKeys(count, eliteChance)
+			end
+
+			-- Only the FIRST wave reports, not all 2-8 of them: the answer cannot change between
+			-- waves of one node, and eight identical warns would bury the Output window.
+			if forceElite and waveIndex == 1 then
+				reportForcedElite(state, forcedEliteLanded(explicitSpawns, spawnKeys), "Ambush")
 			end
 
 			local status = CombatEncounterService.RunRaidCombat(state.Player, roomCenter, spawnKeys, waveMultiplier, function(eventStatus, payload)
