@@ -27,7 +27,7 @@ already made (numbers, mechanics, sequencing), not just vague direction.
 | HUD phase 3 (all station menus) | **Built and verified** — see "Road to release" below |
 | Raid overhaul | **Scope cut to one mode for v1 (2026-09-08)** — steps 5-6 deferred post-launch; step 1 built AND VERIFIED in Studio 2026-09-08, step 2 (room variant folders) BUILT 2026-09-08, not yet verified in Studio, see Phase 00 below; **exit doors switched OFF 2026-09-09** — the Sector Map picks the next room again (`RaidConfig.ExitDoorsEnabled`) |
 | Enemy AI patterns | **Engine built, two patterns** — `Chaser` (six enemy types) and, shipped 2026-09-09, `Slam` (`Siegebreaker` only — a telegraphed wind-up/impact cycle, see "The Voidium infestation" below) |
-| Enemy art (Studio models) | **4 of 5 built (2026-09-10)** — Scavenger, Raider, Brute, Siegebreaker in `ServerStorage.EnemyModels`; VoidwakenHulk finished in Blender, not yet in Studio — see "Resuming after a context reset" |
+| Enemy art (Studio models) | **4 of 5 built (2026-09-10)** — Scavenger, Raider, Brute, Siegebreaker in `ServerStorage.EnemyModels`; VoidwakenHulk imported into Studio and textured (user-reported 2026-09-10); assembly not yet confirmed — see "Resuming after a context reset" |
 | Voidium infestation (lore + the raid boss) | **Partially built 2026-09-09** — `EliteTypes`/`BossTypes` split into separate pools and `Siegebreaker` shipped as the new elite; the bloom itself (the actual raid boss per Decision 2 below) is still designed, not built — see "The Voidium infestation" below; `Siegebreaker` also rolls into raid Combat rooms (`EliteChance`, 2026-09-09) |
 | Boss escort (spawn zones in the Boss room) | **Designed 2026-09-09, nothing built** — blocked on the spawn-zone curves; see "Boss escort" below |
 | Animation pass | **Back in scope (2026-09-10)** — the user is planning unique per-enemy animations; NO playback code exists yet, see "Resuming after a context reset". Was deferred post-launch on 2026-09-08; see Phase 01 |
@@ -3360,6 +3360,8 @@ things cost real time and are worth not relearning:
   with Bake Type **Emission** into `VoidwakenHulk_Baked`.
 - **The copy already in the place, `(fixed2)VoildHulkV1`, predates the UV unwrap, so its UVs don't
   match the texture.** Delete it and `(Rough2)VoidHulk`, and import `VoidwakenHulk.fbx` fresh.
+
+**Update at the very end of the session:** the user reports the Hulk is imported into Studio and "looking pretty", so steps 1–2 below appear DONE. Whether assembly (step 3) is done was not said — ask before walking through it, and don't make them re-import.
 
 **Next session, in order (Roblox side):**
 1. 3D Importer → `VoidwakenHulk.fbx`, **Scale Unit = Centimeter**. The default `Stud` reads FBX
