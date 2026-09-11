@@ -25,11 +25,12 @@ already made (numbers, mechanics, sequencing), not just vague direction.
 | Drone companion (4 Drone Cores) | **Built** — unlocks at Research Tier 3, follows you everywhere |
 | Player Test Mode (admin throwaway profile) | **Built** — see "Data safety" section below |
 | HUD phase 3 (all station menus) | **Built and verified** — see "Road to release" below |
-| Raid overhaul | **Scope cut to one mode for v1 (2026-09-08)** — steps 5-6 deferred post-launch; step 1 built AND VERIFIED in Studio 2026-09-08, step 2 (room variant folders) BUILT 2026-09-08, not yet verified in Studio, see Phase 00 below |
+| Raid overhaul | **Scope cut to one mode for v1 (2026-09-08)** — steps 5-6 deferred post-launch; step 1 built AND VERIFIED in Studio 2026-09-08, step 2 (room variant folders) BUILT 2026-09-08, not yet verified in Studio, see Phase 00 below; **exit doors switched OFF 2026-09-09** — the Sector Map picks the next room again (`RaidConfig.ExitDoorsEnabled`) |
 | Enemy AI patterns | **Engine built, two patterns** — `Chaser` (six enemy types) and, shipped 2026-09-09, `Slam` (`Siegebreaker` only — a telegraphed wind-up/impact cycle, see "The Voidium infestation" below) |
-| Voidium infestation (lore + the raid boss) | **Partially built 2026-09-09** — `EliteTypes`/`BossTypes` split into separate pools and `Siegebreaker` shipped as the new elite; the bloom itself (the actual raid boss per Decision 2 below) is still designed, not built — see "The Voidium infestation" below |
+| Enemy art (Studio models) | **4 of 5 built (2026-09-10)** — Scavenger, Raider, Brute, Siegebreaker in `ServerStorage.EnemyModels`; VoidwakenHulk finished in Blender, not yet in Studio — see "Resuming after a context reset" |
+| Voidium infestation (lore + the raid boss) | **Partially built 2026-09-09** — `EliteTypes`/`BossTypes` split into separate pools and `Siegebreaker` shipped as the new elite; the bloom itself (the actual raid boss per Decision 2 below) is still designed, not built — see "The Voidium infestation" below; `Siegebreaker` also rolls into raid Combat rooms (`EliteChance`, 2026-09-09) |
 | Boss escort (spawn zones in the Boss room) | **Designed 2026-09-09, nothing built** — blocked on the spawn-zone curves; see "Boss escort" below |
-| Animation pass | **Deferred post-launch (2026-09-08)** — attack tell only at release; see Phase 01 |
+| Animation pass | **Back in scope (2026-09-10)** — the user is planning unique per-enemy animations; NO playback code exists yet, see "Resuming after a context reset". Was deferred post-launch on 2026-09-08; see Phase 01 |
 | Early-game pacing & onboarding | **Partially built** — item 1 (ore sells for Scrap) shipped in the ore rework; starter objectives (item 2) still planned, not built — see below |
 | Raid shop rework (run-only perks) | **Planned, not built** — half the tag plumbing exists |
 | PvP base invasion | **Recommended cut from v1** — see "Road to release" below |
@@ -3291,6 +3292,120 @@ for an explicit greenlight before starting any further step of the build order b
 and stop; "pick up where we left off" is NOT the greenlight. Design work, docs and questions are
 fine.
 
+**SESSION OF 2026-09-09 → 09-10 — six commits, then the VoidwakenHulk art pipeline. READ THIS
+ENTRY FIRST. It supersedes the art status in the older entries below: Raider, Brute and Siegebreaker
+are no longer missing.**
+
+Commits, all on `fix/audit-p0-p3`, none pushed:
+- `43af692` — admins get infinite Energy outside a Player Test Session
+  (`RaidEnergyService.HasInfiniteEnergy`). The old inline admin bypass in ExpeditionService's lever
+  is gone; it skipped raid rooms and stayed on inside test mode.
+- `63e1f6f` — enemy variant folders draw from a shuffled bag per folder (`drawVariant`) instead of an
+  independent roll: every variant once before any repeats, and no back-to-back repeat across a
+  reshuffle. `HasModelFor` uses the new `collectVariants`, so an existence check never burns a draw.
+- `8e0f3da` — elites roll into raid Combat rooms: `EliteChance` on
+  `RaidConfig.CombatTierComposition` (0 / 0.20 / 0.35 by Tier), SUBSTITUTING one rolled enemy.
+  Ambush passes none. Closes a gap the pool split left: nothing on the raid side read `EliteTypes`,
+  so the Siegebreaker's raid dodge was unreachable.
+- `b2dfe4d` — **raid navigation is the Sector Map again; exit doors are OFF**
+  (`RaidConfig.ExitDoorsEnabled = false`), reversing Decision 2 at the user's call. Doors stay in the
+  authored rooms, sealed (solid and invisible). The map un-collapses itself when a choice opens, and
+  collapsing now goes to the TOP-right (it used to stay at right-centre because only Size changed).
+- `42e1ad4` — admin dev shortcut: a forced elite in every fight (raid Combat, every Ambush wave,
+  every defense wave). It changes the spawn list only, NOT the wave's `isElite`, so boss-wave loot is
+  untouched. New shared utility `Services/DevShortcuts.lua` (`Active(player)` = admin and not in a
+  test session); `HasInfiniteEnergy` delegates to it. Authored-SpawnPoint rooms are covered by
+  `ensureEliteInPlacements`.
+- `2e8f963` — the shortcut reports what it actually did: `[Admin] ... forced an elite`, or a warn
+  naming the exact `ServerStorage.EnemyModels` path it couldn't find, plus
+  `[DevShortcuts] <name> — ON/OFF` (with the reason) whenever the gate flips.
+
+**Confirmed by the user in Studio:** the Siegebreaker spawns under the forced-elite shortcut (after
+the naming fix below). **Not yet verified:** infinite Energy; the shuffled bag's spread; the real
+`EliteChance` roll with the shortcut off (`/admin off`, then Tier 2/3 rooms); map-click navigation,
+auto-expand and collapse-to-top-right; the `[DevShortcuts]` OFF lines. README section 4 steps 15 and
+24 cover these.
+
+**Enemy art status.** Built in Studio by the user: Scavenger, Raider, Brute, Siegebreaker. Two
+things cost real time and are worth not relearning:
+- **Model names are exact and case-sensitive.** The Siegebreaker was first built as `SiegeBreaker`;
+  `HasModelFor` quietly returned false and no elite could spawn. The `2e8f963` diagnostics are what
+  surfaced it.
+- **A rig that meets the documented contract (Humanoid + PrimaryPart) can still be unable to
+  walk.** The Raider got stuck; the user fixed it without recording the cause. Likely causes, in
+  order: an Anchored part; a prop with CanCollide wedging on geometry (every enemy part joins the
+  `CombatEnemies` group, which only disables enemy-vs-enemy collision); or a PrimaryPart that isn't
+  the HumanoidRootPart (`Chaser` measures distance from `model.PrimaryPart`, so a loose prop can
+  freeze it in the in-range branch).
+
+**VoidwakenHulk — THE ACTIVE WORKSTREAM. The Blender work is DONE; the Roblox work is next.**
+- Source files live OUTSIDE the repo, and git does not back them up:
+  `C:\Users\Carlin\Desktop\VoidHulk.blend` (Blender 5.1.1). The user was told to save
+  `VoidwakenHulk_Color.png` (flat paint; its image datablock is named "MainBody Base Color"),
+  `VoidwakenHulk_Baked.png` (the one for Roblox) and `VoidwakenHulk.fbx` beside it. Confirm the
+  location if they aren't there.
+- A skinned mesh: one mesh `MainBody` plus armature `Root`. **Bone names are a contract, because
+  animations bind to them:** `Root` (Deform OFF), `Hips`, `Torso`, `Head`, `Shoulder.L`,
+  `Upper_Arm.L`, `Lower_Arm.L`, `Hand.L`, `Shoulder.R`, `Upper_Arm.R`, `Lower_Arm.R`. There is no
+  `Hand.R` on purpose: the arms are deliberately asymmetric (a massive pearl-rock right arm, a lean
+  mechanical left one) because each is meant to behave differently as a boss mechanic.
+- Weighted rigidly, one chunk per bone (Ctrl+P → With Empty Groups, then **L** + Assign at 1.0),
+  which is the right method for a hard-surface model. UVs are Smart UV Project, Island Margin 0.02.
+- Palette: pearl rock `#EDE9F3`; Voidium gem and veins `#8130F2` (hue-matched to
+  `MineShaftConfig.OreColors.VoidiumShard`, 120/70/190, so it reads as the ore players mine);
+  gunmetal body `#3A3D45`; eye dome near-black `#15161A`; orange accent rings; a red-orange spike.
+- The bake: Cycles; material = paint × Ambient Occlusion (Distance 6), with the Multiply's Factor
+  driven by a Map Range on HSV Saturation (0.25–0.4 → 1–0), so the saturated purple and orange skip
+  the darkening. Previewed by wiring the Multiply straight into Material Output Surface, then baked
+  with Bake Type **Emission** into `VoidwakenHulk_Baked`.
+- **The copy already in the place, `(fixed2)VoildHulkV1`, predates the UV unwrap, so its UVs don't
+  match the texture.** Delete it and `(Rough2)VoidHulk`, and import `VoidwakenHulk.fbx` fresh.
+
+**Next session, in order (Roblox side):**
+1. 3D Importer → `VoidwakenHulk.fbx`, **Scale Unit = Centimeter**. The default `Stud` reads FBX
+   centimetres as studs: ~100× oversized, which is over Roblox's 2,048-stud part limit.
+2. Texture: a `SurfaceAppearance` inside the MeshPart, with `ColorMap` = `VoidwakenHulk_Baked.png`.
+   Later, for the pearl: low roughness and zero metalness (pearl isn't metal).
+3. Assembly: a Model named exactly **`VoidwakenHulk`**. Not "Voidwaken Hulk" (the DisplayName has a
+   space) and not the file's old "VoildHulk". Inside it: a Part named exactly `HumanoidRootPart`
+   (Transparency 1, CanCollide on, at his centre of mass); the MeshPart with CanCollide off and
+   Massless on; a `Motor6D` inside the MeshPart with Part0 = HumanoidRootPart and Part1 = the
+   MeshPart; a `Humanoid` with an `Animator` inside it; the Model's `PrimaryPart` =
+   HumanoidRootPart. Delete the importer's `AnimationController` and any Moon Animator scratch
+   objects. Set `HipHeight`, check his scale against a 5-stud player, then move him into
+   `ServerStorage.EnemyModels`.
+4. Test with a raid to a Boss node. **If the Boss room clears the instant you walk in, the name is
+   wrong:** `pickBossSpawnKeys` falls back to the unfiltered pool, `spawnEnemy` skips the missing
+   model, and a zero-spawn encounter resolves as trivially cleared.
+
+**Planned, not built — each needs the user's go-ahead:**
+- **Enemy animation playback. Nothing plays enemy animations today.** `EnemyAI` moves rigs with
+  `Humanoid:MoveTo`, and rigs cloned from `ServerStorage` have no `Animate` script. This needs an
+  `Animator` load-and-play in `spawnEnemy` plus triggers (idle, walk, attack, and the Slam's wind-up
+  and impact). The user wants unique animations per enemy: the Studio-built rigs in Moon Animator
+  (which needs Motor6D joints, not Welds), the Hulk in Blender, imported through the Animation
+  Editor and published for IDs.
+- **The Hulk's per-arm mechanic.** A new `EnemyAI.Patterns` entry, the same shape as `Slam`, plus
+  config fields. The user hasn't said what each arm does yet. Ask before designing either the
+  pattern or the animations, so the two are designed together.
+- **The camera eye.** The dome is his dark eyeball. Studio parts: a dark tinted Glass shell slightly
+  bigger than the dome, and a green Neon pupil disc (`#3DFF6E`) with a green PointLight. Code, not
+  written yet: a client script that every frame pins the eye to the `Head` bone's
+  `TransformedWorldCFrame` and places the pupil on the dome facing the player
+  (`CFrame.lookAt(domeCentre, target) * CFrame.new(0, 0, -radius)`). The Hulk is boss-only and each
+  raid has one player, so the target is always the local player.
+- **Gem glow:** a PointLight in `#8130F2` on an `Attachment` parented to the `Torso` bone, so it
+  moves with him. A texture can't glow; `SurfaceAppearance` has no emissive map.
+
+**Offered and declined by the user; don't re-offer unprompted:** a spawn-time rig validator, a
+boot-time check of every `EnemyConfig.ModelName` against `ServerStorage.EnemyModels`, and a dev
+shortcut that forces the next node to be a Boss room.
+
+**Found in passing, NOT fixed on this branch:** `MineShaftConfig.OreColors` has Gold and Platinum
+swapped (Gold renders silver-grey and Platinum gold-yellow, the reverse of OreConfig's own
+descriptions). It's slot-vs-metal drift from the ore rename: the colours followed the slot like the
+stats did, but colour belongs to the metal. Handed off as a separate background task.
+
 **SESSION OF 2026-09-09 — boss escort designed, three fixes shipped.** In order:
 - `07c7d2d` — the Boss escort design round (zones in the Boss room). Read
   "Boss escort — spawn zones in the Boss room" for the five decisions. NOT BUILT, and blocked on the
@@ -3406,7 +3521,7 @@ the six weapon families `Salvage`/`Flamethrowers`/`Bows`/`Snipers`/`GrenadeLaunc
 16 images covering every ore, every refined material and all 18 weapons, since `HudKit.getItemIcon`
 now falls back from an item key to the weapon's `Family`.
 
-**Step 1 of its build order is BUILT AND VERIFIED IN STUDIO (2026-09-08)** — physical exit doors plus
+**Step 1 of its build order is BUILT AND VERIFIED IN STUDIO (2026-09-08)** *(its exit-door half was switched OFF on 2026-09-09 — `RaidConfig.ExitDoorsEnabled = false`, the map is the input again; see the newest entry at the top of this section)* — physical exit doors plus
 the Sector Map, see "Raid Rooms — physical exit doors + the Sector Map" below. The user built the
 first authored Combat room and ran it. Confirmed WITH THEIR OWN EYES, not inferred: doors stay sealed
 and invisible through the fight then appear on clear; walking through one actually travels to that

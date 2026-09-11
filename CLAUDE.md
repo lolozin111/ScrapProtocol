@@ -74,6 +74,12 @@ locally several times and the copies drifted:
   overwrite each other's combat state.
 - `OreGate.CanMine(player, oreKey)` — the tool-tier + wave-unlock check, previously duplicated
   between `MiningService` and `MineShaftService` with a comment warning about the drift.
+- `DevShortcuts.Active(player)` — admin AND not in a Player Test Session. Gates the dev shortcuts
+  that change how the game *plays* (infinite Energy, a forced elite in every fight), so a test
+  session stays an honest look at the real game. Tools that change what you *have* (AdminService's
+  `/give` and friends) deliberately still check `AdminConfig.IsAdmin` alone. It announces
+  `[DevShortcuts] <name> — ON/OFF` in Output whenever the answer flips, with which half turned it
+  off, because a shortcut that is silently off is indistinguishable from one that's broken.
 - `Shared/Wallet.lua` — where a cost key lives on a profile, how much you have, what it's called.
   Shared (not server-only) so the HUD can't disagree with what the server will charge.
 - `ModConfig.ApplyMods(fireRate, damage, hp, itemKey, profile)`,
