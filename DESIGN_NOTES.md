@@ -27,7 +27,7 @@ already made (numbers, mechanics, sequencing), not just vague direction.
 | HUD phase 3 (all station menus) | **Built and verified** — see "Road to release" below |
 | Raid overhaul | **Scope cut to one mode for v1 (2026-09-08)** — steps 5-6 deferred post-launch; step 1 built AND VERIFIED in Studio 2026-09-08, step 2 (room variant folders) BUILT 2026-09-08, not yet verified in Studio, see Phase 00 below; **exit doors switched OFF 2026-09-09** — the Sector Map picks the next room again (`RaidConfig.ExitDoorsEnabled`) |
 | Enemy AI patterns | **Engine built, two patterns** — `Chaser` (six enemy types) and, shipped 2026-09-09, `Slam` (`Siegebreaker` only — a telegraphed wind-up/impact cycle, see "The Voidium infestation" below) |
-| Enemy art (Studio models) | **4 of 5 built (2026-09-10)** — Scavenger, Raider, Brute, Siegebreaker in `ServerStorage.EnemyModels`; VoidwakenHulk imported into Studio and textured (user-reported 2026-09-10); assembly not yet confirmed — see "Resuming after a context reset" |
+| Enemy art (Studio models) | **4 of 5 built (2026-09-10)** — Scavenger, Raider, Brute, Siegebreaker in `ServerStorage.EnemyModels`; VoidwakenHulk imported, textured and assembled (2026-09-10); HipHeight and the move into `EnemyModels` wait on his lying-down pose — see "Resuming after a context reset" |
 | Voidium infestation (lore + the raid boss) | **Partially built 2026-09-09** — `EliteTypes`/`BossTypes` split into separate pools and `Siegebreaker` shipped as the new elite; the bloom itself (the actual raid boss per Decision 2 below) is still designed, not built — see "The Voidium infestation" below; `Siegebreaker` also rolls into raid Combat rooms (`EliteChance`, 2026-09-09) |
 | Boss escort (spawn zones in the Boss room) | **Designed 2026-09-09, nothing built** — blocked on the spawn-zone curves; see "Boss escort" below |
 | Animation pass | **Back in scope (2026-09-10)** — the user is planning unique per-enemy animations; NO playback code exists yet, see "Resuming after a context reset". Was deferred post-launch on 2026-09-08; see Phase 01 |
@@ -3362,6 +3362,37 @@ things cost real time and are worth not relearning:
   match the texture.** Delete it and `(Rough2)VoidHulk`, and import `VoidwakenHulk.fbx` fresh.
 
 **Update at the very end of the session:** the user reports the Hulk is imported into Studio and "looking pretty", so steps 1–2 below appear DONE. Whether assembly (step 3) is done was not said — ask before walking through it, and don't make them re-import.
+
+**Update, next session (2026-09-10 evening) — assembly DONE, float height and the move NOT done.**
+- Done in Studio and seen in screenshots: Model `VoidwakenHulk` in **Workspace** holding `InitialPoses`
+  (importer's; keep it, the Animation Editor uses it), `MainBody` (Anchored off, CanCollide off,
+  Massless on; bones + `SurfaceAppearance` + a `Motor6D` named `RootJoint` made from the command bar
+  with `C0 = r.CFrame:Inverse() * b.CFrame` so the mesh didn't snap), `HumanoidRootPart` (Part,
+  unanchored, CanCollide on, torso-sized, Transparency still 0.5), `Humanoid` (RigType **R15**,
+  RootPart resolved to HumanoidRootPart) with an `Animator`. Model `PrimaryPart` = HumanoidRootPart.
+  The `AnimationController` is deleted.
+- **Not done:** `HipHeight`, root Transparency → 1, and moving him into `ServerStorage.EnemyModels`.
+- Measured in his current (upright) rest pose: 15.8 wide × 33.3 tall × 61.4 deep (the depth is mostly
+  the right arm); root's bottom sits 17.8 studs above his lowest point.
+- **At this size `Chaser` can never hit.** In a raid it tests the 3D distance from the root's CENTRE
+  to the player's root against `ContactRange` (6, Construct default) + `ATTACK_RANGE_SLACK` (12) = 18,
+  and his root is ~20 studs above a player's. The user chose to KEEP HIM FULL SIZE and solve it with
+  the attack design below, not by shrinking him.
+- **Agreed attack design (not built, needs the go-ahead):** the user animates each attack; in the
+  Animation Editor they add an Animation Event marker on the frame the fist lands (names like
+  `ImpactR`/`ImpactL`, a contract like the bone names). Server code plays the track, listens with
+  `GetMarkerReachedSignal`, and on the marker damages the player if within a config radius of the
+  FIST — the same shape as `Slam`'s impact check, but centred on the hand and timed by the animation.
+  No Touched parts (the user's first idea was hand hitboxes; this replaced it). There is no
+  `Hand.R` bone and a bone's position is its HEAD, so the right fist needs an `Attachment` (e.g.
+  `FistR`) inside `Lower_Arm.R`, moved to the fist. Verify when building that the server sees the
+  animated fist position, not the rest pose.
+- **What the user is doing next:** re-posing him to LIE ON THE FLOOR (no legs) and making the attack
+  animations. They were steered toward doing the lying pose as an idle ANIMATION rather than a new
+  rest pose, because a new rest pose means re-exporting, re-importing and redoing the whole assembly
+  above. Once the pose is settled, re-measure, then reshape the root block and set `HipHeight` to
+  match — the numbers above are for the upright pose and will be wrong. The user will bring back
+  published animation IDs + marker names.
 
 **Next session, in order (Roblox side):**
 1. 3D Importer → `VoidwakenHulk.fbx`, **Scale Unit = Centimeter**. The default `Stud` reads FBX
