@@ -3394,6 +3394,24 @@ things cost real time and are worth not relearning:
   match — the numbers above are for the upright pose and will be wrong. The user will bring back
   published animation IDs + marker names.
 
+**Update 2026-09-11 — the Idle is animated, imported and published.**
+- **Idle animation ID: `rbxassetid://113796712422007`** (looping ON, priority Idle). Nothing plays it
+  yet — the playback code still needs the go-ahead. The local `AnimSaves` copy was deleted on publish
+  (the user has the Blender Action), so re-edits go through Blender → re-import.
+- The lying-down pose is the Idle Action itself, as recommended; the rest pose is unchanged, so the
+  Studio assembly stands. The Model's `Scale` reads **0.046** (shrunk after import); the idle still
+  plays correctly at that scale. HipHeight / root block still to redo against the lying pose.
+- **The pipeline that worked, repeat it for each attack.** Blender: one Action per animation, named,
+  Fake User on; scene Frame Range covering the Action (the Idle runs 0–360); File → Export → FBX with
+  Object Types = Armature + Mesh, Transform untouched, **Only Deform Bones OFF** (`Root` is Deform off
+  and would be dropped), Add Leaf Bones OFF, Bake Animation ON with Key All Bones ON, NLA Strips OFF,
+  **All Actions OFF**, Force Start/End Keying ON, Sampling Rate 1, Simplify 0. Studio: Animation Editor
+  on the Hulk → ⋯ → Import → From FBX Animation with Rig Type Custom, **Rest Pose Source = Imported
+  Rig**, **Scale Unit = Centimeter**, Scale Factor 1.0 → loop/priority → Save As → Publish to Roblox
+  under the account/group that owns the game.
+- For ATTACKS, keep the local copy on publish: the Impact markers are added in Studio's editor, so a
+  fresh re-import from Blender loses them.
+
 **Next session, in order (Roblox side):**
 1. 3D Importer → `VoidwakenHulk.fbx`, **Scale Unit = Centimeter**. The default `Stud` reads FBX
    centimetres as studs: ~100× oversized, which is over Roblox's 2,048-stud part limit.
