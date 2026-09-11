@@ -3411,6 +3411,14 @@ things cost real time and are worth not relearning:
   under the account/group that owns the game.
 - For ATTACKS, keep the local copy on publish: the Impact markers are added in Studio's editor, so a
   fresh re-import from Blender loses them.
+- **Pose convention (user's choice, Option A):** every animation starts AND ends in the Idle's lying
+  pose (the first keyframe copied to the last), so crossfades between tracks stay invisible. No
+  separate "ready" stance or wake-up animation.
+- **Heavy attack:** animated in Blender, exported (`VoidwakenHulk_Heavy.fbx`) and imported into
+  Studio, where it plays correctly. NOT yet done: looping off / priority Action, the Impact marker on
+  the landing frame, Save As, publish. Which arm it uses and what the marker is called — ask.
+- Still open design questions for the user: what each arm's attack does, and whether he moves
+  (needs a crawl/drag animation) or is a stationary boss (needs a new pattern instead of `Chaser`).
 
 **Next session, in order (Roblox side):**
 1. 3D Importer → `VoidwakenHulk.fbx`, **Scale Unit = Centimeter**. The default `Stud` reads FBX
