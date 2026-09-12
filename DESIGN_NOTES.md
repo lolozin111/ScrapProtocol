@@ -3432,7 +3432,8 @@ things cost real time and are worth not relearning:
   a regular marker slows **40% for 1.5s**, one tagged final/special slows **70% for 2.5s**.
   Fist reach: **20 studs on a regular marker, 28 on a final one** (the Siegebreaker's slam is 14;
   the user asked for "big but not too crazy" and 30 everywhere would have made the swing undodgeable
-  while slowed). Still to pick: refresh-vs-stack on the slow (refresh suggested).
+  while slowed). A hit landing on an already-slowed player **REFRESHES** the slow (user's call,
+  2026-09-11) — it never stacks, so a three-hit combo can't pin the player in place.
   **Done in Studio (2026-09-11):** the fist points exist as Attachments — **`FistR` inside the
   `Lower_Arm.R` bone** (there is no `Hand.R`, and a bone's position is its joint, not the fist) and
   **`FistL` inside `Hand.L`** — both positioned on the fists in the standing rest pose. Hits measure
