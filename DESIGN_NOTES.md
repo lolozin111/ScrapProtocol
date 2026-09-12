@@ -3427,9 +3427,15 @@ things cost real time and are worth not relearning:
   players; its hits SLOW the player, which is what balances his own very low speed. The slow is
   buildable today — `PlayerSpeed.Set(player, key, multiplier)` is the one authoritative owner of a
   player's WalkSpeed (`Services/PlayerSpeed.lua`), so a Hulk slow stamps its own key and clears it.
-  Numbers still to pick with the user: damage per hit, slow strength/duration (keep the duration
-  under his attack cooldown so one mistake can't snowball), fist reach radius, and whether repeated
-  hits refresh the slow (suggested) or stack.
+  **Numbers chosen by the user (2026-09-11):** damage 12 / 12 / 30 across the combo (~54 for the
+  full thing; his plain ContactDamage is 22, the Siegebreaker's slam 42). Slow on EVERY hit —
+  a regular marker slows **40% for 1.5s**, one tagged final/special slows **70% for 2.5s**.
+  Still to pick: fist reach radius, and refresh-vs-stack (refresh suggested).
+  **Flagged risk, accepted for now:** 70% puts the player at ~4.8 studs/s against his 10, for 2.5s,
+  which is longer than his 1.6s AttackCooldown — so after a finisher he can close and swing again
+  while the player still can't escape. If it plays badly, the least-invasive fixes in order:
+  shorten the finisher slow to ~1.5s, soften it to 50-60%, or add a brief post-finisher window where
+  he cannot hit.
 - Still to animate: movement (crawl/drag — he DOES chase), attack L, a turn-in-place, and a death
   (under 2s, since `humanoid.Died` destroys the model after `task.delay(2, ...)`;
   `BreakJointsOnDeath` must be UNTICKED on his Humanoid or the RootJoint snaps on death).
