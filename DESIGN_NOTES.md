@@ -3430,7 +3430,13 @@ things cost real time and are worth not relearning:
   **Numbers chosen by the user (2026-09-11):** damage 12 / 12 / 30 across the combo (~54 for the
   full thing; his plain ContactDamage is 22, the Siegebreaker's slam 42). Slow on EVERY hit —
   a regular marker slows **40% for 1.5s**, one tagged final/special slows **70% for 2.5s**.
-  Still to pick: fist reach radius, and refresh-vs-stack (refresh suggested).
+  Fist reach: **20 studs on a regular marker, 28 on a final one** (the Siegebreaker's slam is 14;
+  the user asked for "big but not too crazy" and 30 everywhere would have made the swing undodgeable
+  while slowed). Still to pick: refresh-vs-stack on the slow (refresh suggested).
+  **Done in Studio (2026-09-11):** the fist points exist as Attachments — **`FistR` inside the
+  `Lower_Arm.R` bone** (there is no `Hand.R`, and a bone's position is its joint, not the fist) and
+  **`FistL` inside `Hand.L`** — both positioned on the fists in the standing rest pose. Hits measure
+  from these, not from the bones. Nudging one in Studio retunes where a hit centres, no code change.
   **Flagged risk, accepted for now:** 70% puts the player at ~4.8 studs/s against his 10, for 2.5s,
   which is longer than his 1.6s AttackCooldown — so after a finisher he can close and swing again
   while the player still can't escape. If it plays badly, the least-invasive fixes in order:
