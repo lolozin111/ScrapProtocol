@@ -3417,8 +3417,8 @@ things cost real time and are worth not relearning:
 - **Heavy attack (right rock arm) — published: `rbxassetid://137947497885396`.** Looping off,
   priority Action, local `AnimSaves` copy KEPT (the markers live in the Studio copy, not the FBX).
   It is a MULTI-HIT combo: several `ImpactR` markers for the earlier landings and one
-  **`ImpactRFinal`** on the last, longer-wound-up blow, which is meant to hit harder. Confirm the
-  exact count with the user before building.
+  **`ImpactRFinal`** on the last, longer-wound-up blow, which is meant to hit harder. Confirmed
+  count: **2 × `ImpactR`, then 1 × `ImpactRFinal`**.
 - **Marker names are the strategy key.** Each marker NAME gets its own entry (damage, fist reach,
   slow) in the Hulk's config — the flat-table-of-named-strategies shape this repo uses everywhere —
   so a new named hit is a config entry, not a code change. `ImpactR`/`ImpactRFinal` today,
