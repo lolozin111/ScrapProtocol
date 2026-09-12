@@ -3414,11 +3414,25 @@ things cost real time and are worth not relearning:
 - **Pose convention (user's choice, Option A):** every animation starts AND ends in the Idle's lying
   pose (the first keyframe copied to the last), so crossfades between tracks stay invisible. No
   separate "ready" stance or wake-up animation.
-- **Heavy attack:** animated in Blender, exported (`VoidwakenHulk_Heavy.fbx`) and imported into
-  Studio, where it plays correctly. NOT yet done: looping off / priority Action, the Impact marker on
-  the landing frame, Save As, publish. Which arm it uses and what the marker is called — ask.
-- Still open design questions for the user: what each arm's attack does, and whether he moves
-  (needs a crawl/drag animation) or is a stationary boss (needs a new pattern instead of `Chaser`).
+- **Heavy attack (right rock arm) — published: `rbxassetid://137947497885396`.** Looping off,
+  priority Action, local `AnimSaves` copy KEPT (the markers live in the Studio copy, not the FBX).
+  It is a MULTI-HIT combo: several `ImpactR` markers for the earlier landings and one
+  **`ImpactRFinal`** on the last, longer-wound-up blow, which is meant to hit harder. Confirm the
+  exact count with the user before building.
+- **Marker names are the strategy key.** Each marker NAME gets its own entry (damage, fist reach,
+  slow) in the Hulk's config — the flat-table-of-named-strategies shape this repo uses everywhere —
+  so a new named hit is a config entry, not a code change. `ImpactR`/`ImpactRFinal` today,
+  `ImpactL` when the light attack exists.
+- **The Hulk's design, in the user's words:** the rock arm has a long wind-up and punishes greedy
+  players; its hits SLOW the player, which is what balances his own very low speed. The slow is
+  buildable today — `PlayerSpeed.Set(player, key, multiplier)` is the one authoritative owner of a
+  player's WalkSpeed (`Services/PlayerSpeed.lua`), so a Hulk slow stamps its own key and clears it.
+  Numbers still to pick with the user: damage per hit, slow strength/duration (keep the duration
+  under his attack cooldown so one mistake can't snowball), fist reach radius, and whether repeated
+  hits refresh the slow (suggested) or stack.
+- Still to animate: movement (crawl/drag — he DOES chase), attack L, a turn-in-place, and a death
+  (under 2s, since `humanoid.Died` destroys the model after `task.delay(2, ...)`;
+  `BreakJointsOnDeath` must be UNTICKED on his Humanoid or the RootJoint snaps on death).
 
 **Next session, in order (Roblox side):**
 1. 3D Importer → `VoidwakenHulk.fbx`, **Scale Unit = Centimeter**. The default `Stud` reads FBX
