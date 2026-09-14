@@ -454,6 +454,14 @@ local function spawnEnemy(typeKey: string, typeData, spawnPosition: Vector3, mul
 		SlamDamage = typeData.SlamDamage and typeData.SlamDamage * multiplier or nil,
 		SlamRadius = typeData.SlamRadius,
 		SlamCooldown = typeData.SlamCooldown,
+		-- EnemyAI.Patterns.Animated (EnemyAnimation.lua) reads its whole config — Animations,
+		-- Attacks, AnimationHits, FacingYawOffset, DebugHitboxes — straight off TypeData rather than
+		-- having each one copied onto the record individually like ContactRange/AttackCooldown above;
+		-- there are too many of them and they're all read-only. DamageMultiplier is kept alongside it
+		-- so an animation hit's Damage scales with the run/boss multiplier exactly like ContactDamage
+		-- does above, without EnemyAnimation.lua needing to know the multiplier was ever computed.
+		TypeData = typeData,
+		DamageMultiplier = multiplier,
 	}
 
 	-- Housekeeping only, not gameplay logic — the tick loop still finds out about a death by
@@ -1164,10 +1172,20 @@ function CombatEncounterService.RunRaidCombat(player: Player, arenaCenter: Vecto
 
 		-- TargetPosition tracks the player's own LIVE position every tick, not a fixed point — see
 		-- this function's own header and EnemyAI.lua's TargetPosition comment.
+		--
+		-- TargetPart/TargetPlayer are raid-only additions (RunWave's aiContext above has neither, and
+		-- every reader has to tolerate that) — EnemyAnimation.lua's marker callbacks fire ASYNC,
+		-- between ticks, off an animation event rather than this loop's own polling, so by the time one
+		-- runs, TargetPosition above is already a stale snapshot from whichever tick captured it. A
+		-- live Instance lets a hit measure the player's ACTUAL position at the instant it lands instead
+		-- of wherever they were up to TICK_SECONDS ago, and TargetPlayer lets a hit apply a slow
+		-- (PlayerSpeed.Set) to someone, which a bare position can never do.
 		local aiContext = {
 			TargetPosition = rootPart.Position,
 			Now = now,
 			DamageTarget = damageTarget,
+			TargetPart = rootPart,
+			TargetPlayer = player,
 		}
 		-- Statuses tick from the same loop that drives the AI, so a bleed advances at the same
 		-- rate in a raid room as in base defense. Damage routes through the normal pipeline —

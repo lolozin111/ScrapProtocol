@@ -15,7 +15,13 @@
 	SPAWN_GRACE_SECONDS below), though CombatEncounterService currently overrides ContactRange to
 	BaseConfig.WallAttackRange for base defense specifically — see spawnEnemy's comment there, and
 	LastAttackTime/LastMoveThink timestamps this file maintains). `context` is shared across every
-	enemy in the tick: { TargetPosition, Now, DamageTarget }.
+	enemy in the tick: { TargetPosition, Now, DamageTarget, TargetPart?, TargetPlayer? }. The last two
+	are raid-only (RunRaidCombat's aiContext sets both; RunWave's has neither, since base defense has
+	no player to point at) — TargetPart is the player's live HumanoidRootPart, there for consumers like
+	EnemyAnimation.lua whose damage lands off an async animation marker instead of this loop's own
+	polling and so needs the player's position at the INSTANT of the hit, not this tick's snapshot;
+	TargetPlayer is the Player itself, there so a hit can apply a status through PlayerSpeed, which a
+	bare position can never do. Both nil in a wave — anything that reads them must tolerate that.
 
 	TargetPosition is deliberately just a point in space, not tied to any particular kind of
 	target — base defense currently points it at the plot's own anchor position (the wall), NOT
@@ -31,6 +37,7 @@
 ]]
 
 local StatusEffects = require(script.Parent.StatusEffects)
+local EnemyAnimation = require(script.Parent.EnemyAnimation)
 
 local EnemyAI = {}
 
@@ -354,6 +361,22 @@ EnemyAI.Patterns.Slam = function(enemy, context)
 		local standPoint = context.TargetPosition + direction * enemy.ContactRange
 		humanoid:MoveTo(standPoint)
 	end
+end
+
+----------------------------------------------------------------------
+-- Animated — VoidwakenHulk's pattern (EnemyConfig.BossTypes.VoidwakenHulk). Unlike Chaser/Slam
+-- above, the actual thinking (walking, attack selection, marker-timed hit detection) lives in
+-- EnemyAnimation.lua, not here — that file is sized for animation bookkeeping (loading tracks,
+-- listening for markers, per-attachment fist tracking) that has nothing to do with the rest of
+-- this module, the same "extract when the shape stops matching the file" call as MainHud's own
+-- panel extractions. This is deliberately the thinnest possible bridge: EnemyAnimation must never
+-- require this module back (that would be circular, since this file requires it above), so it
+-- takes Chaser as a plain function argument instead of reaching for EnemyAI.Patterns.Chaser
+-- itself — its fallback for "no usable animation" without ever needing to know this table exists.
+----------------------------------------------------------------------
+
+EnemyAI.Patterns.Animated = function(enemy, context)
+	EnemyAnimation.Tick(enemy, context, EnemyAI.Patterns.Chaser)
 end
 
 return EnemyAI

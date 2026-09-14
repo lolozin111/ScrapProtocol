@@ -176,11 +176,59 @@ EnemyConfig.BossTypes = {
 		DisplayName = "Voidwaken Hulk",
 		Description = "Whatever Voidium did to this one, it didn't make it slower.",
 		HP = 340,
+		-- FALLBACK ONLY. The Animated pattern replaces contact damage with the named hits below; this
+		-- is used only if the animations can't load and he drops back to plain Chaser.
 		ContactDamage = 22,
 		MoveSpeed = 10,
+		-- Seconds from the END of one attack animation to when the next may start.
 		AttackCooldown = 1.6,
 		Defense = 28,
 		ModelName = "VoidwakenHulk",
+		-- The stand-off ring he walks to (horizontal studs from the player). Kept inside every
+		-- attack's TriggerRange so arriving means he can swing.
+		ContactRange = 15,
+
+		-- Selects EnemyAI.Patterns.Animated (see EnemyAnimation.lua): his attacks are Studio
+		-- animations, and damage lands on the animation's own event markers, measured from a fist
+		-- Attachment rather than from his root.
+		AIPattern = "Animated",
+
+		-- An empty string means "not animated yet" — that slot is skipped (with one warn), never an error.
+		Animations = {
+			Idle = "rbxassetid://113796712422007",
+			Move = "",
+			Death = "",
+		},
+
+		-- Which attack he plays is a weighted pick among the ones whose TriggerRange (horizontal studs,
+		-- his root to the player) covers the current distance. The damage an attack deals is decided by
+		-- which markers its animation contains, not by anything here.
+		Attacks = {
+			{ Name = "RockArmCombo", AnimationId = "rbxassetid://137947497885396", TriggerRange = 30, Weight = 1 },
+			{ Name = "LeftSweep", AnimationId = "", TriggerRange = 30, Weight = 1 },
+		},
+
+		-- Keyed by animation event NAME (exact, case-sensitive — the names typed in the Animation Editor).
+		--   Kind "Impact": one check the instant the marker named <key> is reached.
+		--   Kind "Sweep":  markers <key>Start and <key>End open and close a window; the fist is checked
+		--                  every frame between them, and each target can be hit at most once per swing.
+		-- Attachment: the Attachment inside the model the hit measures from. Reach: studs from it.
+		-- Damage: base, scaled by the run/boss multiplier like ContactDamage.
+		-- SlowMultiplier: the player's speed multiplier while slowed (0.6 = 40% slower).
+		-- A new hit on a slowed player REFRESHES the slow to the new hit's values; slows never stack.
+		AnimationHits = {
+			ImpactR = { Kind = "Impact", Attachment = "FistR", Damage = 12, Reach = 20, SlowMultiplier = 0.6, SlowSeconds = 1.5 },
+			ImpactRFinal = { Kind = "Impact", Attachment = "FistR", Damage = 30, Reach = 28, SlowMultiplier = 0.3, SlowSeconds = 2.5 },
+			SweepL = { Kind = "Sweep", Attachment = "FistL", Damage = 8, Reach = 15, SlowMultiplier = 0.6, SlowSeconds = 1.5 },
+		},
+
+		-- Degrees added to "face the player" when an attack starts, in case the rig's front isn't the
+		-- root's LookVector. Tune in Studio if he swings sideways.
+		FacingYawOffset = 0,
+
+		-- Studio aid: draws each hit's reach sphere at the fist and prints hit/miss distances to Output.
+		-- Use it to check the server sees the ANIMATED fist, not the rest pose. Leave false when shipping.
+		DebugHitboxes = false,
 	}),
 }
 
