@@ -3451,9 +3451,23 @@ things cost real time and are worth not relearning:
   while the player still can't escape. If it plays badly, the least-invasive fixes in order:
   shorten the finisher slow to ~1.5s, soften it to 50-60%, or add a brief post-finisher window where
   he cannot hit.
-- Still to animate: movement (crawl/drag — he DOES chase), attack L, a turn-in-place, and a death
-  (under 2s, since `humanoid.Died` destroys the model after `task.delay(2, ...)`;
-  `BreakJointsOnDeath` must be UNTICKED on his Humanoid or the RootJoint snaps on death).
+- **BUILT 2026-09-14 (untested in Studio):** `AIPattern = "Animated"` → `Services/EnemyAnimation.lua`.
+  Config lives on the Hulk's `EnemyConfig.BossTypes` entry: `Animations` (Idle/Move/Death), `Attacks`
+  (weighted pick among those whose horizontal `TriggerRange`, default 30, covers the distance; he
+  snaps to face the player on commit, `FacingYawOffset` fixes a sideways rig), and `AnimationHits`
+  keyed by marker name (`Impact` = one check; `Sweep` = `<key>Start`/`<key>End` window, checked every
+  Heartbeat, once per target). Walk ring `ContactRange = 15`; `AttackCooldown` counts from the END
+  of an attack animation. A stun stops the swing. Hit damage × the spawn multiplier, like
+  ContactDamage. Slow key `EnemyHitSlow`, token-refreshed. Fist position = the parent Bone's
+  `TransformedWorldCFrame * attachment.CFrame`; **whether the server sees the animated pose is the
+  open question** — `DebugHitboxes = true` answers it in one playtest. TriggerRange 30 / ring 15 are
+  my guesses, not the user's; tune after seeing him swing. Empty ids/missing attachments warn once
+  and degrade; no usable attack at all → plain Chaser with the fallback ContactDamage 22.
+  **Waiting on:** the left sweep's published id (goes in `Attacks[2].AnimationId`).
+- Still to animate: movement (crawl/drag — he DOES chase; goes in `Animations.Move`), a death
+  (`Animations.Death`, under 2s, since `humanoid.Died` destroys the model after `task.delay(2, ...)`;
+  `BreakJointsOnDeath` must be UNTICKED on his Humanoid or the RootJoint snaps on death), and
+  optionally a turn-in-place (not wired; he snaps to face on attack).
 
 **Next session, in order (Roblox side):**
 1. 3D Importer → `VoidwakenHulk.fbx`, **Scale Unit = Centimeter**. The default `Stud` reads FBX

@@ -1058,6 +1058,19 @@ to end:
     before the run's own strength multiplier is even applied, so expect it to noticeably outlast a
     Combat-node fight.
 
+    The Hulk uses `AIPattern = "Animated"` (`Services/EnemyAnimation.lua`): he should play his Idle
+    at once, walk to about 15 studs from you, turn to face you and play an attack animation. Damage
+    lands on the animation's own event markers, measured from the `FistR`/`FistL` Attachments (not
+    his root): `ImpactR` 12, `ImpactRFinal` 30, and the left-arm sweep 8 once per swing between
+    `SweepLStart` and `SweepLEnd` (all base numbers, scaled like his HP). Every hit also slows you
+    (WalkSpeed visibly drops, then recovers). To verify the server sees the ANIMATED fist, set
+    `EnemyConfig.BossTypes.VoidwakenHulk.DebugHitboxes = true`: a translucent sphere should follow
+    the fist through the swing (red on a hit, white on a miss) with `[EnemyAnimation] ... HIT/miss`
+    lines in Output. A sphere frozen in one spot while the arm moves means the server is reading
+    the rest pose. Also watch Output for `[EnemyAnimation]` warnings: an attack that played without
+    reaching any expected marker (a marker-name typo), a missing Attachment, or an empty animation
+    id (the left sweep's `AnimationId` stays `""` until it's published; he just won't pick it).
+
     The **Go Back To Base** button (top-centre) should appear ONLY while a choice is actually live —
     i.e. exactly while that banner is pulsing. Confirm it is gone during a fight, gone while a Heal
     or Shop room is waiting on its interact prompt, and back the moment the exits unlock. Run a
