@@ -3464,10 +3464,11 @@ things cost real time and are worth not relearning:
   my guesses, not the user's; tune after seeing him swing. Empty ids/missing attachments warn once
   and degrade; no usable attack at all → plain Chaser with the fallback ContactDamage 22.
   **Waiting on:** the left sweep's published id (goes in `Attacks[2].AnimationId`).
-- Still to animate: movement (crawl/drag — he DOES chase; goes in `Animations.Move`), a death
-  (`Animations.Death`, under 2s, since `humanoid.Died` destroys the model after `task.delay(2, ...)`;
-  `BreakJointsOnDeath` must be UNTICKED on his Humanoid or the RootJoint snaps on death), and
-  optionally a turn-in-place (not wired; he snaps to face on attack).
+- **User is DONE animating the Hulk (2026-09-14).** No death animation (`Animations.Death` stays
+  `""`; he just goes limp/breaks and is removed 2s later) and no turn-in-place. Movement
+  (`Animations.Move`) was discussed right before this — confirm whether a walk was actually made and
+  published before assuming either way. A stop animation is not needed: Idle loops underneath and
+  the Move track fades out over it (default 0.1s fade; offered 0.3s if the snap is visible).
 
 **Next session, in order (Roblox side):**
 1. 3D Importer → `VoidwakenHulk.fbx`, **Scale Unit = Centimeter**. The default `Stud` reads FBX
