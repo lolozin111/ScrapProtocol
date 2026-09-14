@@ -3427,9 +3427,10 @@ things cost real time and are worth not relearning:
   animation gets TWO events, **`SweepLStart`** and **`SweepLEnd`**; between them the server checks
   around `FistL` every frame, and each player can be hit AT MOST ONCE per swing. This is a second
   marker shape (a window, not a point) and needs its own small bit of server code alongside the
-  `ImpactR` handling. Not built. Still needed from the user: the published animation ID, and
-  damage / reach / slow numbers for the sweep. The imported take reads 5.58s long — flagged to the
-  user as long for a light attack; confirm before building around it.
+  `ImpactR` handling. Not built. **Numbers chosen by the user:** damage **8** per player per swing,
+  reach **15 studs from `FistL`**, and it DOES slow. Slow amount/duration not given — proposed default
+  is the regular-hit slow (40% for 1.5s, refreshes, never stacks); confirm when building. The 5.58s
+  length is intended ("he is a slow guy"). Still needed: the published animation ID.
 - **The Hulk's design, in the user's words:** the rock arm has a long wind-up and punishes greedy
   players; its hits SLOW the player, which is what balances his own very low speed. The slow is
   buildable today — `PlayerSpeed.Set(player, key, multiplier)` is the one authoritative owner of a
