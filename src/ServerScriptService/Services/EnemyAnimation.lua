@@ -568,6 +568,90 @@ local function facingOffset(enemy, anim): number
 	return anim.FacingYawOffset
 end
 
+----------------------------------------------------------------------
+-- Turning. His facing is owned here, not by Humanoid.AutoRotate: AutoRotate points the
+-- HumanoidRootPart's LookVector along the walk, and this rig's root front isn't the mesh's front, so
+-- he crawled backwards (FacingYawOffset corrects that). It runs every Heartbeat rather than on the
+-- 0.15s AI tick, because turning in tick-sized chunks read as snapping. And it pivots around
+-- TypeData.TurnPivot (a Bone or Attachment, e.g. "Torso") instead of the root: the root isn't the
+-- middle of a lying-down body, so spinning on it swung the whole body round like a door.
+----------------------------------------------------------------------
+
+local warnedTurnPivot: { [string]: boolean } = {}
+
+local function turnPivotPosition(enemy, anim, rootPart: BasePart): Vector3
+	local pivot = anim.TurnPivot
+	if pivot and pivot.Parent then
+		if pivot:IsA("Bone") then
+			return pivot.TransformedWorldCFrame.Position
+		end
+		return fistWorldPosition(enemy, pivot)
+	end
+	return rootPart.Position
+end
+
+-- Signed radians from where he faces to where he should (the target, seen from the pivot), plus his
+-- current yaw so the caller doesn't read it twice.
+local function yawError(enemy, anim, rootPart: BasePart, targetPosition: Vector3): (number, number)
+	local _, currentYaw = rootPart.CFrame:ToEulerAnglesYXZ()
+	local pivot = turnPivotPosition(enemy, anim, rootPart)
+	local flatTo = Vector3.new(targetPosition.X - pivot.X, 0, targetPosition.Z - pivot.Z)
+	if flatTo.Magnitude < 0.01 then
+		return 0, currentYaw
+	end
+	local _, desiredYaw = (CFrame.lookAt(Vector3.zero, flatTo) * CFrame.Angles(0, math.rad(facingOffset(enemy, anim)), 0)):ToEulerAnglesYXZ()
+	return (desiredYaw - currentYaw + math.pi) % (2 * math.pi) - math.pi, currentYaw
+end
+
+local function turnStep(enemy, anim, dt: number)
+	local model = enemy.Model
+	local humanoid = enemy.Humanoid
+	local rootPart = model and model.PrimaryPart
+	local context = anim.Context
+	if not rootPart or not humanoid or humanoid.Health <= 0 or not context then
+		return
+	end
+	-- Same rules as the tick: a stun or a swing in progress owns him, so no turning during either.
+	if StatusEffects.IsStunned(enemy) or (anim.CurrentAttack and anim.CurrentAttack.Track.IsPlaying) then
+		return
+	end
+	local targetPosition = resolveTargetPosition(context)
+	if not targetPosition then
+		return
+	end
+
+	local diff, currentYaw = yawError(enemy, anim, rootPart, targetPosition)
+	local maxStep = math.rad((enemy.TypeData and enemy.TypeData.TurnSpeed) or 90) * dt
+	local step = math.clamp(diff, -maxStep, maxStep)
+	if math.abs(step) < 1e-4 then
+		return
+	end
+
+	-- Rotate the root's horizontal offset from the pivot by the same step, so the pivot stays put and
+	-- the root swings around it, rather than the body swinging around the root.
+	local pivot = turnPivotPosition(enemy, anim, rootPart)
+	local rootPos = rootPart.Position
+	local swung = CFrame.fromEulerAnglesYXZ(0, step, 0) * Vector3.new(rootPos.X - pivot.X, 0, rootPos.Z - pivot.Z)
+	rootPart.CFrame = CFrame.new(pivot.X + swung.X, rootPos.Y, pivot.Z + swung.Z) * CFrame.fromEulerAnglesYXZ(0, currentYaw + step, 0)
+end
+
+local function startTurning(enemy, anim)
+	local pivotName = enemy.TypeData and enemy.TypeData.TurnPivot
+	if pivotName then
+		local found = enemy.Model:FindFirstChild(pivotName, true)
+		if found and found:IsA("Attachment") then -- a Bone is an Attachment too
+			anim.TurnPivot = found
+		else
+			warnOnce(warnedTurnPivot, tostring(enemy.TypeKey), ("[EnemyAnimation] %s's TurnPivot %q isn't a Bone or Attachment in the model — turning around his root instead."):format(
+				tostring(enemy.TypeKey), tostring(pivotName)))
+		end
+	end
+	anim.TurnConnection = RunService.Heartbeat:Connect(function(dt)
+		turnStep(enemy, anim, dt)
+	end)
+	table.insert(anim.Connections, anim.TurnConnection)
+end
+
 function EnemyAnimation.Tick(enemy, context, fallbackPattern)
 	local model = enemy.Model
 	local humanoid = enemy.Humanoid
@@ -595,6 +679,9 @@ function EnemyAnimation.Tick(enemy, context, fallbackPattern)
 	-- AutoRotate must not fight it.
 	if humanoid.AutoRotate then
 		humanoid.AutoRotate = false
+	end
+	if not anim.TurnConnection then
+		startTurning(enemy, anim)
 	end
 
 	-- Same interrupt as Chaser/Slam: a stun neither moves nor attacks. Unlike a simple cooldown, an
@@ -656,7 +743,11 @@ function EnemyAnimation.Tick(enemy, context, fallbackPattern)
 			end
 		end
 
-		if #usable > 0 then
+		-- No snap-to-face on commit: he only swings once turnStep has actually brought him round to
+		-- within AttackFacingTolerance degrees, so getting behind a slow boss buys real time.
+		local tolerance = math.rad((enemy.TypeData and enemy.TypeData.AttackFacingTolerance) or 30)
+		local facingError = yawError(enemy, anim, rootPart, targetPosition)
+		if #usable > 0 and math.abs(facingError) <= tolerance then
 			local roll = math.random() * totalWeight
 			local acc = 0
 			local chosen = usable[1]
@@ -673,17 +764,6 @@ function EnemyAnimation.Tick(enemy, context, fallbackPattern)
 				anim.MoveTrack:Stop()
 			end
 
-			-- Snap to face the target the instant the swing commits. Roblox doesn't turn a Humanoid to
-			-- face anything on its own outside of ordinary MoveTo walking, and a Hulk that swings
-			-- sideways because he was still rotating from his last step reads as broken even though
-			-- the hit detection itself (measured from the fist, never his facing) would still be
-			-- correct. Guarded against a zero-length look vector (target standing exactly on top of
-			-- his root, horizontally) since CFrame.lookAt can't build a direction from nothing.
-			local lookAt = Vector3.new(targetPosition.X, rootPart.Position.Y, targetPosition.Z)
-			if (lookAt - rootPart.Position).Magnitude > 0.01 then
-				rootPart.CFrame = CFrame.lookAt(rootPart.Position, lookAt) * CFrame.Angles(0, math.rad(facingOffset(enemy, anim)), 0)
-			end
-
 			chosen.MarkerCount = 0
 			anim.CurrentAttack = chosen
 			chosen.Track:Play()
@@ -695,25 +775,6 @@ function EnemyAnimation.Tick(enemy, context, fallbackPattern)
 	-- on why) — aim at a point ON the ContactRange ring along the current bearing, never past it, so
 	-- Roblox's own arrival tolerance stops him right at the ring instead of relying on a per-tick
 	-- Move(zero) backstop to catch him after the fact.
-	-- Turn toward the target, rate-limited. Done here rather than by Humanoid.AutoRotate because
-	-- AutoRotate points the HumanoidRootPart's LookVector along the walk, and this rig's root front
-	-- isn't the mesh's front, so he crawled backwards. FacingYawOffset is the one knob that corrects
-	-- both this and the attack snap above. TurnSpeed (degrees/second) keeps a slow boss from spinning
-	-- on the spot; dt is capped so the first tick after a long attack doesn't jump the whole backlog.
-	local dt = math.min(now - (anim.LastTurnAt or now), 0.25)
-	anim.LastTurnAt = now
-	if distance > 0.01 and dt > 0 then
-		local _, currentYaw = rootPart.CFrame:ToEulerAnglesYXZ()
-		local faceAt = Vector3.new(targetPosition.X, rootPart.Position.Y, targetPosition.Z)
-		local _, desiredYaw = (CFrame.lookAt(rootPart.Position, faceAt) * CFrame.Angles(0, math.rad(facingOffset(enemy, anim)), 0)):ToEulerAnglesYXZ()
-		local diff = (desiredYaw - currentYaw + math.pi) % (2 * math.pi) - math.pi
-		local maxStep = math.rad((enemy.TypeData and enemy.TypeData.TurnSpeed) or 90) * dt
-		local step = math.clamp(diff, -maxStep, maxStep)
-		if math.abs(step) > 1e-3 then
-			rootPart.CFrame = CFrame.new(rootPart.Position) * CFrame.fromEulerAnglesYXZ(0, currentYaw + step, 0)
-		end
-	end
-
 	if now - (enemy.LastMoveThink or 0) >= MOVE_THINK_INTERVAL then
 		enemy.LastMoveThink = now
 		local direction = distance > 0 and (flat / distance) or Vector3.new(1, 0, 0)
