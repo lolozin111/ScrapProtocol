@@ -400,7 +400,12 @@ local function spawnEnemy(typeKey: string, typeData, spawnPosition: Vector3, mul
 	end
 
 	model.Parent = parentFolder
-	model:PivotTo(CFrame.new(spawnPosition))
+	-- A type with its own HipHeight spawns already standing at it. Otherwise the root is placed at
+	-- the spawn point and the Humanoid then pushes it up to HipHeight over the next second or so —
+	-- invisible for a normal rig, but a lying-down boss with a large HipHeight visibly climbs out of
+	-- the floor. (HipHeight is ground to the BOTTOM of the root, hence the half-height.)
+	local spawnLift = typeData.HipHeight and (typeData.HipHeight + model.PrimaryPart.Size.Y / 2) or 0
+	model:PivotTo(CFrame.new(spawnPosition + Vector3.new(0, spawnLift, 0)))
 
 	-- See ENEMY_COLLISION_GROUP's own comment above — every part of every spawned enemy joins the
 	-- same group so they never physically shove each other while crowding the wall.
