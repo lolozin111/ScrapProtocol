@@ -36,6 +36,7 @@ local ResearchConfig = require(ReplicatedStorage.Shared.ResearchConfig)
 local UltimateConfig = require(ReplicatedStorage.Shared.UltimateConfig)
 local CaseConfig = require(ReplicatedStorage.Shared.CaseConfig)
 local TurretConfig = require(ReplicatedStorage.Shared.TurretConfig)
+local DashConfig = require(ReplicatedStorage.Shared.DashConfig)
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 local LocalPlayer = Players.LocalPlayer
@@ -53,6 +54,7 @@ local InventoryPanel = require(script.Parent.InventoryPanel)
 local WeldingPanel = require(script.Parent.WeldingPanel)
 local ForgePanel = require(script.Parent.ForgePanel)
 local CasePanel = require(script.Parent.CasePanel)
+local StaminaState = require(script.Parent.StaminaState)
 
 
 local runActive = false
@@ -2539,50 +2541,11 @@ Hud.new("UIPadding", {
 	Parent = statusPanel,
 })
 
--- Small labelled bar, reused for Health and Stamina so the two stay visually identical.
--- Uppercased at the caller via :upper() rather than requiring every caller to remember to shout —
--- this is a section label, not dynamic content, so the display treatment (Hud.FONT.Display +
--- uppercase; TextLabel has no letter-spacing property, so that's the whole treatment) always
--- applies here.
-local function makeStatusBar(order: number, label: string, fillColor: Color3, dimmed: boolean?)
-	local holder = Hud.new("Frame", {
-		BackgroundTransparency = 1,
-		Size = UDim2.new(1, 0, 0, 32), -- 30 -> 32 to fit the track's 12 -> 14 bump below
-		LayoutOrder = order,
-		Parent = statusPanel,
-	})
-	local caption = Hud.new("TextLabel", {
-		BackgroundTransparency = 1,
-		Size = UDim2.new(1, 0, 0, 14),
-		Font = Hud.FONT.Display,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		TextColor3 = dimmed and Hud.COLOR.Muted or Hud.COLOR.Text,
-		TextSize = Hud.TEXTSIZE.Label,
-		Text = label:upper(),
-		Parent = holder,
-	})
-	-- 12 -> 14: kept in step with the segmented Integrity bar's own bump below, so Stamina's
-	-- placeholder slot doesn't look thinner/lower-effort than its neighbour once that one grows.
-	local track = Hud.new("Frame", {
-		BackgroundColor3 = Hud.COLOR.PanelLight,
-		Position = UDim2.new(0, 0, 0, 16),
-		Size = UDim2.new(1, 0, 0, 14),
-		Parent = holder,
-	}, { Hud.corner(4) })
-	local fill = Hud.new("Frame", {
-		BackgroundColor3 = fillColor,
-		Size = UDim2.new(dimmed and 0 or 1, 0, 1, 0),
-		BorderSizePixel = 0,
-		Parent = track,
-	}, { Hud.corner(4) })
-	return caption, fill
-end
-
--- Health is the segmented bar from the design (10 cells) rather than a plain fill — built by hand
--- instead of through makeStatusBar (which stays plain-fill for Stamina below) since segmentBar's
--- shape (a list of cells to colour) doesn't fit makeStatusBar's (caption, fill) return signature.
--- Scoped in a do-block so `holder` doesn't cost a permanent top-level local in a file already near
--- Luau's 200-local ceiling — only the two things refreshHealthBar actually needs escape the block.
+-- Health is the segmented bar from the design (10 cells) rather than a plain fill; Stamina below
+-- (once the dash system landed) is built the exact same way, so the two stay visually identical
+-- without a shared helper — segmentBar IS that helper. Scoped in a do-block so `holder` doesn't
+-- cost a permanent top-level local in a file already near Luau's 200-local ceiling — only the two
+-- things refreshHealthBar actually needs escape the block.
 local statusHealthCaption, statusHealthCells
 do
 	local holder = Hud.new("Frame", {
@@ -2617,10 +2580,84 @@ do
 	statusHealthTrack.Size = UDim2.new(1, 0, 0, 20)
 end
 
--- Stamina is a PLACEHOLDER. There is no stamina or dash system in this codebase yet — no input
--- handling, no regen loop, no server validation — so this is a reserved, visibly-disabled slot
--- rather than a bar that lies about a stat nothing drives. Wire it up when dashing is built.
-local _staminaCaption, _staminaFill = makeStatusBar(2, "Stamina — not built yet", Hud.COLOR.Muted, true)
+-- Stamina: segmented like Integrity above (DashConfig.MaxCharges cells instead of a fixed 10),
+-- filled = available dash charge, dim = spent. The one cell currently refilling gets a growing
+-- inner overlay rather than a colour change — a cell that's "half-coloured" reads as a rendering
+-- bug, a sliver filling up reads as progress. Driven off StaminaState (the CLIENT's predicted
+-- mirror — see DashClient.client.lua/StaminaState.lua), not off a remote payload directly, for the
+-- same reason Health is driven off the local Humanoid: one source of truth, corrected rather than
+-- replaced when the server disagrees. Scoped in a do-block for the same 200-local-ceiling reason
+-- as the Integrity block above.
+local staminaCaption, staminaCells
+do
+	local holder = Hud.new("Frame", {
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 36),
+		LayoutOrder = 2,
+		Parent = statusPanel,
+	})
+	staminaCaption = Hud.new("TextLabel", {
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 14),
+		Font = Hud.FONT.Display,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextColor3 = Hud.COLOR.Text,
+		TextSize = Hud.TEXTSIZE.Label,
+		Text = "STAMINA",
+		Parent = holder,
+	})
+	staminaCells = Hud.segmentBar(holder, DashConfig.MaxCharges)
+	local staminaTrack = staminaCells[1].Parent.Parent
+	staminaTrack.Position = UDim2.fromOffset(0, 16)
+	staminaTrack.Size = UDim2.new(1, 0, 0, 20)
+
+	-- One overlay child per cell, built once — refreshStaminaBar below only ever resizes these,
+	-- never creates/destroys, so redrawing every frame while a charge refills is cheap.
+	local overlays = {}
+	for i, cell in ipairs(staminaCells) do
+		overlays[i] = Hud.new("Frame", {
+			BackgroundColor3 = Hud.COLOR.Accent,
+			BorderSizePixel = 0,
+			Size = UDim2.new(0, 0, 1, 0),
+			Parent = cell,
+		})
+	end
+
+	local function refreshStaminaBar()
+		StaminaState.Settle()
+		local charges = StaminaState.Charges
+		local maxCharges = StaminaState.MaxCharges
+		local remaining = StaminaState.RechargeRemaining()
+		local rechargeSeconds = StaminaState.RechargeSeconds
+		for i = 1, maxCharges do
+			local cell = staminaCells[i]
+			local overlay = overlays[i]
+			if i <= charges then
+				cell.BackgroundColor3 = Hud.COLOR.Accent
+				overlay.Size = UDim2.new(0, 0, 1, 0)
+			elseif i == charges + 1 and remaining > 0 then
+				cell.BackgroundColor3 = Hud.COLOR.PanelLight
+				overlay.Size = UDim2.new(math.clamp(1 - remaining / rechargeSeconds, 0, 1), 0, 1, 0)
+			else
+				cell.BackgroundColor3 = Hud.COLOR.PanelLight
+				overlay.Size = UDim2.new(0, 0, 1, 0)
+			end
+		end
+		staminaCaption.Text = ("STAMINA  %d / %d"):format(charges, maxCharges)
+	end
+
+	-- Two drivers, deliberately: the Changed event catches the instant jumps (a dash spent, a
+	-- server correction) so the HUD never waits a frame for those, and Heartbeat animates the
+	-- smooth in-between (the recharging cell's overlay growing) — gated to skip work entirely once
+	-- full, per the spec, rather than redrawing an unchanging bar 60 times a second forever.
+	StaminaState.Changed.Event:Connect(refreshStaminaBar)
+	refreshStaminaBar()
+	RunService.Heartbeat:Connect(function()
+		if StaminaState.Charges < StaminaState.MaxCharges then
+			refreshStaminaBar()
+		end
+	end)
+end
 
 -- Research button + requirements popup — extracted to ResearchPanel.lua. The button is a child
 -- of statusPanel (built above), so the panel is constructed here rather than at require-time.

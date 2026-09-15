@@ -40,6 +40,8 @@
         "CraftAutoMiner": { "$className": "RemoteFunction" },
         "UpgradeTool": { "$className": "RemoteFunction" },
         "MineFailed": { "$className": "RemoteEvent" },
+        "RequestDash": { "$className": "RemoteEvent" },
+        "StaminaUpdate": { "$className": "RemoteEvent" },
         "EnergyDrinkFound": { "$className": "RemoteEvent" },
         "EndExpedition": { "$className": "RemoteEvent" },
         "MineShaftHit": { "$className": "RemoteEvent" },

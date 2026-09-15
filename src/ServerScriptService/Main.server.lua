@@ -17,6 +17,7 @@ require(Services.DataService)
 require(Services.RateLimiter)
 require(Services.PlayerActivityService)
 require(Services.PlayerSpeed)  -- owns WalkSpeed; must be loaded before anything that modifies it
+require(Services.DashService)
 require(Services.PlotService)
 require(Services.BaseService)
 require(Services.StationService)
@@ -83,7 +84,7 @@ do
 
 	local loaded = {}
 	for _, name in ipairs({
-		"DataService", "RateLimiter", "PlayerActivityService", "PlayerSpeed", "PlotService", "BaseService",
+		"DataService", "RateLimiter", "PlayerActivityService", "PlayerSpeed", "DashService", "PlotService", "BaseService",
 		"StationService", "AdminService", "RaidEnergyService", "MiningService", "CraftingService",
 		"ForgeService", "SmeltService", "WaveService", "ShopService", "NodeService", "SellService",
 		"ExpeditionService", "AutoMinerService", "MineShaftService", "RaidRoomService",
