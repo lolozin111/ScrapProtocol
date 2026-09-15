@@ -365,6 +365,8 @@ end
 -- exactly `typeData.ModelName`, any size/rig/proportions, same placeholder-first convention as
 -- every other system in this project. That entry may be a single Model or a Folder of variants;
 -- pickEnemyTemplate above resolves both and this function never needs to know which it got.
+local CollectionService = game:GetService("CollectionService")
+
 local function spawnEnemy(typeKey: string, typeData, spawnPosition: Vector3, multiplier: number, parentFolder: Instance, contactRange: number)
 	local entry = EnemyModelsFolder:FindFirstChild(typeData.ModelName)
 	if not entry then
@@ -397,6 +399,14 @@ local function spawnEnemy(typeKey: string, typeData, spawnPosition: Vector3, mul
 		warn("[CombatEncounterService] Enemy model", typeData.ModelName, "has no PrimaryPart set — skipping spawn. Set one in Studio (see README).")
 		model:Destroy()
 		return nil
+	end
+
+	-- Boss HUD hook: the client's BossBar.lua finds the fight's boss by this tag and reads its Humanoid
+	-- health directly (Health replicates), so no remote or payload change is needed. Tagged BEFORE
+	-- parenting so the tag arrives on the client together with the model.
+	if EnemyConfig.BossTypes[typeKey] then
+		CollectionService:AddTag(model, "Boss")
+		model:SetAttribute("BossName", typeData.DisplayName or typeKey)
 	end
 
 	model.Parent = parentFolder

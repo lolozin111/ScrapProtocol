@@ -36,6 +36,15 @@
 	"leave and bank everything" action, enabled only after the first chapter's cleared. Ambush nodes
 	reuse the same Combat sub-panel, just labeled with a Wave X/Y prefix (see AmbushStart/Tick/End/
 	WaveCleared below) since they're several RunRaidCombat calls back to back instead of one.
+
+	HUD TIDY-UP (2026-09-14): the room panel, the Scraps Collected readout, the toast, and the Go
+	Back To Base / Extract buttons all move onto HudKit's plate/accentCap/button chrome and token
+	scale here — the last hand-rolled corners left in this file, per an audit that flagged this as
+	the one raid surface still visibly off-house-style next to the Sector Map. Presentation only:
+	every status handler's BEHAVIOUR (when a panel shows, what triggers a toast, what a click does)
+	is untouched. Also pulls in BossBar.lua, a new self-booting top-centre HP bar for the Boss node
+	— while it's showing, the room panel hides (its own "Enemies remaining 1/1" would just be a
+	second, redundant readout for the same fight) and restores the moment the bar hides.
 ]]
 
 local Players = game:GetService("Players")
@@ -43,11 +52,15 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 
 local RaidConfig = require(ReplicatedStorage.Shared.RaidConfig)
-local Hud = require(script.Parent.HudKit) -- the Start Raid button (see its own comment), plus the
+local Hud = require(script.Parent.HudKit) -- the Start Raid button (see its own comment), the
 	-- Sector Map's angular shell (plate/accentCap/CORNER_CUT), its backdrop lookup (applyIcon) and
-	-- darken(). Still NOT a general migration: this file keeps its own COLOR/new/corner/stroke
-	-- helpers, and the room panel and toasts are untouched — HudKit is reached for where the map
-	-- would otherwise have hand-rolled a second copy of chrome the rest of the HUD already has.
+	-- darken() — and, as of the 2026-09-14 tidy-up (see header), the room panel, Scraps Collected,
+	-- the toast, and the Go Back To Base / Extract buttons too. This file still keeps its own COLOR/
+	-- new/corner/stroke helpers rather than a wholesale migration (see header on why), and calls
+	-- straight into `Hud.<name>` rather than aliasing to locals, per HudKit's own header note on why
+	-- re-binding its tables would just move the register-savings problem back into this file.
+local BossBar = require(script.Parent.BossBar) -- top-centre boss HP bar; see this file's header
+	-- and BossBar's own for how it finds the fight and why the room panel defers to it.
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 local RequestStartRaid = Remotes.RequestStartRaid
@@ -151,33 +164,77 @@ startButton.Name = "StartRaidButton"
 -- never briefly shows.
 ----------------------------------------------------------------------
 
-local runCurrencyLabel = new("TextLabel", {
+-- Same plate() shell as the room panel/Sector Map, with the label/value split HudKit's token set
+-- asks for: a small muted caption plus a monospaced value, instead of one hand-formatted string —
+-- so a retint of COLOR.Muted or a font swap in HudKit.FONT.Mono lands here for free.
+local runCurrencySurface, runCurrencyPanel = Hud.plate({
 	Name = "RunCurrencyPanel",
-	BackgroundColor3 = COLOR.Panel,
 	Position = UDim2.new(0, 16, 0, 16),
 	Size = UDim2.new(0, 220, 0, 0),
-	AutomaticSize = Enum.AutomaticSize.Y,
+	automaticSize = true,
 	Visible = false,
-	Font = Enum.Font.SourceSans,
-	Text = "Scraps Collected: 0",
-	TextColor3 = COLOR.Text,
-	TextSize = 15,
-	TextXAlignment = Enum.TextXAlignment.Left,
-	TextWrapped = true,
 	Parent = screenGui,
-}, { corner(6), stroke(), new("UIPadding", {
-	PaddingTop = UDim.new(0, 8), PaddingBottom = UDim.new(0, 8),
-	PaddingLeft = UDim.new(0, 12), PaddingRight = UDim.new(0, 12),
-}) })
+})
+
+local runCurrencyBody = new("Frame", {
+	Name = "Body",
+	BackgroundTransparency = 1,
+	Position = UDim2.new(0, Hud.SPACE.M, 0, Hud.SPACE.S),
+	Size = UDim2.new(1, -Hud.SPACE.M * 2, 0, 0),
+	AutomaticSize = Enum.AutomaticSize.Y,
+	Parent = runCurrencySurface,
+}, {
+	new("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, Hud.SPACE.XS) }),
+	new("UIPadding", { PaddingBottom = UDim.new(0, Hud.SPACE.S) }),
+})
+
+-- One row per currency: caption left (Muted/Label, the token pairing HudKit's own header calls out
+-- for secondary text), value right-aligned in Mono (the "instrument panel" numeric treatment).
+-- Returns the row too so Cores' row can be hidden outright rather than rebuilt — Scrap always
+-- shows, Cores only when the run has actually collected any, same behaviour as the old single
+-- string's one-line/two-line toggle.
+local function currencyRow(order: number, label: string)
+	local row = new("Frame", {
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 20),
+		LayoutOrder = order,
+		Parent = runCurrencyBody,
+	})
+	new("TextLabel", {
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, -60, 1, 0),
+		Font = Hud.FONT.Body,
+		Text = label,
+		TextColor3 = COLOR.Muted,
+		TextSize = Hud.TEXTSIZE.Label,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Parent = row,
+	})
+	local value = new("TextLabel", {
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, 0, 0, 0),
+		BackgroundTransparency = 1,
+		Size = UDim2.new(0, 60, 1, 0),
+		Font = Hud.FONT.Mono,
+		Text = "0",
+		TextColor3 = COLOR.Text,
+		TextSize = Hud.TEXTSIZE.Body,
+		TextXAlignment = Enum.TextXAlignment.Right,
+		Parent = row,
+	})
+	return row, value
+end
+
+local scrapRow, scrapValueLabel = currencyRow(1, "SCRAPS COLLECTED")
+local coresRow, coresValueLabel = currencyRow(2, "CORES COLLECTED")
+coresRow.Visible = false
 
 local function updateRunCurrencyLabel(runCurrencyCollected)
 	local scrap = (runCurrencyCollected and runCurrencyCollected.Scrap) or 0
 	local cores = (runCurrencyCollected and runCurrencyCollected.Cores) or 0
-	if cores > 0 then
-		runCurrencyLabel.Text = ("Scraps Collected: %d\nCores Collected: %d"):format(scrap, cores)
-	else
-		runCurrencyLabel.Text = ("Scraps Collected: %d"):format(scrap)
-	end
+	scrapValueLabel.Text = tostring(scrap)
+	coresValueLabel.Text = tostring(cores)
+	coresRow.Visible = cores > 0
 end
 
 ----------------------------------------------------------------------
@@ -185,23 +242,27 @@ end
 -- abandoned) that don't need a persistent panel of their own.
 ----------------------------------------------------------------------
 
+-- Bottom-centre now, not top-centre — top-centre is the room panel's spot (and, during a Boss
+-- fight, BossBar's too), and a toast firing mid-status-change used to land directly on top of
+-- whichever of those was showing. ~22% up from the bottom keeps it clear of both without needing
+-- to know either panel's exact height.
 local toastLabel = new("TextLabel", {
 	Name = "Toast",
 	BackgroundColor3 = COLOR.Panel,
-	Position = UDim2.new(0.5, 0, 0, 70),
-	AnchorPoint = Vector2.new(0.5, 0),
+	Position = UDim2.new(0.5, 0, 0.78, 0),
+	AnchorPoint = Vector2.new(0.5, 1),
 	Size = UDim2.new(0, 420, 0, 0),
 	AutomaticSize = Enum.AutomaticSize.Y,
 	Visible = false,
-	Font = Enum.Font.SourceSans,
+	Font = Hud.FONT.Body,
 	Text = "",
 	TextColor3 = COLOR.Text,
-	TextSize = 16,
+	TextSize = Hud.TEXTSIZE.Body,
 	TextWrapped = true,
 	Parent = screenGui,
-}, { corner(6), stroke(), new("UIPadding", {
-	PaddingTop = UDim.new(0, 10), PaddingBottom = UDim.new(0, 10),
-	PaddingLeft = UDim.new(0, 14), PaddingRight = UDim.new(0, 14),
+}, { corner(Hud.RADIUS.Panel), stroke(), new("UIPadding", {
+	PaddingTop = UDim.new(0, Hud.SPACE.S), PaddingBottom = UDim.new(0, Hud.SPACE.S),
+	PaddingLeft = UDim.new(0, Hud.SPACE.M + 2), PaddingRight = UDim.new(0, Hud.SPACE.M + 2),
 }) })
 
 local toastToken = 0
@@ -233,41 +294,37 @@ end
 -- the user was worried about, so it wasn't restricted to map-open-only.
 ----------------------------------------------------------------------
 
-local backToBaseButton = new("TextButton", {
-	Name = "BackToBaseButton",
-	BackgroundColor3 = COLOR.Bad,
-	Position = UDim2.new(0.5, 0, 0, 16),
-	AnchorPoint = Vector2.new(0.5, 0),
-	Size = UDim2.new(0, 190, 0, 36),
-	Font = Enum.Font.SourceSansBold,
-	Text = "Go Back To Base",
-	TextColor3 = COLOR.Text,
-	TextSize = 16,
-	Visible = false,
-	Parent = screenGui,
-}, { corner(6) })
+-- "danger" because leaving mid-raid forfeits this chapter's progress — the same reasoning
+-- HudKit.makeRow uses for its Unequip rows, just applied to a standalone button here.
+local backToBaseButton = Hud.button({
+	text = "Go Back To Base",
+	variant = "danger",
+	position = UDim2.new(0.5, 0, 0, 16),
+	anchorPoint = Vector2.new(0.5, 0),
+	size = UDim2.new(0, 190, 0, 36),
+	parent = screenGui,
+	onClick = function()
+		AbandonRaid:FireServer()
+	end,
+})
+backToBaseButton.Name = "BackToBaseButton"
+backToBaseButton.Visible = false
 
-backToBaseButton.MouseButton1Click:Connect(function()
-	AbandonRaid:FireServer()
-end)
-
-local extractButton = new("TextButton", {
-	Name = "ExtractRaidButton",
-	BackgroundColor3 = COLOR.Good,
-	Position = UDim2.new(1, -16, 1, -16),
-	AnchorPoint = Vector2.new(1, 1),
-	Size = UDim2.new(0, 150, 0, 36),
-	Font = Enum.Font.SourceSansBold,
-	Text = "Extract",
-	TextColor3 = COLOR.Text,
-	TextSize = 16,
-	Visible = false,
-	Parent = screenGui,
-}, { corner(6) })
-
-extractButton.MouseButton1Click:Connect(function()
-	RequestExtractRaid:FireServer()
-end)
+-- "primary" — the one loud affirmative action of the two, since it's the "bank everything and
+-- leave clean" choice rather than the punitive one.
+local extractButton = Hud.button({
+	text = "Extract",
+	variant = "primary",
+	position = UDim2.new(1, -16, 1, -16),
+	anchorPoint = Vector2.new(1, 1),
+	size = UDim2.new(0, 150, 0, 36),
+	parent = screenGui,
+	onClick = function()
+		RequestExtractRaid:FireServer()
+	end,
+})
+extractButton.Name = "ExtractRaidButton"
+extractButton.Visible = false
 
 ----------------------------------------------------------------------
 -- Room panel (top-center) — status for whichever node the player is currently standing in.
@@ -276,57 +333,72 @@ end)
 -- since different node types need different controls.
 ----------------------------------------------------------------------
 
-local roomFrame = new("Frame", {
+-- Same plate() + accentCap shell as the Sector Map and Scraps Collected above — this was the last
+-- hand-rolled rounded box left in this file (see header, 2026-09-14 tidy-up). `roomFrame` keeps its
+-- name and stays the thing every status handler below toggles .Visible on; it's now the SHELL
+-- (Hud.plate's second return) rather than a plain Frame, same convention as `mapSurface, mapFrame`
+-- above it.
+local roomSurface, roomFrame = Hud.plate({
 	Name = "RoomPanel",
-	BackgroundColor3 = COLOR.Panel,
-	Position = UDim2.new(0.5, 0, 0, 70),
 	AnchorPoint = Vector2.new(0.5, 0),
+	Position = UDim2.new(0.5, 0, 0, 70),
 	Size = UDim2.new(0, 340, 0, 0),
-	AutomaticSize = Enum.AutomaticSize.Y,
+	automaticSize = true,
 	Visible = false,
 	Parent = screenGui,
-}, { corner(8), stroke(), new("UIPadding", {
-	PaddingTop = UDim.new(0, 12), PaddingBottom = UDim.new(0, 12),
-	PaddingLeft = UDim.new(0, 14), PaddingRight = UDim.new(0, 14),
-}), new("UIListLayout", {
-	SortOrder = Enum.SortOrder.LayoutOrder,
-	Padding = UDim.new(0, 8),
-}) })
+})
+Hud.accentCap(roomSurface, COLOR.Accent)
+
+-- Insets match mapHeader's own: SPACE.M on both sides, plus CORNER_CUT on the right to clear the
+-- plate's 45-degree top-right cut (see HudKit.accentCap's own comment on why a full-width bar runs
+-- past it) — this panel sits at the same top-of-screen height as the map, so it needs the same
+-- clearance.
+local ROOM_HEADER_TOP = Hud.SPACE.S + 4 -- +4 clears the accent cap's own height
+local ROOM_TITLE_HEIGHT = 24
+local ROOM_BODY_TOP = ROOM_HEADER_TOP + ROOM_TITLE_HEIGHT + Hud.SPACE.S
+local ROOM_CONTENT_WIDTH = UDim2.new(1, -(Hud.SPACE.M * 2 + Hud.CORNER_CUT), 0, 0)
 
 local roomTitle = new("TextLabel", {
 	Name = "Title",
 	BackgroundTransparency = 1,
-	Size = UDim2.new(1, 0, 0, 22),
-	LayoutOrder = 1,
-	Font = Enum.Font.SourceSansBold,
+	Position = UDim2.new(0, Hud.SPACE.M, 0, ROOM_HEADER_TOP),
+	Size = UDim2.new(ROOM_CONTENT_WIDTH.X.Scale, ROOM_CONTENT_WIDTH.X.Offset, 0, ROOM_TITLE_HEIGHT),
+	Font = Hud.FONT.Display,
 	Text = "",
 	TextColor3 = COLOR.Text,
-	TextSize = 20,
+	TextSize = Hud.TEXTSIZE.Title,
 	TextXAlignment = Enum.TextXAlignment.Left,
-	Parent = roomFrame,
+	Parent = roomSurface,
 })
 
 -- A generic vertical body the per-type builders below fill in fresh each time — cleared via
 -- ClearAllChildren() rather than tracked piecemeal, since the whole point is different node types
--- show completely different controls here.
+-- show completely different controls here. Per-status content inside (HealApplied/ShopCatalog/
+-- BossCleared/...) keeps its existing SourceSans styling — only the shell and the shared
+-- progressBar() helper below move onto tokens as part of this pass.
 local roomBody = new("Frame", {
 	Name = "Body",
 	BackgroundTransparency = 1,
-	Size = UDim2.new(1, 0, 0, 0),
+	Position = UDim2.new(0, Hud.SPACE.M, 0, ROOM_BODY_TOP),
+	Size = ROOM_CONTENT_WIDTH,
 	AutomaticSize = Enum.AutomaticSize.Y,
-	LayoutOrder = 2,
-	Parent = roomFrame,
-}, { new("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 6) }) })
+	Parent = roomSurface,
+}, {
+	new("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 6) }),
+	new("UIPadding", { PaddingBottom = UDim.new(0, Hud.SPACE.M) }),
+})
 
--- roomBody:ClearAllChildren() also destroys its own UIListLayout — that Layout is a CHILD of
--- roomBody, same as everything else added to it, so a plain ClearAllChildren() wipes it out right
--- along with the old content. Every rebuild after the very first one was then left with no layout
--- at all, so every caption/bar/button just stacked on top of each other at (0,0) instead of
--- flowing top-to-bottom — this is what read as "text overlapping." Route every clear through this
--- instead, which re-adds a fresh UIListLayout right after clearing.
+-- roomBody:ClearAllChildren() also destroys its own UIListLayout AND the UIPadding added at
+-- construction (both are children of roomBody like everything else in it), so a plain
+-- ClearAllChildren() wipes both out right along with the old content. Every rebuild after the very
+-- first one was then left with no layout at all, so every caption/bar/button just stacked on top
+-- of each other at (0,0) instead of flowing top-to-bottom — this is what read as "text
+-- overlapping." Route every clear through this instead, which re-adds fresh copies of both right
+-- after clearing.
 local function clearRoomBody()
 	roomBody:ClearAllChildren()
 	new("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 6) }).Parent = roomBody
+	new("UIPadding", { PaddingBottom = UDim.new(0, Hud.SPACE.M) }).Parent = roomBody
 end
 
 local function progressBar(order: number, label: string)
@@ -334,10 +406,10 @@ local function progressBar(order: number, label: string)
 		BackgroundTransparency = 1,
 		Size = UDim2.new(1, 0, 0, 16),
 		LayoutOrder = order,
-		Font = Enum.Font.SourceSans,
+		Font = Hud.FONT.Body,
 		Text = label,
 		TextColor3 = COLOR.Muted,
-		TextSize = 14,
+		TextSize = Hud.TEXTSIZE.Label,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		Parent = roomBody,
 	})
@@ -346,12 +418,12 @@ local function progressBar(order: number, label: string)
 		Size = UDim2.new(1, 0, 0, 10),
 		LayoutOrder = order + 1,
 		Parent = roomBody,
-	}, { corner(4) })
+	}, { corner(Hud.RADIUS.Button) })
 	local fill = new("Frame", {
 		BackgroundColor3 = COLOR.Good,
 		Size = UDim2.new(1, 0, 1, 0),
 		Parent = track,
-	}, { corner(4) })
+	}, { corner(Hud.RADIUS.Button) })
 	return caption, fill
 end
 
@@ -1087,7 +1159,7 @@ updateRaidButtons = function()
 	startButton.Visible = not inRaid
 	backToBaseButton.Visible = inRaid and choicePending
 	extractButton.Visible = inRaid and not inCombat and extractUnlocked
-	runCurrencyLabel.Visible = inRaid
+	runCurrencyPanel.Visible = inRaid
 end
 
 -- Arrives on EVERY node entry now, not only when a choice opens — the map is a persistent readout,
@@ -1389,5 +1461,27 @@ RaidRoomUpdate.OnClientEvent:Connect(function(payload)
 		-- CombatEncounterService slot out from under it, so the server refuses. See
 		-- PlayerActivityService.
 		showToast(payload.Reason or "You're busy with something else right now.", 3)
+	end
+end)
+
+----------------------------------------------------------------------
+-- Boss bar hand-off — see this file's header (2026-09-14 tidy-up).
+----------------------------------------------------------------------
+
+-- Only restores the room panel if the boss bar is what hid it: `roomPanelHiddenByBoss` remembers
+-- whether roomFrame was actually visible the moment the bar appeared, so this never forces the
+-- panel back on after a raid has already ended (Defeated/Extracted/Abandoned above already set
+-- roomFrame.Visible = false themselves) or after some other status hid it for its own reason.
+local roomPanelHiddenByBoss = false
+
+BossBar.VisibilityChanged.Event:Connect(function(isShowing)
+	if isShowing then
+		if roomFrame.Visible then
+			roomPanelHiddenByBoss = true
+			roomFrame.Visible = false
+		end
+	elseif roomPanelHiddenByBoss and inRaid then
+		roomPanelHiddenByBoss = false
+		roomFrame.Visible = true
 	end
 end)
