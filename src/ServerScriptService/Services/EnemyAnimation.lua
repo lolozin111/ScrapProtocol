@@ -775,7 +775,20 @@ function EnemyAnimation.Tick(enemy, context, fallbackPattern)
 	-- on why) — aim at a point ON the ContactRange ring along the current bearing, never past it, so
 	-- Roblox's own arrival tolerance stops him right at the ring instead of relying on a per-tick
 	-- Move(zero) backstop to catch him after the fact.
-	if now - (enemy.LastMoveThink or 0) >= MOVE_THINK_INTERVAL then
+	-- AttackRadius (optional): inside it he holds his ground, turning and swinging but not walking. He
+	-- only starts walking once the target leaves it, then walks until they're back inside the
+	-- ContactRange ring. The gap between the two is deliberate: with one threshold, a player standing
+	-- on the line would flick him between walking and stopping every tick.
+	local attackRadius = enemy.TypeData and enemy.TypeData.AttackRadius
+	if not attackRadius or distance > attackRadius then
+		anim.Walking = true
+	elseif distance <= enemy.ContactRange then
+		anim.Walking = false
+	end
+
+	if not anim.Walking then
+		humanoid:Move(Vector3.new(0, 0, 0))
+	elseif now - (enemy.LastMoveThink or 0) >= MOVE_THINK_INTERVAL then
 		enemy.LastMoveThink = now
 		local direction = distance > 0 and (flat / distance) or Vector3.new(1, 0, 0)
 		local standPoint = targetPosition + direction * enemy.ContactRange
