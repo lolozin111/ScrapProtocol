@@ -1082,6 +1082,16 @@ to end:
     failed to load. He should use both attacks (the right-arm combo and the left sweep, picked at
     random) and play his crawl while moving.
 
+    Regular enemies can animate too, without animated attacks: a Chaser type whose `EnemyConfig`
+    entry sets `Animations = { Idle = ..., Move = ..., Death = ... }` plays them through
+    `EnemyAnimation.Locomotion` (only the listed slots load). The Scavenger has a `Move` walk. In any
+    raid Combat room, a Scavenger should play its walk while closing in and stop walking once it's
+    in hitting range, while still dealing contact damage exactly as before. Its model needs an
+    `Animator` inside its `Humanoid`: without one it moves unanimated, with one
+    `[EnemyAnimation] Scavenger has Animations set but its model's Humanoid has no Animator child`
+    warning in Output. A held Tool (the Scavenger's pickaxe) only animates if it's joined to the hand
+    by a `Motor6D`, not the `RightGrip` weld an equipped Tool comes with.
+
     The **Go Back To Base** button (top-centre) should appear ONLY while a choice is actually live —
     i.e. exactly while that banner is pulsing. Confirm it is gone during a fight, gone while a Heal
     or Shop room is waiting on its interact prompt, and back the moment the exits unlock. Run a

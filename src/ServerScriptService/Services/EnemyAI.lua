@@ -86,6 +86,7 @@ EnemyAI.Patterns.Chaser = function(enemy, context)
 	-- interrupt rather than a slow — Move(zero) stops whatever walk was already in progress.
 	if StatusEffects.IsStunned(enemy) then
 		humanoid:Move(Vector3.new(0, 0, 0))
+		EnemyAnimation.Locomotion(enemy, false)
 		return
 	end
 
@@ -100,8 +101,15 @@ EnemyAI.Patterns.Chaser = function(enemy, context)
 
 	local toEnemy = rootPart.Position - context.TargetPosition
 	local distance = toEnemy.Magnitude
+	local inRange = distance <= enemy.ContactRange + ATTACK_RANGE_SLACK
 
-	if distance <= enemy.ContactRange + ATTACK_RANGE_SLACK then
+	-- Idle/Move animations for a type whose EnemyConfig entry sets Animations; a no-op for every other
+	-- type, and for an "Animated" enemy falling back to this pattern (its own Tick owns its tracks).
+	-- Fed this walk decision rather than measured velocity, for the reason EnemyAnimation.Tick's Move
+	-- block gives.
+	EnemyAnimation.Locomotion(enemy, not inRange)
+
+	if inRange then
 		-- Move(zero) stops whatever walk is already in progress the instant we cross into range,
 		-- and stays as a defensive backstop every tick — cheap, and covers the moment right after
 		-- crossing the boundary before the standPoint walk below would've naturally stopped anyway.

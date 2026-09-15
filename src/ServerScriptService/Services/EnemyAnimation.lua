@@ -396,6 +396,35 @@ local function onAttackStopped(enemy, anim, loadedAttack)
 	end
 end
 
+-- Empty id or a failed LoadAnimation both just skip the slot — see this file's header on missing
+-- art never breaking the loop. pcall'd because LoadAnimation can throw on a malformed/deleted
+-- asset id, not just return nil. Shared by setupAnim (the "Animated" pattern) and setupLocomotion
+-- (a Chaser's Idle/Move) so the two can't disagree about priority or looping.
+local function loadTrack(animator: Animator, typeKey: string, slotName: string, id: string?, looped: boolean, priority: Enum.AnimationPriority): AnimationTrack?
+	if not id or id == "" then
+		warnOnce(warnedSlot, typeKey .. "/" .. slotName,
+			("[EnemyAnimation] %s has no %s animation set — that slot is skipped."):format(tostring(typeKey), slotName))
+		return nil
+	end
+	local asset = Instance.new("Animation")
+	asset.AnimationId = id
+	local ok, trackOrErr = pcall(function()
+		return animator:LoadAnimation(asset)
+	end)
+	if not ok or not trackOrErr then
+		warnOnce(warnedSlot, typeKey .. "/" .. slotName,
+			("[EnemyAnimation] %s's %s animation (%s) failed to load — that slot is skipped."):format(tostring(typeKey), slotName, tostring(id)))
+		return nil
+	end
+	trackOrErr.Looped = looped
+	-- Forced here rather than trusted from the Animation Editor. Blending only lets a track override
+	-- Idle if its Priority is HIGHER, and a walk published at the editor's default priority sits
+	-- level with (or under) Idle, so it plays at full weight yet never shows. That is invisible from
+	-- the Studio side, so the slot decides the priority, not whatever was picked at publish time.
+	trackOrErr.Priority = priority
+	return trackOrErr
+end
+
 local function setupAnim(enemy)
 	local typeKey = enemy.TypeKey
 	local typeData = enemy.TypeData
@@ -450,32 +479,8 @@ local function setupAnim(enemy)
 
 	local animations = typeData.Animations or {}
 
-	-- Empty id or a failed LoadAnimation both just skip the slot — see this file's header on missing
-	-- art never breaking the loop. pcall'd because LoadAnimation can throw on a malformed/deleted
-	-- asset id, not just return nil.
 	local function loadSlot(slotName: string, id: string?, looped: boolean, priority: Enum.AnimationPriority): AnimationTrack?
-		if not id or id == "" then
-			warnOnce(warnedSlot, typeKey .. "/" .. slotName,
-				("[EnemyAnimation] %s has no %s animation set — that slot is skipped."):format(tostring(typeKey), slotName))
-			return nil
-		end
-		local asset = Instance.new("Animation")
-		asset.AnimationId = id
-		local ok, trackOrErr = pcall(function()
-			return animator:LoadAnimation(asset)
-		end)
-		if not ok or not trackOrErr then
-			warnOnce(warnedSlot, typeKey .. "/" .. slotName,
-				("[EnemyAnimation] %s's %s animation (%s) failed to load — that slot is skipped."):format(tostring(typeKey), slotName, tostring(id)))
-			return nil
-		end
-		trackOrErr.Looped = looped
-		-- Forced here rather than trusted from the Animation Editor. Blending only lets a track override
-		-- Idle if its Priority is HIGHER, and a walk published at the editor's default priority sits
-		-- level with (or under) Idle, so it plays at full weight yet never shows. That is invisible from
-		-- the Studio side, so the slot decides the priority, not whatever was picked at publish time.
-		trackOrErr.Priority = priority
-		return trackOrErr
+		return loadTrack(animator, typeKey, slotName, id, looped, priority)
 	end
 
 	anim.IdleTrack = loadSlot("Idle", animations.Idle, true, Enum.AnimationPriority.Idle)
@@ -844,6 +849,85 @@ function EnemyAnimation.Tick(enemy, context, fallbackPattern)
 		elseif anim.MoveTrack.IsPlaying then
 			anim.MoveTrack:Stop()
 		end
+	end
+end
+
+----------------------------------------------------------------------
+-- Locomotion — Idle/Move/Death animations for an enemy that is NOT "Animated" (EnemyAI.Patterns.Chaser
+-- calls this every tick). Just the looks: no markers, no turning, no damage, which all stay with the
+-- pattern. A type opts in by setting `Animations` on its EnemyConfig entry; a type without one costs a
+-- single table lookup and stays silent, since that is still most enemies. Only the slots the entry
+-- actually lists are loaded, so leaving Idle out is a choice, not a warning.
+----------------------------------------------------------------------
+
+local function setupLocomotion(enemy)
+	local loco = {}
+	local typeKey = tostring(enemy.TypeKey)
+	local animations = enemy.TypeData and enemy.TypeData.Animations
+	local humanoid = enemy.Humanoid
+	if not animations or not humanoid then
+		return loco
+	end
+
+	local animator = humanoid:FindFirstChildOfClass("Animator")
+	if not animator then
+		warnOnce(warnedFallback, typeKey .. "/Locomotion",
+			("[EnemyAnimation] %s has Animations set but its model's Humanoid has no Animator child — it moves unanimated. Add an Animator inside the Humanoid of ServerStorage.EnemyModels.%s."):format(typeKey, tostring(enemy.TypeData.ModelName)))
+		return loco
+	end
+
+	if animations.Idle then
+		loco.IdleTrack = loadTrack(animator, typeKey, "Idle", animations.Idle, true, Enum.AnimationPriority.Idle)
+		if loco.IdleTrack then
+			loco.IdleTrack:Play()
+		end
+	end
+	if animations.Move then
+		loco.MoveTrack = loadTrack(animator, typeKey, "Move", animations.Move, true, Enum.AnimationPriority.Movement)
+	end
+	if animations.Death then
+		loco.DeathTrack = loadTrack(animator, typeKey, "Death", animations.Death, false, Enum.AnimationPriority.Action)
+	end
+
+	-- The pattern stops ticking a dead enemy, so the loops would otherwise keep playing on the corpse.
+	-- Disconnected with the Humanoid when the encounter destroys the model.
+	humanoid.Died:Connect(function()
+		if loco.IdleTrack then
+			loco.IdleTrack:Stop()
+		end
+		if loco.MoveTrack then
+			loco.MoveTrack:Stop()
+		end
+		if loco.DeathTrack then
+			loco.DeathTrack:Play()
+		end
+	end)
+	return loco
+end
+
+-- `walking` is the pattern's own decision (out of attack range and not stunned), not measured motion,
+-- for the same reason Tick's Move block gives.
+function EnemyAnimation.Locomotion(enemy, walking: boolean)
+	if enemy.Anim then
+		return -- an "Animated" enemy falling back to Chaser: Tick already loaded and owns its tracks
+	end
+	if not enemy.Loco then
+		enemy.Loco = setupLocomotion(enemy)
+	end
+
+	local moveTrack = enemy.Loco.MoveTrack
+	if not moveTrack or not enemy.Humanoid or enemy.Humanoid.Health <= 0 then
+		return
+	end
+	if walking then
+		local speed = (enemy.TypeData and enemy.TypeData.MoveAnimationSpeed) or 1
+		if not moveTrack.IsPlaying then
+			moveTrack:Play(0.1, 1, speed)
+		elseif math.abs(moveTrack.Speed - speed) > 0.01 then
+			moveTrack:AdjustSpeed(speed)
+		end
+	elseif moveTrack.IsPlaying then
+		moveTrack:Stop(0.15)
 	end
 end
 

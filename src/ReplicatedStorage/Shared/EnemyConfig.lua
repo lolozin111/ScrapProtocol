@@ -84,6 +84,12 @@ EnemyConfig.Types = {
 		Description = "Underequipped and outnumbered on their own — the danger is never one Scavenger.",
 		HP = 18,
 		ModelName = "Scavenger",
+		-- Idle/Move/Death animation ids, played by EnemyAnimation.Locomotion for a Chaser. Leave a slot
+		-- out to skip it. The model's Humanoid needs an Animator child, or nothing plays (one warn).
+		-- Optional MoveAnimationSpeed (1 = as published) works here the same as on the Hulk.
+		Animations = {
+			Move = "rbxassetid://80963801870849",
+		},
 	}),
 	Raider = defineEnemy(RebelBase, {
 		DisplayName = "Raider",
