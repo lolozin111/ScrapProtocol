@@ -236,6 +236,10 @@ RaidConfig.SpawnZoneMinPlayerDistance = 25
 RaidConfig.SpawnZoneFloorOffset = 3
 RaidConfig.SpawnZoneMaxPlacementAttempts = 12
 RaidConfig.SpawnZoneRaycastExtraDepth = 200
+-- Boss escort, Decision 5: when placing escort minions, a candidate must also be at least this far
+-- from every spawn already placed in the room (the boss's SpawnPoint and earlier minions), so a
+-- zone overlapping the arena can't drop a minion inside the boss, and minions don't pile up.
+RaidConfig.SpawnZoneMinSpawnDistance = 20
 
 -- Heal/Shop interaction — build a Heal or Shop Room Model in Studio with a Part named exactly this
 -- (a ProximityPrompt is created on it automatically if it doesn't already have one) — the player
@@ -437,7 +441,18 @@ RaidConfig.CombatTierComposition = {
 -- A Boss room is meant to be one or two genuinely tough BossTypes enemies (see
 -- RaidRoomService.pickBossSpawnKeys, drawing from EnemyConfig.BossTypes, which is boss-only and
 -- read from nowhere else), not just "more of the regular enemies."
-RaidConfig.BossComposition = { EnemyCountMin = 1, EnemyCountMax = 2, Multiplier = 2.6 }
+-- Exactly one since the Boss escort build (DESIGN_NOTES "Boss escort", Decision 2): the boss is a
+-- single set-piece, authored as ONE SpawnPoint, and extra bodies come from the escort below instead.
+RaidConfig.BossComposition = { EnemyCountMin = 1, EnemyCountMax = 1, Multiplier = 2.6 }
+
+-- Boss escort ("Boss escort" Decisions 3-4). Minions stand in the Boss room's SpawnZones:
+--   minions = max(0, floor(combatCount * BossMinionFraction) - 1)
+-- combatCount is a Combat room's enemy roll at the boss node's tier (CombatTierComposition), standing
+-- in for the unbuilt depth-based quantity curve. The -1 is STRUCTURAL (it's what gives shallow boss
+-- rooms no escort once a real curve exists), not a knob. Minions draw from the normal roster with no
+-- elites, at that Combat tier's strength, never the boss's 2.6x. This fraction is the one number to
+-- move in playtesting. At Tier 3 (4-5 enemies) it currently gives 1-2 minions.
+RaidConfig.BossMinionFraction = 0.6
 
 RaidConfig.AmbushChance = 0.16 -- flat probability a non-forced-Heal, non-Shop regular node is an
 	-- Ambush (multi-wave fight) instead of a single Combat encounter — rarer than Combat since it's

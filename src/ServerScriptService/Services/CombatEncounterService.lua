@@ -1043,11 +1043,11 @@ end
 -- plain callback instead of a hardcoded Remote, so this file doesn't need to know the raid system's
 -- remote names either. RaidRoomService relays these into its own RaidRoomUpdate remote.
 --
--- explicitSpawns (optional): a room-authored spawn list ({ {Position: Vector3, TypeKey: string} }),
--- straight from RaidConfig.SpawnPointName Parts placed in a hand-built Room Model. When given
--- (non-nil, non-empty) it's used INSTEAD of spawnKeys/the circle-around-arenaCenter placement below
--- — spawn exactly what the room says, exactly where it says — so spawnKeys is only ever consulted
--- when explicitSpawns is nil, same as before this parameter existed.
+-- explicitSpawns (optional): a room-authored spawn list ({ {Position: Vector3, TypeKey: string,
+-- Multiplier: number?} }), from RaidConfig.SpawnPointName Parts or SpawnZone placement in a hand-built
+-- Room Model — spawn exactly what the room says, exactly where it says. spawnKeys (the ring around
+-- arenaCenter) is spawned TOO when it's non-empty; callers that want only one pass the other empty.
+-- An entry's own Multiplier overrides `multiplier` (a Boss room's escort vs its boss).
 ----------------------------------------------------------------------
 
 function CombatEncounterService.RunRaidCombat(player: Player, arenaCenter: Vector3, spawnKeys: { string }, multiplier: number, onEvent: ((string, any) -> ())?, explicitSpawns: { { Position: Vector3, TypeKey: string } }?): string
@@ -1068,16 +1068,24 @@ function CombatEncounterService.RunRaidCombat(player: Player, arenaCenter: Vecto
 		-- Room-authored spawn points — see this function's own header. Every entry here already
 		-- passed RaidRoomService's own EnemyType validation (missing/unknown attributes are warned
 		-- about and filtered out before this ever runs), so this just spawns exactly what's left.
+		-- An entry's own Multiplier wins over the encounter's: a Boss room's escort spawns at
+		-- Combat-room strength beside a boss at the boss multiplier (DESIGN_NOTES "Boss escort",
+		-- Decision 3), and one encounter can only take one `multiplier` argument.
 		for _, spawnInfo in ipairs(explicitSpawns) do
 			local typeData = getEnemyTypeData(spawnInfo.TypeKey)
 			if typeData then
-				local record = spawnEnemy(spawnInfo.TypeKey, typeData, spawnInfo.Position, multiplier, playerFolder, typeData.ContactRange)
+				local record = spawnEnemy(spawnInfo.TypeKey, typeData, spawnInfo.Position, spawnInfo.Multiplier or multiplier, playerFolder, typeData.ContactRange)
 				if record then
 					enemyByModel[record.Model] = record
 				end
 			end
 		end
-	else
+	end
+	-- NOT an else any more: explicitSpawns and spawnKeys are both honoured when both are non-empty. A
+	-- Boss room with zones but no SpawnPoint rings its boss from spawnKeys while its escort stands in
+	-- the zones (explicitSpawns). Every caller that has explicitSpawns passes an EMPTY spawnKeys, so
+	-- their behaviour is unchanged.
+	do
 		local spawnCount = #spawnKeys
 		local angleStep = spawnCount > 0 and (math.pi * 2 / spawnCount) or 0
 		for i, typeKey in ipairs(spawnKeys) do

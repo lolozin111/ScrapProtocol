@@ -1349,7 +1349,10 @@ and that are easy to get subtly wrong (economy math, save data, purchase handlin
   facing, not just position) — absent, the player falls back to the model's own pivot plus a fixed
   height offset, dead centre, facing an arbitrary direction; `SpawnPoint` Parts with an `EnemyType`
   string Attribute (Combat/Ambush/Boss) to hand-author exactly what spawns there instead of a random
-  roll; `SpawnZone` Parts (Combat/Ambush) — volumes rather than points, sized and rotated however you
+  roll (in a Boss room, the `SpawnPoint` IS the boss — author one, `EnemyType` = `VoidwakenHulk`);
+  `SpawnZone` Parts (Combat/Ambush, and Boss rooms for the boss's escort: 1–2 normal-strength,
+  non-elite minions placed at least 20 studs from the boss's SpawnPoint and from each other) —
+  volumes rather than points, sized and rotated however you
   draw the Part, with an optional number Attribute `Weight` (absent or non-positive = 1) setting that
   zone's share of the room's spawns — enemies land at random points inside a zone's own box, never
   within 25 studs of the player. `SpawnPoint`s and `SpawnZone`s can coexist in one room: authored

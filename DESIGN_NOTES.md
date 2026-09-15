@@ -29,7 +29,7 @@ already made (numbers, mechanics, sequencing), not just vague direction.
 | Enemy AI patterns | **Engine built, two patterns** — `Chaser` (six enemy types) and, shipped 2026-09-09, `Slam` (`Siegebreaker` only — a telegraphed wind-up/impact cycle, see "The Voidium infestation" below) |
 | Enemy art (Studio models) | **4 of 5 built (2026-09-10)** — Scavenger, Raider, Brute, Siegebreaker in `ServerStorage.EnemyModels`; VoidwakenHulk imported, textured, assembled and rigged with `FistR`/`FistL` hit-point Attachments (2026-09-10/11); HipHeight and the move into `EnemyModels` wait on his lying-down pose — see "Resuming after a context reset" |
 | Voidium infestation (lore + the raid boss) | **Partially built 2026-09-09** — `EliteTypes`/`BossTypes` split into separate pools and `Siegebreaker` shipped as the new elite; the bloom itself (the actual raid boss per Decision 2 below) is still designed, not built — see "The Voidium infestation" below; `Siegebreaker` also rolls into raid Combat rooms (`EliteChance`, 2026-09-09) |
-| Boss escort (spawn zones in the Boss room) | **Designed 2026-09-09, nothing built** — blocked on the spawn-zone curves; see "Boss escort" below |
+| Boss escort (spawn zones in the Boss room) | **Built 2026-09-15 with an interim count, untested in Studio** — the depth curve is still unbuilt, so `combatCount` is the Combat roll at the boss node's tier (Tier 3: 1–2 minions). User's call. See "Boss escort" below |
 | Animation pass | **In progress on the Hulk (2026-09-11)** — his Idle (`113796712422007`) and heavy rock-arm attack (`137947497885396`, markers `ImpactR` ×2 + `ImpactRFinal`) are animated in Blender and published; crawl/attack-L/turn/death still to animate. **NO playback code exists yet** — nothing plays any of them, and that build needs the user's go-ahead. Full pipeline, damage/slow numbers and marker contract in "Resuming after a context reset". Was deferred post-launch on 2026-09-08; see Phase 01 |
 | Early-game pacing & onboarding | **Partially built** — item 1 (ore sells for Scrap) shipped in the ore rework; starter objectives (item 2) still planned, not built — see below |
 | Raid shop rework (run-only perks) | **Planned, not built** — half the tag plumbing exists |
@@ -891,6 +891,24 @@ trigger into the boss room would make it two systems at once. Separate build, la
 **Also depends on `beginBoss` reading authored placements at all**, which it does not — see the
 2026-09-09 correction under "Spawn zones + difficulty curves" point 1. The escort has nowhere to be
 placed until that one-line-ish fix lands, since zones in a Boss room are read by nothing.
+(Superseded: `beginBoss` reads SpawnPoints now.)
+
+**BUILT 2026-09-15 — interim count, user's pick of three options.** The depth-based quantity curve
+is still unbuilt, so `combatCount` is `math.random` over `CombatTierComposition[node.Tier]` (boss
+nodes are always `BossTier` 3 → 4–5 → **1–2 minions**, never 0, until the curve lands and the `-1`
+starts producing boss-alone shallow rooms). What shipped, by decision:
+- D2: `BossComposition` is `1, 1`.
+- D3: minions use `pickRaidSpawnKeys(n, 0)` (normal roster, no elites) at
+  `CombatTierComposition[tier].Multiplier`, which is exactly what `beginCombat` passes (no run
+  multiplier — the design text says "run-progression" but a real Combat room doesn't apply it, and
+  "as tough as a regular Combat enemy" is the rule). Carried per spawn entry via a new optional
+  `Multiplier` field, since `RunRaidCombat` takes one encounter multiplier.
+- D4: `RaidConfig.BossMinionFraction = 0.6` with the structural `-1`.
+- D5: `placeInZones` takes an optional `avoid` list; `RaidConfig.SpawnZoneMinSpawnDistance = 20`
+  from the boss's SpawnPoint and earlier minions. A RINGED boss (no SpawnPoint) isn't avoided — his
+  position isn't known until `RunRaidCombat` places him.
+- `RunRaidCombat` now spawns `explicitSpawns` AND the `spawnKeys` ring when both are non-empty (it
+  was either/or); every older caller passes an empty `spawnKeys` alongside explicit spawns.
 
 **Depends on:** the spawn-zone curves themselves, which are DESIGNED but NOT BUILT (see "Spawn zones
 + difficulty curves" above — markers built 2026-09-08, curves not). There is no `combatCount` curve

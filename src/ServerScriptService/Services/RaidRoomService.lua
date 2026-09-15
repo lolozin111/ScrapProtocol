@@ -454,7 +454,11 @@ end
 -- Returns however many positions actually resolved, which may be fewer than `count` if a zone keeps
 -- failing (see the per-enemy warn below) — a short encounter beats a stuck one, so this never falls
 -- back to an unchecked position just to hit the count.
-local function placeInZones(zones: { { Part: BasePart, Weight: number } }, player: Player, count: number): { Vector3 }
+-- `avoid` (optional, Boss escort Decision 5): positions already taken in the room. When given, a
+-- candidate must also clear RaidConfig.SpawnZoneMinSpawnDistance from each of them, and every accepted
+-- position is added to it so later placements keep their distance too. Omitted by Combat/Ambush,
+-- whose placement is unchanged.
+local function placeInZones(zones: { { Part: BasePart, Weight: number } }, player: Player, count: number, avoid: { Vector3 }?): { Vector3 }
 	local totalWeight = 0
 	for _, zone in ipairs(zones) do
 		totalWeight += zone.Weight
@@ -497,7 +501,17 @@ local function placeInZones(zones: { { Part: BasePart, Weight: number } }, playe
 				raycastParams)
 			if rayResult then
 				local position = rayResult.Position + Vector3.new(0, RaidConfig.SpawnZoneFloorOffset, 0)
-				if not characterPosition or (position - characterPosition).Magnitude >= RaidConfig.SpawnZoneMinPlayerDistance then
+				local clearOfSpawns = true
+				for _, taken in ipairs(avoid or {}) do
+					if (position - taken).Magnitude < RaidConfig.SpawnZoneMinSpawnDistance then
+						clearOfSpawns = false
+						break
+					end
+				end
+				if clearOfSpawns and (not characterPosition or (position - characterPosition).Magnitude >= RaidConfig.SpawnZoneMinPlayerDistance) then
+					if avoid then
+						table.insert(avoid, position)
+					end
 					table.insert(positions, position)
 					placed = true
 					break
@@ -1417,20 +1431,52 @@ local function beginBoss(state, node)
 	local runMultiplier = RaidConfig.GetRunProgressionMultiplier(state.TotalNodesVisited)
 	local count = math.random(composition.EnemyCountMin, composition.EnemyCountMax)
 
-	-- Authored placement for Boss rooms — collectSpawnPoints DIRECTLY, deliberately NOT the full
-	-- resolveEnemyPlacements point+zone path beginCombat/beginAmbush use. A zone-filled enemy here
-	-- would inherit `multiplier` below, i.e. composition.Multiplier (2.6x), so every body a zone
-	-- added would be an ELITE body and the room's difficulty would jump far past what its enemy
-	-- count suggests — see DESIGN_NOTES "Boss escort", Decision 3. Zones in a Boss room therefore
-	-- stay inert until the escort build gives minions their own multiplier and their own roster.
-	-- Points only, as the 2026-09-07 round always intended and this path never actually did.
-	-- With points authored, THEY decide the count (one Part, one enemy) and the BossComposition
+	-- Authored placement for Boss rooms — collectSpawnPoints DIRECTLY for the boss, deliberately NOT
+	-- the full resolveEnemyPlacements point+zone path beginCombat/beginAmbush use. A zone-filled enemy
+	-- through that path would inherit `multiplier` below, i.e. composition.Multiplier (2.6x), so every
+	-- body a zone added would be an ELITE body — see DESIGN_NOTES "Boss escort", Decision 3. Zones in
+	-- a Boss room are the ESCORT's instead, placed below with their own roster and multiplier.
+	-- With points authored, THEY decide the boss count (one Part, one enemy) and the BossComposition
 	-- roll above only sizes the procedural fallback, exactly as in beginCombat.
 	local explicitSpawns = state.RoomFolder and collectSpawnPoints(state.RoomFolder)
 	local spawnKeys = {}
 	if not explicitSpawns then
 		spawnKeys = pickBossSpawnKeys(count)
 	end
+
+	-- Boss escort (DESIGN_NOTES "Boss escort", built 2026-09-15). Minions stand in the room's
+	-- SpawnZones. Count = max(0, floor(combatCount * BossMinionFraction) - 1), with combatCount a Combat
+	-- room's roll at this node's tier, standing in for the unbuilt depth curve. They're drawn from the
+	-- normal roster with no elites, at exactly the strength a Combat room at this tier uses, never the
+	-- boss's multiplier (Decision 3). That strength rides on each spawn entry, since RunRaidCombat takes
+	-- one encounter-wide multiplier and that one is the boss's. Placement keeps clear of the player and
+	-- of every spawn already placed (Decision 5).
+	local zones = state.RoomFolder and collectSpawnZones(state.RoomFolder)
+	if zones then
+		local combatComposition = RaidConfig.CombatTierComposition[node.Tier]
+			or RaidConfig.CombatTierComposition[#RaidConfig.CombatTierComposition]
+		local combatCount = math.random(combatComposition.EnemyCountMin, combatComposition.EnemyCountMax)
+		local minionCount = math.max(0, math.floor(combatCount * RaidConfig.BossMinionFraction) - 1)
+		if minionCount > 0 then
+			-- The boss's position is only known here when it came from a SpawnPoint. A ringed boss (no
+			-- point authored) is placed inside RunRaidCombat, so minions can't keep clear of him.
+			local taken = {}
+			for _, spawnInfo in ipairs(explicitSpawns or {}) do
+				table.insert(taken, spawnInfo.Position)
+			end
+			local positions = placeInZones(zones, state.Player, minionCount, taken)
+			if #positions > 0 then
+				local minionKeys = pickRaidSpawnKeys(#positions, 0)
+				-- With no SpawnPoint this list starts empty while spawnKeys holds the ringed boss;
+				-- RunRaidCombat spawns both lists when both are non-empty.
+				explicitSpawns = explicitSpawns or {}
+				for i, position in ipairs(positions) do
+					table.insert(explicitSpawns, { Position = position, TypeKey = minionKeys[i], Multiplier = combatComposition.Multiplier })
+				end
+			end
+		end
+	end
+
 	local multiplier = composition.Multiplier * runMultiplier
 
 	task.spawn(function()
