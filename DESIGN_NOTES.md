@@ -3472,7 +3472,32 @@ things cost real time and are worth not relearning:
   He spawned buried → **`HipHeight = 15`** (found live; now `EnemyConfig` `HipHeight`, applied at
   spawn, and `spawnEnemy` lifts the pivot by HipHeight + half the root so he doesn't visibly climb out
   of the floor). A "25" detour was judged during a DnsResolve internet outage where no animations
-  loaded (rest pose reads as floating) — re-judge height only with Idle actually playing. He faced
+  loaded (rest pose reads as floating) — re-judge height only with Idle actually playing. Then
+  **HipHeight 12** looked right with Idle playing. **Facing:** code-owned (AutoRotate off), found live
+  via a `FacingYawOffset` Attribute → **-90**. The command-bar root rotation offered earlier was
+  superseded by this; unknown whether the user ran it (if they did, -90 already accounts for it).
+  Turning is per-Heartbeat at `TurnSpeed` 90°/s around the `Torso` bone (`TurnPivot`), and he only
+  attacks within `AttackFacingTolerance` 30° of facing (the snap-on-attack was removed — user wanted
+  less snappy). Walk plays at `MoveAnimationSpeed` 0.7 (user: "a bit too fast").
+  **Hold ground (user's call):** `AttackRadius` 50 — inside it he doesn't walk, only turns and
+  attacks; he walks once the player is beyond 50 and stops at `ContactRange` 40. Both attacks'
+  `TriggerRange` raised to 50 to match. Flagged, not yet seen: fist reach is only 15–28 from the
+  fist, so swings started from far out may miss by design unless his arms are that long.
+  **Walk stutter fixed in code:** no enemy ever called `SetNetworkOwner(nil)`, so the nearest
+  client simulated him and fought the server's MoveTo/turn — EnemyAnimation now claims server
+  ownership. Attacks also wait until a started walk reaches the ContactRange ring, and the Move
+  track follows the walk decision rather than measured velocity. (Other enemy types still don't
+  set network ownership; nothing has reported stutter for them.)
+  **User: "he is working" (2026-09-14)** → `DebugHitboxes` back to false. MoveSpeed 10 → **13**
+  ("too slow"), crawl `MoveAnimationSpeed` 0.7 → 0.9 to keep pace.
+- **Boss health bar + raid HUD tidy (2026-09-14, untested in Studio).** `spawnEnemy` tags any
+  `EnemyConfig.BossTypes` model `"Boss"` with a `BossName` Attribute; `StarterPlayerScripts/BossBar.lua`
+  (self-booting) finds it by tag and reads replicated `Humanoid.Health` — no remote. Top-centre
+  plate, name + Mono HP readout, `COLOR.Bad` fill with a held damage trail; the room panel hides
+  while it shows. RaidClient's Scraps readout, room panel shell, toast, Go Back To Base (`danger`)
+  and Extract (`primary`) moved onto HudKit plate/button/tokens; the toast moved bottom-centre
+  because it overlapped the room panel. Per-status room BODY content (Heal/Shop/BossCleared/card
+  choice) still uses old fonts — deliberately left for a later pass. He faced
   the wrong way while walking (AutoRotate turns the HumanoidRootPart's LookVector, and the HRP's front
   isn't the mesh's front) — fix is rotating the HRP and recomputing `RootJoint.C0` from the command
   bar, NOT `FacingYawOffset` (that only covers the attack snap, not walking). Walk didn't show:

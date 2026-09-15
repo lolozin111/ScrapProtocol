@@ -179,14 +179,22 @@ EnemyConfig.BossTypes = {
 		-- FALLBACK ONLY. The Animated pattern replaces contact damage with the named hits below; this
 		-- is used only if the animations can't load and he drops back to plain Chaser.
 		ContactDamage = 22,
-		MoveSpeed = 10,
+		MoveSpeed = 13, -- was 10; user: "too slow". Still under a player's 16.
 		-- Seconds from the END of one attack animation to when the next may start.
 		AttackCooldown = 1.6,
 		Defense = 28,
 		ModelName = "VoidwakenHulk",
-		-- The stand-off ring he walks to (horizontal studs from the player). Kept inside every
-		-- attack's TriggerRange so arriving means he can swing.
-		ContactRange = 15,
+		-- Inside AttackRadius (horizontal studs from the player) he holds his ground and attacks; he
+		-- only walks once the player leaves it, and then walks until they're within ContactRange.
+		-- Keep ContactRange below AttackRadius (the gap stops him flicking between walk and stop at
+		-- the edge) and AttackRadius within every attack's TriggerRange (so holding ground means he
+		-- can still swing).
+		AttackRadius = 50,
+		ContactRange = 40,
+		-- Humanoid.HipHeight, applied at spawn so it can't drift from a hand-edited Studio copy. His
+		-- root sits inside a lying-down body, so the Roblox default buries him. Raise it if he sinks
+		-- into the floor, lower it if he floats.
+		HipHeight = 12,
 
 		-- Selects EnemyAI.Patterns.Animated (see EnemyAnimation.lua): his attacks are Studio
 		-- animations, and damage lands on the animation's own event markers, measured from a fist
@@ -199,13 +207,16 @@ EnemyConfig.BossTypes = {
 			Move = "rbxassetid://103708147649106",
 			Death = "",
 		},
+		-- Playback speed of the Move animation (1 = as published). Lower = slower crawl.
+		-- Scaled up with MoveSpeed (0.7 at speed 10) so the crawl keeps pace instead of sliding.
+		MoveAnimationSpeed = 0.9,
 
 		-- Which attack he plays is a weighted pick among the ones whose TriggerRange (horizontal studs,
 		-- his root to the player) covers the current distance. The damage an attack deals is decided by
 		-- which markers its animation contains, not by anything here.
 		Attacks = {
-			{ Name = "RockArmCombo", AnimationId = "rbxassetid://137947497885396", TriggerRange = 30, Weight = 1 },
-			{ Name = "LeftSweep", AnimationId = "rbxassetid://105875185230848", TriggerRange = 30, Weight = 1 },
+			{ Name = "RockArmCombo", AnimationId = "rbxassetid://137947497885396", TriggerRange = 50, Weight = 1 },
+			{ Name = "LeftSweep", AnimationId = "rbxassetid://105875185230848", TriggerRange = 50, Weight = 1 },
 		},
 
 		-- Keyed by animation event NAME (exact, case-sensitive — the names typed in the Animation Editor).
@@ -222,9 +233,16 @@ EnemyConfig.BossTypes = {
 			SweepL = { Kind = "Sweep", Attachment = "FistL", Damage = 8, Reach = 15, SlowMultiplier = 0.6, SlowSeconds = 1.5 },
 		},
 
-		-- Degrees added to "face the player" when an attack starts, in case the rig's front isn't the
-		-- root's LookVector. Tune in Studio if he swings sideways.
-		FacingYawOffset = 0,
+		-- Degrees added to "face the player", because the rig's front isn't the root's LookVector.
+		-- Found live in a playtest (a FacingYawOffset number Attribute on the live Model overrides this).
+		FacingYawOffset = -90,
+		-- How fast he turns toward the player, in degrees per second. Low on purpose: a slow boss.
+		TurnSpeed = 90,
+		-- What he turns around: a Bone or Attachment name. His root isn't the middle of his lying body.
+		TurnPivot = "Torso",
+		-- He only starts an attack once he's within this many degrees of facing the player, so
+		-- getting behind him buys time instead of being met by an instant snap-and-swing.
+		AttackFacingTolerance = 30,
 
 		-- Studio aid: draws each hit's reach sphere at the fist and prints hit/miss distances to Output.
 		-- Use it to check the server sees the ANIMATED fist, not the rest pose. Leave false when shipping.
