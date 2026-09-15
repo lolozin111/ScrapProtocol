@@ -25,12 +25,13 @@ already made (numbers, mechanics, sequencing), not just vague direction.
 | Drone companion (4 Drone Cores) | **Built** — unlocks at Research Tier 3, follows you everywhere |
 | Player Test Mode (admin throwaway profile) | **Built** — see "Data safety" section below |
 | HUD phase 3 (all station menus) | **Built and verified** — see "Road to release" below |
-| Raid overhaul | **Scope cut to one mode for v1 (2026-09-08)** — steps 5-6 deferred post-launch; step 1 built AND VERIFIED in Studio 2026-09-08, step 2 (room variant folders) BUILT 2026-09-08, not yet verified in Studio, see Phase 00 below; **exit doors switched OFF 2026-09-09** — the Sector Map picks the next room again (`RaidConfig.ExitDoorsEnabled`) |
+| Raid overhaul | **Scope cut to one mode for v1 (2026-09-08)** — steps 5-6 deferred post-launch; step 1 built AND VERIFIED in Studio 2026-09-08, step 2 (room variant folders) BUILT and VERIFIED in Studio 2026-09-15; **step 3 (mode plumbing) BUILT 2026-09-15, not yet verified**; step 4 next but its mode identity is an open question, see Phase 00 below; **exit doors switched OFF 2026-09-09** — the Sector Map picks the next room again (`RaidConfig.ExitDoorsEnabled`) |
 | Enemy AI patterns | **Engine built, two patterns** — `Chaser` (six enemy types) and, shipped 2026-09-09, `Slam` (`Siegebreaker` only — a telegraphed wind-up/impact cycle, see "The Voidium infestation" below) |
-| Enemy art (Studio models) | **4 of 5 built (2026-09-10)** — Scavenger, Raider, Brute, Siegebreaker in `ServerStorage.EnemyModels`; VoidwakenHulk imported, textured, assembled and rigged with `FistR`/`FistL` hit-point Attachments (2026-09-10/11); HipHeight and the move into `EnemyModels` wait on his lying-down pose — see "Resuming after a context reset" |
+| Enemy art (Studio models) | **4 of 5 built (2026-09-10)** — Scavenger, Raider, Brute, Siegebreaker in `ServerStorage.EnemyModels`; VoidwakenHulk imported, textured, rigged with `FistR`/`FistL` Attachments, in `EnemyModels`, and FIGHTING in raids as of 2026-09-15 (HipHeight/hitbox/facing now come from EnemyConfig) — see "Resuming after a context reset" |
 | Voidium infestation (lore + the raid boss) | **Partially built 2026-09-09** — `EliteTypes`/`BossTypes` split into separate pools and `Siegebreaker` shipped as the new elite; the bloom itself (the actual raid boss per Decision 2 below) is still designed, not built — see "The Voidium infestation" below; `Siegebreaker` also rolls into raid Combat rooms (`EliteChance`, 2026-09-09) |
 | Boss escort (spawn zones in the Boss room) | **Built 2026-09-15 with an interim count, untested in Studio** — the depth curve is still unbuilt, so `combatCount` is the Combat roll at the boss node's tier (Tier 3: 1–2 minions). User's call. See "Boss escort" below |
-| Animation pass | **In progress on the Hulk (2026-09-11)** — his Idle (`113796712422007`) and heavy rock-arm attack (`137947497885396`, markers `ImpactR` ×2 + `ImpactRFinal`) are animated in Blender and published; crawl/attack-L/turn/death still to animate. **NO playback code exists yet** — nothing plays any of them, and that build needs the user's go-ahead. Full pipeline, damage/slow numbers and marker contract in "Resuming after a context reset". Was deferred post-launch on 2026-09-08; see Phase 01 |
+| Animation pass | **Hulk DONE and verified 2026-09-15** — Idle `113796712422007`, Walk `103708147649106`, heavy combo `137947497885396` (`ImpactR` ×2 + `ImpactRFinal`), left sweep `105875185230848` (`SweepLStart`/`SweepLEnd`), all playing through `AIPattern = "Animated"` (`EnemyAnimation.lua`). No death or turn animation, by the user's choice. Next animation: the player's DASH (`DashConfig.AnimationId`, user is making it). Other enemies still have no attack tell. Details in "Resuming after a context reset" |
+| Stamina & dash | **Built 2026-09-15, verified working by the user** — 3 charges, 1 per 5s, Q/B/touch; see "Stamina & dash" |
 | Early-game pacing & onboarding | **Partially built** — item 1 (ore sells for Scrap) shipped in the ore rework; starter objectives (item 2) still planned, not built — see below |
 | Raid shop rework (run-only perks) | **Planned, not built** — half the tag plumbing exists |
 | PvP base invasion | **Recommended cut from v1** — see "Road to release" below |
@@ -181,11 +182,26 @@ them, AI patterns last because they need three raids to exist):
 1. ~~Physical exit doors + read-only minimap~~ — **BUILT (2026-09-03), VERIFIED IN STUDIO
    (2026-09-08)**, see "Raid Rooms — physical
    exit doors + the Sector Map" below.
-2. ~~Room variant folders~~ — **BUILT (2026-09-08), NOT YET VERIFIED IN STUDIO** — small,
+2. ~~Room variant folders~~ — **BUILT (2026-09-08), VERIFIED IN STUDIO (2026-09-15, user: "room
+   variants works")** — small,
    independent, unblocks Studio art. See "Decision 3 — room variants" above and
    `RaidRoomService.lua`'s `pickRoomTemplate`.
-3. Mode plumbing — a `RaidMode` on the raid state plus one `RaidConfig.Modes` table of named rules
-   (the project's standard flat-table-of-strategies shape).
+3. ~~Mode plumbing~~ — **BUILT 2026-09-15, NOT YET VERIFIED IN STUDIO.** `RaidConfig.Modes` with ONE
+   entry, `Standard` (today's raid, every rule pointing at the value raids already used, so nothing
+   plays differently), plus `RaidConfig.DefaultMode`. `state.RaidMode` is set at `RequestStartRaid`
+   (optional client arg; nil → default; a malformed value is REJECTED with `Status = "UnknownMode"`,
+   never defaulted). Rules and their readers: `EnergyCost` (start), `Map` (→ `GenerateMap(rules)` →
+   `placeBossNodes`, at start AND on chapter regen; missing fields fall back to the module constants),
+   `ShopCatalog` (a NodeConfig table NAME, read by `revealShop` and the Buy handler via
+   `shopCatalogFor`), `CardsEnabled` (the post-boss pick; the `false` path is written but untested and
+   the client has never seen a BossCleared without `CardChoices`), `DisplayName` (sent as
+   `Mode`/`ModeName` in the map payload; nothing reads it yet). Deliberately NOT mode rules yet: enemy
+   composition and depth curves (curve work) and `RunLocked` tagging (step 4).
+   **Open for step 4 — the mode's identity.** The user described today's raid (2026-09-15) as "a
+   little game, sort of a hack and slash, so people can do stuff and get special items like
+   Contraband". That is NOT the Salvage Run this plan assumed the one v1 mode becomes (ore feedstock,
+   `RunLocked`, carry cap, physical Extraction). Hence the neutral key `Standard`. Settle which it is
+   BEFORE building step 4.
 4. Salvage Run — cheapest: tagging, carry cap, Extraction as a real room. Almost no new systems.
 5. ~~Gauntlet~~ — **CUT FROM v1 (2026-09-08), first post-launch update.** A real card pool with real
    effects plus the run-only perk shop. Biggest content write.
@@ -3318,6 +3334,37 @@ generic chassis outline rather than an empty frame. Forge A's chamber needs no a
 and frames.
 
 ### Resuming after a context reset
+
+**NEWEST — end of session 2026-09-14/15. Start here.** Everything below this paragraph is older.
+
+Shipped this session (all committed and pushed on branch `fix/audit-p0-p3`, NOT merged to `main`):
+- **The Hulk fights.** `AIPattern = "Animated"` / `EnemyAnimation.lua`: animation-marker hits
+  measured from `FistR`/`FistL`, a Sweep window, refresh-not-stack slows, AlignOrientation turning
+  about his body, server network ownership, hold-ground `AttackRadius` 50 / `ContactRange` 40, speed
+  bursts, a config-sized `Hitbox`, `NoCollide`, `HipHeight` 12, `FacingYawOffset` -90, `MoveSpeed` 21.
+  All numbers in `EnemyConfig.BossTypes.VoidwakenHulk`, each tuned live with the user. User: works.
+- **Boss escort** (minions in Boss-room SpawnZones, interim tier count) — user: works.
+- **Boss health bar** (`BossBar.lua`, "Boss" tag) and a HudKit pass over the raid HUD.
+- **Admin shortcut:** an admin's raid opens on Boss nodes.
+- **Stamina & dash** (`DashConfig`/`DashService`/`DashClient`/`StaminaState`) — user: works.
+- **Raid overhaul step 2 verified; step 3 (mode plumbing) built, NOT verified in Studio.**
+
+Hard-won lessons from this session, each cost real time:
+- **New Remotes in `default.project.json` need `rojo serve` RESTARTED** — Rojo reads the project file
+  only on start. And never `WaitForChild` a remote at the top of a boot-list service: it stalled every
+  later service and the player didn't even spawn on their base.
+- **Config edits only apply on a fresh Play** — a running test keeps the values it loaded.
+- **A skinned mesh animated out of its rest pose keeps REST-pose collision** → needs a `Hitbox`.
+- **Per-frame root CFrame writes fight a Humanoid's walk** (he crawled at any WalkSpeed); turn with
+  a constraint instead. And set `SetNetworkOwner(nil)` on server-driven NPCs.
+- **An internet outage (DnsResolve) looks like broken animations and a floating boss** — no
+  animation loads, the rig shows its rest pose. Rule it out before tuning.
+
+**Where to pick up:** (1) the user verifies step 3 in Studio (a raid should behave exactly as before;
+Output should be clean). (2) Before step 4, settle the mode's identity — see the "Open for step 4" note
+under Phase 00's build order: the user calls today's raid a hack-and-slash for special items, which is
+not the Salvage Run the plan assumed. (3) Paste the dash animation id when the user has it. (4) Offer
+a PR from `fix/audit-p0-p3` to `main` — nothing from this session is on `main`.
 
 **START AT "Road to release" NEAR THE TOP OF THIS FILE, not here.** That section is the live plan for
 the whole project now; this one is the record of the HUD phase-3 round, which is finished, shipped
