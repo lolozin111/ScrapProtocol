@@ -3497,7 +3497,12 @@ things cost real time and are worth not relearning:
   while it shows. RaidClient's Scraps readout, room panel shell, toast, Go Back To Base (`danger`)
   and Extract (`primary`) moved onto HudKit plate/button/tokens; the toast moved bottom-centre
   because it overlapped the room panel. Per-status room BODY content (Heal/Shop/BossCleared/card
-  choice) still uses old fonts — deliberately left for a later pass. He faced
+  choice) still uses old fonts — deliberately left for a later pass.
+- **Hitbox (2026-09-15):** he only took damage on his root — a skinned MeshPart's collision stays in
+  its standing REST pose, so shots at the lying body passed through. `spawnEnemy` now welds an
+  invisible, query-only, massless `Hitbox` Part to the root from `EnemyConfig` `Hitbox`, sized live
+  by the user via `HitboxSize`/`HitboxOffset` Attributes: **Size (26, 18, 39), Offset (-3, -10, 5)**.
+  Any future rig animated out of its rest pose needs the same entry. He faced
   the wrong way while walking (AutoRotate turns the HumanoidRootPart's LookVector, and the HRP's front
   isn't the mesh's front) — fix is rotating the HRP and recomputing `RootJoint.C0` from the command
   bar, NOT `FacingYawOffset` (that only covers the attack snap, not walking). Walk didn't show:
