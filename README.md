@@ -159,8 +159,8 @@ no manual copy-pasting scripts into Studio.
 - **Research** — the game's progression rank, and the one number worth tracking. One tier drives
   which base Model (and its stations) you get, how big your base footprint is, your Wall HP in
   defense, how many turret slots you have, and how far a turret can be levelled. It's shown two
-  ways: a **bottom-left status panel** (health bar, a reserved stamina slot that isn't wired up
-  yet, and a Research row you can click) and a **floating sign over your base** showing owner and
+  ways: a **bottom-left status panel** (health bar, stamina cells — see **Stamina & dash** below —
+  and a Research row you can click) and a **floating sign over your base** showing owner and
   tier. Clicking the Research row opens a breakdown of exactly what the next tier needs, with
   have-vs-needed per line. Each tier is unlocked by reaching a wave milestone, then claimed at the
   **Workbench** for Scrap + ore + one boss-wave Core — so wave defense sets the pace while mining
@@ -641,6 +641,14 @@ no manual copy-pasting scripts into Studio.
   the first saved would silently rewind your progress. A player whose lock can't be acquired is
   kicked with an explanation rather than let in with an unsaveable profile.
 
+- **Stamina & dash** — every player has **3 stamina charges** (the cells in the bottom-left status
+  panel). Press **Q** (gamepad **B**, or the on-screen button on touch) to dash about 18 studs in
+  the direction you're moving, or the way you face if standing still; each dash spends one charge,
+  and charges refill **one every 5 seconds**. With no charges left, Q does nothing. Every number,
+  plus the slots for a future dash animation (`AnimationId`, speed, fade, priority), lives in
+  `ReplicatedStorage/Shared/DashConfig.lua`. Test: press Q three times quickly — you should dash
+  three times (at least 0.35s apart), watch three cells empty, and see the first recharging cell fill
+  over 5 seconds; a fourth press before it fills does nothing. Respawning refills all three.
 - **Admin dev shortcuts** — `AdminConfig.lua` auto-detects the place's owner (via
   `game.CreatorId`, which works automatically in Studio when you're testing as yourself; add your
   UserId to `AdminUserIds` too if the game ends up owned by a Group). Admins win any Combat raid

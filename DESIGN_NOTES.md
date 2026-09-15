@@ -2938,11 +2938,30 @@ have to move together.
 should still be spaced for the largest tier (63 studs across at T6), not the smallest, but that's a
 small ask compared to the old 200-stud top tier — which was the point of this retune.
 
-**Displayed two ways:** a bottom-left status panel (health bar, a reserved-and-disabled stamina
-slot, and a Research row that opens the requirements popup) and a floating sign over the base
-showing owner + tier. The stamina bar is a deliberate placeholder — there is no stamina or dash
-system in the codebase at all yet (no input handling, no regen loop, no server validation), so it is
-shown visibly disabled rather than lying about a stat nothing drives.
+**Displayed two ways:** a bottom-left status panel (health bar, stamina cells, and a Research row
+that opens the requirements popup) and a floating sign over the base showing owner + tier. The
+stamina slot was a disabled placeholder until the dash was built (2026-09-15, see "Stamina & dash").
+
+### Stamina & dash — BUILT 2026-09-15, untested in Studio
+
+User's spec: 3 stamina slots at the start, spent by dashes in whatever direction the player is
+moving, recovering 1 per 5 seconds, with variables ready for a dash animation they will make.
+- `Shared/DashConfig.lua` holds every number (MaxCharges 3, RechargeSeconds 5, Speed 80 × Duration
+  0.22 ≈ 17.6 studs, Cooldown 0.35, WhenStandingStill "Facing", AllowInAir false, Keys Q + gamepad B,
+  TouchButton) and the animation slots (`AnimationId` "" until published, speed, fade, priority,
+  StopAnimationWithDash). Shared so the HUD and the client's prediction can't disagree with the server.
+- `DashService` owns the charge count: lazy timestamp recharge (no per-player loop), `RequestDash`
+  takes no arguments and is RateLimiter-gated at Cooldown × 0.8, every request is answered with a
+  corrective `StaminaUpdate` ({Charges, MaxCharges, RechargeRemaining, RechargeSeconds}), refill on
+  respawn. `GetCharges(player)` for future systems.
+- `DashClient` predicts the spend (via `StaminaState.lua`, shared with MainHud) so the dash is instant,
+  and moves the character with a `LinearVelocity` (PerAxis force limit, Y = 0 so gravity/jumps are
+  untouched, RelativeTo World) for Duration. A character is simulated on its own client, so the
+  movement can't be server-authoritative; the server keeps the COUNT honest.
+- MainHud's stamina placeholder is now `Hud.segmentBar` cells; the recharging cell fills in.
+- "In the beginning" → a future upgrade adds a profile field on top of MaxCharges. Not built.
+- Not decided/handled: whether a Hulk slow (PlayerSpeed) should shorten dashes (it doesn't), and
+  i-frames during a dash (none).
 
 Six tiers exist as placeholders (Scrap Workbench → Foundry, waves 0/5/10/15/20/25). Extending the
 ladder is adding a table entry plus the matching Studio Model — no code changes.
