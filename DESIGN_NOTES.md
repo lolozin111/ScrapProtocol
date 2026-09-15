@@ -3467,7 +3467,13 @@ things cost real time and are worth not relearning:
 - **User is DONE animating the Hulk (2026-09-14).** No death animation (`Animations.Death` stays
   `""`; he just goes limp/breaks and is removed 2s later) and no turn-in-place. Movement
   (`Animations.Move`) IS made: **Walk `rbxassetid://103708147649106`**. **Light attack (left sweep)
-  published: `rbxassetid://105875185230848`.** All four ids are now in EnemyConfig. A stop animation is not needed: Idle loops underneath and
+  published: `rbxassetid://105875185230848`.** All four ids are now in EnemyConfig.
+- **First playtest (2026-09-14):** he was still in Workspace → moved to `ServerStorage.EnemyModels`.
+  He spawned buried → **`Humanoid.HipHeight = 15`** (found live, set on the EnemyModels copy). He faced
+  the wrong way while walking (AutoRotate turns the HumanoidRootPart's LookVector, and the HRP's front
+  isn't the mesh's front) — fix is rotating the HRP and recomputing `RootJoint.C0` from the command
+  bar, NOT `FacingYawOffset` (that only covers the attack snap, not walking). Walk didn't show:
+  fixed in code (forced track priorities + velocity-based walking check). A stop animation is not needed: Idle loops underneath and
   the Move track fades out over it (default 0.1s fade; offered 0.3s if the snap is visible).
 
 **Next session, in order (Roblox side):**
