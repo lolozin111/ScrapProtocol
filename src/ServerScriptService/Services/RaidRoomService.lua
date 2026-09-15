@@ -961,6 +961,26 @@ end
 -- actual end: it marks the first "clear" (unlocking RequestExtractRaid below, if this is the very
 -- first one) and always regenerates a brand new map, continuing straight into it — "generate a new
 -- one with different paths... it can keep going."
+-- Dev shortcut (DevShortcuts.Active: admin AND not in a Player Test Session): every node reachable
+-- from a fresh raid's Start becomes a Boss, so testing a boss doesn't mean clearing rooms to reach one.
+-- Applied at raid START only, never to onMapCleared's regenerated chapters below: the shortcut gets
+-- you to the boss, and the rest of the run stays the real game. Tier matches placeBossNodes so the
+-- room scales exactly like a naturally placed boss.
+local function applyDevBossFirst(player: Player, map)
+	if not DevShortcuts.Active(player) then
+		return map
+	end
+	local start = map.Nodes[map.StartNodeId]
+	for _, id in ipairs(start and start.Connections or {}) do
+		local node = map.Nodes[id]
+		if node then
+			node.Type = "Boss"
+			node.Tier = RaidConfig.BossTier
+		end
+	end
+	return map
+end
+
 local function onMapCleared(state)
 	state.MapsCleared += 1
 	local justUnlocked = not state.ExtractUnlocked
@@ -1544,7 +1564,7 @@ RequestStartRaid.OnServerEvent:Connect(function(player: Player)
 		SlotIndex = slotIndex,
 		InstanceFolder = instanceFolder,
 		RoomFolder = nil :: Instance?,
-		Map = RaidConfig.GenerateMap(),
+		Map = applyDevBossFirst(player, RaidConfig.GenerateMap()),
 		CurrentNodeId = nil :: number?,
 		InCombat = false,
 		MapsCleared = 0, -- how many map chapters this raid has finished so far — see onMapCleared

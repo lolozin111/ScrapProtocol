@@ -418,6 +418,10 @@ local function spawnEnemy(typeKey: string, typeData, spawnPosition: Vector3, mul
 	end
 
 	humanoid.WalkSpeed = typeData.MoveSpeed
+	-- Optional per-type override; nil leaves whatever the Studio template has.
+	if typeData.HipHeight then
+		humanoid.HipHeight = typeData.HipHeight
+	end
 	humanoid.MaxHealth = typeData.HP * multiplier
 	humanoid.Health = humanoid.MaxHealth
 
