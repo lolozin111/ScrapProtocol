@@ -198,9 +198,9 @@ EnemyConfig.BossTypes = {
 		-- What player shots can hit (see spawnEnemy). His body mesh only registers hits in its standing
 		-- rest pose, not the lying pose you see, so without this only his root block took damage.
 		-- Size/Offset are studs relative to his HumanoidRootPart, whose axes are turned 90° from his
-		-- body (see FacingYawOffset). Starting guess; size it live via the model's HitboxSize /
-		-- HitboxOffset Attributes in a playtest, then copy the numbers here.
-		Hitbox = { Size = Vector3.new(20, 12, 34), Offset = Vector3.new(0, 0, 0) },
+		-- body (see FacingYawOffset). Sized live in a playtest (2026-09-15) via the model's HitboxSize /
+		-- HitboxOffset Attributes; re-tune the same way.
+		Hitbox = { Size = Vector3.new(26, 18, 39), Offset = Vector3.new(-3, -10, 5) },
 
 		-- Selects EnemyAI.Patterns.Animated (see EnemyAnimation.lua): his attacks are Studio
 		-- animations, and damage lands on the animation's own event markers, measured from a fist
