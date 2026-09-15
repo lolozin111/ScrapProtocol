@@ -3504,7 +3504,9 @@ things cost real time and are worth not relearning:
   by the user via `HitboxSize`/`HitboxOffset` Attributes: **Size (26, 18, 30), Offset (-18, -6, -5)**.
   (Config edits only apply on a fresh Play — a running test keeps the values it loaded; that cost a
   few rounds of "it isn't moving".) Same day: **AttackRadius 70 / ContactRange 60 / TriggerRange 70**
-  (user: he still got too close to do anything), **MoveSpeed 15**, crawl anim 1.05.
+  (user: he still got too close to do anything), **MoveSpeed 15**, crawl anim 1.05. Then user: "works,
+  just make him faster, add 10" → **MoveSpeed 25**, crawl anim 1.75. He now outpaces a player (16),
+  so the "slows balanced by his low speed" design premise no longer holds — flagged to the user.
   Any future rig animated out of its rest pose needs the same entry. He faced
   the wrong way while walking (AutoRotate turns the HumanoidRootPart's LookVector, and the HRP's front
   isn't the mesh's front) — fix is rotating the HRP and recomputing `RootJoint.C0` from the command

@@ -179,7 +179,10 @@ EnemyConfig.BossTypes = {
 		-- FALLBACK ONLY. The Animated pattern replaces contact damage with the named hits below; this
 		-- is used only if the animations can't load and he drops back to plain Chaser.
 		ContactDamage = 22,
-		MoveSpeed = 15, -- was 10, then 13; user: still "too slow". Still under a player's 16.
+		-- Was 10, then 13, then 15; user: still "too slow", asked for +10. Now FASTER than a player's 16,
+		-- which drops the original "his slows are balanced by his low speed" premise — watch for a
+		-- slowed player being unable to ever get out of his AttackRadius.
+		MoveSpeed = 25,
 		-- Seconds from the END of one attack animation to when the next may start.
 		AttackCooldown = 1.6,
 		Defense = 28,
@@ -214,8 +217,8 @@ EnemyConfig.BossTypes = {
 			Death = "",
 		},
 		-- Playback speed of the Move animation (1 = as published). Lower = slower crawl.
-		-- Scaled up with MoveSpeed (0.7 at speed 10, 0.9 at 13) so the crawl keeps pace instead of sliding.
-		MoveAnimationSpeed = 1.05,
+		-- Scaled with MoveSpeed (0.7 at 10, 0.9 at 13, 1.05 at 15) so the crawl keeps pace instead of sliding.
+		MoveAnimationSpeed = 1.75,
 
 		-- Which attack he plays is a weighted pick among the ones whose TriggerRange (horizontal studs,
 		-- his root to the player) covers the current distance. The damage an attack deals is decided by
