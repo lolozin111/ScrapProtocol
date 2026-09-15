@@ -453,7 +453,7 @@ local function setupAnim(enemy)
 	-- Empty id or a failed LoadAnimation both just skip the slot — see this file's header on missing
 	-- art never breaking the loop. pcall'd because LoadAnimation can throw on a malformed/deleted
 	-- asset id, not just return nil.
-	local function loadSlot(slotName: string, id: string?, looped: boolean): AnimationTrack?
+	local function loadSlot(slotName: string, id: string?, looped: boolean, priority: Enum.AnimationPriority): AnimationTrack?
 		if not id or id == "" then
 			warnOnce(warnedSlot, typeKey .. "/" .. slotName,
 				("[EnemyAnimation] %s has no %s animation set — that slot is skipped."):format(tostring(typeKey), slotName))
@@ -470,21 +470,26 @@ local function setupAnim(enemy)
 			return nil
 		end
 		trackOrErr.Looped = looped
+		-- Forced here rather than trusted from the Animation Editor. Blending only lets a track override
+		-- Idle if its Priority is HIGHER, and a walk published at the editor's default priority sits
+		-- level with (or under) Idle, so it plays at full weight yet never shows. That is invisible from
+		-- the Studio side, so the slot decides the priority, not whatever was picked at publish time.
+		trackOrErr.Priority = priority
 		return trackOrErr
 	end
 
-	anim.IdleTrack = loadSlot("Idle", animations.Idle, true)
+	anim.IdleTrack = loadSlot("Idle", animations.Idle, true, Enum.AnimationPriority.Idle)
 	if anim.IdleTrack then
-		-- Plays immediately and keeps looping underneath everything else — Move/attack tracks are
-		-- expected to be published at a higher Priority in the Animation Editor, which is what lets
-		-- Roblox's own animation blending override Idle without this file ever stopping it itself.
+		-- Plays immediately and keeps looping underneath everything else; Move/attack tracks load at a
+		-- higher Priority (see loadSlot), which is what lets Roblox's own blending override Idle without
+		-- this file ever stopping it itself.
 		anim.IdleTrack:Play()
 	end
-	anim.MoveTrack = loadSlot("Move", animations.Move, true)
-	anim.DeathTrack = loadSlot("Death", animations.Death, false)
+	anim.MoveTrack = loadSlot("Move", animations.Move, true, Enum.AnimationPriority.Movement)
+	anim.DeathTrack = loadSlot("Death", animations.Death, false, Enum.AnimationPriority.Action)
 
 	for _, attackSpec in ipairs(typeData.Attacks or {}) do
-		local track = loadSlot("Attack " .. tostring(attackSpec.Name), attackSpec.AnimationId, false)
+		local track = loadSlot("Attack " .. tostring(attackSpec.Name), attackSpec.AnimationId, false, Enum.AnimationPriority.Action)
 		if track then
 			local loadedAttack = {
 				Name = attackSpec.Name,
@@ -681,7 +686,11 @@ function EnemyAnimation.Tick(enemy, context, fallbackPattern)
 	end
 
 	if anim.MoveTrack then
-		if humanoid.MoveDirection.Magnitude > 0.1 then
+		-- Read from the root's actual horizontal velocity, not humanoid.MoveDirection: MoveDirection
+		-- reflects player-style input and is not reliably set for a server-driven MoveTo walker, so it
+		-- could read zero the whole time he crawls and the walk would never start.
+		local velocity = rootPart.AssemblyLinearVelocity
+		if Vector3.new(velocity.X, 0, velocity.Z).Magnitude > 1 then
 			if not anim.MoveTrack.IsPlaying then
 				anim.MoveTrack:Play()
 			end
