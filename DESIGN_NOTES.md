@@ -3469,7 +3469,10 @@ things cost real time and are worth not relearning:
   (`Animations.Move`) IS made: **Walk `rbxassetid://103708147649106`**. **Light attack (left sweep)
   published: `rbxassetid://105875185230848`.** All four ids are now in EnemyConfig.
 - **First playtest (2026-09-14):** he was still in Workspace → moved to `ServerStorage.EnemyModels`.
-  He spawned buried → **`Humanoid.HipHeight = 15`** (found live, set on the EnemyModels copy). He faced
+  He spawned buried → **`HipHeight = 15`** (found live; now `EnemyConfig` `HipHeight`, applied at
+  spawn, and `spawnEnemy` lifts the pivot by HipHeight + half the root so he doesn't visibly climb out
+  of the floor). A "25" detour was judged during a DnsResolve internet outage where no animations
+  loaded (rest pose reads as floating) — re-judge height only with Idle actually playing. He faced
   the wrong way while walking (AutoRotate turns the HumanoidRootPart's LookVector, and the HRP's front
   isn't the mesh's front) — fix is rotating the HRP and recomputing `RootJoint.C0` from the command
   bar, NOT `FacingYawOffset` (that only covers the attack snap, not walking). Walk didn't show:
