@@ -192,8 +192,12 @@ EnemyConfig.BossTypes = {
 		-- Keep ContactRange below AttackRadius (the gap stops him flicking between walk and stop at
 		-- the edge) and AttackRadius within every attack's TriggerRange (so holding ground means he
 		-- can still swing).
-		AttackRadius = 70,
-		ContactRange = 60,
+		AttackRadius = 50, -- was 70 for a while; user moved it back once the escort and bursts landed
+		ContactRange = 40,
+		-- Every so often while he's WALKING after a player, he surges: speed x Multiplier for Duration
+		-- seconds, then a random CooldownMin..CooldownMax before the next one. Lets a slow crawler
+		-- actually close on a player who keeps backing off, without raising his everyday speed.
+		SpeedBurst = { Multiplier = 1.8, Duration = 1.5, CooldownMin = 5, CooldownMax = 9 },
 		-- Humanoid.HipHeight, applied at spawn so it can't drift from a hand-edited Studio copy. His
 		-- root sits inside a lying-down body, so the Roblox default buries him. Raise it if he sinks
 		-- into the floor, lower it if he floats.
@@ -227,8 +231,8 @@ EnemyConfig.BossTypes = {
 		-- his root to the player) covers the current distance. The damage an attack deals is decided by
 		-- which markers its animation contains, not by anything here.
 		Attacks = {
-			{ Name = "RockArmCombo", AnimationId = "rbxassetid://137947497885396", TriggerRange = 70, Weight = 1 },
-			{ Name = "LeftSweep", AnimationId = "rbxassetid://105875185230848", TriggerRange = 70, Weight = 1 },
+			{ Name = "RockArmCombo", AnimationId = "rbxassetid://137947497885396", TriggerRange = 50, Weight = 1 },
+			{ Name = "LeftSweep", AnimationId = "rbxassetid://105875185230848", TriggerRange = 50, Weight = 1 },
 		},
 
 		-- Keyed by animation event NAME (exact, case-sensitive — the names typed in the Animation Editor).

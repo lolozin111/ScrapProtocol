@@ -711,7 +711,24 @@ function EnemyAnimation.Tick(enemy, context, fallbackPattern)
 
 	-- Same recompute-every-think convention as Chaser/Slam — see EnemyAI.lua's own comment on why
 	-- this is scaled from the RECORD's MoveSpeed rather than read back from WalkSpeed.
-	local desiredSpeed = (enemy.MoveSpeed or humanoid.WalkSpeed) * StatusEffects.GetSpeedMultiplier(enemy)
+	-- Speed bursts (TypeData.SpeedBurst): a timed surge that only STARTS while he's walking after the
+	-- target, so a player who keeps backing off gets caught now and then. anim.Walking is last tick's
+	-- decision (it's recomputed further down), which is fine at a 0.15s tick.
+	local burst = enemy.TypeData and enemy.TypeData.SpeedBurst
+	anim.BurstMultiplier = 1
+	if burst then
+		local now = context.Now
+		anim.NextBurstAt = anim.NextBurstAt or (now + burst.CooldownMin + math.random() * (burst.CooldownMax - burst.CooldownMin))
+		if anim.BurstUntil and now < anim.BurstUntil then
+			anim.BurstMultiplier = burst.Multiplier
+		elseif anim.Walking and now >= anim.NextBurstAt then
+			anim.BurstUntil = now + burst.Duration
+			anim.NextBurstAt = anim.BurstUntil + burst.CooldownMin + math.random() * (burst.CooldownMax - burst.CooldownMin)
+			anim.BurstMultiplier = burst.Multiplier
+		end
+	end
+
+	local desiredSpeed = (enemy.MoveSpeed or humanoid.WalkSpeed) * StatusEffects.GetSpeedMultiplier(enemy) * anim.BurstMultiplier
 	if math.abs(humanoid.WalkSpeed - desiredSpeed) > 0.01 then
 		humanoid.WalkSpeed = desiredSpeed
 	end
@@ -816,11 +833,13 @@ function EnemyAnimation.Tick(enemy, context, fallbackPattern)
 		-- reliably set for a server-driven MoveTo walker, and velocity dips below any threshold for a
 		-- frame or two mid-crawl, which started and stopped the animation over and over.
 		if anim.Walking then
+			-- Playback speed scales the published crawl without a re-export from Blender, and follows a
+			-- speed burst so his limbs keep pace with the surge instead of sliding.
+			local moveAnimSpeed = ((enemy.TypeData and enemy.TypeData.MoveAnimationSpeed) or 1) * (anim.BurstMultiplier or 1)
 			if not anim.MoveTrack.IsPlaying then
-				-- Play's third argument is playback speed; the config scales the published crawl without
-				-- a re-export from Blender.
-				local moveAnimSpeed = (enemy.TypeData and enemy.TypeData.MoveAnimationSpeed) or 1
 				anim.MoveTrack:Play(0.1, 1, moveAnimSpeed)
+			elseif math.abs(anim.MoveTrack.Speed - moveAnimSpeed) > 0.01 then
+				anim.MoveTrack:AdjustSpeed(moveAnimSpeed)
 			end
 		elseif anim.MoveTrack.IsPlaying then
 			anim.MoveTrack:Stop()
