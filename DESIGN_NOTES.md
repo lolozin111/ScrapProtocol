@@ -3501,7 +3501,10 @@ things cost real time and are worth not relearning:
 - **Hitbox (2026-09-15):** he only took damage on his root — a skinned MeshPart's collision stays in
   its standing REST pose, so shots at the lying body passed through. `spawnEnemy` now welds an
   invisible, query-only, massless `Hitbox` Part to the root from `EnemyConfig` `Hitbox`, sized live
-  by the user via `HitboxSize`/`HitboxOffset` Attributes: **Size (26, 18, 39), Offset (-25, -10, 5)**.
+  by the user via `HitboxSize`/`HitboxOffset` Attributes: **Size (26, 18, 30), Offset (-18, -6, -5)**.
+  (Config edits only apply on a fresh Play — a running test keeps the values it loaded; that cost a
+  few rounds of "it isn't moving".) Same day: **AttackRadius 70 / ContactRange 60 / TriggerRange 70**
+  (user: he still got too close to do anything), **MoveSpeed 15**, crawl anim 1.05.
   Any future rig animated out of its rest pose needs the same entry. He faced
   the wrong way while walking (AutoRotate turns the HumanoidRootPart's LookVector, and the HRP's front
   isn't the mesh's front) — fix is rotating the HRP and recomputing `RootJoint.C0` from the command

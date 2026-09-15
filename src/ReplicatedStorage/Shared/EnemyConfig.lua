@@ -179,7 +179,7 @@ EnemyConfig.BossTypes = {
 		-- FALLBACK ONLY. The Animated pattern replaces contact damage with the named hits below; this
 		-- is used only if the animations can't load and he drops back to plain Chaser.
 		ContactDamage = 22,
-		MoveSpeed = 13, -- was 10; user: "too slow". Still under a player's 16.
+		MoveSpeed = 15, -- was 10, then 13; user: still "too slow". Still under a player's 16.
 		-- Seconds from the END of one attack animation to when the next may start.
 		AttackCooldown = 1.6,
 		Defense = 28,
@@ -189,8 +189,8 @@ EnemyConfig.BossTypes = {
 		-- Keep ContactRange below AttackRadius (the gap stops him flicking between walk and stop at
 		-- the edge) and AttackRadius within every attack's TriggerRange (so holding ground means he
 		-- can still swing).
-		AttackRadius = 50,
-		ContactRange = 40,
+		AttackRadius = 70,
+		ContactRange = 60,
 		-- Humanoid.HipHeight, applied at spawn so it can't drift from a hand-edited Studio copy. His
 		-- root sits inside a lying-down body, so the Roblox default buries him. Raise it if he sinks
 		-- into the floor, lower it if he floats.
@@ -200,7 +200,7 @@ EnemyConfig.BossTypes = {
 		-- Size/Offset are studs relative to his HumanoidRootPart, whose axes are turned 90° from his
 		-- body (see FacingYawOffset). Sized live in a playtest (2026-09-15) via the model's HitboxSize /
 		-- HitboxOffset Attributes; re-tune the same way.
-		Hitbox = { Size = Vector3.new(26, 18, 39), Offset = Vector3.new(-25, -10, 5) },
+		Hitbox = { Size = Vector3.new(26, 18, 30), Offset = Vector3.new(-18, -6, -5) },
 
 		-- Selects EnemyAI.Patterns.Animated (see EnemyAnimation.lua): his attacks are Studio
 		-- animations, and damage lands on the animation's own event markers, measured from a fist
@@ -214,15 +214,15 @@ EnemyConfig.BossTypes = {
 			Death = "",
 		},
 		-- Playback speed of the Move animation (1 = as published). Lower = slower crawl.
-		-- Scaled up with MoveSpeed (0.7 at speed 10) so the crawl keeps pace instead of sliding.
-		MoveAnimationSpeed = 0.9,
+		-- Scaled up with MoveSpeed (0.7 at speed 10, 0.9 at 13) so the crawl keeps pace instead of sliding.
+		MoveAnimationSpeed = 1.05,
 
 		-- Which attack he plays is a weighted pick among the ones whose TriggerRange (horizontal studs,
 		-- his root to the player) covers the current distance. The damage an attack deals is decided by
 		-- which markers its animation contains, not by anything here.
 		Attacks = {
-			{ Name = "RockArmCombo", AnimationId = "rbxassetid://137947497885396", TriggerRange = 50, Weight = 1 },
-			{ Name = "LeftSweep", AnimationId = "rbxassetid://105875185230848", TriggerRange = 50, Weight = 1 },
+			{ Name = "RockArmCombo", AnimationId = "rbxassetid://137947497885396", TriggerRange = 70, Weight = 1 },
+			{ Name = "LeftSweep", AnimationId = "rbxassetid://105875185230848", TriggerRange = 70, Weight = 1 },
 		},
 
 		-- Keyed by animation event NAME (exact, case-sensitive — the names typed in the Animation Editor).
