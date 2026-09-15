@@ -645,8 +645,10 @@ no manual copy-pasting scripts into Studio.
   `game.CreatorId`, which works automatically in Studio when you're testing as yourself; add your
   UserId to `AdminUserIds` too if the game ends up owned by a Group). Admins win any Combat raid
   instantly, never run out of Energy (expeditions and raid rooms are both free — the display just
-  stays pinned at full), get a **guaranteed elite in every fight** (see below), and get a set of
-  chat commands for testing things without grinding the systems upstream of them:
+  stays pinned at full), get a **guaranteed elite in every fight** (see below), start every raid
+  with **Boss nodes as the first choices on the sector map** (raid start only — the maps generated
+  after you clear one are normal), and get a set of chat commands for testing things without
+  grinding the systems upstream of them:
 
   | Command | What it does |
   |---|---|
