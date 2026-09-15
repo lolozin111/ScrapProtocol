@@ -961,6 +961,10 @@ local function mapUpdatePayload(state, reachableIds: { number }, choicePending: 
 		ChoicePending = choicePending,
 		AllowNodeClick = allowNodeClick,
 		MapsCleared = state.MapsCleared,
+		Mode = state.RaidMode, -- nothing reads these yet; there for a future mode picker/readout
+		-- Read inline, NOT via modeOf: that local is defined further down this file, and a local function
+		-- referenced above its own definition resolves as a nil global and throws on every map update.
+		ModeName = (RaidConfig.Modes[state.RaidMode] or RaidConfig.Modes[RaidConfig.DefaultMode]).DisplayName,
 	}
 end
 
@@ -991,6 +995,26 @@ end
 -- Applied at raid START only, never to onMapCleared's regenerated chapters below: the shortcut gets
 -- you to the boss, and the rest of the run stays the real game. Tier matches placeBossNodes so the
 -- room scales exactly like a naturally placed boss.
+-- The raid's mode rules (RaidConfig.Modes, Phase 00 step 3). state.RaidMode is validated at start, so
+-- the DefaultMode fallback only matters for a state built by something older than modes.
+local function modeOf(state)
+	return RaidConfig.Modes[state.RaidMode] or RaidConfig.Modes[RaidConfig.DefaultMode]
+end
+
+-- The Shop node's catalog for this raid's mode. The mode names a NodeConfig table (see
+-- RaidConfig.Modes); an unknown name warns and falls back to the default catalog rather than leaving
+-- a Shop room with nothing to sell.
+local function shopCatalogFor(state)
+	local name = modeOf(state).ShopCatalog
+	local catalog = name and NodeConfig[name]
+	if type(catalog) ~= "table" then
+		warn(("[RaidRoomService] Raid mode %s names ShopCatalog %q, which isn't a NodeConfig table — using NodeConfig.ShopCatalog."):format(
+			tostring(state.RaidMode), tostring(name)))
+		return NodeConfig.ShopCatalog
+	end
+	return catalog
+end
+
 local function applyDevBossFirst(player: Player, map)
 	if not DevShortcuts.Active(player) then
 		return map
@@ -1017,7 +1041,7 @@ local function onMapCleared(state)
 		JustUnlocked = justUnlocked,
 	})
 
-	state.Map = RaidConfig.GenerateMap()
+	state.Map = RaidConfig.GenerateMap(modeOf(state).Map)
 	enterNode(state, state.Map.StartNodeId)
 end
 
@@ -1374,7 +1398,7 @@ local function doHeal(state)
 end
 
 local function revealShop(state)
-	RaidRoomUpdate:FireClient(state.Player, { Status = "ShopCatalog", Catalog = NodeConfig.ShopCatalog })
+	RaidRoomUpdate:FireClient(state.Player, { Status = "ShopCatalog", Catalog = shopCatalogFor(state) })
 	-- Waits for "Buy" (any number of times) and "Continue" — see RaidRoomAction handler below.
 end
 
@@ -1501,6 +1525,19 @@ local function beginBoss(state, node)
 			local lootMultiplier = RaidConfig.GetLootMultiplier(node.Tier, state.TotalNodesVisited)
 			local granted = grantRunLoot(state, NodeConfig.BossLoot, lootMultiplier)
 
+			-- Mode rule: a mode without cards skips the pick and moves on. UNTESTED path, since the only
+			-- mode today (Standard) has cards on; the client's BossCleared handler has only ever seen
+			-- a payload WITH CardChoices, so check it copes before shipping a card-less mode.
+			if not modeOf(state).CardsEnabled then
+				RaidRoomUpdate:FireClient(state.Player, {
+					Status = "BossCleared",
+					Loot = granted,
+					HealedToFull = true,
+				})
+				advanceFromNode(state)
+				return
+			end
+
 			local cardChoices = RaidConfig.RollCardChoices(3)
 			state.PendingCardChoice = cardChoices
 
@@ -1575,9 +1612,27 @@ end
 -- Start a raid
 ----------------------------------------------------------------------
 
-RequestStartRaid.OnServerEvent:Connect(function(player: Player)
+RequestStartRaid.OnServerEvent:Connect(function(player: Player, requestedMode: any)
 	if activeRaids[player.UserId] then
 		return -- already mid-raid
+	end
+
+	-- Raid mode (Phase 00 step 3). No client sends one today, so nil means RaidConfig.DefaultMode. Anything
+	-- that IS sent must name a real mode exactly: a malformed value is rejected outright rather than
+	-- quietly turned into the default, same rule as SellService's amounts. Checked before anything is
+	-- claimed or spent, so a rejected request costs nothing.
+	local modeKey = RaidConfig.DefaultMode
+	if requestedMode ~= nil then
+		if typeof(requestedMode) ~= "string" or not RaidConfig.Modes[requestedMode] then
+			RaidRoomUpdate:FireClient(player, { Status = "UnknownMode" })
+			return
+		end
+		modeKey = requestedMode
+	end
+	local mode = RaidConfig.Modes[modeKey]
+	if not mode then
+		warn(("[RaidRoomService] RaidConfig.DefaultMode %q isn't a key in RaidConfig.Modes — raids cannot start."):format(tostring(modeKey)))
+		return
 	end
 	local character = player.Character
 	if not character or not character:FindFirstChildOfClass("Humanoid") or character.Humanoid.Health <= 0 then
@@ -1605,7 +1660,7 @@ RequestStartRaid.OnServerEvent:Connect(function(player: Player)
 		return
 	end
 
-	if not RaidEnergyService.TrySpendEnergy(player, RaidConfig.EnergyCost) then
+	if not RaidEnergyService.TrySpendEnergy(player, mode.EnergyCost) then
 		releaseSlot(slotIndex)
 		PlayerActivityService.Release(player, PlayerActivityService.Activities.Raid)
 		RaidRoomUpdate:FireClient(player, { Status = "NoEnergy" })
@@ -1621,7 +1676,8 @@ RequestStartRaid.OnServerEvent:Connect(function(player: Player)
 		SlotIndex = slotIndex,
 		InstanceFolder = instanceFolder,
 		RoomFolder = nil :: Instance?,
-		Map = applyDevBossFirst(player, RaidConfig.GenerateMap()),
+		RaidMode = modeKey, -- fixed for the whole run; every mode rule is read through modeOf(state)
+		Map = applyDevBossFirst(player, RaidConfig.GenerateMap(mode.Map)),
 		CurrentNodeId = nil :: number?,
 		InCombat = false,
 		MapsCleared = 0, -- how many map chapters this raid has finished so far — see onMapCleared
@@ -1693,7 +1749,9 @@ RaidRoomAction.OnServerEvent:Connect(function(player: Player, actionKey: string,
 		if node.Type ~= "Shop" or typeof(payload) ~= "string" then
 			return
 		end
-		local item = NodeConfig.ShopCatalog[payload]
+		-- The same mode catalog revealShop showed, so a Buy can never resolve against a different list
+		-- than the one on screen.
+		local item = shopCatalogFor(state)[payload]
 		if not item then
 			RaidRoomUpdate:FireClient(player, { Status = "ShopResult", Success = false, Reason = "Unknown item" })
 			return

@@ -611,10 +611,16 @@ end
 -- BossMinStageIndex (see that constant's own comment). Falls back to whatever non-Start nodes
 -- exist if a freak-shallow map has nothing that deep, so every map still gets at least
 -- BossMinPerMap — the cap/floor is a hard guarantee, not just a preference.
-local function placeBossNodes(map)
+-- `rules` (optional): a RaidConfig.Modes[...].Map table. Any field it doesn't set falls back to the
+-- module-wide constant, so a nil `rules` is exactly the pre-modes behaviour.
+local function placeBossNodes(map, rules)
+	rules = rules or {}
+	local bossMinPerMap = rules.BossMinPerMap or RaidConfig.BossMinPerMap
+	local bossMaxPerMap = rules.BossMaxPerMap or RaidConfig.BossMaxPerMap
+	local bossMinStageIndex = rules.BossMinStageIndex or RaidConfig.BossMinStageIndex
 	local candidates = {}
 	for id, node in pairs(map.Nodes) do
-		if node.Type ~= "Start" and node.StageIndex >= RaidConfig.BossMinStageIndex then
+		if node.Type ~= "Start" and node.StageIndex >= bossMinStageIndex then
 			table.insert(candidates, id)
 		end
 	end
@@ -636,7 +642,7 @@ local function placeBossNodes(map)
 		candidates[i], candidates[j] = candidates[j], candidates[i]
 	end
 
-	local bossCount = math.min(#candidates, math.random(RaidConfig.BossMinPerMap, RaidConfig.BossMaxPerMap))
+	local bossCount = math.min(#candidates, math.random(bossMinPerMap, bossMaxPerMap))
 	for i = 1, bossCount do
 		local node = map.Nodes[candidates[i]]
 		node.Type = "Boss"
@@ -650,7 +656,8 @@ end
 -- simulation of this exact retry logic hit 0/5000 fallbacks at these odds, so this is a safety net,
 -- not the expected path). Boss placement (placeBossNodes) always runs on whichever map is finally
 -- returned, retry or fallback alike.
-function RaidConfig.GenerateMap()
+-- `rules` (optional): the raid mode's Map rules (RaidConfig.Modes[key].Map), handed to placeBossNodes.
+function RaidConfig.GenerateMap(rules)
 	local best = nil
 	local bestCount = -1
 	for _ = 1, RaidConfig.MaxGenerateAttempts do
@@ -660,7 +667,7 @@ function RaidConfig.GenerateMap()
 			count += 1
 		end
 		if count >= RaidConfig.MinMapNodes then
-			placeBossNodes(map)
+			placeBossNodes(map, rules)
 			return map
 		end
 		if count > bestCount then
@@ -669,7 +676,7 @@ function RaidConfig.GenerateMap()
 		end
 	end
 	if best then
-		placeBossNodes(best)
+		placeBossNodes(best, rules)
 	end
 	return best
 end
@@ -748,5 +755,46 @@ RaidConfig.MaxConcurrentInstances = 20
 
 RaidConfig.EnergyCost = 1 -- spent via RaidEnergyService.TrySpendEnergy when a raid starts — same
 	-- one-charge-per-run idea as ExpeditionConfig's lever cost, not per-node inside the run
+
+----------------------------------------------------------------------
+-- Raid modes — Phase 00 step 3, "mode plumbing" (DESIGN_NOTES "Road to release"). BUILT 2026-09-15.
+----------------------------------------------------------------------
+-- A raid is started IN a mode (state.RaidMode, fixed for the whole run) and the rules below are read
+-- off that mode wherever a raid behaves differently per mode. Flat table of named strategies, the
+-- project's standard shape: a future mode is a new entry here plus content, not new branches through
+-- the raid state, loot settlement and map generator.
+--
+-- ONE entry on purpose (the v1 scope cut: Gauntlet and Contract are post-launch). `Standard` is
+-- today's raid exactly, a hack-and-slash run for special items like Contraband in the user's words,
+-- so every rule points at the value raids already used. Changing nothing about how a raid plays was
+-- the point of this step; whether this entry becomes step 4's "Salvage Run" is an open design call.
+--
+-- Rules, and where each is read:
+--   DisplayName  — sent to the client in the map payload (Mode/ModeName) for a future mode picker.
+--   EnergyCost   — RequestStartRaid's Energy spend.
+--   Map          — handed to GenerateMap, both at raid start and when a cleared chapter regenerates.
+--                  Any field left out falls back to the module constant (BossMinPerMap etc.).
+--   ShopCatalog  — NAME of the NodeConfig table a Shop node sells from (a name, not the table, so this
+--                  file never requires NodeConfig). Read by the reveal and by the Buy handler.
+--   CardsEnabled — whether a Boss clear offers the card pick. false skips straight to the next choice.
+--
+-- NOT mode rules yet, deliberately: enemy composition (CombatTierComposition/BossComposition) and the
+-- depth curves both belong to the unbuilt curve work, and RunLocked tagging is step 4.
+RaidConfig.Modes = {
+	Standard = {
+		DisplayName = "Raid",
+		EnergyCost = RaidConfig.EnergyCost,
+		Map = {
+			BossMinPerMap = RaidConfig.BossMinPerMap,
+			BossMaxPerMap = RaidConfig.BossMaxPerMap,
+			BossMinStageIndex = RaidConfig.BossMinStageIndex,
+		},
+		ShopCatalog = "ShopCatalog",
+		CardsEnabled = true,
+	},
+}
+
+-- The mode a raid starts in when the client asks for none (every client today: there's no picker).
+RaidConfig.DefaultMode = "Standard"
 
 return RaidConfig
