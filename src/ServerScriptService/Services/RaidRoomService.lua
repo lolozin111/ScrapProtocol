@@ -309,6 +309,17 @@ local function buildRoom(nodeType: string, origin: Vector3, parentFolder: Instan
 	if template then
 		model = template:Clone()
 		model:PivotTo(CFrame.new(origin))
+		-- Hide every SpawnZone the moment the room exists, whatever its type. collectSpawnZones below
+		-- also does this, but only runs when a room actually USES its zones, so a room that never read
+		-- them (a Boss room, whose zones wait for the unbuilt escort; a Heal or Shop room) left bright
+		-- grey blocks standing in play. Inlined rather than calling collectSpawnZones, which is defined further down this file.
+		for _, descendant in ipairs(model:GetDescendants()) do
+			if descendant:IsA("BasePart") and descendant.Name == RaidConfig.SpawnZoneName then
+				descendant.Transparency = 1
+				descendant.CanCollide = false
+				descendant.CanQuery = false
+			end
+		end
 	else
 		-- Fires for a missing entry AND for a present-but-unusable one (a Model with no PrimaryPart, a
 		-- variant Folder with no usable Model in it). The message always claimed to cover the

@@ -3515,7 +3515,14 @@ things cost real time and are worth not relearning:
   Also `NoCollide = true` (user asked; he snagged on stuff) — every part CanCollide false, HipHeight
   still holds him up. UNVERIFIED in Studio; if he still crawls, next suspects are the AttackRadius
   70 / ContactRange 60 band (he only ever walks ~10 studs before stopping) and Humanoid state.
-  User also reports raid "spawn zones" not working — scout dispatched, not yet diagnosed.
+  **Confirmed working by the user**; then MoveSpeed 25 → **21** ("4 less to make it perfect"), crawl 1.45.
+- **"Spawn zones grey and not working" (2026-09-15).** Cause: the admin boss-first shortcut means
+  every test lands in a Boss room, and `beginBoss` reads only `SpawnPoint`s (by design, Decision 7
+  above: the Boss-room point IS the boss, zones are for the unbuilt escort). Zones were only hidden
+  inside `collectSpawnZones`, which a Boss room never calls, so they stayed grey. Fixed: `buildRoom`
+  now hides every `SpawnZone` at build for all room types. A change letting zones PLACE the boss when
+  a Boss room has no SpawnPoint was written and REVERTED before commit — it contradicts Decision 7.
+  Told the user to author a `SpawnPoint` (`EnemyType` = `VoidwakenHulk`) in the Boss room instead.
   Any future rig animated out of its rest pose needs the same entry. He faced
   the wrong way while walking (AutoRotate turns the HumanoidRootPart's LookVector, and the HRP's front
   isn't the mesh's front) — fix is rotating the HRP and recomputing `RootJoint.C0` from the command
