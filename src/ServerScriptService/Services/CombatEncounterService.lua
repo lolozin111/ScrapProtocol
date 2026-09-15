@@ -416,7 +416,11 @@ local function spawnEnemy(typeKey: string, typeData, spawnPosition: Vector3, mul
 		hitbox.CanCollide = false
 		hitbox.CanTouch = false
 		hitbox.CanQuery = true -- the one thing it's for: player shots must be able to hit it
-		hitbox.Massless = true -- never shifts his centre of mass or how he walks
+		-- Deliberately NOT massless: at body size it outweighs the root block, which puts the assembly's
+		-- centre of mass in the middle of the visible body. EnemyAnimation turns him with an
+		-- AlignOrientation, and physics rotates about the centre of mass, so this is what makes him turn
+		-- around his body instead of swinging it round the root. The Humanoid scales its forces to mass.
+		hitbox.Massless = false
 		hitbox.CastShadow = false
 		hitbox.Material = Enum.Material.SmoothPlastic
 		hitbox.Color = Color3.fromRGB(255, 60, 60)
@@ -465,6 +469,12 @@ local function spawnEnemy(typeKey: string, typeData, spawnPosition: Vector3, mul
 	for _, part in ipairs(model:GetDescendants()) do
 		if part:IsA("BasePart") then
 			part.CollisionGroup = ENEMY_COLLISION_GROUP
+			-- EnemyConfig `NoCollide`: a big rig whose root block snags on props and room geometry. The
+			-- Humanoid still holds him at HipHeight above the floor (that's a floor probe, not a collision),
+			-- and player shots still land, since raycasts use CanQuery rather than CanCollide.
+			if typeData.NoCollide then
+				part.CanCollide = false
+			end
 		end
 	end
 

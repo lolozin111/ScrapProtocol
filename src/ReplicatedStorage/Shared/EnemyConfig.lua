@@ -198,6 +198,9 @@ EnemyConfig.BossTypes = {
 		-- root sits inside a lying-down body, so the Roblox default buries him. Raise it if he sinks
 		-- into the floor, lower it if he floats.
 		HipHeight = 12,
+		-- None of his parts collide, so his big root block can't snag on props or room walls. The
+		-- Humanoid still holds him above the floor at HipHeight. (He can now crawl through walls.)
+		NoCollide = true,
 		-- What player shots can hit (see spawnEnemy). His body mesh only registers hits in its standing
 		-- rest pose, not the lying pose you see, so without this only his root block took damage.
 		-- Size/Offset are studs relative to his HumanoidRootPart, whose axes are turned 90° from his

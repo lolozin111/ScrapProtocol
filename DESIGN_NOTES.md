@@ -3507,6 +3507,15 @@ things cost real time and are worth not relearning:
   (user: he still got too close to do anything), **MoveSpeed 15**, crawl anim 1.05. Then user: "works,
   just make him faster, add 10" → **MoveSpeed 25**, crawl anim 1.75. He now outpaces a player (16),
   so the "slows balanced by his low speed" design premise no longer holds — flagged to the user.
+  **Then: raising MoveSpeed changed nothing** ("literally crawling") — so WalkSpeed wasn't the limit.
+  Suspected cause: the per-Heartbeat `rootPart.CFrame` writes used for smooth turning fought the
+  Humanoid's movement controller. Replaced with an `AlignOrientation` on the root (aimed each AI tick,
+  `MaxAngularVelocity` = TurnSpeed). To keep "turn about his middle", the Hitbox is no longer
+  massless: it outweighs the root, so the centre of mass (what physics rotates about) is his body.
+  Also `NoCollide = true` (user asked; he snagged on stuff) — every part CanCollide false, HipHeight
+  still holds him up. UNVERIFIED in Studio; if he still crawls, next suspects are the AttackRadius
+  70 / ContactRange 60 band (he only ever walks ~10 studs before stopping) and Humanoid state.
+  User also reports raid "spawn zones" not working — scout dispatched, not yet diagnosed.
   Any future rig animated out of its rest pose needs the same entry. He faced
   the wrong way while walking (AutoRotate turns the HumanoidRootPart's LookVector, and the HRP's front
   isn't the mesh's front) — fix is rotating the HRP and recomputing `RootJoint.C0` from the command

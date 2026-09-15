@@ -571,10 +571,10 @@ end
 ----------------------------------------------------------------------
 -- Turning. His facing is owned here, not by Humanoid.AutoRotate: AutoRotate points the
 -- HumanoidRootPart's LookVector along the walk, and this rig's root front isn't the mesh's front, so
--- he crawled backwards (FacingYawOffset corrects that). It runs every Heartbeat rather than on the
--- 0.15s AI tick, because turning in tick-sized chunks read as snapping. And it pivots around
--- TypeData.TurnPivot (a Bone or Attachment, e.g. "Torso") instead of the root: the root isn't the
--- middle of a lying-down body, so spinning on it swung the whole body round like a door.
+-- he crawled backwards (FacingYawOffset corrects that). The turn itself is an AlignOrientation (see
+-- startTurning): smooth between AI ticks, and it doesn't fight the Humanoid's walking the way
+-- per-frame CFrame writes did. TypeData.TurnPivot (a Bone or Attachment, e.g. "Torso") is where he
+-- AIMS from; where he physically ROTATES about is his centre of mass, which the Hitbox provides.
 ----------------------------------------------------------------------
 
 local warnedTurnPivot: { [string]: boolean } = {}
@@ -603,36 +603,15 @@ local function yawError(enemy, anim, rootPart: BasePart, targetPosition: Vector3
 	return (desiredYaw - currentYaw + math.pi) % (2 * math.pi) - math.pi, currentYaw
 end
 
-local function turnStep(enemy, anim, dt: number)
-	local model = enemy.Model
-	local humanoid = enemy.Humanoid
-	local rootPart = model and model.PrimaryPart
-	local context = anim.Context
-	if not rootPart or not humanoid or humanoid.Health <= 0 or not context then
+-- Points the AlignOrientation (see startTurning) at the target. Called from the AI tick; physics does
+-- the actual turning smoothly between ticks, capped at TurnSpeed by MaxAngularVelocity.
+local function aimTurn(enemy, anim, rootPart: BasePart, targetPosition: Vector3)
+	local align = anim.TurnAlign
+	if not align then
 		return
 	end
-	-- Same rules as the tick: a stun or a swing in progress owns him, so no turning during either.
-	if StatusEffects.IsStunned(enemy) or (anim.CurrentAttack and anim.CurrentAttack.Track.IsPlaying) then
-		return
-	end
-	local targetPosition = resolveTargetPosition(context)
-	if not targetPosition then
-		return
-	end
-
 	local diff, currentYaw = yawError(enemy, anim, rootPart, targetPosition)
-	local maxStep = math.rad((enemy.TypeData and enemy.TypeData.TurnSpeed) or 90) * dt
-	local step = math.clamp(diff, -maxStep, maxStep)
-	if math.abs(step) < 1e-4 then
-		return
-	end
-
-	-- Rotate the root's horizontal offset from the pivot by the same step, so the pivot stays put and
-	-- the root swings around it, rather than the body swinging around the root.
-	local pivot = turnPivotPosition(enemy, anim, rootPart)
-	local rootPos = rootPart.Position
-	local swung = CFrame.fromEulerAnglesYXZ(0, step, 0) * Vector3.new(rootPos.X - pivot.X, 0, rootPos.Z - pivot.Z)
-	rootPart.CFrame = CFrame.new(pivot.X + swung.X, rootPos.Y, pivot.Z + swung.Z) * CFrame.fromEulerAnglesYXZ(0, currentYaw + step, 0)
+	align.CFrame = CFrame.fromEulerAnglesYXZ(0, currentYaw + diff, 0)
 end
 
 local function startTurning(enemy, anim)
@@ -657,10 +636,30 @@ local function startTurning(enemy, anim)
 				tostring(enemy.TypeKey), tostring(pivotName)))
 		end
 	end
-	anim.TurnConnection = RunService.Heartbeat:Connect(function(dt)
-		turnStep(enemy, anim, dt)
-	end)
-	table.insert(anim.Connections, anim.TurnConnection)
+	-- Turning is done by physics (an AlignOrientation on the root), NOT by writing rootPart.CFrame.
+	-- The first version wrote the root's CFrame every Heartbeat, and those writes fought the Humanoid's
+	-- movement controller: he barely covered ground, and raising WalkSpeed changed nothing. A
+	-- constraint turns him about his assembly's centre of mass, which is why the Hitbox carries his
+	-- mass (see spawnEnemy): the turn centres on his visible body instead of on the root block.
+	if rootPart then
+		local attachment = Instance.new("Attachment")
+		attachment.Name = "TurnAttachment"
+		attachment.Parent = rootPart
+
+		local align = Instance.new("AlignOrientation")
+		align.Name = "TurnAlign"
+		align.Mode = Enum.OrientationAlignmentMode.OneAttachment
+		align.Attachment0 = attachment
+		align.MaxTorque = math.huge
+		align.Responsiveness = 25
+		align.MaxAngularVelocity = math.rad((enemy.TypeData and enemy.TypeData.TurnSpeed) or 90)
+		-- Hold his spawn facing until the first tick aims him, rather than snapping to world-forward.
+		local _, spawnYaw = rootPart.CFrame:ToEulerAnglesYXZ()
+		align.CFrame = CFrame.fromEulerAnglesYXZ(0, spawnYaw, 0)
+		align.Parent = rootPart
+		anim.TurnAlign = align
+	end
+	anim.TurnStarted = true
 end
 
 function EnemyAnimation.Tick(enemy, context, fallbackPattern)
@@ -691,7 +690,7 @@ function EnemyAnimation.Tick(enemy, context, fallbackPattern)
 	if humanoid.AutoRotate then
 		humanoid.AutoRotate = false
 	end
-	if not anim.TurnConnection then
+	if not anim.TurnStarted then
 		startTurning(enemy, anim)
 	end
 
@@ -738,6 +737,9 @@ function EnemyAnimation.Tick(enemy, context, fallbackPattern)
 	local distance = flat.Magnitude
 	local now = context.Now
 
+	-- Aim every tick he isn't swinging or stunned (both returned above); physics turns him in between.
+	aimTurn(enemy, anim, rootPart, targetPosition)
+
 	-- `not anim.Walking`: once he has set off after a player who left AttackRadius, he finishes the walk
 	-- to the ContactRange ring before swinging. Otherwise he'd take one step back inside the radius,
 	-- stop to attack, fall behind again, and repeat, which reads as stop-start stutter.
@@ -757,7 +759,7 @@ function EnemyAnimation.Tick(enemy, context, fallbackPattern)
 			end
 		end
 
-		-- No snap-to-face on commit: he only swings once turnStep has actually brought him round to
+		-- No snap-to-face on commit: he only swings once the turn (aimTurn) has actually brought him round to
 		-- within AttackFacingTolerance degrees, so getting behind a slow boss buys real time.
 		local tolerance = math.rad((enemy.TypeData and enemy.TypeData.AttackFacingTolerance) or 30)
 		local facingError = yawError(enemy, anim, rootPart, targetPosition)
