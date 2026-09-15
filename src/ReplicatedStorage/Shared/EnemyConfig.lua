@@ -182,7 +182,7 @@ EnemyConfig.BossTypes = {
 		-- Was 10, then 13, then 15; user: still "too slow", asked for +10. Now FASTER than a player's 16,
 		-- which drops the original "his slows are balanced by his low speed" premise — watch for a
 		-- slowed player being unable to ever get out of his AttackRadius.
-		MoveSpeed = 25,
+		MoveSpeed = 21, -- user: 25 was right once movement was fixed, "4 less to make it perfect"
 		-- Seconds from the END of one attack animation to when the next may start.
 		AttackCooldown = 1.6,
 		Defense = 28,
@@ -221,7 +221,7 @@ EnemyConfig.BossTypes = {
 		},
 		-- Playback speed of the Move animation (1 = as published). Lower = slower crawl.
 		-- Scaled with MoveSpeed (0.7 at 10, 0.9 at 13, 1.05 at 15) so the crawl keeps pace instead of sliding.
-		MoveAnimationSpeed = 1.75,
+		MoveAnimationSpeed = 1.45,
 
 		-- Which attack he plays is a weighted pick among the ones whose TriggerRange (horizontal studs,
 		-- his root to the player) covers the current distance. The damage an attack deals is decided by
