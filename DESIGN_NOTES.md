@@ -3466,8 +3466,8 @@ things cost real time and are worth not relearning:
   **Waiting on:** the left sweep's published id (goes in `Attacks[2].AnimationId`).
 - **User is DONE animating the Hulk (2026-09-14).** No death animation (`Animations.Death` stays
   `""`; he just goes limp/breaks and is removed 2s later) and no turn-in-place. Movement
-  (`Animations.Move`) was discussed right before this — confirm whether a walk was actually made and
-  published before assuming either way. A stop animation is not needed: Idle loops underneath and
+  (`Animations.Move`) IS made: **Walk `rbxassetid://103708147649106`**. **Light attack (left sweep)
+  published: `rbxassetid://105875185230848`.** All four ids are now in EnemyConfig. A stop animation is not needed: Idle loops underneath and
   the Move track fades out over it (default 0.1s fade; offered 0.3s if the snap is visible).
 
 **Next session, in order (Roblox side):**

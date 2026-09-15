@@ -196,7 +196,7 @@ EnemyConfig.BossTypes = {
 		-- An empty string means "not animated yet" — that slot is skipped (with one warn), never an error.
 		Animations = {
 			Idle = "rbxassetid://113796712422007",
-			Move = "",
+			Move = "rbxassetid://103708147649106",
 			Death = "",
 		},
 
@@ -205,7 +205,7 @@ EnemyConfig.BossTypes = {
 		-- which markers its animation contains, not by anything here.
 		Attacks = {
 			{ Name = "RockArmCombo", AnimationId = "rbxassetid://137947497885396", TriggerRange = 30, Weight = 1 },
-			{ Name = "LeftSweep", AnimationId = "", TriggerRange = 30, Weight = 1 },
+			{ Name = "LeftSweep", AnimationId = "rbxassetid://105875185230848", TriggerRange = 30, Weight = 1 },
 		},
 
 		-- Keyed by animation event NAME (exact, case-sensitive — the names typed in the Animation Editor).

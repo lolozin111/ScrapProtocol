@@ -1068,8 +1068,9 @@ to end:
     the fist through the swing (red on a hit, white on a miss) with `[EnemyAnimation] ... HIT/miss`
     lines in Output. A sphere frozen in one spot while the arm moves means the server is reading
     the rest pose. Also watch Output for `[EnemyAnimation]` warnings: an attack that played without
-    reaching any expected marker (a marker-name typo), a missing Attachment, or an empty animation
-    id (the left sweep's `AnimationId` stays `""` until it's published; he just won't pick it).
+    reaching any expected marker (a marker-name typo), a missing Attachment, or an animation that
+    failed to load. He should use both attacks (the right-arm combo and the left sweep, picked at
+    random) and play his crawl while moving.
 
     The **Go Back To Base** button (top-centre) should appear ONLY while a choice is actually live —
     i.e. exactly while that banner is pulsing. Confirm it is gone during a fight, gone while a Heal
