@@ -401,6 +401,49 @@ local function spawnEnemy(typeKey: string, typeData, spawnPosition: Vector3, mul
 		return nil
 	end
 
+	-- Optional per-type hitbox (EnemyConfig `Hitbox = { Size, Offset }`): an invisible, query-only Part
+	-- welded to the root. A skinned MeshPart's collision stays in its REST pose, so on a rig animated
+	-- into a different pose (the Hulk lies down; his rest pose stands) shots at the visible body pass
+	-- through and only the root registers. ResolvePlayerHit already maps any part inside the model back
+	-- to its enemy, so nothing else needs to know this exists. Size/Offset are mirrored onto the model
+	-- as "HitboxSize"/"HitboxOffset" Attributes and re-applied whenever those change, so it can be sized
+	-- live in a playtest (server view) and the numbers copied back into EnemyConfig.
+	if typeData.Hitbox then
+		local rootPart = model.PrimaryPart
+		local hitbox = Instance.new("Part")
+		hitbox.Name = "Hitbox"
+		hitbox.Anchored = false
+		hitbox.CanCollide = false
+		hitbox.CanTouch = false
+		hitbox.CanQuery = true -- the one thing it's for: player shots must be able to hit it
+		hitbox.Massless = true -- never shifts his centre of mass or how he walks
+		hitbox.CastShadow = false
+		hitbox.Material = Enum.Material.SmoothPlastic
+		hitbox.Color = Color3.fromRGB(255, 60, 60)
+		hitbox.Transparency = typeData.DebugHitboxes and 0.6 or 1
+
+		local weld = Instance.new("Weld")
+		weld.Part0 = rootPart
+		weld.Part1 = hitbox
+		weld.Parent = hitbox
+
+		local function applyHitbox()
+			local size = model:GetAttribute("HitboxSize")
+			local offset = model:GetAttribute("HitboxOffset")
+			if typeof(size) == "Vector3" then
+				hitbox.Size = size
+			end
+			weld.C0 = CFrame.new(typeof(offset) == "Vector3" and offset or Vector3.zero)
+		end
+		model:SetAttribute("HitboxSize", typeData.Hitbox.Size or rootPart.Size)
+		model:SetAttribute("HitboxOffset", typeData.Hitbox.Offset or Vector3.zero)
+		applyHitbox()
+		hitbox.CFrame = rootPart.CFrame * weld.C0 -- placed before parenting so the weld has nothing to yank
+		hitbox.Parent = model
+		model:GetAttributeChangedSignal("HitboxSize"):Connect(applyHitbox)
+		model:GetAttributeChangedSignal("HitboxOffset"):Connect(applyHitbox)
+	end
+
 	-- Boss HUD hook: the client's BossBar.lua finds the fight's boss by this tag and reads its Humanoid
 	-- health directly (Health replicates), so no remote or payload change is needed. Tagged BEFORE
 	-- parenting so the tag arrives on the client together with the model.
