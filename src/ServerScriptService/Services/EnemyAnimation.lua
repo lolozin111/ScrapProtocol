@@ -557,6 +557,17 @@ end
 
 -- `fallbackPattern` is EnemyAI.Patterns.Chaser, passed in by the caller rather than looked up here —
 -- see this file's header on why this module can never require EnemyAI back.
+-- A "FacingYawOffset" number Attribute on the live Model wins over the config value, so the right
+-- offset can be found by editing it mid-playtest (server view) and watching him turn, instead of a
+-- config edit and a restart per guess. Copy the number that works into EnemyConfig afterwards.
+local function facingOffset(enemy, anim): number
+	local override = enemy.Model and enemy.Model:GetAttribute("FacingYawOffset")
+	if typeof(override) == "number" then
+		return override
+	end
+	return anim.FacingYawOffset
+end
+
 function EnemyAnimation.Tick(enemy, context, fallbackPattern)
 	local model = enemy.Model
 	local humanoid = enemy.Humanoid
@@ -670,7 +681,7 @@ function EnemyAnimation.Tick(enemy, context, fallbackPattern)
 			-- his root, horizontally) since CFrame.lookAt can't build a direction from nothing.
 			local lookAt = Vector3.new(targetPosition.X, rootPart.Position.Y, targetPosition.Z)
 			if (lookAt - rootPart.Position).Magnitude > 0.01 then
-				rootPart.CFrame = CFrame.lookAt(rootPart.Position, lookAt) * CFrame.Angles(0, math.rad(anim.FacingYawOffset), 0)
+				rootPart.CFrame = CFrame.lookAt(rootPart.Position, lookAt) * CFrame.Angles(0, math.rad(facingOffset(enemy, anim)), 0)
 			end
 
 			chosen.MarkerCount = 0
@@ -694,7 +705,7 @@ function EnemyAnimation.Tick(enemy, context, fallbackPattern)
 	if distance > 0.01 and dt > 0 then
 		local _, currentYaw = rootPart.CFrame:ToEulerAnglesYXZ()
 		local faceAt = Vector3.new(targetPosition.X, rootPart.Position.Y, targetPosition.Z)
-		local _, desiredYaw = (CFrame.lookAt(rootPart.Position, faceAt) * CFrame.Angles(0, math.rad(anim.FacingYawOffset), 0)):ToEulerAnglesYXZ()
+		local _, desiredYaw = (CFrame.lookAt(rootPart.Position, faceAt) * CFrame.Angles(0, math.rad(facingOffset(enemy, anim)), 0)):ToEulerAnglesYXZ()
 		local diff = (desiredYaw - currentYaw + math.pi) % (2 * math.pi) - math.pi
 		local maxStep = math.rad((enemy.TypeData and enemy.TypeData.TurnSpeed) or 90) * dt
 		local step = math.clamp(diff, -maxStep, maxStep)
@@ -717,7 +728,10 @@ function EnemyAnimation.Tick(enemy, context, fallbackPattern)
 		local velocity = rootPart.AssemblyLinearVelocity
 		if Vector3.new(velocity.X, 0, velocity.Z).Magnitude > 1 then
 			if not anim.MoveTrack.IsPlaying then
-				anim.MoveTrack:Play()
+				-- Play's third argument is playback speed; the config scales the published crawl without
+				-- a re-export from Blender.
+				local moveAnimSpeed = (enemy.TypeData and enemy.TypeData.MoveAnimationSpeed) or 1
+				anim.MoveTrack:Play(0.1, 1, moveAnimSpeed)
 			end
 		elseif anim.MoveTrack.IsPlaying then
 			anim.MoveTrack:Stop()
