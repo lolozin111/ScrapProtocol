@@ -23,8 +23,14 @@ local DashConfig = require(ReplicatedStorage.Shared.DashConfig)
 local StaminaState = require(script.Parent.StaminaState)
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
-local RequestDash = Remotes:WaitForChild("RequestDash")
-local StaminaUpdate = Remotes:WaitForChild("StaminaUpdate")
+-- Bounded wait with an explicit message instead of an open-ended WaitForChild, whose only symptom is an
+-- "Infinite yield possible" line and a Q key that silently does nothing. See DashService's matching note.
+local RequestDash = Remotes:WaitForChild("RequestDash", 10)
+local StaminaUpdate = Remotes:WaitForChild("StaminaUpdate", 10)
+if not (RequestDash and StaminaUpdate) then
+	warn("[DashClient] ReplicatedStorage.Remotes is missing RequestDash and/or StaminaUpdate — dashing is DISABLED. Restart `rojo serve` and reconnect the Studio plugin so Rojo picks up default.project.json.")
+	return
+end
 
 local LocalPlayer = Players.LocalPlayer
 

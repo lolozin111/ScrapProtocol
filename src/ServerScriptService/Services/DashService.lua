@@ -22,8 +22,21 @@ local DashConfig = require(ReplicatedStorage.Shared.DashConfig)
 local RateLimiter = require(script.Parent.RateLimiter)
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
-local RequestDash = Remotes:WaitForChild("RequestDash")
-local StaminaUpdate = Remotes:WaitForChild("StaminaUpdate")
+-- FindFirstChild, NEVER WaitForChild. This module is required near the top of Main.server.lua's boot
+-- list, so a yield here stalls every service after it. That happened on first test: Rojo was still
+-- running from before these remotes were added to default.project.json (it only reads that file on
+-- start), WaitForChild yielded forever, and PlotService/BaseService never loaded, so the player
+-- didn't even spawn on their base. A missing remote now costs the dash, not the whole server.
+local RequestDash = Remotes:FindFirstChild("RequestDash")
+local StaminaUpdate = Remotes:FindFirstChild("StaminaUpdate")
+if not (RequestDash and StaminaUpdate) then
+	warn("[DashService] ReplicatedStorage.Remotes is missing RequestDash and/or StaminaUpdate — dashing is DISABLED. They're declared in default.project.json: restart `rojo serve` and reconnect the Studio plugin so Rojo picks them up.")
+	return {
+		GetCharges = function(_player: Player): number
+			return DashConfig.MaxCharges
+		end,
+	}
+end
 
 local DashService = {}
 
