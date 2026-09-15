@@ -197,12 +197,34 @@ them, AI patterns last because they need three raids to exist):
    the client has never seen a BossCleared without `CardChoices`), `DisplayName` (sent as
    `Mode`/`ModeName` in the map payload; nothing reads it yet). Deliberately NOT mode rules yet: enemy
    composition and depth curves (curve work) and `RunLocked` tagging (step 4).
-   **Open for step 4 — the mode's identity.** The user described today's raid (2026-09-15) as "a
-   little game, sort of a hack and slash, so people can do stuff and get special items like
-   Contraband". That is NOT the Salvage Run this plan assumed the one v1 mode becomes (ore feedstock,
-   `RunLocked`, carry cap, physical Extraction). Hence the neutral key `Standard`. Settle which it is
-   BEFORE building step 4.
-4. Salvage Run — cheapest: tagging, carry cap, Extraction as a real room. Almost no new systems.
+   **SETTLED for step 4 — the mode's identity (2026-09-15).** Earlier the same day the user had
+   called today's raid "a little game, sort of a hack and slash, so people can do stuff and get
+   special items like Contraband", which did not sound like the Salvage Run this plan assumed. Asked
+   directly, they clarified that it IS salvage-shaped: "you can get some quick resources and stuff,
+   but its the main way to get contraband and some cores, but we only reward those after a player
+   finishes a map node and then the game gotta make a new one so the player can continue, and also
+   in boss nodes". The rules, agreed one by one:
+   - **Scrap and ore** still drop in every room, and are always kept, as today.
+   - **Contraband and Cores come ONLY from clearing a map (`onMapCleared`) and from beating a Boss
+     node.** Take Cores out of the regular Combat loot tables (`NodeConfig.lua` ~52/62); the Boss
+     table already has them (~77) and gains Contraband.
+   - **They are held in the run and LOST on death or abandon.** Only Extract banks them. This
+     deliberately overrides the older "currency is always banked in full" rule, for these two only.
+   - **Each map clear pays more than the last** (scales with `MapsCleared`).
+   - **The old flat Extract Contraband bonus (`completeRaid`) becomes a MULTIPLIER on everything
+     banked at extract, scaled by the number of BOSSES DEFEATED this run.** The user first read it as
+     "how far you go", then changed it: "make it multiply based on the number of bosses defeated, so it
+     encourages players on doing bosses nodes". Bosses are 1–2 per map on random nodes at stage 3 or
+     deeper (`placeBossNodes`), so a player can often route around them. That is the choice this
+     rewards. Starting numbers, to tune in playtests, living in `RaidConfig`: 0 bosses ×1.0, then
+     +0.25 per boss, capped at ×2.0. The per-map growth and the boss multiplier stack, which is why
+     both start modest and the cap exists.
+   - **The raid shop becomes Scrap-only** (`NodeConfig.ShopCatalog`, e.g. the 10-Cores item ~114),
+     so it works from room one and Cores stay a prize you take home.
+   Still open, not discussed: whether ore also becomes `RunLocked`, a carry cap, and a physical
+   Extraction room (the rest of the original Salvage Run stakes layer). Mode key stays `Standard`.
+4. Raid rewards rework (the settled rules above) — built on step 3's mode plumbing. NOT STARTED:
+   wait for the user's go-ahead.
 5. ~~Gauntlet~~ — **CUT FROM v1 (2026-09-08), first post-launch update.** A real card pool with real
    effects plus the run-only perk shop. Biggest content write.
 6. ~~Contract~~ — **CUT FROM v1 (2026-09-08), post-launch.** Largest new surface: board, objective
@@ -3361,9 +3383,9 @@ Hard-won lessons from this session, each cost real time:
   animation loads, the rig shows its rest pose. Rule it out before tuning.
 
 **Where to pick up:** (1) the user verifies step 3 in Studio (a raid should behave exactly as before;
-Output should be clean). (2) Before step 4, settle the mode's identity — see the "Open for step 4" note
-under Phase 00's build order: the user calls today's raid a hack-and-slash for special items, which is
-not the Salvage Run the plan assumed. (3) Paste the dash animation id when the user has it. (4) Offer
+Output should be clean). (2) Step 4's rules are SETTLED (2026-09-15) — see "SETTLED for step 4" under
+Phase 00's build order (map-clear/boss-only Contraband and Cores, lost on death, boss-count extract
+multiplier, Scrap-only shop). Build it only on the user's go-ahead. (3) Paste the dash animation id when the user has it. (4) Offer
 a PR from `fix/audit-p0-p3` to `main` — nothing from this session is on `main`.
 
 **START AT "Road to release" NEAR THE TOP OF THIS FILE, not here.** That section is the live plan for
