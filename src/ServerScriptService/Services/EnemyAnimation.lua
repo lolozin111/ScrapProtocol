@@ -636,6 +636,17 @@ local function turnStep(enemy, anim, dt: number)
 end
 
 local function startTurning(enemy, anim)
+	-- The server must own his physics. Left on automatic, Roblox hands an unanchored NPC's simulation
+	-- to whichever player is nearest, and then that client's physics fights the server's MoveTo and
+	-- the per-frame turn below: he stutters, stops, and starts again. pcall because SetNetworkOwner
+	-- throws on an anchored assembly.
+	local rootPart = enemy.Model.PrimaryPart
+	if rootPart then
+		pcall(function()
+			rootPart:SetNetworkOwner(nil)
+		end)
+	end
+
 	local pivotName = enemy.TypeData and enemy.TypeData.TurnPivot
 	if pivotName then
 		local found = enemy.Model:FindFirstChild(pivotName, true)
@@ -727,7 +738,10 @@ function EnemyAnimation.Tick(enemy, context, fallbackPattern)
 	local distance = flat.Magnitude
 	local now = context.Now
 
-	if now >= (enemy.NextAttackAt or 0) and now - enemy.SpawnTime >= SPAWN_GRACE_SECONDS then
+	-- `not anim.Walking`: once he has set off after a player who left AttackRadius, he finishes the walk
+	-- to the ContactRange ring before swinging. Otherwise he'd take one step back inside the radius,
+	-- stop to attack, fall behind again, and repeat, which reads as stop-start stutter.
+	if not anim.Walking and now >= (enemy.NextAttackAt or 0) and now - enemy.SpawnTime >= SPAWN_GRACE_SECONDS then
 		-- Which attack plays is a weighted pick among whichever ones this distance is inside the
 		-- TriggerRange of — NOT gated by ContactRange the way Chaser/Slam gate their single attack.
 		-- EnemyConfig's own comment on ContactRange explains why: it's the ring he walks to, kept
@@ -796,11 +810,10 @@ function EnemyAnimation.Tick(enemy, context, fallbackPattern)
 	end
 
 	if anim.MoveTrack then
-		-- Read from the root's actual horizontal velocity, not humanoid.MoveDirection: MoveDirection
-		-- reflects player-style input and is not reliably set for a server-driven MoveTo walker, so it
-		-- could read zero the whole time he crawls and the walk would never start.
-		local velocity = rootPart.AssemblyLinearVelocity
-		if Vector3.new(velocity.X, 0, velocity.Z).Magnitude > 1 then
+		-- Driven by the walking decision above, not by measured motion. humanoid.MoveDirection is not
+		-- reliably set for a server-driven MoveTo walker, and velocity dips below any threshold for a
+		-- frame or two mid-crawl, which started and stopped the animation over and over.
+		if anim.Walking then
 			if not anim.MoveTrack.IsPlaying then
 				-- Play's third argument is playback speed; the config scales the published crawl without
 				-- a re-export from Blender.
