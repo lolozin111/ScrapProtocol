@@ -580,6 +580,12 @@ function EnemyAnimation.Tick(enemy, context, fallbackPattern)
 	-- tick's context was current when their track started playing.
 	anim.Context = context
 
+	-- This file owns his facing (see the turn step in the walking branch below), so the Humanoid's own
+	-- AutoRotate must not fight it.
+	if humanoid.AutoRotate then
+		humanoid.AutoRotate = false
+	end
+
 	-- Same interrupt as Chaser/Slam: a stun neither moves nor attacks. Unlike a simple cooldown, an
 	-- in-progress swing gets STOPPED outright rather than just paused — Stop() fires this track's own
 	-- Stopped signal, so onAttackStopped still closes any open Sweep window and stamps the cooldown
@@ -678,6 +684,25 @@ function EnemyAnimation.Tick(enemy, context, fallbackPattern)
 	-- on why) — aim at a point ON the ContactRange ring along the current bearing, never past it, so
 	-- Roblox's own arrival tolerance stops him right at the ring instead of relying on a per-tick
 	-- Move(zero) backstop to catch him after the fact.
+	-- Turn toward the target, rate-limited. Done here rather than by Humanoid.AutoRotate because
+	-- AutoRotate points the HumanoidRootPart's LookVector along the walk, and this rig's root front
+	-- isn't the mesh's front, so he crawled backwards. FacingYawOffset is the one knob that corrects
+	-- both this and the attack snap above. TurnSpeed (degrees/second) keeps a slow boss from spinning
+	-- on the spot; dt is capped so the first tick after a long attack doesn't jump the whole backlog.
+	local dt = math.min(now - (anim.LastTurnAt or now), 0.25)
+	anim.LastTurnAt = now
+	if distance > 0.01 and dt > 0 then
+		local _, currentYaw = rootPart.CFrame:ToEulerAnglesYXZ()
+		local faceAt = Vector3.new(targetPosition.X, rootPart.Position.Y, targetPosition.Z)
+		local _, desiredYaw = (CFrame.lookAt(rootPart.Position, faceAt) * CFrame.Angles(0, math.rad(anim.FacingYawOffset), 0)):ToEulerAnglesYXZ()
+		local diff = (desiredYaw - currentYaw + math.pi) % (2 * math.pi) - math.pi
+		local maxStep = math.rad((enemy.TypeData and enemy.TypeData.TurnSpeed) or 90) * dt
+		local step = math.clamp(diff, -maxStep, maxStep)
+		if math.abs(step) > 1e-3 then
+			rootPart.CFrame = CFrame.new(rootPart.Position) * CFrame.fromEulerAnglesYXZ(0, currentYaw + step, 0)
+		end
+	end
+
 	if now - (enemy.LastMoveThink or 0) >= MOVE_THINK_INTERVAL then
 		enemy.LastMoveThink = now
 		local direction = distance > 0 and (flat / distance) or Vector3.new(1, 0, 0)
