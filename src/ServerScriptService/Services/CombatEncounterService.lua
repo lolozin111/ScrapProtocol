@@ -474,10 +474,8 @@ local function spawnEnemy(typeKey: string, typeData, spawnPosition: Vector3, mul
 	-- Deliberately AFTER the parent/PivotTo above: an R15 rig built in Studio can sit in ServerStorage
 	-- with NO Motor6Ds at all (the Raider has 68 welds and zero joints) — the engine builds them from
 	-- each MeshPart's RigAttachments when the model enters the workspace, which is why such a rig still
-	-- animates in game. Run any earlier and there is no root joint to turn yet, which is exactly what
-	-- the "no root Motor6D" warning below used to be reporting. BuildRigFromAttachments is called as a
-	-- fallback rather than unconditionally: it is the engine's own rigging pass, so asking for it is
-	-- harmless, but a rig that already has its joints must not be re-rigged out from under an animation.
+	-- animates in game. That pass does not finish on the frame the model is parented either, so the
+	-- correction below waits for the root joint to show up rather than assuming it is already there.
 	--
 	-- Mirrored onto the model as a "BodyYawOffset" Attribute and re-applied whenever it changes, exactly
 	-- like HitboxSize/HitboxOffset above and for the same reason: which way a rig is skewed is settled by
@@ -495,18 +493,7 @@ local function spawnEnemy(typeKey: string, typeData, spawnPosition: Vector3, mul
 			return nil
 		end
 
-		local rootJoint = findRootJoint()
-		if not rootJoint then
-			local rigHumanoid = model:FindFirstChildOfClass("Humanoid")
-			if rigHumanoid then
-				pcall(function()
-					rigHumanoid:BuildRigFromAttachments()
-				end)
-				rootJoint = findRootJoint()
-			end
-		end
-
-		if rootJoint then
+		local function applyTo(rootJoint: Motor6D)
 			local baseC0 = rootJoint.C0
 			local function applyBodyYaw()
 				local degrees = model:GetAttribute("BodyYawOffset")
@@ -515,8 +502,32 @@ local function spawnEnemy(typeKey: string, typeData, spawnPosition: Vector3, mul
 			model:SetAttribute("BodyYawOffset", typeData.BodyYawOffset)
 			applyBodyYaw()
 			model:GetAttributeChangedSignal("BodyYawOffset"):Connect(applyBodyYaw)
+		end
+
+		local rootJoint = findRootJoint()
+		if rootJoint then
+			applyTo(rootJoint)
 		else
-			warn(("[CombatEncounterService] %s sets BodyYawOffset but its model still has no root Motor6D after rigging — the rig keeps its original facing."):format(typeKey))
+			-- WAIT for it instead of giving up. These rigs carry no Motor6Ds in ServerStorage: the engine
+			-- builds them from each MeshPart's RigAttachments once the model is in the workspace, and that
+			-- pass does NOT finish on the frame the model is parented — the reason two earlier versions of
+			-- this looked at an unrigged model and warned. A spawned enemy is on screen for a lot longer
+			-- than a couple of frames, so polling briefly costs nothing and needs no engine internals.
+			task.spawn(function()
+				local deadline = os.clock() + 3
+				while os.clock() < deadline do
+					task.wait()
+					if model.Parent == nil then
+						return -- died or the encounter ended before the rig ever came up
+					end
+					local joint = findRootJoint()
+					if joint then
+						applyTo(joint)
+						return
+					end
+				end
+				warn(("[CombatEncounterService] %s sets BodyYawOffset but its model never got a root Motor6D — the rig keeps its original facing. Its MeshParts are probably missing their RigAttachments, in which case it cannot be animated either."):format(typeKey))
+			end)
 		end
 	end
 
