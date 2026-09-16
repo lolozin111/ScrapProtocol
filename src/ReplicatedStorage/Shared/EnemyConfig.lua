@@ -170,6 +170,7 @@ EnemyConfig.EliteTypes = {
 		ModelName = "Siegebreaker",
 		Animations = {
 			Move = "rbxassetid://86699665518029",
+			Attack = "rbxassetid://112779091928181",
 		},
 
 		-- Selects EnemyAI.Patterns.Slam. Every other type in this file uses the faction default

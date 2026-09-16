@@ -440,6 +440,9 @@ EnemyAI.Patterns.Slam = function(enemy, context)
 			enemy.SlamCentre = rootPart.Position
 			enemy.SlamImpactAt = context.Now + enemy.SlamWindup
 			spawnTelegraph(enemy)
+			-- Played at the COMMIT, not at impact: the wind-up is the tell, so the animation should run
+			-- across it. Keep the animation about as long as SlamWindup (0.9s).
+			EnemyAnimation.PlayAttack(enemy)
 		end
 	elseif context.Now - enemy.LastMoveThink >= MOVE_THINK_INTERVAL then
 		enemy.LastMoveThink = context.Now
