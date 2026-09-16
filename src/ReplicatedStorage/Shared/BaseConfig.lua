@@ -56,8 +56,9 @@ BaseConfig.TurretEdgeClearance = 0.5
 BaseConfig.WallAttackRange = 28
 
 -- Base security lasers (BaseLaserService). Any base template containing descendants with these names
--- gets them: every BasePart inside something named LaserName is a laser, and each ButtonName part gets
--- the on/off ProximityPrompt. Names are matched case-insensitively. Tiers 1-3 have neither and are
+-- gets them: every BasePart inside anything whose name STARTS with LaserName is a laser ("Laser",
+-- "Laser2", a "Lasers" folder), and each part named exactly ButtonName gets the on/off ProximityPrompt.
+-- Names are matched case-insensitively. Tiers 1-3 have neither and are
 -- untouched. Off is the default each session.
 BaseConfig.Lasers = {
 	LaserName = "Laser",

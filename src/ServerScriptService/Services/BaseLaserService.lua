@@ -35,8 +35,14 @@ local function nameIs(inst: Instance, wanted: string): boolean
 	return string.lower(inst.Name) == string.lower(wanted)
 end
 
--- Every BasePart that is, or sits inside, something named LaserName. Deduped, since a Laser Model may
--- itself contain a part also named Laser.
+-- Prefix match, so a base with several lasers works however they are named: "Laser", "Laser1", "Laser2",
+-- a "Lasers" folder or model holding them all.
+local function nameStartsWith(inst: Instance, prefix: string): boolean
+	return string.sub(string.lower(inst.Name), 1, #prefix) == string.lower(prefix)
+end
+
+-- Every BasePart that is, or sits inside, something whose name starts with LaserName. Deduped, since a
+-- "Lasers" folder may itself contain parts also named Laser.
 local function collectLaserParts(baseModel: Model): { BasePart }
 	local seen, parts = {}, {}
 	local function add(part: BasePart)
@@ -46,7 +52,7 @@ local function collectLaserParts(baseModel: Model): { BasePart }
 		end
 	end
 	for _, inst in ipairs(baseModel:GetDescendants()) do
-		if nameIs(inst, CONFIG.LaserName) then
+		if nameStartsWith(inst, CONFIG.LaserName) then
 			if inst:IsA("BasePart") then
 				add(inst)
 			end
