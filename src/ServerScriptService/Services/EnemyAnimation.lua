@@ -917,17 +917,13 @@ local function setupLocomotion(enemy)
 	return loco
 end
 
--- `walking` is the pattern's own decision (out of attack range and not stunned), not measured motion,
--- for the same reason Tick's Move block gives.
 -- One swing, played by the pattern at the moment it lands a contact hit. Silent no-op for a type with
 -- no Attack animation, which is most of them.
 --
--- A swing that ends while the enemy is standing still does not end: just before its last frame it jumps
--- back to its FIRST frame and freezes there, held until the next swing or until it walks off. Without an
--- Idle animation there is nothing underneath the swing, so letting it end snapped the rig straight back
--- to its rest T-pose between hits. The first frame, not the last, by the user's call after trying both:
--- the wind-up stance reads better than the follow-through (the Brute's especially).
-local ATTACK_HOLD_LEAD = 0.05 -- seconds before the natural end that the swing is caught
+-- The swing fades out just before its natural end instead of snapping off, onto whatever Locomotion has
+-- underneath it — the walk, for a type with no Idle (see Locomotion). Holding the swing's last frame and
+-- then its first frame were both tried and both read worse than simply falling back to the walk.
+local ATTACK_FADE_OUT = 0.15 -- seconds; the swing starts fading this long before its natural end
 
 function EnemyAnimation.PlayAttack(enemy)
 	if enemy.Anim then
@@ -938,19 +934,13 @@ function EnemyAnimation.PlayAttack(enemy)
 	end
 	local loco = enemy.Loco
 	local track = loco.AttackTrack
-	if not track or (track.IsPlaying and track.Speed > 0) then
+	if not track or track.IsPlaying then
 		return -- no Attack animation, or still mid-swing
 	end
 
 	loco.AttackPlayId = (loco.AttackPlayId or 0) + 1
 	local playId = loco.AttackPlayId
-	if track.IsPlaying then
-		-- Held on its first frame from the previous swing: restart it rather than blend it into itself.
-		track.TimePosition = 0
-		track:AdjustSpeed(1)
-	else
-		track:Play(0.1)
-	end
+	track:Play(0.1)
 
 	task.spawn(function()
 		-- Length reads 0 until the asset has loaded, which can still be true on the very first swing.
@@ -961,19 +951,15 @@ function EnemyAnimation.PlayAttack(enemy)
 			warnOnce(warnedSlot, tostring(enemy.TypeKey) .. "/AttackLength",
 				("[EnemyAnimation] %s's Attack animation is %.2fs but its AttackCooldown is %.2fs — hits that land mid-swing get no swing of their own. Shorten the animation or raise AttackCooldown in EnemyConfig."):format(tostring(enemy.TypeKey), track.Length, enemy.AttackCooldown))
 		end
-		task.wait(math.max(track.Length - track.TimePosition - ATTACK_HOLD_LEAD, 0))
-		if loco.AttackPlayId ~= playId or not track.IsPlaying then
-			return -- restarted by a newer swing, or stopped (death, despawn)
-		end
-		if loco.Walking then
-			track:Stop(0.2)
-		else
-			track:AdjustSpeed(0)
-			track.TimePosition = 0
+		task.wait(math.max(track.Length - track.TimePosition - ATTACK_FADE_OUT, 0))
+		if loco.AttackPlayId == playId and track.IsPlaying then
+			track:Stop(ATTACK_FADE_OUT)
 		end
 	end)
 end
 
+-- `walking` is the pattern's own decision (out of attack range and not stunned), not measured motion,
+-- for the same reason Tick's Move block gives.
 function EnemyAnimation.Locomotion(enemy, walking: boolean)
 	if enemy.Anim then
 		return -- an "Animated" enemy falling back to Chaser: Tick already loaded and owns its tracks
@@ -982,17 +968,14 @@ function EnemyAnimation.Locomotion(enemy, walking: boolean)
 		enemy.Loco = setupLocomotion(enemy)
 	end
 
-	enemy.Loco.Walking = walking
-	local attackTrack = enemy.Loco.AttackTrack
-	if walking and attackTrack and attackTrack.IsPlaying and attackTrack.Speed == 0 then
-		attackTrack:Stop(0.2) -- release a held swing pose (see PlayAttack) now that it is walking again
-	end
-
 	local moveTrack = enemy.Loco.MoveTrack
 	if not moveTrack or not enemy.Humanoid or enemy.Humanoid.Health <= 0 then
 		return
 	end
-	if walking then
+	-- A type with no Idle animation keeps its walk playing while it stands in range: the swing (Action
+	-- priority) covers it during an attack, and it is what shows between swings instead of the rest
+	-- T-pose. Once an Idle slot is filled, standing still stops the walk and lets the Idle show again.
+	if walking or not enemy.Loco.IdleTrack then
 		local speed = (enemy.TypeData and enemy.TypeData.MoveAnimationSpeed) or 1
 		if not moveTrack.IsPlaying then
 			moveTrack:Play(0.1, 1, speed)
