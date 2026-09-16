@@ -74,6 +74,68 @@ local SPAWN_GRACE_SECONDS = 1
 -- health threshold, is a new function here later, not a rewrite of either of these two.
 EnemyAI.Patterns = {}
 
+-- Opt-in per-type facing fix (EnemyConfig `WalkFacingOffset`, degrees). A rig whose body was built
+-- pointing somewhere other than its HumanoidRootPart's forward walks and fights sideways, because the
+-- Humanoid turns the ROOT and the body is bolted to it at whatever angle it was built. The Hulk solves
+-- the same problem inside EnemyAnimation; this is the cheap version for a plain Chaser, and it needs
+-- nothing from the rig: no Motor6Ds, no RigAttachments, no joints of any kind, since it turns the whole
+-- assembly rather than anything inside it. That matters — some of these enemy models have no animation
+-- joints at all, so a fix that turned the body AT a joint had nothing to turn.
+--
+-- Turning is a physics constraint, not per-frame CFrame writes: writing the root's CFrame every tick
+-- fights the Humanoid's own movement controller and the enemy barely covers ground (learned on the
+-- Hulk — see EnemyAnimation.startTurning, which this deliberately mirrors).
+local function ensureFacing(enemy)
+	if enemy.FacingAlign or enemy.FacingChecked then
+		return
+	end
+	enemy.FacingChecked = true -- one attempt per enemy, whatever the outcome
+
+	local offset = enemy.TypeData and enemy.TypeData.WalkFacingOffset
+	local rootPart = enemy.Model and enemy.Model.PrimaryPart
+	if not offset or not rootPart then
+		return
+	end
+
+	-- The Humanoid's own rotation would fight the constraint, and an NPC whose physics Roblox handed to
+	-- a nearby player's client would fight it too (same two lessons as the Hulk).
+	if enemy.Humanoid then
+		enemy.Humanoid.AutoRotate = false
+	end
+	pcall(function()
+		rootPart:SetNetworkOwner(nil)
+	end)
+
+	local attachment = Instance.new("Attachment")
+	attachment.Name = "FacingAttachment"
+	attachment.Parent = rootPart
+
+	local align = Instance.new("AlignOrientation")
+	align.Name = "FacingAlign"
+	align.Mode = Enum.OrientationAlignmentMode.OneAttachment
+	align.Attachment0 = attachment
+	align.MaxTorque = math.huge
+	align.Responsiveness = 25
+	align.MaxAngularVelocity = math.rad((enemy.TypeData and enemy.TypeData.TurnSpeed) or 360)
+	local _, spawnYaw = rootPart.CFrame:ToEulerAnglesYXZ()
+	align.CFrame = CFrame.fromEulerAnglesYXZ(0, spawnYaw, 0)
+	align.Parent = rootPart
+	enemy.FacingAlign = align
+end
+
+-- Points a WalkFacingOffset enemy at whatever it's chasing, with its own build angle added on top.
+local function aimFacing(enemy, rootPart: BasePart, targetPosition: Vector3)
+	local align = enemy.FacingAlign
+	if not align then
+		return
+	end
+	local flat = Vector3.new(targetPosition.X - rootPart.Position.X, 0, targetPosition.Z - rootPart.Position.Z)
+	if flat.Magnitude < 0.1 then
+		return -- standing on top of the target: keep the facing we already have rather than spinning
+	end
+	align.CFrame = CFrame.lookAt(Vector3.zero, flat.Unit) * CFrame.Angles(0, math.rad(enemy.TypeData.WalkFacingOffset), 0)
+end
+
 EnemyAI.Patterns.Chaser = function(enemy, context)
 	local model = enemy.Model
 	local humanoid = enemy.Humanoid
@@ -102,6 +164,11 @@ EnemyAI.Patterns.Chaser = function(enemy, context)
 	local toEnemy = rootPart.Position - context.TargetPosition
 	local distance = toEnemy.Magnitude
 	local inRange = distance <= enemy.ContactRange + ATTACK_RANGE_SLACK
+
+	-- Whole-model facing correction, for a type whose EnemyConfig entry sets WalkFacingOffset (nothing
+	-- happens for any other type). Set up once per enemy, aimed every tick.
+	ensureFacing(enemy)
+	aimFacing(enemy, rootPart, context.TargetPosition)
 
 	-- Idle/Move animations for a type whose EnemyConfig entry sets Animations; a no-op for every other
 	-- type, and for an "Animated" enemy falling back to this pattern (its own Tick owns its tracks).

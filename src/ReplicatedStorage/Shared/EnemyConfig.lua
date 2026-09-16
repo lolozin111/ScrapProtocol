@@ -97,6 +97,10 @@ EnemyConfig.Types = {
 		HP = 30,
 		ContactDamage = 9,
 		ModelName = "Raider",
+		-- His body was built facing off from his HumanoidRootPart, so he walks sideways without this —
+		-- EnemyAI turns the whole model by this many degrees on top of the direction he is chasing.
+		-- Tune by eye: 45, -45, 90, 180. Needs nothing from the rig itself.
+		WalkFacingOffset = 45,
 		Animations = {
 			Move = "rbxassetid://103569921109638",
 		},
