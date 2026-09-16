@@ -401,20 +401,19 @@ local function spawnEnemy(typeKey: string, typeData, spawnPosition: Vector3, mul
 		return nil
 	end
 
-	-- Optional per-type hitbox (EnemyConfig `Hitbox = { Size, Offset }`): an invisible, query-only Part
-	-- welded to the root. A skinned MeshPart's collision stays in its REST pose, so on a rig animated
-	-- into a different pose (the Hulk lies down; his rest pose stands) shots at the visible body pass
-	-- through and only the root registers. ResolvePlayerHit already maps any part inside the model back
-	-- to its enemy, so nothing else needs to know this exists. Size/Offset are mirrored onto the model
-	-- as "HitboxSize"/"HitboxOffset" Attributes and re-applied whenever those change, so it can be sized
-	-- live in a playtest (server view) and the numbers copied back into EnemyConfig.
 	-- Optional per-type body yaw (EnemyConfig `BodyYawOffset`, degrees): turns the BODY relative to the
 	-- HumanoidRootPart, at the root joint. A rig whose parts were built facing off-axis from its root
 	-- walks and animates visibly crabbed, because the Humanoid steers the ROOT and everything jointed to
 	-- it inherits the skew. Corrected here rather than in Studio so it stays one config number per type
 	-- that a re-imported model can't silently lose. Not the same thing as the Hulk's FacingYawOffset,
 	-- which corrects where EnemyAnimation POINTS him, not how his rig was built.
-	if typeData.BodyYawOffset and typeData.BodyYawOffset ~= 0 then
+	--
+	-- Mirrored onto the model as a "BodyYawOffset" Attribute and re-applied whenever it changes, exactly
+	-- like HitboxSize/HitboxOffset below and for the same reason: which way a rig is skewed is settled by
+	-- looking at it, so it gets dialled in on a live enemy (server view) and the number copied back into
+	-- EnemyConfig. Re-applied from the rig's ORIGINAL C0 every time, never compounded onto the last one,
+	-- so dragging the number back and forth can't wander.
+	if typeData.BodyYawOffset then
 		local rootJoint
 		for _, descendant in ipairs(model:GetDescendants()) do
 			if descendant:IsA("Motor6D") and descendant.Part0 == model.PrimaryPart then
@@ -423,12 +422,26 @@ local function spawnEnemy(typeKey: string, typeData, spawnPosition: Vector3, mul
 			end
 		end
 		if rootJoint then
-			rootJoint.C0 = rootJoint.C0 * CFrame.Angles(0, math.rad(typeData.BodyYawOffset), 0)
+			local baseC0 = rootJoint.C0
+			local function applyBodyYaw()
+				local degrees = model:GetAttribute("BodyYawOffset")
+				rootJoint.C0 = baseC0 * CFrame.Angles(0, math.rad(typeof(degrees) == "number" and degrees or 0), 0)
+			end
+			model:SetAttribute("BodyYawOffset", typeData.BodyYawOffset)
+			applyBodyYaw()
+			model:GetAttributeChangedSignal("BodyYawOffset"):Connect(applyBodyYaw)
 		else
 			warn(("[CombatEncounterService] %s sets BodyYawOffset but no Motor6D joins its PrimaryPart to the body — the rig keeps its original facing."):format(typeKey))
 		end
 	end
 
+	-- Optional per-type hitbox (EnemyConfig `Hitbox = { Size, Offset }`): an invisible, query-only Part
+	-- welded to the root. A skinned MeshPart's collision stays in its REST pose, so on a rig animated
+	-- into a different pose (the Hulk lies down; his rest pose stands) shots at the visible body pass
+	-- through and only the root registers. ResolvePlayerHit already maps any part inside the model back
+	-- to its enemy, so nothing else needs to know this exists. Size/Offset are mirrored onto the model
+	-- as "HitboxSize"/"HitboxOffset" Attributes and re-applied whenever those change, so it can be sized
+	-- live in a playtest (server view) and the numbers copied back into EnemyConfig.
 	if typeData.Hitbox then
 		local rootPart = model.PrimaryPart
 		local hitbox = Instance.new("Part")
