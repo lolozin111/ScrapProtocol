@@ -115,7 +115,7 @@ EnemyConfig.Types = {
 		Defense = 10,
 		ModelName = "Brute",
 		Animations = {
-			Move = "rbxassetid://108164136083181",
+			Move = "rbxassetid://75539074134343",
 		},
 	}),
 
