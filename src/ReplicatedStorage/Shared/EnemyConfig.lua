@@ -97,10 +97,6 @@ EnemyConfig.Types = {
 		HP = 30,
 		ContactDamage = 9,
 		ModelName = "Raider",
-		-- His rig was built facing 45° off its HumanoidRootPart, so without this he walks crabbed —
-		-- applied at spawn by CombatEncounterService, see BodyYawOffset there. Flip the sign if he
-		-- ends up skewed the other way.
-		BodyYawOffset = -45,
 		Animations = {
 			Move = "rbxassetid://103569921109638",
 		},

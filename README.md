@@ -1092,11 +1092,6 @@ to end:
     warning in Output. A held Tool (the Scavenger's pickaxe) only animates if it's joined to the hand
     by a `Motor6D`, not the `RightGrip` weld an equipped Tool comes with.
 
-    If a rig was built facing off-axis from its `HumanoidRootPart` it walks crabbed, since the
-    Humanoid steers the root. `EnemyConfig`'s `BodyYawOffset` (degrees, applied at spawn by
-    `CombatEncounterService`) turns the body back at the root joint: the Raider uses 45. A model
-    whose `PrimaryPart` has no `Motor6D` joining it to the body warns and keeps its original facing.
-
     The **Go Back To Base** button (top-centre) should appear ONLY while a choice is actually live —
     i.e. exactly while that banner is pulsing. Confirm it is gone during a fight, gone while a Heal
     or Shop room is waiting on its interact prompt, and back the moment the exits unlock. Run a
