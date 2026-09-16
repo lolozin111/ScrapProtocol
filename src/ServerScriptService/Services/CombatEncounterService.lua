@@ -401,46 +401,6 @@ local function spawnEnemy(typeKey: string, typeData, spawnPosition: Vector3, mul
 		return nil
 	end
 
-	-- Optional per-type body yaw (EnemyConfig `BodyYawOffset`, degrees): turns the BODY relative to the
-	-- HumanoidRootPart, at the root joint. A rig whose parts were built facing off-axis from its root
-	-- walks and animates visibly crabbed, because the Humanoid steers the ROOT and everything jointed to
-	-- it inherits the skew. Corrected here rather than in Studio so it stays one config number per type
-	-- that a re-imported model can't silently lose. Not the same thing as the Hulk's FacingYawOffset,
-	-- which corrects where EnemyAnimation POINTS him, not how his rig was built.
-	--
-	-- Mirrored onto the model as a "BodyYawOffset" Attribute and re-applied whenever it changes, exactly
-	-- like HitboxSize/HitboxOffset below and for the same reason: which way a rig is skewed is settled by
-	-- looking at it, so it gets dialled in on a live enemy (server view) and the number copied back into
-	-- EnemyConfig. Re-applied from the rig's ORIGINAL C0 every time, never compounded onto the last one,
-	-- so dragging the number back and forth can't wander.
-	if typeData.BodyYawOffset then
-		-- The joint the whole body hangs off. Looked up by the HumanoidRootPart the rig actually has
-		-- rather than by model.PrimaryPart: a rig whose PrimaryPart was set to some other part (a torso,
-		-- a prop) still animates off its real root, and this correction should not quietly stop applying
-		-- just because someone pointed PrimaryPart somewhere else in Studio. Humanoid.RootPart is not
-		-- resolved yet at this point (the clone isn't parented), hence the by-name lookup first.
-		local rootPart = model:FindFirstChild("HumanoidRootPart") or model.PrimaryPart
-		local rootJoint
-		for _, descendant in ipairs(model:GetDescendants()) do
-			if descendant:IsA("Motor6D") and (descendant.Part0 == rootPart or descendant.Name == "Root" or descendant.Name == "RootJoint") then
-				rootJoint = descendant
-				break
-			end
-		end
-		if rootJoint then
-			local baseC0 = rootJoint.C0
-			local function applyBodyYaw()
-				local degrees = model:GetAttribute("BodyYawOffset")
-				rootJoint.C0 = baseC0 * CFrame.Angles(0, math.rad(typeof(degrees) == "number" and degrees or 0), 0)
-			end
-			model:SetAttribute("BodyYawOffset", typeData.BodyYawOffset)
-			applyBodyYaw()
-			model:GetAttributeChangedSignal("BodyYawOffset"):Connect(applyBodyYaw)
-		else
-			warn(("[CombatEncounterService] %s sets BodyYawOffset but its model has no root Motor6D (no joint off HumanoidRootPart, and none named Root/RootJoint) — the rig keeps its original facing."):format(typeKey))
-		end
-	end
-
 	-- Optional per-type hitbox (EnemyConfig `Hitbox = { Size, Offset }`): an invisible, query-only Part
 	-- welded to the root. A skinned MeshPart's collision stays in its REST pose, so on a rig animated
 	-- into a different pose (the Hulk lies down; his rest pose stands) shots at the visible body pass
@@ -503,6 +463,62 @@ local function spawnEnemy(typeKey: string, typeData, spawnPosition: Vector3, mul
 	-- the floor. (HipHeight is ground to the BOTTOM of the root, hence the half-height.)
 	local spawnLift = typeData.HipHeight and (typeData.HipHeight + model.PrimaryPart.Size.Y / 2) or 0
 	model:PivotTo(CFrame.new(spawnPosition + Vector3.new(0, spawnLift, 0)))
+
+	-- Optional per-type body yaw (EnemyConfig `BodyYawOffset`, degrees): turns the BODY relative to the
+	-- HumanoidRootPart, at the rig's root joint. A rig whose parts were built facing off-axis from its
+	-- root walks and animates visibly crabbed, because the Humanoid steers the ROOT and everything
+	-- jointed to it inherits the skew. Corrected here rather than in Studio so it stays one config
+	-- number per type that a re-imported model can't silently lose. Not the same thing as the Hulk's
+	-- FacingYawOffset, which corrects where EnemyAnimation POINTS him, not how his rig was built.
+	--
+	-- Deliberately AFTER the parent/PivotTo above: an R15 rig built in Studio can sit in ServerStorage
+	-- with NO Motor6Ds at all (the Raider has 68 welds and zero joints) — the engine builds them from
+	-- each MeshPart's RigAttachments when the model enters the workspace, which is why such a rig still
+	-- animates in game. Run any earlier and there is no root joint to turn yet, which is exactly what
+	-- the "no root Motor6D" warning below used to be reporting. BuildRigFromAttachments is called as a
+	-- fallback rather than unconditionally: it is the engine's own rigging pass, so asking for it is
+	-- harmless, but a rig that already has its joints must not be re-rigged out from under an animation.
+	--
+	-- Mirrored onto the model as a "BodyYawOffset" Attribute and re-applied whenever it changes, exactly
+	-- like HitboxSize/HitboxOffset above and for the same reason: which way a rig is skewed is settled by
+	-- looking at it, so it gets dialled in on a live enemy (server view) and the number copied back into
+	-- EnemyConfig. Re-applied from the rig's ORIGINAL C0 every time, never compounded onto the last one,
+	-- so dragging the number back and forth can't wander.
+	if typeData.BodyYawOffset then
+		local rootPart = model:FindFirstChild("HumanoidRootPart") or model.PrimaryPart
+		local function findRootJoint(): Motor6D?
+			for _, descendant in ipairs(model:GetDescendants()) do
+				if descendant:IsA("Motor6D") and (descendant.Part0 == rootPart or descendant.Name == "Root" or descendant.Name == "RootJoint") then
+					return descendant
+				end
+			end
+			return nil
+		end
+
+		local rootJoint = findRootJoint()
+		if not rootJoint then
+			local rigHumanoid = model:FindFirstChildOfClass("Humanoid")
+			if rigHumanoid then
+				pcall(function()
+					rigHumanoid:BuildRigFromAttachments()
+				end)
+				rootJoint = findRootJoint()
+			end
+		end
+
+		if rootJoint then
+			local baseC0 = rootJoint.C0
+			local function applyBodyYaw()
+				local degrees = model:GetAttribute("BodyYawOffset")
+				rootJoint.C0 = baseC0 * CFrame.Angles(0, math.rad(typeof(degrees) == "number" and degrees or 0), 0)
+			end
+			model:SetAttribute("BodyYawOffset", typeData.BodyYawOffset)
+			applyBodyYaw()
+			model:GetAttributeChangedSignal("BodyYawOffset"):Connect(applyBodyYaw)
+		else
+			warn(("[CombatEncounterService] %s sets BodyYawOffset but its model still has no root Motor6D after rigging — the rig keeps its original facing."):format(typeKey))
+		end
+	end
 
 	-- See ENEMY_COLLISION_GROUP's own comment above — every part of every spawned enemy joins the
 	-- same group so they never physically shove each other while crowding the wall.
