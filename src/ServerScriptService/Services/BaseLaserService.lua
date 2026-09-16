@@ -31,12 +31,8 @@ local lasersOn: { [number]: boolean } = {} -- owner UserId -> on
 local laserParts: { [number]: { BasePart } } = {} -- owner UserId -> laser parts in their current base
 local prompts: { [number]: { ProximityPrompt } } = {}
 
-local function nameIs(inst: Instance, wanted: string): boolean
-	return string.lower(inst.Name) == string.lower(wanted)
-end
-
--- Prefix match, so a base with several lasers works however they are named: "Laser", "Laser1", "Laser2",
--- a "Lasers" folder or model holding them all.
+-- Prefix match, so names work however they are numbered: "Laser", "Laser1", a "Lasers" folder holding
+-- them all; "Button", "ButtonT4", "ButtonT5".
 local function nameStartsWith(inst: Instance, prefix: string): boolean
 	return string.sub(string.lower(inst.Name), 1, #prefix) == string.lower(prefix)
 end
@@ -122,8 +118,19 @@ local function wireBase(player: Player, baseModel: Model)
 
 	local buttons = {}
 	for _, inst in ipairs(baseModel:GetDescendants()) do
-		if nameIs(inst, CONFIG.ButtonName) then
-			table.insert(buttons, inst)
+		if nameStartsWith(inst, CONFIG.ButtonName) then
+			-- Skip a "Button..." part inside a "Button..." model, or the one button would get two prompts.
+			local parent, nested = inst.Parent, false
+			while parent and parent ~= baseModel do
+				if nameStartsWith(parent, CONFIG.ButtonName) then
+					nested = true
+					break
+				end
+				parent = parent.Parent
+			end
+			if not nested then
+				table.insert(buttons, inst)
+			end
 		end
 	end
 
