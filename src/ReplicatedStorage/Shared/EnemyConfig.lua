@@ -103,6 +103,7 @@ EnemyConfig.Types = {
 		WalkFacingOffset = -60,
 		Animations = {
 			Move = "rbxassetid://103569921109638",
+			Attack = "rbxassetid://108543228338491",
 		},
 	}),
 	Brute = defineEnemy(RebelBase, {

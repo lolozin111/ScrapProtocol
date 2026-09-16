@@ -888,6 +888,14 @@ local function setupLocomotion(enemy)
 	if animations.Death then
 		loco.DeathTrack = loadTrack(animator, typeKey, "Death", animations.Death, false, Enum.AnimationPriority.Action)
 	end
+	if animations.Attack then
+		-- Action priority so it plays over the walk, and unlooped so one hit is one swing. Cosmetic:
+		-- the damage is still the pattern's own ContactDamage on its own cooldown, NOT marker-timed off
+		-- this animation (that is what AIPattern "Animated" is for, see the top of this file). Keep the
+		-- animation about as long as the type's AttackCooldown or the swing gets cut off by the next one.
+		loco.AttackTrack = loadTrack(animator, typeKey, "Attack", animations.Attack, false, Enum.AnimationPriority.Action)
+	end
+
 
 	-- The pattern stops ticking a dead enemy, so the loops would otherwise keep playing on the corpse.
 	-- Disconnected with the Humanoid when the encounter destroys the model.
@@ -907,6 +915,21 @@ end
 
 -- `walking` is the pattern's own decision (out of attack range and not stunned), not measured motion,
 -- for the same reason Tick's Move block gives.
+-- One swing, played by the pattern at the moment it lands a contact hit. Silent no-op for a type with
+-- no Attack animation, which is most of them.
+function EnemyAnimation.PlayAttack(enemy)
+	if enemy.Anim then
+		return -- an "Animated" enemy picks and plays its own attacks, marker-timed
+	end
+	if not enemy.Loco then
+		enemy.Loco = setupLocomotion(enemy)
+	end
+	local track = enemy.Loco.AttackTrack
+	if track and not track.IsPlaying then
+		track:Play(0.1)
+	end
+end
+
 function EnemyAnimation.Locomotion(enemy, walking: boolean)
 	if enemy.Anim then
 		return -- an "Animated" enemy falling back to Chaser: Tick already loaded and owns its tracks

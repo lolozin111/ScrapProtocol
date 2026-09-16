@@ -184,6 +184,7 @@ EnemyAI.Patterns.Chaser = function(enemy, context)
 		if context.Now - enemy.LastAttackTime >= enemy.AttackCooldown and context.Now - enemy.SpawnTime >= SPAWN_GRACE_SECONDS then
 			enemy.LastAttackTime = context.Now
 			context.DamageTarget(enemy.ContactDamage)
+			EnemyAnimation.PlayAttack(enemy)
 		end
 	elseif context.Now - enemy.LastMoveThink >= MOVE_THINK_INTERVAL then
 		enemy.LastMoveThink = context.Now
