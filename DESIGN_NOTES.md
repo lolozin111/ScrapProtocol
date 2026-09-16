@@ -27,7 +27,7 @@ already made (numbers, mechanics, sequencing), not just vague direction.
 | HUD phase 3 (all station menus) | **Built and verified** — see "Road to release" below |
 | Raid overhaul | **Scope cut to one mode for v1 (2026-09-08)** — steps 5-6 deferred post-launch; step 1 built AND VERIFIED in Studio 2026-09-08, step 2 (room variant folders) BUILT and VERIFIED in Studio 2026-09-15; **step 3 (mode plumbing) BUILT 2026-09-15, not yet verified**; step 4 next but its mode identity is an open question, see Phase 00 below; **exit doors switched OFF 2026-09-09** — the Sector Map picks the next room again (`RaidConfig.ExitDoorsEnabled`) |
 | Enemy AI patterns | **Engine built, two patterns** — `Chaser` (six enemy types) and, shipped 2026-09-09, `Slam` (`Siegebreaker` only — a telegraphed wind-up/impact cycle, see "The Voidium infestation" below) |
-| Enemy art (Studio models) | **4 of 5 built (2026-09-10)** — Scavenger, Raider, Brute, Siegebreaker in `ServerStorage.EnemyModels`; VoidwakenHulk imported, textured, rigged with `FistR`/`FistL` Attachments, in `EnemyModels`, and FIGHTING in raids as of 2026-09-15 (HipHeight/hitbox/facing now come from EnemyConfig) — see "Resuming after a context reset" |
+| Enemy art (Studio models) | **All 5 built; all animated as of 2026-09-16** (walk + attack ids in `EnemyConfig.Animations`; Idle/Death deliberately left for a post-launch update). Originally: **4 of 5 built (2026-09-10)** — Scavenger, Raider, Brute, Siegebreaker in `ServerStorage.EnemyModels`; VoidwakenHulk imported, textured, rigged with `FistR`/`FistL` Attachments, in `EnemyModels`, and FIGHTING in raids as of 2026-09-15 (HipHeight/hitbox/facing now come from EnemyConfig) — see "Resuming after a context reset" |
 | Voidium infestation (lore + the raid boss) | **Partially built 2026-09-09** — `EliteTypes`/`BossTypes` split into separate pools and `Siegebreaker` shipped as the new elite; the bloom itself (the actual raid boss per Decision 2 below) is still designed, not built — see "The Voidium infestation" below; `Siegebreaker` also rolls into raid Combat rooms (`EliteChance`, 2026-09-09) |
 | Boss escort (spawn zones in the Boss room) | **Built 2026-09-15 with an interim count, untested in Studio** — the depth curve is still unbuilt, so `combatCount` is the Combat roll at the boss node's tier (Tier 3: 1–2 minions). User's call. See "Boss escort" below |
 | Animation pass | **Hulk DONE and verified 2026-09-15** — Idle `113796712422007`, Walk `103708147649106`, heavy combo `137947497885396` (`ImpactR` ×2 + `ImpactRFinal`), left sweep `105875185230848` (`SweepLStart`/`SweepLEnd`), all playing through `AIPattern = "Animated"` (`EnemyAnimation.lua`). No death or turn animation, by the user's choice. Next animation: the player's DASH (`DashConfig.AnimationId`, user is making it). Other enemies still have no attack tell. Details in "Resuming after a context reset" |
@@ -3364,7 +3364,57 @@ and frames.
 
 ### Resuming after a context reset
 
-**NEWEST — end of session 2026-09-14/15. Start here.** Everything below this paragraph is older.
+**NEWEST — end of session 2026-09-15/16. Start here.** Everything below this block is older.
+
+Shipped this session (all committed on `fix/audit-p0-p3`):
+- **Raid mode identity SETTLED and step 4 BUILT** (not yet verified in Studio) — see "SETTLED for
+  step 4" in Phase 00's build order for the rules and the implementation map, and README section 4's
+  "Extraction rewards" paragraph for the exact Studio test.
+- **Every regular enemy animates.** Only the Hulk could before, and only through `AIPattern =
+  "Animated"`, which refuses to start without attack animations. New: `EnemyAnimation.Locomotion`
+  (Idle/Move/Death) and `EnemyAnimation.PlayAttack`, both driven by `EnemyConfig`'s `Animations`
+  table and called from `EnemyAI.Patterns.Chaser` AND `.Slam` (Slam could not animate at all before).
+  Walk + attack ids are in for Scavenger, Raider, Brute; Siegebreaker has walk + slam. Idle and Death
+  slots are deliberately empty — the user is saving those for a post-launch update, "it feels good so
+  it doesn't need".
+- **`WalkFacingOffset`** (`EnemyConfig`, degrees; `EnemyAI.ensureFacing`/`aimFacing`) — an
+  AlignOrientation aims the WHOLE model at its target plus a build angle. The Raider needs -60.
+
+Hard-won lessons from this session:
+- **These enemy rigs carry NO Motor6Ds in `ServerStorage`.** The engine builds them from each
+  MeshPart's RigAttachments when the model enters the workspace. Six separate attempts to fix the
+  Raider's facing AT a joint failed for that one reason (all reverted; see the `BodyYawOffset`
+  commits). Anything that must work on these rigs has to work on the whole assembly instead.
+- **Never hand the user a Studio script that DELETES anything** — deleting a rig's Humanoid scale
+  NumberValues visibly broke a model, Ctrl+Z did not undo it, and their place auto-saves. See the
+  memory file `studio-scripts-never-delete`.
+- **Their models arrive needing rig repair**, and the same script fixes each: accessories welded
+  where they sit (never snapped to Roblox's standard attachment spots — that moved hand-placed
+  armour), held Tools joined by a `Motor6D` (not the `RightGrip` weld), collisions off on hair, and
+  an `Animator` added under the Humanoid.
+- **A scaled rig (theirs is 1.76) rescales gear on load** from an `OriginalSize` CHILD object, not
+  only the attribute of the same name.
+
+**Where to pick up — the user's own plan for 2026-09-16:** (1) finish the remaining BASE models;
+(2) guns in the player's hand — `ReplicatedStorage.WeaponTools` is still an empty folder, so decide
+Tool-with-Handle vs. a `Motor6D`-attached model, and note the Tool `RightGrip` lesson above;
+(3) a gun-holding animation for the player (the player has no animation system of its own yet —
+`DashConfig.AnimationId` is the only existing hook, and it is still `""`); (4) if that lands, ENEMY
+AI — the user: "rn they are pretty simple and superr dumb". Today there are three patterns total
+(`Chaser`, `Slam`, `Animated`); `DESIGN_NOTES`' own Phase 00 step 7 wants three NEW ones picked for
+VARIETY, and `EnemyAI.Patterns` is a flat named table precisely so each is one function plus one
+config line.
+
+**Open questions, none blocking:**
+- Step 4 needs its Studio pass, and its numbers (`RaidConfig.ExtractionRewards`) are unplaytested
+  placeholders — payout ranges, +35% per clear, +0.25 per boss, x2 cap.
+- Does the Siegebreaker's slam animation fit inside `SlamWindup` (0.9s)? Raise the windup if not.
+- Do the Brute/Siegebreaker need a `MoveAnimationSpeed` (they are the slow ones)?
+- The rest of the original Salvage Run stakes layer — `RunLocked` ore, a carry cap, a physical
+  Extraction room — is still unbuilt and was never discussed. Step 4 works without it.
+- The dash animation id is still unpasted (`DashConfig.AnimationId = ""`).
+
+**Session 2026-09-14/15.** (Superseded by the block above.)
 
 Shipped this session (all committed and pushed on branch `fix/audit-p0-p3`, NOT merged to `main`):
 - **The Hulk fights.** `AIPattern = "Animated"` / `EnemyAnimation.lua`: animation-marker hits
