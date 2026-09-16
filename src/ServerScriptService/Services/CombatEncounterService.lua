@@ -414,9 +414,15 @@ local function spawnEnemy(typeKey: string, typeData, spawnPosition: Vector3, mul
 	-- EnemyConfig. Re-applied from the rig's ORIGINAL C0 every time, never compounded onto the last one,
 	-- so dragging the number back and forth can't wander.
 	if typeData.BodyYawOffset then
+		-- The joint the whole body hangs off. Looked up by the HumanoidRootPart the rig actually has
+		-- rather than by model.PrimaryPart: a rig whose PrimaryPart was set to some other part (a torso,
+		-- a prop) still animates off its real root, and this correction should not quietly stop applying
+		-- just because someone pointed PrimaryPart somewhere else in Studio. Humanoid.RootPart is not
+		-- resolved yet at this point (the clone isn't parented), hence the by-name lookup first.
+		local rootPart = model:FindFirstChild("HumanoidRootPart") or model.PrimaryPart
 		local rootJoint
 		for _, descendant in ipairs(model:GetDescendants()) do
-			if descendant:IsA("Motor6D") and descendant.Part0 == model.PrimaryPart then
+			if descendant:IsA("Motor6D") and (descendant.Part0 == rootPart or descendant.Name == "Root" or descendant.Name == "RootJoint") then
 				rootJoint = descendant
 				break
 			end
@@ -431,7 +437,7 @@ local function spawnEnemy(typeKey: string, typeData, spawnPosition: Vector3, mul
 			applyBodyYaw()
 			model:GetAttributeChangedSignal("BodyYawOffset"):Connect(applyBodyYaw)
 		else
-			warn(("[CombatEncounterService] %s sets BodyYawOffset but no Motor6D joins its PrimaryPart to the body — the rig keeps its original facing."):format(typeKey))
+			warn(("[CombatEncounterService] %s sets BodyYawOffset but its model has no root Motor6D (no joint off HumanoidRootPart, and none named Root/RootJoint) — the rig keeps its original facing."):format(typeKey))
 		end
 	end
 
