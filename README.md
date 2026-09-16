@@ -1092,6 +1092,14 @@ to end:
     warning in Output. A held Tool (the Scavenger's pickaxe) only animates if it's joined to the hand
     by a `Motor6D`, not the `RightGrip` weld an equipped Tool comes with.
 
+    A rig whose body was built facing away from its `HumanoidRootPart` walks sideways, since the
+    Humanoid turns the root. `EnemyConfig`'s `WalkFacingOffset` (degrees) fixes it: `EnemyAI` aims the
+    whole model at what it is chasing with that angle added, through an `AlignOrientation` on the root
+    (`AutoRotate` off, network ownership forced to the server — the same treatment the Hulk gets). The
+    Raider uses -60, found by eye. It needs nothing from the rig itself, which is the point: these
+    enemy models carry NO Motor6Ds in `ServerStorage` at all, so a correction applied at a joint has
+    nothing to work with. Tune by trying values (45, -45, ±90, 180) — config changes need a fresh Play.
+
     The **Go Back To Base** button (top-centre) should appear ONLY while a choice is actually live —
     i.e. exactly while that banner is pulsing. Confirm it is gone during a fight, gone while a Heal
     or Shop room is waiting on its interact prompt, and back the moment the exits unlock. Run a
