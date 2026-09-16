@@ -892,7 +892,8 @@ local function setupLocomotion(enemy)
 		-- Action priority so it plays over the walk, and unlooped so one hit is one swing. Cosmetic:
 		-- the damage is still the pattern's own ContactDamage on its own cooldown, NOT marker-timed off
 		-- this animation (that is what AIPattern "Animated" is for, see the top of this file). Keep the
-		-- animation about as long as the type's AttackCooldown or the swing gets cut off by the next one.
+		-- animation no longer than the type's AttackCooldown, or a hit that lands mid-swing gets no swing
+		-- of its own (PlayAttack warns once if it is longer).
 		loco.AttackTrack = loadTrack(animator, typeKey, "Attack", animations.Attack, false, Enum.AnimationPriority.Action)
 	end
 
@@ -906,6 +907,9 @@ local function setupLocomotion(enemy)
 		if loco.MoveTrack then
 			loco.MoveTrack:Stop()
 		end
+		if loco.AttackTrack then
+			loco.AttackTrack:Stop() -- a swing held on its last pose would otherwise sit over the Death animation
+		end
 		if loco.DeathTrack then
 			loco.DeathTrack:Play()
 		end
@@ -917,6 +921,13 @@ end
 -- for the same reason Tick's Move block gives.
 -- One swing, played by the pattern at the moment it lands a contact hit. Silent no-op for a type with
 -- no Attack animation, which is most of them.
+--
+-- A swing that ends while the enemy is standing still is frozen just before its last frame instead of
+-- ending, and held until the next swing or until it walks off. Without an Idle animation there is
+-- nothing underneath the swing, so letting it end snapped the rig straight back to its rest T-pose
+-- between hits, which also chopped the tail off the swing itself.
+local ATTACK_HOLD_LEAD = 0.05 -- seconds before the natural end that the swing is frozen
+
 function EnemyAnimation.PlayAttack(enemy)
 	if enemy.Anim then
 		return -- an "Animated" enemy picks and plays its own attacks, marker-timed
@@ -924,10 +935,41 @@ function EnemyAnimation.PlayAttack(enemy)
 	if not enemy.Loco then
 		enemy.Loco = setupLocomotion(enemy)
 	end
-	local track = enemy.Loco.AttackTrack
-	if track and not track.IsPlaying then
+	local loco = enemy.Loco
+	local track = loco.AttackTrack
+	if not track or (track.IsPlaying and track.Speed > 0) then
+		return -- no Attack animation, or still mid-swing
+	end
+
+	loco.AttackPlayId = (loco.AttackPlayId or 0) + 1
+	local playId = loco.AttackPlayId
+	if track.IsPlaying then
+		-- Held on its last pose from the previous swing: restart it rather than blend it into itself.
+		track.TimePosition = 0
+		track:AdjustSpeed(1)
+	else
 		track:Play(0.1)
 	end
+
+	task.spawn(function()
+		-- Length reads 0 until the asset has loaded, which can still be true on the very first swing.
+		while track.Length == 0 and track.IsPlaying and loco.AttackPlayId == playId do
+			task.wait()
+		end
+		if track.Length > 0 and enemy.AttackCooldown and track.Length > enemy.AttackCooldown then
+			warnOnce(warnedSlot, tostring(enemy.TypeKey) .. "/AttackLength",
+				("[EnemyAnimation] %s's Attack animation is %.2fs but its AttackCooldown is %.2fs — hits that land mid-swing get no swing of their own. Shorten the animation or raise AttackCooldown in EnemyConfig."):format(tostring(enemy.TypeKey), track.Length, enemy.AttackCooldown))
+		end
+		task.wait(math.max(track.Length - track.TimePosition - ATTACK_HOLD_LEAD, 0))
+		if loco.AttackPlayId ~= playId or not track.IsPlaying then
+			return -- restarted by a newer swing, or stopped (death, despawn)
+		end
+		if loco.Walking then
+			track:Stop(0.2)
+		else
+			track:AdjustSpeed(0)
+		end
+	end)
 end
 
 function EnemyAnimation.Locomotion(enemy, walking: boolean)
@@ -936,6 +978,12 @@ function EnemyAnimation.Locomotion(enemy, walking: boolean)
 	end
 	if not enemy.Loco then
 		enemy.Loco = setupLocomotion(enemy)
+	end
+
+	enemy.Loco.Walking = walking
+	local attackTrack = enemy.Loco.AttackTrack
+	if walking and attackTrack and attackTrack.IsPlaying and attackTrack.Speed == 0 then
+		attackTrack:Stop(0.2) -- release a held swing pose (see PlayAttack) now that it is walking again
 	end
 
 	local moveTrack = enemy.Loco.MoveTrack
