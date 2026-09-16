@@ -223,8 +223,15 @@ them, AI patterns last because they need three raids to exist):
      so it works from room one and Cores stay a prize you take home.
    Still open, not discussed: whether ore also becomes `RunLocked`, a carry cap, and a physical
    Extraction room (the rest of the original Salvage Run stakes layer). Mode key stays `Standard`.
-4. Raid rewards rework (the settled rules above) — built on step 3's mode plumbing. NOT STARTED:
-   wait for the user's go-ahead.
+4. ~~Raid rewards rework~~ — **BUILT 2026-09-16, NOT YET VERIFIED IN STUDIO.** The settled rules
+   above, implemented as: `RaidConfig.ExtractionRewards` + `RollMapClearReward`/`RollBossReward`/
+   `ExtractMultiplier` (shared, so the HUD and the server agree); `state.PendingRewards` and
+   `state.BossesDefeated` in `RaidRoomService`, fed by `addPendingReward` from `onMapCleared` and the
+   Boss branch, banked with the multiplier in `completeRaid` and simply dropped (but REPORTED) by
+   `failRaid`/Abandon/disconnect; Cores stripped from `NodeConfig`s Combat tiers 2/3 and `BossLoot`;
+   the Cores shop item repriced to Scrap. `RaidClient` shows CONTRABAND/CORES — AT RISK rows plus an
+   EXTRACT BONUS row, and every end-of-raid toast names what was banked or lost. Still not built from
+   the original Salvage Run layer: `RunLocked` ore, a carry cap, a physical Extraction room.
 5. ~~Gauntlet~~ — **CUT FROM v1 (2026-09-08), first post-launch update.** A real card pool with real
    effects plus the run-only perk shop. Biggest content write.
 6. ~~Contract~~ — **CUT FROM v1 (2026-09-08), post-launch.** Largest new surface: board, objective
@@ -3382,10 +3389,9 @@ Hard-won lessons from this session, each cost real time:
 - **An internet outage (DnsResolve) looks like broken animations and a floating boss** — no
   animation loads, the rig shows its rest pose. Rule it out before tuning.
 
-**Where to pick up:** (1) the user verifies step 3 in Studio (a raid should behave exactly as before;
-Output should be clean). (2) Step 4's rules are SETTLED (2026-09-15) — see "SETTLED for step 4" under
-Phase 00's build order (map-clear/boss-only Contraband and Cores, lost on death, boss-count extract
-multiplier, Scrap-only shop). Build it only on the user's go-ahead. (3) Paste the dash animation id when the user has it. (4) Offer
+**Where to pick up:** (1) Step 3 VERIFIED in Studio by the user (2026-09-16, "step 3 all good").
+(2) Step 4 is BUILT but NOT verified — see its entry in Phase 00's build order, and README section 4's
+"Extraction rewards" paragraph for the exact test. (3) Paste the dash animation id when the user has it. (4) Offer
 a PR from `fix/audit-p0-p3` to `main` — nothing from this session is on `main`.
 
 **START AT "Road to release" NEAR THE TOP OF THIS FILE, not here.** That section is the live plan for

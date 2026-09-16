@@ -604,7 +604,7 @@ no manual copy-pasting scripts into Studio.
 - **Black Market & Hacker Machine** — the endgame content faucet. A dealer sells **sealed cases**
   from stock that rotates every 4 hours; you open them on a separate **Hacker Machine**, which takes
   real time and finishes whether or not you're online. Scrap and Cores buy the ordinary lines;
-  **Contraband** — earned 3-6 on a clean raid extract and 2 per boss wave — buys the premium
+  **Contraband** — earned by clearing raid maps and beating raid bosses, banked only if you extract, plus 2 per boss wave — buys the premium
   Blackline case, the only one that rolls Mythical (i.e. Ultimate mods). A decode can be rushed two
   ways with deliberately different risk: **Robux** is instant and safe, **25 Cores** is instant but
   has a 25% chance to corrupt the case and lose it outright. The dealer shows its odds per case. See
@@ -1108,6 +1108,17 @@ to end:
     the trail reset, and a green **Extract** button appearing. Click Extract and confirm it ends the
     raid and returns you home. Try starting a second raid with Energy at 0 (see step 9) and confirm
     a "Not enough Energy" toast instead of teleporting you anywhere.
+
+    **Extraction rewards (the point of a raid).** Combat rooms now pay only Scrap and Ore, which you
+    always keep. **Contraband and Cores come only from clearing a map and from beating a Boss node**,
+    and they are HELD, not banked: the top-left panel shows them as **AT RISK** in orange. Confirm the
+    "Map cleared!" toast names what you earned, that the at-risk rows go up, and that each later clear
+    pays more than the one before (`RaidConfig.ExtractionRewards.MapGrowthPerClear`, +35% per clear).
+    Beat a Boss node and confirm an **EXTRACT BONUS** row appears at `x1.25`, rising 0.25 per boss to a
+    cap of `x2`. Then Extract and confirm the toast names the multiplied total, and that your real
+    Contraband and Cores go up by exactly that. Finally, do a run the other way: earn some, then die
+    or Abandon, and confirm the toast says what you lost and that **none** of it reaches your profile.
+    The raid Shop is Scrap-only now, so a first-room purchase must still be possible.
 
     **Player spawn marker (optional):** in a Combat Room Model under `ServerStorage.RaidRoomModels`
     (a Model with a `PrimaryPart`), place a Part named exactly `PlayerSpawn` somewhere in the room and

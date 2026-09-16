@@ -49,7 +49,6 @@ NodeConfig.CombatTiers = {
 		Loot = {
 			{ Kind = "Ore", OreKey = "GoldOre", Min = 10, Max = 20, Chance = 1.0 },
 			{ Kind = "Currency", CurrencyKey = "Scrap", Min = 15, Max = 30, Chance = 1.0 },
-			{ Kind = "Currency", CurrencyKey = "Cores", Min = 1, Max = 3, Chance = 0.5 },
 		},
 	},
 	[3] = {
@@ -59,7 +58,6 @@ NodeConfig.CombatTiers = {
 		CooldownSeconds = 120,
 		Loot = {
 			{ Kind = "Ore", OreKey = "PlatinumOre", Min = 5, Max = 12, Chance = 1.0 },
-			{ Kind = "Currency", CurrencyKey = "Cores", Min = 3, Max = 8, Chance = 1.0 },
 			{ Kind = "Currency", CurrencyKey = "Scrap", Min = 30, Max = 60, Chance = 1.0 },
 		},
 	},
@@ -74,7 +72,6 @@ NodeConfig.CombatTiers = {
 
 NodeConfig.BossLoot = {
 	{ Kind = "Ore", OreKey = "PlatinumOre", Min = 10, Max = 20, Chance = 1.0 },
-	{ Kind = "Currency", CurrencyKey = "Cores", Min = 5, Max = 12, Chance = 1.0 },
 	{ Kind = "Currency", CurrencyKey = "Scrap", Min = 50, Max = 90, Chance = 1.0 },
 }
 
@@ -85,7 +82,9 @@ NodeConfig.BossLoot = {
 NodeConfig.HealCooldownSeconds = 20 -- free, but not spammable mid-raid
 
 ----------------------------------------------------------------------
--- Shop — the actual sink for Scrap/Cores currency
+-- Shop — the actual sink for the run's collected Scrap. Deliberately Scrap-only: Cores are no
+-- longer collected room by room (see RaidConfig.ExtractionRewards), so a Cores price here would be
+-- unbuyable until the first map clear, and Cores are meant to be a prize you carry home anyway.
 ----------------------------------------------------------------------
 
 NodeConfig.ShopCatalog = {
@@ -111,7 +110,7 @@ NodeConfig.ShopCatalog = {
 	},
 	GoldCache = {
 		DisplayName = "Platinum Ore Cache",
-		CostCurrency = "Cores", CostAmount = 10,
+		CostCurrency = "Scrap", CostAmount = 120,
 		Grant = { Kind = "Ore", OreKey = "PlatinumOre", Amount = 8 },
 	},
 }

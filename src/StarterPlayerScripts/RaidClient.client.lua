@@ -226,15 +226,39 @@ local function currencyRow(order: number, label: string)
 end
 
 local scrapRow, scrapValueLabel = currencyRow(1, "SCRAPS COLLECTED")
-local coresRow, coresValueLabel = currencyRow(2, "CORES COLLECTED")
+
+-- The at-risk pile: Contraband and Cores earned from map clears and Boss nodes, which are only
+-- banked by extracting and lost outright on a Defeat or an Abandon (RaidConfig.ExtractionRewards).
+-- Shown in Accent rather than Text, and captioned AT RISK, because the whole reward design depends
+-- on the player knowing there is something here to lose before they push into another map.
+local contrabandRow, contrabandValueLabel = currencyRow(2, "CONTRABAND — AT RISK")
+contrabandValueLabel.TextColor3 = COLOR.Accent
+contrabandRow.Visible = false
+
+local coresRow, coresValueLabel = currencyRow(3, "CORES — AT RISK")
+coresValueLabel.TextColor3 = COLOR.Accent
 coresRow.Visible = false
 
-local function updateRunCurrencyLabel(runCurrencyCollected)
+-- What extracting right now would multiply that pile by — one per boss beaten, capped. Hidden at
+-- x1 so it only ever appears as a reward for having fought something.
+local multiplierRow, multiplierValueLabel = currencyRow(4, "EXTRACT BONUS")
+multiplierValueLabel.TextColor3 = COLOR.Good
+multiplierRow.Visible = false
+
+local function updateRunCurrencyLabel(runCurrencyCollected, pendingRewards, extractMultiplier)
 	local scrap = (runCurrencyCollected and runCurrencyCollected.Scrap) or 0
-	local cores = (runCurrencyCollected and runCurrencyCollected.Cores) or 0
 	scrapValueLabel.Text = tostring(scrap)
+
+	local contraband = (pendingRewards and pendingRewards.Contraband) or 0
+	local cores = (pendingRewards and pendingRewards.Cores) or 0
+	contrabandValueLabel.Text = tostring(contraband)
+	contrabandRow.Visible = contraband > 0
 	coresValueLabel.Text = tostring(cores)
 	coresRow.Visible = cores > 0
+
+	local multiplier = extractMultiplier or 1
+	multiplierValueLabel.Text = ("x%.2f"):format(multiplier)
+	multiplierRow.Visible = multiplier > 1 and (contraband > 0 or cores > 0)
 end
 
 ----------------------------------------------------------------------
@@ -1227,7 +1251,7 @@ RaidRoomUpdate.OnClientEvent:Connect(function(payload)
 		updateRaidButtons()
 
 	elseif status == "RunCurrencyUpdate" then
-		updateRunCurrencyLabel(payload.RunCurrencyCollected)
+		updateRunCurrencyLabel(payload.RunCurrencyCollected, payload.PendingRewards, payload.ExtractMultiplier)
 
 	elseif status == "AwaitingInteraction" then
 		-- Heal/Shop now wait for a Part interaction before actually triggering — see
@@ -1420,8 +1444,18 @@ RaidRoomUpdate.OnClientEvent:Connect(function(payload)
 			extractUnlocked = true
 		end
 		updateRaidButtons()
-		showToast(payload.JustUnlocked and "Map cleared! Extract is now available whenever you're ready."
-			or "Map cleared — moving to a new area.", payload.JustUnlocked and 4 or 3)
+		-- The payout is the news here, not the map: say what was earned, and that it is only kept by
+		-- extracting (see RaidConfig.ExtractionRewards).
+		local earned = {}
+		if (payload.RewardContraband or 0) > 0 then
+			table.insert(earned, payload.RewardContraband .. " Contraband")
+		end
+		if (payload.RewardCores or 0) > 0 then
+			table.insert(earned, payload.RewardCores .. " Cores")
+		end
+		local earnedText = #earned > 0 and (" Earned " .. table.concat(earned, " and ") .. " — extract to keep it.") or ""
+		showToast((payload.JustUnlocked and "Map cleared! Extract is now available whenever you are ready."
+			or "Map cleared — moving to a new area.") .. earnedText, payload.JustUnlocked and 5 or 4)
 
 	elseif status == "Defeated" then
 		inRaid = false
@@ -1430,7 +1464,10 @@ RaidRoomUpdate.OnClientEvent:Connect(function(payload)
 		roomFrame.Visible = false
 		hideSectorMap()
 		updateRaidButtons()
-		showToast("Raid failed — " .. (payload.Reason or "you went down.") .. " Back to base.", 5)
+		local lost = (payload.LostContraband or 0) + (payload.LostCores or 0) > 0
+			and (" Lost " .. (payload.LostContraband or 0) .. " Contraband and " .. (payload.LostCores or 0) .. " Cores.")
+			or ""
+		showToast("Raid failed — " .. (payload.Reason or "you went down.") .. lost .. " Back to base.", 5)
 
 	elseif status == "Extracted" then
 		inRaid = false
@@ -1439,7 +1476,19 @@ RaidRoomUpdate.OnClientEvent:Connect(function(payload)
 		roomFrame.Visible = false
 		hideSectorMap()
 		updateRaidButtons()
-		showToast("Extracted! Made it out clean.", 5)
+		local banked = {}
+		if (payload.Contraband or 0) > 0 then
+			table.insert(banked, payload.Contraband .. " Contraband")
+		end
+		if (payload.Cores or 0) > 0 then
+			table.insert(banked, payload.Cores .. " Cores")
+		end
+		local bonus = (payload.Multiplier or 1) > 1
+			and ((" (x%.2f for %d bosses)"):format(payload.Multiplier, payload.BossesDefeated or 0))
+			or ""
+		showToast(#banked > 0
+			and ("Extracted with " .. table.concat(banked, " and ") .. bonus .. ".")
+			or "Extracted! Made it out clean.", 5)
 
 	elseif status == "Abandoned" then
 		inRaid = false
@@ -1448,7 +1497,10 @@ RaidRoomUpdate.OnClientEvent:Connect(function(payload)
 		roomFrame.Visible = false
 		hideSectorMap()
 		updateRaidButtons()
-		showToast("Raid abandoned.", 3)
+		local walkedAway = (payload.LostContraband or 0) + (payload.LostCores or 0) > 0
+			and ((" Left behind %d Contraband and %d Cores."):format(payload.LostContraband or 0, payload.LostCores or 0))
+			or ""
+		showToast("Raid abandoned." .. walkedAway, 4)
 
 	elseif status == "NoEnergy" then
 		showToast("Not enough Energy to start a raid.", 3)

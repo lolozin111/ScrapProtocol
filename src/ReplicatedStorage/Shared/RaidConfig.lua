@@ -509,6 +509,69 @@ function RaidConfig.GetLootMultiplier(tier: number, totalNodesVisited: number): 
 	return tierData.Multiplier * RaidConfig.GetRunProgressionMultiplier(totalNodesVisited)
 end
 
+----------------------------------------------------------------------
+-- EXTRACTION REWARDS — what a raid is actually FOR (2026-09-15, settled with the user; see
+-- DESIGN_NOTES.md's "SETTLED for step 4"). "You can get some quick resources and stuff, but its the
+-- main way to get contraband and some cores, but we only reward those after a player finishes a map
+-- node and then the game gotta make a new one so the player can continue, and also in boss nodes."
+--
+-- The shape, and why:
+--   * Scrap and Ore still drop room by room and are still always kept. Those are the "quick
+--     resources" — the raid must still pay for itself even on a run that ends badly.
+--   * Contraband and Cores come ONLY from clearing a map and from beating a Boss, and they are HELD
+--     (RaidRoomService's state.PendingRewards) rather than banked as they're earned. A Defeat or an
+--     Abandon loses the lot. That is the whole stakes layer: pushing into one more map risks
+--     everything already earned, and Extract is the decision that keeps it.
+--   * Each clear pays more than the last (MapGrowthPerClear), so depth is worth the risk.
+--   * Extracting MULTIPLIES the held pile by how many BOSSES were beaten — "make it multiply based
+--     on the number of bosses defeated, so it encourages players on doing bosses nodes". Bosses sit
+--     on 1-2 random nodes per map at BossMinStageIndex or deeper, so most maps CAN be finished
+--     without fighting one, which is what makes choosing to fight one a real decision.
+--
+-- Growth and the boss multiplier stack, which is why both start modest and the multiplier is
+-- capped. All placeholder amounts — tune here, never in the service.
+----------------------------------------------------------------------
+
+RaidConfig.ExtractionRewards = {
+	-- Paid when a map's last node is cleared (RaidRoomService.onMapCleared).
+	MapClear = { ContrabandMin = 2, ContrabandMax = 4, CoresMin = 3, CoresMax = 6 },
+	-- Paid on top of the Boss room's own loot table (NodeConfig.BossLoot, Scrap/Ore only now).
+	Boss = { ContrabandMin = 3, ContrabandMax = 6, CoresMin = 5, CoresMax = 10 },
+
+	-- Each map already cleared adds this fraction of the base payout to the next one: the first
+	-- clear pays 1x, the second 1.35x, the third 1.7x, and so on, uncapped — a run that deep has
+	-- already survived everything the multiplier is asking it to risk.
+	MapGrowthPerClear = 0.35,
+
+	-- Extract multiplier: 1 + this per boss beaten, capped. 0 bosses x1, 1 boss x1.25, 4+ x2.
+	MultiplierPerBoss = 0.25,
+	MultiplierCap = 2.0,
+}
+
+-- Rolled payout for finishing a map, grown by how many were already finished. `mapsCleared` is the
+-- count INCLUDING the one just cleared (1 on the first), so the first clear gets the flat base.
+function RaidConfig.RollMapClearReward(mapsCleared: number): (number, number)
+	local rules = RaidConfig.ExtractionRewards
+	local growth = 1 + rules.MapGrowthPerClear * math.max(0, mapsCleared - 1)
+	local contraband = math.floor(math.random(rules.MapClear.ContrabandMin, rules.MapClear.ContrabandMax) * growth + 0.5)
+	local cores = math.floor(math.random(rules.MapClear.CoresMin, rules.MapClear.CoresMax) * growth + 0.5)
+	return contraband, cores
+end
+
+-- Rolled payout for beating a Boss node. Flat: a boss already pays twice, once here and again
+-- through the extract multiplier below.
+function RaidConfig.RollBossReward(): (number, number)
+	local boss = RaidConfig.ExtractionRewards.Boss
+	return math.random(boss.ContrabandMin, boss.ContrabandMax), math.random(boss.CoresMin, boss.CoresMax)
+end
+
+-- What a clean Extract multiplies the held pile by. Shared (not server-only) so the raid HUD can
+-- show the player what extracting is currently worth without inventing its own arithmetic.
+function RaidConfig.ExtractMultiplier(bossesDefeated: number): number
+	local rules = RaidConfig.ExtractionRewards
+	return math.min(rules.MultiplierCap, 1 + rules.MultiplierPerBoss * math.max(0, bossesDefeated or 0))
+end
+
 -- Regular-node type roll: Heal is forced at a fixed interval (not random — see this file's header
 -- and HealInterval above), Shop and then Ambush are each a flat independent chance, and Combat is
 -- everything else — the deliberate "common case" per the design ask. `regularCounter` is the

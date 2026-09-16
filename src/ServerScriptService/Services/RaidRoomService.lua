@@ -693,11 +693,26 @@ local function pushInventory(player: Player, profile)
 	})
 end
 
+-- The client's raid HUD mirrors both piles: RunCurrencyCollected (spendable at the raid Shop, always
+-- banked) and PendingRewards (the extraction-only pile, lost on a bad exit), plus what extracting is
+-- currently worth. One payload for both so the two can never disagree on screen.
 local function pushRunCurrencyUpdate(state)
 	RaidRoomUpdate:FireClient(state.Player, {
 		Status = "RunCurrencyUpdate",
 		RunCurrencyCollected = state.RunCurrencyCollected,
+		PendingRewards = state.PendingRewards,
+		BossesDefeated = state.BossesDefeated,
+		ExtractMultiplier = RaidConfig.ExtractMultiplier(state.BossesDefeated or 0),
 	})
+end
+
+-- Map-clear and Boss payouts land here, NOT on the profile: held for the whole run and only banked
+-- by a clean Extract (completeRaid), multiplied by how many bosses were beaten. This is the entire
+-- risk half of a raid — see RaidConfig.ExtractionRewards for the design and the numbers.
+local function addPendingReward(state, contraband: number, cores: number)
+	state.PendingRewards.Contraband += contraband
+	state.PendingRewards.Cores += cores
+	pushRunCurrencyUpdate(state)
 end
 
 -- One shared sink for anything earned this run — a Combat/Ambush/Boss loot roll, or a Shop
@@ -1034,11 +1049,19 @@ local function onMapCleared(state)
 	state.MapsCleared += 1
 	local justUnlocked = not state.ExtractUnlocked
 	state.ExtractUnlocked = true
+
+	-- The reason to finish a map at all. Held, not banked: a Defeat or Abandon from here on loses it
+	-- (see addPendingReward), and each clear pays more than the last.
+	local contraband, cores = RaidConfig.RollMapClearReward(state.MapsCleared)
+	addPendingReward(state, contraband, cores)
+
 	RaidRoomUpdate:FireClient(state.Player, {
 		Status = "MapCleared",
 		MapsCleared = state.MapsCleared,
 		ExtractUnlocked = state.ExtractUnlocked,
 		JustUnlocked = justUnlocked,
+		RewardContraband = contraband,
+		RewardCores = cores,
 	})
 
 	state.Map = RaidConfig.GenerateMap(modeOf(state).Map)
@@ -1083,21 +1106,46 @@ end
 
 local function failRaid(state, reason: string)
 	settleRunLoot(state, true) -- forfeit: dying counts the same as abandoning for RunLocked drops
-	RaidRoomUpdate:FireClient(state.Player, { Status = "Defeated", Reason = reason })
+	-- The held pile dies with the run. Reported rather than silently dropped: losing it IS the
+	-- consequence the whole reward design is built around, so the player has to see what it cost.
+	local lost = state.PendingRewards
+	RaidRoomUpdate:FireClient(state.Player, {
+		Status = "Defeated",
+		Reason = reason,
+		LostContraband = lost.Contraband,
+		LostCores = lost.Cores,
+	})
 	cleanupRaid(state, true)
 end
 
 local function completeRaid(state)
 	settleRunLoot(state, false) -- clean exit — everything collected is kept, no forfeiture
 
-	-- Contraband is paid on a CLEAN extract only, never on a defeat or an abandon. That is what
-	-- makes extracting a decision rather than a formality — see BlackMarketService.Income.
-	local income = BlackMarketService.Income
-	BlackMarketService.AwardContraband(
-		state.Player,
-		math.random(income.RaidExtractMin, income.RaidExtractMax),
-		"Raid extraction")
-	RaidRoomUpdate:FireClient(state.Player, { Status = "Extracted" })
+	-- The extraction payout. Contraband and Cores earned from map clears and Boss nodes have been
+	-- HELD all run (state.PendingRewards) and only reach the profile here, multiplied by how many
+	-- bosses were beaten — see RaidConfig.ExtractionRewards. Nothing is paid for a run that never
+	-- cleared a map, which is correct: Extract isn't even offered until the first clear.
+	local multiplier = RaidConfig.ExtractMultiplier(state.BossesDefeated)
+	local contraband = math.floor(state.PendingRewards.Contraband * multiplier + 0.5)
+	local cores = math.floor(state.PendingRewards.Cores * multiplier + 0.5)
+
+	if contraband > 0 then
+		BlackMarketService.AwardContraband(state.Player, contraband, "Raid extraction")
+	end
+	if cores > 0 then
+		DataService.AddCurrency(state.Player, "Cores", cores)
+	end
+	-- Both currencies just moved; the client's own mirror has to follow or the payout looks like it
+	-- never happened (see CLAUDE.md on PushWallet).
+	DataService.PushWallet(state.Player)
+
+	RaidRoomUpdate:FireClient(state.Player, {
+		Status = "Extracted",
+		Contraband = contraband,
+		Cores = cores,
+		Multiplier = multiplier,
+		BossesDefeated = state.BossesDefeated,
+	})
 	cleanupRaid(state, true)
 end
 
@@ -1525,6 +1573,13 @@ local function beginBoss(state, node)
 			local lootMultiplier = RaidConfig.GetLootMultiplier(node.Tier, state.TotalNodesVisited)
 			local granted = grantRunLoot(state, NodeConfig.BossLoot, lootMultiplier)
 
+			-- A boss pays twice: this held Contraband/Cores payout, and a permanently better extract
+			-- multiplier. Bosses sit on 1-2 random nodes per map and can usually be walked around, so
+			-- both halves are the reward for choosing to fight one.
+			state.BossesDefeated += 1
+			local bossContraband, bossCores = RaidConfig.RollBossReward()
+			addPendingReward(state, bossContraband, bossCores)
+
 			-- Mode rule: a mode without cards skips the pick and moves on. UNTESTED path, since the only
 			-- mode today (Standard) has cards on; the client's BossCleared handler has only ever seen
 			-- a payload WITH CardChoices, so check it copes before shipping a card-less mode.
@@ -1533,6 +1588,9 @@ local function beginBoss(state, node)
 					Status = "BossCleared",
 					Loot = granted,
 					HealedToFull = true,
+					RewardContraband = bossContraband,
+					RewardCores = bossCores,
+					BossesDefeated = state.BossesDefeated,
 				})
 				advanceFromNode(state)
 				return
@@ -1545,6 +1603,9 @@ local function beginBoss(state, node)
 				Status = "BossCleared",
 				Loot = granted,
 				HealedToFull = true,
+				RewardContraband = bossContraband,
+				RewardCores = bossCores,
+				BossesDefeated = state.BossesDefeated,
 				CardChoices = cardChoices,
 			})
 			-- Deliberately NOT calling advanceFromNode yet — see RaidRoomAction's "ChooseCard".
@@ -1689,6 +1750,11 @@ RequestStartRaid.OnServerEvent:Connect(function(player: Player, requestedMode: a
 		RunCurrencyCollected = { Scrap = 0, Cores = 0 }, -- this raid's own live-spendable currency —
 			-- "scraps collected... instead of the scraps that you currently have as a player, in
 			-- your base" — always banked in full whenever/however the raid ends
+		PendingRewards = { Contraband = 0, Cores = 0 }, -- the extraction-only pile: map-clear and Boss
+			-- payouts are HELD here and only reach the profile on a clean Extract, multiplied by
+			-- BossesDefeated. A Defeat or Abandon loses all of it — see RaidConfig.ExtractionRewards
+		BossesDefeated = 0, -- across the whole raid, not the current chapter — drives the extract
+			-- multiplier ("encourages players on doing bosses nodes")
 		PendingCardChoice = nil :: any, -- set by beginBoss right after a Boss clear, cleared by
 			-- RaidRoomAction's "ChooseCard" handler
 		CollectedCards = {}, -- placeholder record of what's been picked — no real buff effects
@@ -1805,7 +1871,13 @@ AbandonRaid.OnServerEvent:Connect(function(player: Player)
 		return
 	end
 	settleRunLoot(state, true) -- forfeit: RunLocked (non-Permanent) drops are lost on Abandon
-	RaidRoomUpdate:FireClient(player, { Status = "Abandoned" })
+	-- Same as a Defeat for the held pile: walking out early loses every map-clear and Boss payout,
+	-- which is exactly what Extract exists to protect (see RaidConfig.ExtractionRewards).
+	RaidRoomUpdate:FireClient(player, {
+		Status = "Abandoned",
+		LostContraband = state.PendingRewards.Contraband,
+		LostCores = state.PendingRewards.Cores,
+	})
 	cleanupRaid(state, true)
 end)
 
