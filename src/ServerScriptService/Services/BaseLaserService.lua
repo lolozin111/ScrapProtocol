@@ -29,6 +29,7 @@ local BaseLaserService = {}
 
 local lasersOn: { [number]: boolean } = {} -- owner UserId -> on
 local laserParts: { [number]: { BasePart } } = {} -- owner UserId -> laser parts in their current base
+local laserFx: { [number]: { Instance } } = {} -- owner UserId -> decals/beams/lights drawing those lasers
 local prompts: { [number]: { ProximityPrompt } } = {}
 
 -- Prefix match, so names work however they are numbered: "Laser", "Laser1", a "Lasers" folder holding
@@ -74,21 +75,56 @@ local function promptParentFor(button: Instance): Instance?
 	return button:FindFirstChildWhichIsA("BasePart", true)
 end
 
+-- Everything else that draws a laser besides the Part itself: a Decal/Texture on it still shows on a
+-- fully transparent Part, and a Beam can hang off a laser's Attachment while living somewhere else in
+-- the base entirely. Collected once per build, since the Beam search walks the whole base.
+local function collectLaserFx(baseModel: Model, parts: { BasePart }): { Instance }
+	local isLaserPart, fx = {}, {}
+	for _, part in ipairs(parts) do
+		isLaserPart[part] = true
+		for _, inst in ipairs(part:GetDescendants()) do
+			if not inst:IsA("Beam") then -- Beams are all picked up by the pass below
+				table.insert(fx, inst)
+			end
+		end
+	end
+	for _, inst in ipairs(baseModel:GetDescendants()) do
+		if inst:IsA("Beam") then
+			local a0, a1 = inst.Attachment0, inst.Attachment1
+			if isLaserPart[inst.Parent] or (a0 and isLaserPart[a0.Parent]) or (a1 and isLaserPart[a1.Parent]) then
+				table.insert(fx, inst)
+			end
+		end
+	end
+	return fx
+end
+
+-- The as-built look is remembered the first time, so ON restores exactly what was authored.
+local function setShown(inst: Instance, on: boolean)
+	if inst:IsA("BasePart") or inst:IsA("Decal") then -- Decal covers Texture
+		if inst:GetAttribute("LaserOnTransparency") == nil then
+			inst:SetAttribute("LaserOnTransparency", inst.Transparency)
+		end
+		inst.Transparency = on and inst:GetAttribute("LaserOnTransparency") or 1
+	elseif inst:IsA("Beam") or inst:IsA("ParticleEmitter") or inst:IsA("Light") or inst:IsA("Trail")
+		or inst:IsA("Highlight") or inst:IsA("SurfaceGui") or inst:IsA("BillboardGui") then
+		inst.Enabled = on
+	elseif inst:IsA("SelectionBox") then
+		inst.Visible = on
+	end
+end
+
 local function applyState(userId: number)
 	local on = lasersOn[userId] == true
 	for _, part in ipairs(laserParts[userId] or {}) do
-		-- The as-built look is remembered on first touch, so ON restores exactly what was authored.
-		if part:GetAttribute("LaserOnTransparency") == nil then
-			part:SetAttribute("LaserOnTransparency", part.Transparency)
+		if part:GetAttribute("LaserOnCanCollide") == nil then
 			part:SetAttribute("LaserOnCanCollide", part.CanCollide)
 		end
-		part.Transparency = on and part:GetAttribute("LaserOnTransparency") or 1
 		part.CanCollide = on and part:GetAttribute("LaserOnCanCollide") or false
-		for _, fx in ipairs(part:GetDescendants()) do
-			if fx:IsA("Beam") or fx:IsA("ParticleEmitter") or fx:IsA("Light") or fx:IsA("Trail") then
-				fx.Enabled = on
-			end
-		end
+		setShown(part, on)
+	end
+	for _, inst in ipairs(laserFx[userId] or {}) do
+		setShown(inst, on)
 	end
 	for _, prompt in ipairs(prompts[userId] or {}) do
 		prompt.ActionText = on and CONFIG.DeactivateText or CONFIG.ActivateText
@@ -114,6 +150,7 @@ local function wireBase(player: Player, baseModel: Model)
 	local userId = player.UserId
 	-- The previous base's parts and prompts were destroyed with it, taking their connections along.
 	laserParts[userId] = collectLaserParts(baseModel)
+	laserFx[userId] = collectLaserFx(baseModel, laserParts[userId])
 	prompts[userId] = {}
 
 	local buttons = {}
@@ -192,6 +229,7 @@ BaseService.BaseBuilt:Connect(wireBase)
 Players.PlayerRemoving:Connect(function(player)
 	lasersOn[player.UserId] = nil
 	laserParts[player.UserId] = nil
+	laserFx[player.UserId] = nil
 	prompts[player.UserId] = nil
 end)
 
