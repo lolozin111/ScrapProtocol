@@ -201,6 +201,12 @@ function BaseService.RebuildPlayerBase(player: Player, plot: Instance)
 
 	local baseModel
 	if template and template:IsA("Model") then
+		if not template.PrimaryPart then
+			-- Without one, PivotTo goes by whatever WorldPivot the model happens to have, which spawned a
+			-- Tier 4 base upside down.
+			warn(("[BaseService] ReplicatedStorage.%s.%s has no PrimaryPart — the base may spawn rotated or at the wrong height. Set PrimaryPart to its floor Part (Orientation 0, 0, 0)."):format(
+				ResearchConfig.TemplateFolderName, tier.ModelName))
+		end
 		baseModel = template:Clone()
 		baseModel.Name = ("%s_Base"):format(player.Name)
 		baseModel:PivotTo(plot.CFrame)
