@@ -165,6 +165,9 @@ EnemyConfig.EliteTypes = {
 		ContactRange = 8,    -- bulkier reach than the Construct default 6
 		Defense = 45,
 		ModelName = "Siegebreaker",
+		Animations = {
+			Move = "rbxassetid://86699665518029",
+		},
 
 		-- Selects EnemyAI.Patterns.Slam. Every other type in this file uses the faction default
 		-- "Chaser"; this is the second pattern the game has ever had.

@@ -371,6 +371,7 @@ EnemyAI.Patterns.Slam = function(enemy, context)
 	-- non-stunned tick where context.Now has already passed SlamImpactAt.
 	if StatusEffects.IsStunned(enemy) then
 		humanoid:Move(Vector3.new(0, 0, 0))
+		EnemyAnimation.Locomotion(enemy, false)
 		return
 	end
 
@@ -387,6 +388,7 @@ EnemyAI.Patterns.Slam = function(enemy, context)
 		if context.Now < enemy.SlamImpactAt then
 			humanoid:Move(Vector3.new(0, 0, 0))
 			updateTelegraph(enemy, context)
+			EnemyAnimation.Locomotion(enemy, false)
 			return
 		end
 
@@ -418,7 +420,15 @@ EnemyAI.Patterns.Slam = function(enemy, context)
 	local toEnemy = rootPart.Position - context.TargetPosition
 	local distance = toEnemy.Magnitude
 
-	if distance <= enemy.ContactRange + ATTACK_RANGE_SLACK then
+	local inRange = distance <= enemy.ContactRange + ATTACK_RANGE_SLACK
+
+	-- Same two opt-in extras Chaser gets: whole-model facing (WalkFacingOffset) and Idle/Move
+	-- animations (Animations). Both no-ops for a type whose config sets neither.
+	ensureFacing(enemy)
+	aimFacing(enemy, rootPart, context.TargetPosition)
+	EnemyAnimation.Locomotion(enemy, not inRange)
+
+	if inRange then
 		-- Same defensive backstop as Chaser's Move(zero) — see that pattern's own comment.
 		humanoid:Move(Vector3.new(0, 0, 0))
 		if context.Now >= (enemy.SlamNextReadyAt or 0) and context.Now - enemy.SpawnTime >= SPAWN_GRACE_SECONDS then
