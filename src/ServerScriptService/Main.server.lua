@@ -20,6 +20,7 @@ require(Services.PlayerSpeed)  -- owns WalkSpeed; must be loaded before anything
 require(Services.DashService)
 require(Services.PlotService)
 require(Services.BaseService)
+require(Services.BaseLaserService)
 require(Services.StationService)
 require(Services.AdminService)
 require(Services.RaidEnergyService)

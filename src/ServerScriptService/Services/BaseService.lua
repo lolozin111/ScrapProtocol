@@ -54,6 +54,11 @@ local BaseService = {}
 
 local playerBaseModel: { [Player]: Model } = {} -- currently-built base Model per player
 
+-- Fired every time a player's real base Model is (re)built and parented, so a system that wires up
+-- parts inside it (BaseLaserService) redoes that on each tier upgrade without BaseService knowing it.
+local baseBuiltSignal = Instance.new("BindableEvent")
+BaseService.BaseBuilt = baseBuiltSignal.Event -- (player: Player, baseModel: Model)
+
 -- DataService's own PlayerAdded handler loads the profile asynchronously (a yielding DataStore
 -- call), and Roblox doesn't guarantee that finishes before PlotService's separately-connected
 -- PlayerAdded handler assigns a plot and fires PlotAssigned — so this may run before the profile
@@ -216,6 +221,7 @@ function BaseService.RebuildPlayerBase(player: Player, plot: Instance)
 	playerBaseModel[player] = baseModel
 
 	refreshBaseSign(player, plot, tier, tierIndex)
+	baseBuiltSignal:Fire(player, baseModel)
 end
 
 -- Exposes the actual currently-built base Model (real BaseTier art, or the fallback floor if none

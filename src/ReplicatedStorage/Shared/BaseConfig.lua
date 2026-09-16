@@ -55,4 +55,18 @@ BaseConfig.TurretEdgeClearance = 0.5
 -- sensible guess is the right one regardless of what tier the player has reached.
 BaseConfig.WallAttackRange = 28
 
+-- Base security lasers (BaseLaserService). Any base template containing descendants with these names
+-- gets them: every BasePart inside something named LaserName is a laser, and each ButtonName part gets
+-- the on/off ProximityPrompt. Names are matched case-insensitively. Tiers 1-3 have neither and are
+-- untouched. Off is the default each session.
+BaseConfig.Lasers = {
+	LaserName = "Laser",
+	ButtonName = "Button",
+	PromptHoldDuration = 0.5,
+	PromptMaxDistance = 10,
+	ActivateText = "Activate Lasers",
+	DeactivateText = "Deactivate Lasers",
+	ToggleCooldown = 0.5, -- seconds, RateLimiter
+}
+
 return BaseConfig
