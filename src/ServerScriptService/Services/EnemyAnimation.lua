@@ -908,7 +908,7 @@ local function setupLocomotion(enemy)
 			loco.MoveTrack:Stop()
 		end
 		if loco.AttackTrack then
-			loco.AttackTrack:Stop() -- a swing held on its last pose would otherwise sit over the Death animation
+			loco.AttackTrack:Stop() -- a held swing pose would otherwise sit over the Death animation
 		end
 		if loco.DeathTrack then
 			loco.DeathTrack:Play()
@@ -922,11 +922,12 @@ end
 -- One swing, played by the pattern at the moment it lands a contact hit. Silent no-op for a type with
 -- no Attack animation, which is most of them.
 --
--- A swing that ends while the enemy is standing still is frozen just before its last frame instead of
--- ending, and held until the next swing or until it walks off. Without an Idle animation there is
--- nothing underneath the swing, so letting it end snapped the rig straight back to its rest T-pose
--- between hits, which also chopped the tail off the swing itself.
-local ATTACK_HOLD_LEAD = 0.05 -- seconds before the natural end that the swing is frozen
+-- A swing that ends while the enemy is standing still does not end: just before its last frame it jumps
+-- back to its FIRST frame and freezes there, held until the next swing or until it walks off. Without an
+-- Idle animation there is nothing underneath the swing, so letting it end snapped the rig straight back
+-- to its rest T-pose between hits. The first frame, not the last, by the user's call after trying both:
+-- the wind-up stance reads better than the follow-through (the Brute's especially).
+local ATTACK_HOLD_LEAD = 0.05 -- seconds before the natural end that the swing is caught
 
 function EnemyAnimation.PlayAttack(enemy)
 	if enemy.Anim then
@@ -944,7 +945,7 @@ function EnemyAnimation.PlayAttack(enemy)
 	loco.AttackPlayId = (loco.AttackPlayId or 0) + 1
 	local playId = loco.AttackPlayId
 	if track.IsPlaying then
-		-- Held on its last pose from the previous swing: restart it rather than blend it into itself.
+		-- Held on its first frame from the previous swing: restart it rather than blend it into itself.
 		track.TimePosition = 0
 		track:AdjustSpeed(1)
 	else
@@ -968,6 +969,7 @@ function EnemyAnimation.PlayAttack(enemy)
 			track:Stop(0.2)
 		else
 			track:AdjustSpeed(0)
+			track.TimePosition = 0
 		end
 	end)
 end
