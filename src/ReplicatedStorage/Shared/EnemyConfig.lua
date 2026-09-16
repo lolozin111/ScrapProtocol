@@ -89,6 +89,7 @@ EnemyConfig.Types = {
 		-- Optional MoveAnimationSpeed (1 = as published) works here the same as on the Hulk.
 		Animations = {
 			Move = "rbxassetid://80963801870849",
+			Attack = "rbxassetid://131525897744848",
 		},
 	}),
 	Raider = defineEnemy(RebelBase, {
