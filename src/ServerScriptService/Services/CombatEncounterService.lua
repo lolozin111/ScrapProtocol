@@ -408,6 +408,27 @@ local function spawnEnemy(typeKey: string, typeData, spawnPosition: Vector3, mul
 	-- to its enemy, so nothing else needs to know this exists. Size/Offset are mirrored onto the model
 	-- as "HitboxSize"/"HitboxOffset" Attributes and re-applied whenever those change, so it can be sized
 	-- live in a playtest (server view) and the numbers copied back into EnemyConfig.
+	-- Optional per-type body yaw (EnemyConfig `BodyYawOffset`, degrees): turns the BODY relative to the
+	-- HumanoidRootPart, at the root joint. A rig whose parts were built facing off-axis from its root
+	-- walks and animates visibly crabbed, because the Humanoid steers the ROOT and everything jointed to
+	-- it inherits the skew. Corrected here rather than in Studio so it stays one config number per type
+	-- that a re-imported model can't silently lose. Not the same thing as the Hulk's FacingYawOffset,
+	-- which corrects where EnemyAnimation POINTS him, not how his rig was built.
+	if typeData.BodyYawOffset and typeData.BodyYawOffset ~= 0 then
+		local rootJoint
+		for _, descendant in ipairs(model:GetDescendants()) do
+			if descendant:IsA("Motor6D") and descendant.Part0 == model.PrimaryPart then
+				rootJoint = descendant
+				break
+			end
+		end
+		if rootJoint then
+			rootJoint.C0 = rootJoint.C0 * CFrame.Angles(0, math.rad(typeData.BodyYawOffset), 0)
+		else
+			warn(("[CombatEncounterService] %s sets BodyYawOffset but no Motor6D joins its PrimaryPart to the body — the rig keeps its original facing."):format(typeKey))
+		end
+	end
+
 	if typeData.Hitbox then
 		local rootPart = model.PrimaryPart
 		local hitbox = Instance.new("Part")
