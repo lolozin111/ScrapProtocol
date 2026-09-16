@@ -29,6 +29,8 @@ tree — check it before assuming where something lives or what Remotes exist:
 - `src/ReplicatedStorage/Shared/*.lua` → `ReplicatedStorage.Shared` — pure config ModuleScripts.
 - `src/ServerScriptService/Main.server.lua` + `Services/*.lua` → `ServerScriptService`.
 - `src/StarterPlayerScripts/*.client.lua` → `StarterPlayer.StarterPlayerScripts`.
+- `src/ReplicatedFirst/` → `ReplicatedFirst` — only `LoadingScreen.client.lua`, which runs before the
+  rest of the game replicates and so cannot require `HudKit` (it keeps a copy of the few colors it uses).
 - `ReplicatedStorage.Remotes` (every RemoteEvent/RemoteFunction) is declared entirely inside
   `default.project.json`, not created in Lua — add new ones there.
 - Empty asset folders the running game expects content in (also declared in
