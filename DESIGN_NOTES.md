@@ -3364,7 +3364,61 @@ and frames.
 
 ### Resuming after a context reset
 
-**NEWEST — end of session 2026-09-15/16. Start here.** Everything below this block is older.
+**NEWEST — end of session 2026-09-17. Start here.** Everything below this block is older.
+
+Shipped this session (all committed AND PUSHED on `fix/audit-p0-p3`):
+- **Enemy attack animations read right.** With no Idle animation there was nothing underneath an
+  attack track, so a swing ended by snapping the rig to its rest T-pose (obvious on the Raider,
+  chopped the Brute's follow-through). Settled after three tries — hold the last frame, hold the
+  first frame, both worse — on: a type with NO Idle keeps its Move track playing while it stands in
+  range, and the swing fades out (`ATTACK_FADE_OUT` 0.15s) onto that walk. Filling an Idle slot later
+  switches it back to Idle automatically, no code change. `EnemyAnimation.PlayAttack` also warns once
+  if a type's Attack animation is longer than its `AttackCooldown`. User: works, reads better.
+- **Base security lasers, Tier 4+** (`BaseLaserService.lua`, `BaseLaserClient.client.lua`,
+  `BaseConfig.Lasers`). Owner-only ProximityPrompt on the base's button: ON = lasers visible and any
+  non-owner player who touches one dies; OFF = invisible, non-collidable, harmless. Off by default
+  each session (not persisted), players only (enemies/robots pass through) — both easy to change if
+  wanted. Names are PREFIX matched, case-insensitively: anything starting with `Laser` (a `Lasers`
+  folder, `Laser1`…) and anything starting with `Button` (`ButtonT4`, so T5/T6 need no code change).
+  Turning them off also hides Decals/Textures/Beams/Highlights/SurfaceGuis on those parts — a Decal
+  stays visible on a fully transparent Part, which is what the "one laser still showing" bug was.
+  User: works.
+- **`BaseService.BaseBuilt`** — a new BindableEvent fired after each base Model is parented. That is
+  the hook for anything that has to wire up parts INSIDE a base and survive a tier rebuild; a Script
+  inside the template can't, since the template lives only in Studio and wouldn't know its owner.
+- **Join loading screen** (`src/ReplicatedFirst/LoadingScreen.client.lua`, and `ReplicatedFirst` is
+  now mapped in `default.project.json`). Preloads every asset-carrying instance under Workspace/
+  ReplicatedStorage/Lighting/StarterGui/SoundService plus every `rbxassetid://` string found in
+  `EnemyConfig` (enemy animations are ids in config, not instances, so nothing else would preload
+  them). Progress bar, Skip button after 5s, fades out when done. It cannot require `HudKit`
+  (StarterPlayerScripts has not replicated yet) so it keeps its own copy of six colors — keep them
+  matched on a palette retune. User: works.
+
+Lessons worth keeping:
+- **A base template with no PrimaryPart spawned upside down.** `PivotTo` uses whatever WorldPivot the
+  model happens to have. `BaseService` now warns at build time naming the tier. Convention: PrimaryPart
+  = the floor Part, Orientation 0,0,0.
+- **A fully transparent Part still shows its Decals/Textures**, and a Beam can hang off a laser's
+  Attachment while living elsewhere in the base entirely.
+- **Holding a frozen animation pose reads worse than falling back to a looping one.** Tried both ends
+  of the swing; the walk won.
+
+**Where to pick up — unchanged from yesterday, none of it started:** (1) finish the remaining BASE
+models; (2) guns in the player's hand (`ReplicatedStorage.WeaponTools` still empty — Tool-with-Handle
+vs. a `Motor6D`-attached model, and mind the `RightGrip` lesson below); (3) a gun-holding animation
+for the player; (4) ENEMY AI variety — three patterns exist (`Chaser`, `Slam`, `Animated`), Phase 00
+step 7 wants three new ones.
+
+**Open questions, none blocking:** everything in the 2026-09-15/16 block below still stands (step 4
+unverified in Studio and its `RaidConfig.ExtractionRewards` numbers unplaytested, Siegebreaker slam vs.
+`SlamWindup`, `MoveAnimationSpeed` for the slow types, dash animation id unpasted), plus: should laser
+state persist across sessions, and should lasers kill ENEMIES during a wave?
+
+**Working from the laptop:** repo pushed to GitHub, place saved to Roblox cloud, so both machines can
+work from either. The setup checklist (what syncs, what has to be copied by hand — the `.claude`
+memory folder does not sync) is at https://claude.ai/artifact/3rdpvUEwfY7Z5oANABYDqu
+
+**Session 2026-09-15/16.** (Superseded by the block above.)
 
 Shipped this session (all committed on `fix/audit-p0-p3`):
 - **Raid mode identity SETTLED and step 4 BUILT** (not yet verified in Studio) — see "SETTLED for
