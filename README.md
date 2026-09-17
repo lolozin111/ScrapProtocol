@@ -125,7 +125,10 @@ no manual copy-pasting scripts into Studio.
   floor must sit at local Y=0** — e.g. set the Model's `PrimaryPart` to the floor piece — because
   `BaseService` positions the whole Model with `baseModel:PivotTo(plot.CFrame)`, and a Model with
   no `PrimaryPart` pivots on its bounding-box centre instead, which spawns it half-buried in the
-  ground. **Build each tier's platform to the size `ResearchConfig.Tiers` actually claims**:
+  ground. `BaseService` now warns at build time (`[BaseService] ... has no PrimaryPart`) if a tier's
+  template Model has none — that gap is exactly what spawned a Tier 4 base upside down before the
+  check existed. The convention going forward: `PrimaryPart` = the floor Part, with `Orientation`
+  `0, 0, 0`. **Build each tier's platform to the size `ResearchConfig.Tiers` actually claims**:
   48×0.6×48 studs at Tier 1, growing by exactly 3 studs of width per tier (51, 54, 57, 60, up to
   63×0.6×63 at Tier 6) — see `ResearchConfig.lua`'s `FootprintHalfSize` for the full ladder.
   Getting this wrong fails silently: enemy wall-attack range and the wave spawn ring are measured
@@ -201,6 +204,24 @@ no manual copy-pasting scripts into Studio.
   player's cloned base, so nobody can walk into someone else's base and use their gear. A loose
   `Station` block placed directly in the world (not part of any base Model — i.e. what
   placeholder-block testing looks like right now) has no owner and stays open to everyone.
+- **Base security lasers** — Tier 4+ only. A base template that contains parts named starting with
+  `Laser` (`BaseConfig.Lasers.LaserName` — a "Lasers" folder, `Laser1`, doesn't matter which, only the
+  prefix does) and a separate Part or Model named starting with `Button` (`ButtonName`, e.g.
+  `ButtonT4`) gets a ProximityPrompt on the button automatically (`BaseLaserService.lua`), matched
+  case-insensitively so casing never has to line up exactly. Only the base's owner can use it —
+  `BaseLaserClient.client.lua` hides the prompt client-side for everyone else, but the real gate is
+  server-side: a non-owner `Triggered` fire is rejected outright, with a warn() in Output naming who
+  tried it. **ON**: lasers show exactly as authored, and any player other than the owner who touches
+  one dies instantly — enemies and deployed robots walk straight through, unaffected. **OFF**: lasers
+  go fully invisible, non-collidable, and harmless, and that includes every Decal/Texture/Beam/
+  ParticleEmitter/Light/Highlight/SurfaceGui hanging off one, not just the laser Part itself. State is
+  per session and **off by default**, and survives a tier-upgrade rebuild — it's re-wired every time
+  off a new `BaseService.BaseBuilt` BindableEvent, fired at the end of `RebuildPlayerBase` with
+  `(player, baseModel)`, which is now the hook to reach for anything else that needs to wire up parts
+  inside a base and keep working across rebuilds. Toggling is rate-limited through `RateLimiter`
+  (`"BaseLaserToggle"`, 0.5s). Tiers 1-3 have neither name and are silently untouched, no warning; a
+  base with one name but not the other warns in Output naming exactly which is missing, so a
+  half-wired security system doesn't fail quietly.
 - **World stations** — three station types live OUT in the world instead of inside a base plot:
   **`BlackMarket`** (buys sealed cases), **`Hacker`** (opens them), and **`Shop`** (the Hub Shop —
   **Blueprints** tab, rotating turret blueprint stock, same rotation mechanic as the Black Market's
@@ -693,6 +714,23 @@ no manual copy-pasting scripts into Studio.
   your real save no matter which of those four paths tries to write. A DataStore error while
   checking the flag fails closed (loads your real profile, never a blank one), since defaulting the
   other way would be indistinguishable from real data loss from the player's seat.
+- **Join loading screen** — `LoadingScreen.client.lua` (`ReplicatedFirst`) covers the screen the
+  moment you join: calls `ReplicatedFirst:RemoveDefaultLoadingScreen()`, waits on `game.Loaded`, then
+  preloads in batches of 20 (`BATCH_SIZE`) through `ContentProvider:PreloadAsync` every asset-carrying
+  instance (meshes, images, sounds, animations, particles, beams, sky, clothing) under `Workspace`/
+  `ReplicatedStorage`/`Lighting`/`StarterGui`/`SoundService`, plus every `rbxassetid://` string it
+  finds inside `EnemyConfig` — enemy animations are ids in config, not instances anywhere in the
+  tree, so nothing else would ever preload them. Shows a progress bar and percentage, a **Skip**
+  button after `SKIP_AFTER` (5) seconds, then "Ready" and a fade-out; skipping just lets the same
+  preload keep running in the background rather than cancelling it. All four tunables (`SKIP_AFTER`,
+  `BATCH_SIZE`, `READY_HOLD`, `FADE_TIME`) sit at the top of the file. It runs before
+  `StarterPlayerScripts` has replicated, so it can't `require(HudKit)` — it carries its own copy of
+  six `HudKit.COLOR` values instead, which needs to be kept matched by hand on a palette retune.
+
+  **New Rojo mapping**: `ReplicatedFirst` is now declared in `default.project.json`
+  (`"$path": "src/ReplicatedFirst"`, `"$ignoreUnknownInstances": true`) — if you already had
+  `rojo serve` running from before this shipped, restart it, since Rojo only reads the project file
+  at start and won't pick up a brand-new top-level folder on its own.
 
 ## 4. Testing the loop (debug HUD)
 
@@ -861,7 +899,7 @@ to end:
    **You need a Model in `ServerStorage.EnemyModels` for each type you want to see spawn.** Only
    five type keys are ever picked automatically: **`Scavenger`**, **`Raider`**, **`Brute`** (the
    regular wave-defense roster, `WaveConfig.EnemyTypes`), **`Siegebreaker`** (the elite pick on
-   every `WaveConfig.EliteWaveInterval`-th wave — 5 — from `EnemyConfig.EliteTypes`; see step 24)
+   every `WaveConfig.EliteWaveInterval`-th wave — 5 — from `EnemyConfig.EliteTypes`; see step 25)
    and **`VoidwakenHulk`** (raid Boss rooms only, drawn from the separate `EnemyConfig.BossTypes`
    pool; see step 15). Each of those five names is the exact, literal Model name
    `CombatEncounterService.lua` looks for — build (or drop in a placeholder dummy) a Model under
@@ -1279,7 +1317,23 @@ to end:
     same still-open panel, try selling something else you're still holding: confirm it's rejected
     with "You need to be at the Hub Shop to do that" instead of silently doing nothing, then walk
     back and confirm it works again.
-24. **The Siegebreaker's Slam (elite-wave attack pattern, shipped 2026-09-09, none of this
+24. **Base security lasers.** Needs a Tier 4+ base — `/setwave` to whatever `ResearchConfig.Tiers`
+    gates Tier 4 behind, claim it from the Research row, and build (or already have) a `BaseTier4`
+    Model in `ReplicatedStorage.BaseTemplates` with a Part (or a `Lasers` folder of them) named
+    starting with `Laser`, and a separate Part or Model named starting with `Button` (e.g.
+    `ButtonT4`) — casing doesn't matter, only the prefix does. Play, walk up to the button, and hold
+    **E**: the lasers should snap to visible exactly as authored and the prompt's text should flip to
+    "Deactivate Lasers". Open **Test → Clients and Servers** with 2 players; as the second
+    (non-owning) client, confirm you never see the prompt at all, then walk into a laser and confirm
+    your character dies instantly — walk an enemy or a deployed robot through the same laser during a
+    wave and confirm neither is affected. Back as the owner, deactivate: the lasers should go fully
+    invisible and walkable-through, including any Decal/Beam/ParticleEmitter/Highlight hanging off
+    one. Trigger the toggle twice within half a second and confirm the second press is silently
+    swallowed (`RateLimiter`, 0.5s). Finally, claim the next Research tier to rebuild your base and
+    confirm the lasers still work afterward without touching anything — the reconnect happens
+    automatically off `BaseService.BaseBuilt`. (Tiers 1-3 need none of this: no `Laser`/`Button`
+    names, no warning, nothing to test.)
+25. **The Siegebreaker's Slam (elite-wave attack pattern, shipped 2026-09-09, none of this
     verified in Studio yet).** Build a `Siegebreaker` Model in `ServerStorage.EnemyModels` (same
     `Humanoid` + `PrimaryPart` requirement as every other enemy — see step 8), then click **Start
     Defense** and clear waves 1 through 4 in a row without stopping — wave 5
@@ -1321,6 +1375,16 @@ to end:
     This is the exact same function resolving both times — `context.TargetPosition` is the wall's
     fixed point in a wave and your own live position in a raid — so the wall can never dodge and
     you always can, by design, not as two separate code paths.
+26. **Join loading screen.** Press Play (or Play Solo) — a **SALVAGE PROTOCOL** panel should cover
+    the screen with a progress bar and percentage climbing, fading away on its own once it reaches
+    "Ready". In Studio everything loads locally, so this is normally near-instant — you likely won't
+    even see the bar move. To actually watch it: temporarily set `SKIP_AFTER` to `1` and confirm a
+    **Skip** button appears after one second and dismisses the screen immediately on click (loading
+    keeps running in the background — join a wave right after skipping and confirm nothing looks
+    half-loaded, e.g. missing particles), or test in a published place where assets genuinely have to
+    download over the network instead of resolving instantly off disk. Check Output for
+    `[LoadingScreen]` warnings (a bad preload id, or a missing `EnemyConfig`) — neither should appear
+    on a clean sync.
 
 ## 5. Environment effects (optional polish)
 
