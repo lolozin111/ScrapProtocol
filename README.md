@@ -212,10 +212,10 @@ no manual copy-pasting scripts into Studio.
   `BaseLaserClient.client.lua` hides the prompt client-side for everyone else, but the real gate is
   server-side: a non-owner `Triggered` fire is rejected outright, with a warn() in Output naming who
   tried it. **ON**: lasers show exactly as authored, and any player other than the owner who touches
-  one dies instantly — enemies and deployed robots walk straight through, unaffected. **OFF**: lasers
+  one dies instantly, and so does any enemy (spawns carry an `Enemy` CollectionService tag for this; a laser kill counts like a gun kill) — deployed robots walk straight through, unaffected. **OFF**: lasers
   go fully invisible, non-collidable, and harmless, and that includes every Decal/Texture/Beam/
   ParticleEmitter/Light/Highlight/SurfaceGui hanging off one, not just the laser Part itself. State is
-  per session and **off by default**, and survives a tier-upgrade rebuild — it's re-wired every time
+  saved on the profile (`BaseLasersOn`, off for a fresh profile), so it survives a rejoin, and survives a tier-upgrade rebuild — it's re-wired every time
   off a new `BaseService.BaseBuilt` BindableEvent, fired at the end of `RebuildPlayerBase` with
   `(player, baseModel)`, which is now the hook to reach for anything else that needs to wire up parts
   inside a base and keep working across rebuilds. Toggling is rate-limited through `RateLimiter`
@@ -1325,8 +1325,9 @@ to end:
     **E**: the lasers should snap to visible exactly as authored and the prompt's text should flip to
     "Deactivate Lasers". Open **Test → Clients and Servers** with 2 players; as the second
     (non-owning) client, confirm you never see the prompt at all, then walk into a laser and confirm
-    your character dies instantly — walk an enemy or a deployed robot through the same laser during a
-    wave and confirm neither is affected. Back as the owner, deactivate: the lasers should go fully
+    your character dies instantly — walk a deployed robot through the same laser during a wave and
+    confirm it is unaffected, then let an enemy walk into one and confirm it dies and counts toward the
+    wave. Leave with lasers ON, rejoin, and confirm they come back ON. Back as the owner, deactivate: the lasers should go fully
     invisible and walkable-through, including any Decal/Beam/ParticleEmitter/Highlight hanging off
     one. Trigger the toggle twice within half a second and confirm the second press is silently
     swallowed (`RateLimiter`, 0.5s). Finally, claim the next Research tier to rebuild your base and

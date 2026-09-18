@@ -3,14 +3,16 @@
 	Security lasers on Tier 4+ bases. A base template that contains a "Laser" and a "Button" (names in
 	BaseConfig.Lasers) gets a ProximityPrompt on the Button that only the base's owner can use:
 
-	  ON  — lasers visible; any player other than the owner who touches one dies.
+	  ON  — lasers visible; any player other than the owner, and any enemy, who touches one dies.
 	  OFF — lasers invisible and harmless (and non-collidable, so there is no invisible wall).
 
 	Wired up from BaseService.BaseBuilt rather than a Script inside the template: the template lives only
 	in Studio (not synced from src/), and a copied Script would not know whose base it sits in. Re-runs on
-	every rebuild, so a tier upgrade keeps the current state. State is per session, off by default.
+	every rebuild, so a tier upgrade keeps the current state. The on/off state is saved on the profile
+	(BaseLasersOn), so it survives a rejoin; a fresh profile starts off.
 
-	Only players are killed — enemies and robots walk through. The prompt is hidden for everyone but the
+	Enemies are recognised by the "Enemy" tag CombatEncounterService puts on every spawn, so robots
+	(untagged, and not players) walk through. The prompt is hidden for everyone but the
 	owner by BaseLaserClient.client.lua; the owner check here is the real gate.
 ]]
 
@@ -20,6 +22,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local BaseConfig = require(ReplicatedStorage.Shared.BaseConfig)
 local BaseService = require(script.Parent.BaseService)
+local DataService = require(script.Parent.DataService)
 local RateLimiter = require(script.Parent.RateLimiter)
 
 local CONFIG = BaseConfig.Lasers
@@ -135,11 +138,20 @@ local function onLaserTouched(ownerUserId: number, hit: BasePart)
 	if not lasersOn[ownerUserId] then
 		return
 	end
-	local character = hit:FindFirstAncestorOfClass("Model")
-	local victim = character and Players:GetPlayerFromCharacter(character)
-	if not victim or victim.UserId == ownerUserId then
-		return
+	-- Walk up to the tagged enemy Model: the part touched can sit inside a nested rig Model.
+	local enemy = hit:FindFirstAncestorOfClass("Model")
+	while enemy and not CollectionService:HasTag(enemy, "Enemy") do
+		enemy = enemy:FindFirstAncestorOfClass("Model")
 	end
+	local character = enemy or hit:FindFirstAncestorOfClass("Model")
+	if not enemy then
+		local victim = character and Players:GetPlayerFromCharacter(character)
+		if not victim or victim.UserId == ownerUserId then
+			return
+		end
+	end
+	-- Health = 0 rather than anything bespoke: the encounter loop polls Health, so a laser kill counts
+	-- exactly like a gun kill.
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
 	if humanoid and humanoid.Health > 0 then
 		humanoid.Health = 0
@@ -148,6 +160,10 @@ end
 
 local function wireBase(player: Player, baseModel: Model)
 	local userId = player.UserId
+	if lasersOn[userId] == nil then -- first build this session: restore the saved switch
+		local profile = DataService.Get(player)
+		lasersOn[userId] = profile ~= nil and profile.BaseLasersOn == true
+	end
 	-- The previous base's parts and prompts were destroyed with it, taking their connections along.
 	laserParts[userId] = collectLaserParts(baseModel)
 	laserFx[userId] = collectLaserFx(baseModel, laserParts[userId])
@@ -210,6 +226,10 @@ local function wireBase(player: Player, baseModel: Model)
 				return
 			end
 			lasersOn[userId] = not lasersOn[userId]
+			local profile = DataService.Get(player)
+			if profile then
+				profile.BaseLasersOn = lasersOn[userId] -- saved with the rest of the profile on autosave/leave
+			end
 			applyState(userId)
 		end)
 		prompt.Parent = parent
@@ -225,7 +245,8 @@ end
 
 BaseService.BaseBuilt:Connect(wireBase)
 
--- No profile data involved, so PlayerRemoving (not DataService.PlayerSaving) is fine here.
+-- The saved switch is written to the profile at toggle time, so this only clears session tables and
+-- PlayerRemoving (not DataService.PlayerSaving) is still fine.
 Players.PlayerRemoving:Connect(function(player)
 	lasersOn[player.UserId] = nil
 	laserParts[player.UserId] = nil

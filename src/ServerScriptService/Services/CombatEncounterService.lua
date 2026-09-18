@@ -456,6 +456,9 @@ local function spawnEnemy(typeKey: string, typeData, spawnPosition: Vector3, mul
 		model:SetAttribute("BossName", typeData.DisplayName or typeKey)
 	end
 
+	-- Lets anything outside the encounter recognise an enemy on touch without a robot looking the same
+	-- (BaseLaserService). Set before parenting, like the Boss tag above.
+	CollectionService:AddTag(model, "Enemy")
 	model.Parent = parentFolder
 	-- A type with its own HipHeight spawns already standing at it. Otherwise the root is placed at
 	-- the spawn point and the Humanoid then pushes it up to HipHeight over the next second or so —

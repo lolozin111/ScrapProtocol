@@ -60,7 +60,7 @@ BaseConfig.WallAttackRange = 28
 -- "Laser2", a "Lasers" folder), and each part whose name starts with ButtonName ("ButtonT4") gets the
 -- on/off ProximityPrompt.
 -- Names are matched case-insensitively. Tiers 1-3 have neither and are
--- untouched. Off is the default each session.
+-- untouched. The on/off state is saved on the profile; a fresh profile starts off.
 BaseConfig.Lasers = {
 	LaserName = "Laser",
 	ButtonName = "Button",

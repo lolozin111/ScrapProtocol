@@ -3409,10 +3409,10 @@ vs. a `Motor6D`-attached model, and mind the `RightGrip` lesson below); (3) a gu
 for the player; (4) ENEMY AI variety — three patterns exist (`Chaser`, `Slam`, `Animated`), Phase 00
 step 7 wants three new ones.
 
-**Open questions, none blocking:** everything in the 2026-09-15/16 block below still stands (step 4
-unverified in Studio and its `RaidConfig.ExtractionRewards` numbers unplaytested, Siegebreaker slam vs.
-`SlamWindup`, `MoveAnimationSpeed` for the slow types, dash animation id unpasted), plus: should laser
-state persist across sessions, and should lasers kill ENEMIES during a wave?
+**Open questions — ANSWERED 2026-09-18:** step 4 verified working in Studio, rewards granted;
+Siegebreaker slam is good; `MoveAnimationSpeed` stays as is; the user will make the dash animation.
+Laser state now PERSISTS (`BaseLasersOn` profile field) and lasers now KILL ENEMIES (via a new `Enemy`
+tag set in `CombatEncounterService.spawnEnemy`) — both built 2026-09-18, not yet verified in Studio.
 
 **Working from the laptop:** repo pushed to GitHub, place saved to Roblox cloud, so both machines can
 work from either. The setup checklist (what syncs, what has to be copied by hand — the `.claude`

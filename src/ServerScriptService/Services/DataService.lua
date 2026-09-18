@@ -243,6 +243,7 @@ local function defaultProfile()
 			-- false the first time pity resets — see ForgeService.ForgeWeapon. Deliberately given to
 			-- every existing save too (backfillMissingFields hands it to anyone missing it), granting
 			-- current players one boosted run each; that's intended, not an oversight.
+		BaseLasersOn = false,   -- Tier 4+ security lasers' on/off switch, kept across sessions — see BaseLaserService
 	}
 end
 
