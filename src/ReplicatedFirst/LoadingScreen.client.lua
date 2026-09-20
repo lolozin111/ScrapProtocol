@@ -11,9 +11,11 @@
 	if the palette is retuned.
 
 	What gets preloaded: every asset-carrying instance (meshes, images, sounds, animations, particles)
-	under Workspace, ReplicatedStorage, Lighting, StarterGui and SoundService, plus every rbxassetid://
-	string in EnemyConfig — enemy animations are ids in config, not instances, and would otherwise only
-	download the first time an enemy tries to play one.
+	under Workspace, ReplicatedStorage, Lighting, StarterGui and SoundService, plus the ids that live in
+	config rather than on an instance and so appear nowhere in that tree: EnemyConfig's animations, and
+	every icon in ItemIconConfig/UiIconConfig. Each of those would otherwise download at the moment it
+	is first used — an enemy's first swing, or the first time a panel draws an icon, which is what made
+	the inventory and hover cards pop in blank and fill a beat later.
 ]]
 
 local ContentProvider = game:GetService("ContentProvider")
@@ -213,33 +215,69 @@ local function isAsset(inst: Instance): boolean
 	return false
 end
 
--- Enemy animation ids live as strings in config, not as instances anywhere in the tree.
-local function collectConfigIds(into: { any })
+local function requireShared(moduleName: string): any?
 	local shared = game:GetService("ReplicatedStorage"):FindFirstChild("Shared")
-	local module = shared and shared:FindFirstChild("EnemyConfig")
+	local module = shared and shared:FindFirstChild(moduleName)
 	if not module then
-		return
+		return nil
 	end
-	local ok, config = pcall(require, module)
+	local ok, result = pcall(require, module)
 	if not ok then
-		warn("[LoadingScreen] Could not read EnemyConfig for animation ids: " .. tostring(config))
-		return
+		warn(("[LoadingScreen] Could not read %s for asset ids: %s"):format(moduleName, tostring(result)))
+		return nil
 	end
-	local seen, seenIds = {}, {}
-	local function walk(value)
-		if type(value) == "string" then
-			if string.match(value, "^rbxassetid://%d+$") and not seenIds[value] then
-				seenIds[value] = true
-				table.insert(into, value)
+	return result
+end
+
+-- Ids that live in config rather than on an instance, so nothing in the tree walk above can find
+-- them. Two shapes, and they are collected differently ON PURPOSE:
+--
+--   EnemyConfig — animation ids, full "rbxassetid://..." strings scattered at unknown depths, so
+--   this walks the whole table looking for that exact string pattern.
+--
+--   ItemIconConfig / UiIconConfig — bare NUMBERS under .Icons. A blind walk can't be used here: it
+--   would have to treat every number in the table as an asset id, and an unset icon is the number
+--   0. Going through each module's own Get() instead means the loading screen resolves an icon
+--   exactly the way HudKit will at render time — including skipping the 0s — so what gets preloaded
+--   can never drift from what gets drawn.
+--
+-- WHY THIS MATTERS: an icon that isn't preloaded is fetched the first time it's actually shown,
+-- which is why a panel used to pop in blank and fill a moment later.
+local function collectConfigIds(into: { any })
+	local seenIds = {}
+	local function add(id: string?)
+		if id and not seenIds[id] then
+			seenIds[id] = true
+			table.insert(into, id)
+		end
+	end
+
+	local enemyConfig = requireShared("EnemyConfig")
+	if enemyConfig then
+		local seen = {}
+		local function walk(value)
+			if type(value) == "string" then
+				if string.match(value, "^rbxassetid://%d+$") then
+					add(value)
+				end
+			elseif type(value) == "table" and not seen[value] then
+				seen[value] = true
+				for _, v in pairs(value) do
+					walk(v)
+				end
 			end
-		elseif type(value) == "table" and not seen[value] then
-			seen[value] = true
-			for _, v in pairs(value) do
-				walk(v)
+		end
+		walk(enemyConfig)
+	end
+
+	for _, moduleName in ipairs({ "ItemIconConfig", "UiIconConfig" }) do
+		local iconConfig = requireShared(moduleName)
+		if iconConfig and type(iconConfig.Icons) == "table" and type(iconConfig.Get) == "function" then
+			for key in pairs(iconConfig.Icons) do
+				add(iconConfig.Get(key))
 			end
 		end
 	end
-	walk(config)
 end
 
 if not game:IsLoaded() then
