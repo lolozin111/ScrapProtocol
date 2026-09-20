@@ -26,6 +26,7 @@ local TweenService = game:GetService("TweenService")
 local CraftingRecipes = require(ReplicatedStorage.Shared.CraftingRecipes)
 local RaidEnergyConfig = require(ReplicatedStorage.Shared.RaidEnergyConfig)
 local UiIconConfig = require(ReplicatedStorage.Shared.UiIconConfig)
+local ItemIconConfig = require(ReplicatedStorage.Shared.ItemIconConfig)
 local Wallet = require(ReplicatedStorage.Shared.Wallet)
 
 local LocalPlayer = Players.LocalPlayer
@@ -286,8 +287,20 @@ local function resolveIcon(folder: Instance?, key: string): (Instance?, string?)
 	return nil, nil
 end
 
-function HudKit.getItemIcon(key: string): string?
+-- ItemIconConfig first, the ItemIcons folder second — the same order (and for the same reasons)
+-- getUiIcon uses for its own pair. Each step is tried for the exact item key before ANY of them is
+-- tried for the Family, so a per-weapon icon in either place still beats a family icon in either.
+local function resolveItemIcon(key: string): string?
+	local configured = ItemIconConfig.Get(key)
+	if configured then
+		return configured
+	end
 	local _, image = resolveIcon(ItemIcons, key)
+	return image
+end
+
+function HudKit.getItemIcon(key: string): string?
+	local image = resolveItemIcon(key)
 	if image then
 		return image
 	end
@@ -299,8 +312,7 @@ function HudKit.getItemIcon(key: string): string?
 	if not family then
 		return nil
 	end
-	local _, familyImage = resolveIcon(ItemIcons, family)
-	return familyImage
+	return resolveItemIcon(family)
 end
 
 -- Same lookup, against ReplicatedStorage.UiIcons instead of ItemIcons — for chrome/buttons/panel
@@ -326,11 +338,15 @@ end
 -- is a real `text` or an `iconFallbackText` before it builds anything, and applyIcon can only ever
 -- report success by actually mutating a label it doesn't have at that point in the build.
 local function resolveIconImage(key: string, folderName: string?): (string?, Instance?)
-	if not folderName then
-		local configured = UiIconConfig.Get(key)
-		if configured then
-			return configured, nil -- no template instance for a config-sourced icon; see applyIcon
-		end
+	-- Each folder has a config in front of it (UiIconConfig / ItemIconConfig), so pointing applyIcon
+	-- at ItemIcons must consult THAT config rather than skipping straight to the folder — otherwise
+	-- an item icon set in the config would render everywhere except through applyIcon.
+	local configured = if folderName == "ItemIcons"
+		then ItemIconConfig.Get(key)
+		elseif not folderName then UiIconConfig.Get(key)
+		else nil
+	if configured then
+		return configured, nil -- no template instance for a config-sourced icon; see applyIcon
 	end
 	local folder = if folderName then ReplicatedStorage:FindFirstChild(folderName) else UiIcons
 	local inst, image = resolveIcon(folder, key)

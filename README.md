@@ -427,7 +427,11 @@ no manual copy-pasting scripts into Studio.
   else, browsing is just unrestricted.
 
   **Icons** (optional — everything works without them, just shows a plain colored tile with the
-  item's name as text): add an `ImageLabel`, `ImageButton`, or `Decal` inside
+  item's name as text). Two ways in, and a value set either way is honoured. **Preferred**: paste the
+  uploaded image's ID next to the item's key in `src/ReplicatedStorage/Shared/ItemIconConfig.lua`
+  (every key is already listed, set to `0` = not uploaded yet) — it's Rojo-synced, so it's in git
+  and survives losing the place file, exactly like `UiIconConfig.lua` does for the HUD's own chrome.
+  **Or, in Studio**: add an `ImageLabel`, `ImageButton`, or `Decal` inside
   `ReplicatedStorage.ItemIcons` (an empty Folder, already in `default.project.json`), named EXACTLY
   like the item's key (e.g. `PipePistol`, `IronOre`, `SpeedCoil`, or the literal `Scrap`/`Cores`
   for the two currencies), and set its Image/Texture property via Studio's normal asset picker.
