@@ -34,9 +34,9 @@ UiIconConfig.Icons = {
 	-- Raid sector map backdrop. Not a glyph like everything else here — a full-bleed BACKGROUND
 	-- image sitting behind the raid minimap's node tree (RaidClient.client.lua), scrimmed down so
 	-- the nodes stay legible whatever art lands here. Wants something map-ish and roughly 3:4
-	-- portrait: a schematic, a scan, a torn survey chart. At 0 the minimap draws its own procedural
-	-- grid instead and looks finished either way, so this can stay empty indefinitely.
-	raid_map_backdrop = 0,
+	-- portrait: a schematic, a scan, a torn survey chart. Landed 2026-09-20. At 0 the minimap draws
+	-- its own procedural grid instead, so clearing this is always safe.
+	raid_map_backdrop = 85290921846067,
 
 	-- Action row (bottom-centre). `defense` is the big Start Defense shield.
 	inventory = 104907654078136,
@@ -63,19 +63,19 @@ UiIconConfig.Icons = {
 	materials_hover = 137045467867215,
 
 	-- Robot rig silhouettes for the Welding Station's rig diagram — one line drawing per robot, in
-	-- the same 180x230 proportion the design mockup used. NONE of these are uploaded yet, and that is
-	-- not a blocker: MainHud draws each rig out of Frames (an outline chassis, per robot) and only
-	-- swaps in the image once its ID lands here, so the tab is complete-looking either way. Same
-	-- "missing art never breaks the loop" rule as everything else in this table.
-	rig_Scrapbot = 0,
-	rig_SentryDrone = 0,
-	rig_IronGuardian = 0,
-	rig_ArcTurret = 0,
+	-- the same 180x230 proportion the design mockup used. All six landed 2026-09-20. MainHud still draws
+	-- each rig out of Frames (an outline chassis, per robot) underneath, and only swaps in the image
+	-- when its ID resolves — so clearing one back to 0 returns that rig to the drawn chassis rather
+	-- than an empty slot. Same "missing art never breaks the loop" rule as everything else here.
+	rig_Scrapbot = 80151007183183,
+	rig_SentryDrone = 97701995483868,
+	rig_IronGuardian = 80966572255279,
+	rig_ArcTurret = 137530542592176,
 	-- The companion drone, drawn on the same machinery for the Drones tab's core bay.
-	rig_drone = 0,
+	rig_drone = 119438986320857,
 	-- Drawn for a robot key with no rig_<key> entry at all (a Tier 5 added to CraftingRecipes before
 	-- its art exists). Also unset, which just falls through to the drawn generic chassis.
-	rig_generic = 0,
+	rig_generic = 126576474168818,
 
 	-- The 9-sliced panel shape: square top-left and bottom-right, 45-degree cut top-right and
 	-- bottom-left. White, tinted per element at runtime, so this one asset is every angular panel,
