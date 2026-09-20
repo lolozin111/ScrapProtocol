@@ -3364,7 +3364,59 @@ and frames.
 
 ### Resuming after a context reset
 
-**NEWEST — end of session 2026-09-17. Start here.** Everything below this block is older.
+**NEWEST — end of session 2026-09-20. Start here.** Everything below this block is older.
+
+Shipped this session (all committed on `fix/audit-p0-p3`, NOT pushed):
+- **Base lasers persist and kill enemies** — both of last session's open questions, answered by the
+  user. New profile field `BaseLasersOn` (backfilled `false`), restored on the first base build of a
+  session and written on each toggle. Enemies now die to an active laser: `CombatEncounterService`'s
+  `spawnEnemy` tags every spawn `Enemy`, `BaseLaserService` walks up from the touched part to that
+  tag and sets `Health = 0`, so the kill counts exactly like a gun kill. Robots still pass through.
+  NOT yet verified in Studio. Two known gaps, both deliberate and unasked: a BOSS walking into a
+  laser dies instantly (could trivialise boss waves — one line to exempt), and a laser only ever
+  fires if it sits where enemies actually walk, since they stop at the base's edge to attack it.
+- **`ItemIconConfig.lua`** — item icons can now be filled in from code, the way `UiIconConfig` always
+  worked for chrome. Created because the alternative was the user hand-building ~44 ImageLabels in a
+  Studio folder that git never sees. `HudKit.getItemIcon` resolves config → `ItemIcons` folder for
+  the exact key, then the same pair for the weapon's `Family`; `applyIcon(..., "ItemIcons")` consults
+  it too. The folder convention is untouched and still honoured.
+- **The icon set is IN.** 52 uploads wired up: every item key but `CopperOre` (not drawn yet), plus a
+  per-weapon `ScrapSMG`, plus all six `rig_*` robot line drawings and `raid_map_backdrop` — the last
+  entries in `UiIconConfig` that were still `0`. Confirmed rendering in game by the user.
+- **The loading screen preloads the icon configs.** Found by the user: icons still popped in blank on
+  first hover/inventory open, because a bare number in a config is invisible to both the instance
+  tree walk and the `rbxassetid://` string match. Resolved through each module's own `Get()` rather
+  than a blind table walk — a walk would have to treat every number as an id, and an unset icon IS
+  the number 0. Side effect worth remembering: the Skip button (5s) drops you in before the preload
+  finishes, so "icons still pop in" during a test usually means the screen was skipped.
+- **All six base models built and placed** (user, in Studio). The setup contract they were built
+  against — exact `BaseTier1`..`BaseTier6` names, `ReplicatedStorage.BaseTemplates`, PrimaryPart =
+  floor at Orientation 0,0,0, per-tier footprint, the `Laser`/`Button` prefix pair on T4+ — is on a
+  companion page: https://claude.ai/artifact/CiMxwyJeMb6oPEFVzYZ98d
+
+Lessons worth keeping:
+- **An asset's uploaded NAME stops mattering once the ID lives in a config.** Three of the 52 were
+  uploaded misspelled (`ScavangedCapacitor`, `BlackLine`, `Rig_ArcTurret`) and needed no re-upload —
+  the key in the file is the contract, the asset name is just a label. This is a real advantage of
+  the config over the Studio folder, where the instance's name IS the lookup.
+- **`MarketplaceService:GetProductInfo(id).Name` in the command bar maps a pile of pasted asset IDs
+  back to their filenames.** That is how 52 unlabelled IDs became a mapping without guesswork; worth
+  reaching for again rather than asking the user to copy names one at a time.
+- **Preload lists drift from render paths unless they share a resolver.** Same lesson as `Shared/`
+  generally: the loading screen asking `Get()` is why a future icon source can't be silently missed.
+
+**Where to pick up, none of it started:** (1) guns in the player's hand — `ReplicatedStorage.WeaponTools`
+is still empty, and it needs all 18 as real Tools with a Handle (no family shortcut, that is an
+icon-resolver feature); (2) a gun-holding animation for the player — the user is making the dash
+animation already, so animation work is live; (3) ENEMY AI variety — three patterns exist
+(`Chaser`, `Slam`, `Animated`), Phase 00 step 7 wants three new ones. Plus the `CopperOre` icon
+whenever it's drawn (one number into `ItemIconConfig`).
+
+**Open questions:** should a BOSS be immune to base lasers? Do the finished base models match the
+per-tier footprint numbers in `ResearchConfig` (the "am I at my base" radius), or should those
+numbers move to match the art? Both are asked and unanswered.
+
+**Session 2026-09-17.** (Superseded by the block above.)
 
 Shipped this session (all committed AND PUSHED on `fix/audit-p0-p3`):
 - **Enemy attack animations read right.** With no Idle animation there was nothing underneath an
