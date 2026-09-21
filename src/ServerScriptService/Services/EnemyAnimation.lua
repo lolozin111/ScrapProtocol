@@ -60,13 +60,15 @@ local RunService = game:GetService("RunService")
 
 local StatusEffects = require(script.Parent.StatusEffects)
 local PlayerSpeed = require(script.Parent.PlayerSpeed)
+local EnemyMovement = require(script.Parent.EnemyMovement)
 
 local EnemyAnimation = {}
 
--- Mirrors EnemyAI.lua's own MOVE_THINK_INTERVAL / SPAWN_GRACE_SECONDS exactly — kept as a separate
--- copy rather than shared, because EnemyAI's are private locals in a module this file must never
--- require (see header). If either tuning number changes there, change it here too.
-local MOVE_THINK_INTERVAL = 0.5
+-- Mirrors EnemyAI.lua's own SPAWN_GRACE_SECONDS exactly — kept as a separate copy rather than
+-- shared, because EnemyAI's is a private local in a module this file must never require (see
+-- header). If it changes there, change it here too. Walking's own timing (the old
+-- MOVE_THINK_INTERVAL this file used to keep its own copy of) now lives entirely inside
+-- EnemyMovement.lua, which both files require directly — nothing left here to duplicate.
 local SPAWN_GRACE_SECONDS = 1
 
 -- The PlayerSpeed key every animation-hit slow is filed under. One key, not one per attack, per
@@ -704,7 +706,7 @@ function EnemyAnimation.Tick(enemy, context, fallbackPattern)
 	-- Stopped signal, so onAttackStopped still closes any open Sweep window and stamps the cooldown
 	-- exactly like a normal finish would, instead of leaving a window open forever.
 	if StatusEffects.IsStunned(enemy) then
-		humanoid:Move(Vector3.new(0, 0, 0))
+		EnemyMovement.Stop(enemy)
 		if anim.CurrentAttack and anim.CurrentAttack.Track.IsPlaying then
 			anim.CurrentAttack.Track:Stop()
 		end
@@ -740,9 +742,10 @@ function EnemyAnimation.Tick(enemy, context, fallbackPattern)
 
 	-- Mid-swing: hold still, let the animation and its markers do the rest. No re-targeting, no
 	-- distance check, nothing — same "an attack in progress owns the enemy completely" rule Slam's
-	-- wind-up enforces for the identical reason.
+	-- wind-up enforces for the identical reason, and Stop (not Hold) for the identical reason too: a
+	-- swing that visibly slides mid-animation reads as broken, not threatening.
 	if anim.CurrentAttack and anim.CurrentAttack.Track.IsPlaying then
-		humanoid:Move(Vector3.new(0, 0, 0))
+		EnemyMovement.Stop(enemy)
 		return
 	end
 
@@ -797,7 +800,10 @@ function EnemyAnimation.Tick(enemy, context, fallbackPattern)
 				end
 			end
 
-			humanoid:Move(Vector3.new(0, 0, 0))
+			-- Committing to swing is the same "must not move" moment as Slam's wind-up commit — Stop,
+			-- not Hold, so the attack doesn't open with a peer-overlap nudge sliding him out of the
+			-- facing he just spent the turn earning.
+			EnemyMovement.Stop(enemy)
 			if anim.MoveTrack and anim.MoveTrack.IsPlaying then
 				anim.MoveTrack:Stop()
 			end
@@ -809,10 +815,11 @@ function EnemyAnimation.Tick(enemy, context, fallbackPattern)
 		end
 	end
 
-	-- Walking: same boundary-circle MoveTo convention as Chaser/Slam (see EnemyAI.lua's own comment
-	-- on why) — aim at a point ON the ContactRange ring along the current bearing, never past it, so
-	-- Roblox's own arrival tolerance stops him right at the ring instead of relying on a per-tick
-	-- Move(zero) backstop to catch him after the fact.
+	-- Walking: same boundary-circle target convention as Chaser/Slam (see EnemyAI.lua's own comment
+	-- on why) — aim at a point ON the ContactRange ring along the current bearing, never past it.
+	-- EnemyMovement.WalkTo is what actually issues (and paths, and steers) the walk now, called every
+	-- tick — it throttles its own MoveTo issuance internally, so this is no longer gated by a think
+	-- timer, and Hold covers the "not walking" case instead of a bare Move(zero) backstop.
 	-- AttackRadius (optional): inside it he holds his ground, turning and swinging but not walking. He
 	-- only starts walking once the target leaves it, then walks until they're back inside the
 	-- ContactRange ring. The gap between the two is deliberate: with one threshold, a player standing
@@ -824,13 +831,12 @@ function EnemyAnimation.Tick(enemy, context, fallbackPattern)
 		anim.Walking = false
 	end
 
-	if not anim.Walking then
-		humanoid:Move(Vector3.new(0, 0, 0))
-	elseif now - (enemy.LastMoveThink or 0) >= MOVE_THINK_INTERVAL then
-		enemy.LastMoveThink = now
+	if anim.Walking then
 		local direction = distance > 0 and (flat / distance) or Vector3.new(1, 0, 0)
 		local standPoint = targetPosition + direction * enemy.ContactRange
-		humanoid:MoveTo(standPoint)
+		EnemyMovement.WalkTo(enemy, standPoint, context)
+	else
+		EnemyMovement.Hold(enemy, context)
 	end
 
 	if anim.MoveTrack then

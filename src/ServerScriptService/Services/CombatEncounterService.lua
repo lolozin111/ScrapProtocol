@@ -515,7 +515,9 @@ local function spawnEnemy(typeKey: string, typeData, spawnPosition: Vector3, mul
 		Defense = typeData.Defense * multiplier,
 		AIPattern = typeData.AIPattern,
 		LastAttackTime = 0,
-		LastMoveThink = 0,
+		-- No LastMoveThink here anymore — walking's own timing/pathing/stuck-detection state now
+		-- lives on `enemy.Movement`, created lazily by EnemyMovement.lua the first time it sees this
+		-- record, the same "the record grows the fields it needs" pattern the Slam fields below use.
 		-- Slam cycle fields (EnemyAI.Patterns.Slam) — nil for every type that doesn't set
 		-- AIPattern = "Slam" on its EnemyConfig entry (the faction base templates have no such
 		-- fields, so the metatable __index chain just yields nil for a Chaser-type enemy). That's
@@ -962,10 +964,16 @@ function CombatEncounterService.RunWave(player: Player, waveNumber: number, opts
 
 		-- TargetPosition is the base's own anchor point, not the player — every enemy is chasing
 		-- and attacking the wall now, see this file's header.
+		--
+		-- Enemies = aliveEnemies: this tick's own alive-enemy list, threaded through so
+		-- EnemyMovement's separation steering can see every other enemy without keeping its own
+		-- second copy of it. Same list the pattern-dispatch loop right below already iterates — one
+		-- list, read by both, never two that could drift out of sync with each other.
 		local aiContext = {
 			TargetPosition = basePosition,
 			Now = now,
 			DamageTarget = damageTarget,
+			Enemies = aliveEnemies,
 		}
 		-- Statuses tick from the same loop that drives the AI, so a bleed advances at the same
 		-- rate in a raid room as in base defense. Damage routes through the normal pipeline —
@@ -1263,12 +1271,16 @@ function CombatEncounterService.RunRaidCombat(player: Player, arenaCenter: Vecto
 		-- live Instance lets a hit measure the player's ACTUAL position at the instant it lands instead
 		-- of wherever they were up to TICK_SECONDS ago, and TargetPlayer lets a hit apply a slow
 		-- (PlayerSpeed.Set) to someone, which a bare position can never do.
+		-- Enemies = aliveEnemies: same reasoning as RunWave's own aiContext above — lets
+		-- EnemyMovement's separation steering see every other enemy in this encounter without a
+		-- second list to keep in sync with the one the pattern-dispatch loop below already uses.
 		local aiContext = {
 			TargetPosition = rootPart.Position,
 			Now = now,
 			DamageTarget = damageTarget,
 			TargetPart = rootPart,
 			TargetPlayer = player,
+			Enemies = aliveEnemies,
 		}
 		-- Statuses tick from the same loop that drives the AI, so a bleed advances at the same
 		-- rate in a raid room as in base defense. Damage routes through the normal pipeline —

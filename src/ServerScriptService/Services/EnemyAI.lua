@@ -14,14 +14,18 @@
 	ContactRange/AttackCooldown copied as-is from EnemyConfig, SpawnTime stamped at spawn (see
 	SPAWN_GRACE_SECONDS below), though CombatEncounterService currently overrides ContactRange to
 	BaseConfig.WallAttackRange for base defense specifically — see spawnEnemy's comment there, and
-	LastAttackTime/LastMoveThink timestamps this file maintains). `context` is shared across every
-	enemy in the tick: { TargetPosition, Now, DamageTarget, TargetPart?, TargetPlayer? }. The last two
-	are raid-only (RunRaidCombat's aiContext sets both; RunWave's has neither, since base defense has
-	no player to point at) — TargetPart is the player's live HumanoidRootPart, there for consumers like
-	EnemyAnimation.lua whose damage lands off an async animation marker instead of this loop's own
-	polling and so needs the player's position at the INSTANT of the hit, not this tick's snapshot;
-	TargetPlayer is the Player itself, there so a hit can apply a status through PlayerSpeed, which a
-	bare position can never do. Both nil in a wave — anything that reads them must tolerate that.
+	LastAttackTime timestamp this file maintains — walking's own timing/pathing state now lives on
+	enemy.Movement instead, owned and lazily created by EnemyMovement.lua). `context` is shared across
+	every enemy in the tick: { TargetPosition, Now, DamageTarget, TargetPart?, TargetPlayer?, Enemies }.
+	Enemies is the tick's own aliveEnemies list, threaded through so EnemyMovement's separation
+	steering can see every other enemy without this file or that one needing its own copy of the list.
+	TargetPart/TargetPlayer are raid-only (RunRaidCombat's aiContext sets both; RunWave's has neither,
+	since base defense has no player to point at) — TargetPart is the player's live HumanoidRootPart,
+	there for consumers like EnemyAnimation.lua whose damage lands off an async animation marker
+	instead of this loop's own polling and so needs the player's position at the INSTANT of the hit,
+	not this tick's snapshot; TargetPlayer is the Player itself, there so a hit can apply a status
+	through PlayerSpeed, which a bare position can never do. Both nil in a wave — anything that reads
+	them must tolerate that.
 
 	TargetPosition is deliberately just a point in space, not tied to any particular kind of
 	target — base defense currently points it at the plot's own anchor position (the wall), NOT
@@ -38,13 +42,9 @@
 
 local StatusEffects = require(script.Parent.StatusEffects)
 local EnemyAnimation = require(script.Parent.EnemyAnimation)
+local EnemyMovement = require(script.Parent.EnemyMovement)
 
 local EnemyAI = {}
-
--- How often a Chasing enemy re-issues a MoveTo while it's still out of contact range — not every
--- single tick, so a fast tick rate doesn't spam Humanoid:MoveTo (and the pathfinding work behind
--- it) for no benefit.
-local MOVE_THINK_INTERVAL = 0.5
 
 -- Extra slack (studs) added ONLY to the "am I close enough to attack" check below, on top of
 -- enemy.ContactRange — NOT used for where MoveTo aims (see standPoint below, still the exact
@@ -145,9 +145,11 @@ EnemyAI.Patterns.Chaser = function(enemy, context)
 	end
 
 	-- A stunned enemy neither moves nor attacks. Checked before anything else so a stun is a real
-	-- interrupt rather than a slow — Move(zero) stops whatever walk was already in progress.
+	-- interrupt rather than a slow — Stop() cancels whatever walk/path was already in progress and
+	-- resets the stuck tracker, so resuming afterward re-evaluates fresh instead of continuing
+	-- whatever was true before the interrupt.
 	if StatusEffects.IsStunned(enemy) then
-		humanoid:Move(Vector3.new(0, 0, 0))
+		EnemyMovement.Stop(enemy)
 		EnemyAnimation.Locomotion(enemy, false)
 		return
 	end
@@ -177,28 +179,31 @@ EnemyAI.Patterns.Chaser = function(enemy, context)
 	EnemyAnimation.Locomotion(enemy, not inRange)
 
 	if inRange then
-		-- Move(zero) stops whatever walk is already in progress the instant we cross into range,
-		-- and stays as a defensive backstop every tick — cheap, and covers the moment right after
+		-- Hold stops whatever walk is already in progress the instant we cross into range (and
+		-- keeps nudging apart from an overlapping peer at plain contact — see EnemyMovement.Hold),
+		-- called every tick as a defensive backstop — cheap, and covers the moment right after
 		-- crossing the boundary before the standPoint walk below would've naturally stopped anyway.
-		humanoid:Move(Vector3.new(0, 0, 0))
+		EnemyMovement.Hold(enemy, context)
 		if context.Now - enemy.LastAttackTime >= enemy.AttackCooldown and context.Now - enemy.SpawnTime >= SPAWN_GRACE_SECONDS then
 			enemy.LastAttackTime = context.Now
 			context.DamageTarget(enemy.ContactDamage)
 			EnemyAnimation.PlayAttack(enemy)
 		end
-	elseif context.Now - enemy.LastMoveThink >= MOVE_THINK_INTERVAL then
-		enemy.LastMoveThink = context.Now
-		-- The actual fix: MoveTo used to always target TargetPosition itself (the base's dead
-		-- center), so every walk command was aimed PAST the ContactRange ring and relied entirely
-		-- on Move(zero) catching it after the fact each tick — any momentary jostle out of range
-		-- (physics, another enemy, tick timing) re-fired this branch and sent it walking at the
-		-- literal center again, which could creep an enemy further in each time it happened. Instead,
-		-- aim MoveTo at a point ON the ContactRange boundary circle itself, along the current bearing
-		-- from the target to the enemy — Roblox's own MoveTo arrival naturally stops the enemy right
-		-- at the ring by design, it's never asked to walk any further than that in the first place.
+	else
+		-- The actual fix (this comment predates EnemyMovement, still holds): MoveTo used to always
+		-- target TargetPosition itself (the base's dead center), so every walk command was aimed PAST
+		-- the ContactRange ring and relied entirely on a Move(zero) backstop catching it after the
+		-- fact each tick — any momentary jostle out of range (physics, another enemy, tick timing)
+		-- re-fired this branch and sent it walking at the literal center again, which could creep an
+		-- enemy further in each time it happened. Instead, aim at a point ON the ContactRange boundary
+		-- circle itself, along the current bearing from the target to the enemy — arrival naturally
+		-- stops the enemy right at the ring by design, it's never asked to walk any further than that
+		-- in the first place. EnemyMovement.WalkTo is what actually issues (and paths, and steers) the
+		-- walk toward that point now; this file just decides WHERE that point is, every tick — WalkTo
+		-- throttles its own MoveTo issuance internally, so this is no longer gated by a think timer.
 		local direction = distance > 0 and (toEnemy / distance) or Vector3.new(1, 0, 0)
 		local standPoint = context.TargetPosition + direction * enemy.ContactRange
-		humanoid:MoveTo(standPoint)
+		EnemyMovement.WalkTo(enemy, standPoint, context)
 	end
 end
 
@@ -361,7 +366,7 @@ EnemyAI.Patterns.Slam = function(enemy, context)
 			warn(("[EnemyAI] Enemy type %s uses AIPattern \"Slam\" but is missing one of SlamWindup/SlamDamage/SlamRadius/SlamCooldown in EnemyConfig — it will stand still. Add all four."):format(
 				tostring(enemy.TypeKey)))
 		end
-		humanoid:Move(Vector3.new(0, 0, 0))
+		EnemyMovement.Stop(enemy)
 		return
 	end
 
@@ -371,7 +376,7 @@ EnemyAI.Patterns.Slam = function(enemy, context)
 	-- the telegraph's growth) until the stun clears; the impact still resolves on the first
 	-- non-stunned tick where context.Now has already passed SlamImpactAt.
 	if StatusEffects.IsStunned(enemy) then
-		humanoid:Move(Vector3.new(0, 0, 0))
+		EnemyMovement.Stop(enemy)
 		EnemyAnimation.Locomotion(enemy, false)
 		return
 	end
@@ -387,7 +392,11 @@ EnemyAI.Patterns.Slam = function(enemy, context)
 	-- timer runs out, and the telegraph would be lying about where the hit lands.
 	if enemy.SlamImpactAt then
 		if context.Now < enemy.SlamImpactAt then
-			humanoid:Move(Vector3.new(0, 0, 0))
+			-- Stop, not Hold: the enemy must not visibly slide during its telegraph, even the small
+			-- peer-overlap nudge Hold would otherwise apply — a committed wind-up owns the enemy
+			-- completely (see this branch's own header comment above), and a telegraph that moves is a
+			-- telegraph that lies about where the hit lands.
+			EnemyMovement.Stop(enemy)
 			updateTelegraph(enemy, context)
 			EnemyAnimation.Locomotion(enemy, false)
 			return
@@ -430,8 +439,10 @@ EnemyAI.Patterns.Slam = function(enemy, context)
 	EnemyAnimation.Locomotion(enemy, not inRange)
 
 	if inRange then
-		-- Same defensive backstop as Chaser's Move(zero) — see that pattern's own comment.
-		humanoid:Move(Vector3.new(0, 0, 0))
+		-- Same defensive backstop as Chaser's Hold — see that pattern's own comment. No wind-up is
+		-- committed yet on this branch (that case returned above), so Hold's small peer-overlap nudge
+		-- is fine here; only the ACTUAL wind-up above needs the harder Stop.
+		EnemyMovement.Hold(enemy, context)
 		if context.Now >= (enemy.SlamNextReadyAt or 0) and context.Now - enemy.SpawnTime >= SPAWN_GRACE_SECONDS then
 			-- Commit: lock the centre NOW, at the moment the wind-up begins — not re-read at impact.
 			-- Reading it again at impact would let anything that moves the enemy between commit and
@@ -444,11 +455,13 @@ EnemyAI.Patterns.Slam = function(enemy, context)
 			-- across it. Keep the animation about as long as SlamWindup (0.9s).
 			EnemyAnimation.PlayAttack(enemy)
 		end
-	elseif context.Now - enemy.LastMoveThink >= MOVE_THINK_INTERVAL then
-		enemy.LastMoveThink = context.Now
+	else
+		-- See Chaser's own walking-branch comment for the boundary-circle reasoning — copy-identical
+		-- on purpose. EnemyMovement.WalkTo throttles its own MoveTo issuance now, so this is no longer
+		-- gated by a think timer.
 		local direction = distance > 0 and (toEnemy / distance) or Vector3.new(1, 0, 0)
 		local standPoint = context.TargetPosition + direction * enemy.ContactRange
-		humanoid:MoveTo(standPoint)
+		EnemyMovement.WalkTo(enemy, standPoint, context)
 	end
 end
 
