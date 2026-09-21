@@ -21,12 +21,16 @@
 	first build) so equipping never breaks before gun art exists. Swap in the real Tool later; this
 	file picks it up automatically the moment a Studio-authored one with that exact name exists,
 	since the placeholder path is only ever a fallback.
+
+	The hold POSE that plays while a gun is out is not here — it lives in
+	StarterPlayerScripts/WeaponPose.client.lua, driven off the WeaponTool/WeaponKey attributes this
+	file stamps on each Tool. It was briefly server-side and had to move: see that file's header for
+	why (a visible race against Roblox's own default tool pose that no amount of preloading fixed).
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local CraftingRecipes = require(ReplicatedStorage.Shared.CraftingRecipes)
-local WeaponPoseConfig = require(ReplicatedStorage.Shared.WeaponPoseConfig)
 local PlayerSpeed = require(script.Parent.PlayerSpeed)
 local DataService = require(script.Parent.DataService)
 
@@ -85,107 +89,6 @@ local function getTemplate(weaponKey: string): Tool
 	return buildPlaceholderTool(weaponKey, CraftingRecipes.Weapons[weaponKey])
 end
 
--- The hold pose (WeaponPoseConfig) — a looping arm-only animation played while a gun is out, so the
--- player visibly holds it instead of running with empty hands. Layered rather than replacing
--- anything: Action priority beats the default walk/run on the joints the pose actually keyframes
--- (the arms) and leaves every other joint to Roblox's own animations, which is why one static pose
--- covers walking, running, jumping and falling without a clip for each.
---
--- Priority is forced HERE rather than trusted from the uploaded asset. An animation published at
--- the wrong priority fails in one of two silent ways — ignored under the walk, or stopping the legs
--- outright — and which one is invisible from Studio after upload.
-local POSE_FADE = 0.15 -- seconds, both directions; a hard cut to a pose reads as a snap
-
-local animationCache: { [string]: Animation } = {}
-local activePose: { [number]: AnimationTrack } = {} -- userId -> the pose track currently playing
-
--- userId -> animationId -> a track already loaded onto THIS character's Animator.
---
--- Why tracks are cached and loaded EARLY: loading a track is what actually fetches the animation
--- data, and doing it at Equipped time meant the first equip of a session played Roblox's default
--- hold for a beat before the real pose appeared. So the track is loaded when the gun Tool is
--- built (SyncEquippedTool) — which also covers every respawn, since the gun is rebuilt from the
--- profile then — and Equipped only has to :Play() something already resident. The join-time
--- preload in LoadingScreen covers the download; this covers the per-character load on top of it.
---
--- Keyed per character, NOT per player: a track belongs to the Animator it was loaded on, and that
--- Animator dies with the character, so this is cleared on CharacterAdded rather than reused.
-local poseTracks: { [number]: { [string]: AnimationTrack } } = {}
-
-local function animationFor(animationId: string): Animation
-	local animation = animationCache[animationId]
-	if not animation then
-		animation = Instance.new("Animation")
-		animation.AnimationId = animationId
-		animationCache[animationId] = animation
-	end
-	return animation
-end
-
--- Loads (and caches) the pose track for weaponKey on the player's current character, without
--- playing it. Returns nil when there is no pose for this weapon, or no character to load onto yet.
-local function loadPoseTrack(player: Player, weaponKey: string): AnimationTrack?
-	local animationId = WeaponPoseConfig.Get(weaponKey)
-	if not animationId then
-		return nil -- no pose made for this weapon yet; default arms, as before this existed
-	end
-
-	local forPlayer = poseTracks[player.UserId]
-	if forPlayer and forPlayer[animationId] then
-		return forPlayer[animationId]
-	end
-
-	local character = player.Character
-	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-	local animator = humanoid and humanoid:FindFirstChildOfClass("Animator")
-	if not animator then
-		return nil
-	end
-
-	local ok, track = pcall(function()
-		return animator:LoadAnimation(animationFor(animationId))
-	end)
-	if not ok or not track then
-		warn(("[WeaponToolService] Could not load the hold pose for %s (%s) — check the animation exists and is owned by whoever owns this place."):format(weaponKey, animationId))
-		return nil
-	end
-
-	-- Priority and Looped are set once, here, rather than at every play.
-	track.Priority = Enum.AnimationPriority.Action
-	track.Looped = true
-
-	forPlayer = forPlayer or {}
-	forPlayer[animationId] = track
-	poseTracks[player.UserId] = forPlayer
-	return track
-end
-
-local function stopPose(player: Player)
-	local track = activePose[player.UserId]
-	activePose[player.UserId] = nil
-	if track then
-		-- The track outlives its Animator on respawn; stopping a dead one throws rather than no-ops.
-		pcall(function()
-			track:Stop(POSE_FADE)
-		end)
-	end
-end
-
-local function playPose(player: Player, weaponKey: string)
-	stopPose(player)
-
-	-- Almost always a cache hit by the time this runs — see loadPoseTrack's comment. It still
-	-- loads on demand as a fallback, for the case where the character wasn't ready when the gun
-	-- was built.
-	local track = loadPoseTrack(player, weaponKey)
-	if not track then
-		return
-	end
-
-	track:Play(POSE_FADE)
-	activePose[player.UserId] = track
-end
-
 local function isWeaponTool(instance: Instance): boolean
 	return instance:IsA("Tool") and instance:GetAttribute("WeaponTool") == true
 end
@@ -207,7 +110,6 @@ local function clearExistingWeaponTools(player: Player)
 		end
 	end
 	PlayerSpeed.Set(player, "Wield", nil)
-	stopPose(player) -- Unequipped never fires for a held Tool that is destroyed; see above
 end
 
 function WeaponToolService.SyncEquippedTool(player: Player, weaponInstance)
@@ -249,22 +151,6 @@ function WeaponToolService.SyncEquippedTool(player: Player, weaponInstance)
 		end)
 	end
 
-	-- Same pair of events as the wield penalty above, and for the same reason: Equipped/Unequipped
-	-- already cover dropping the gun, dying with it and switching slots. The one case they DON'T
-	-- cover is the tool being destroyed while held — clearExistingWeaponTools handles that, exactly
-	-- as it already has to for the wield penalty.
-	tool.Equipped:Connect(function()
-		playPose(player, weaponInstance.WeaponKey)
-	end)
-	tool.Unequipped:Connect(function()
-		stopPose(player)
-	end)
-
-	-- Load the pose onto this character NOW, while the gun is only sitting in the Backpack, so the
-	-- first Equipped has nothing left to fetch. This is what stops the first equip of a session
-	-- showing Roblox's default hold for a beat before snapping into the real pose.
-	loadPoseTrack(player, weaponInstance.WeaponKey)
-
 	tool.Parent = backpack
 end
 
@@ -289,18 +175,8 @@ local function waitForProfile(player: Player)
 	return profile
 end
 
-Players.PlayerRemoving:Connect(function(player: Player)
-	activePose[player.UserId] = nil -- no profile data here, so PlayerRemoving is fine
-	poseTracks[player.UserId] = nil
-end)
-
 Players.PlayerAdded:Connect(function(player: Player)
 	player.CharacterAdded:Connect(function()
-		-- Tracks belong to the old character's Animator, which has just been replaced. Dropping them
-		-- here means SyncEquippedTool below loads fresh ones onto the new Animator.
-		poseTracks[player.UserId] = nil
-		activePose[player.UserId] = nil
-
 		local profile = waitForProfile(player)
 		if not profile or not profile.EquippedWeaponId then
 			return
