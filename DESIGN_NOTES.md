@@ -3364,7 +3364,40 @@ and frames.
 
 ### Resuming after a context reset
 
-**NEWEST — end of session 2026-09-20. Start here.** Everything below this block is older.
+**NEWEST — 2026-09-21, same session continuing. Start here.** Everything below this block is older.
+
+**Gun hold poses — BUILT and verified working by the user.** `WeaponPoseConfig.lua` (Shared) maps a
+weapon to a looping arm-only animation, resolved exact key → `Family` → `Default`, the same shape
+`ItemIconConfig` uses. The user made FOUR poses (pistol/Salvage, Flamethrowers, Bows, Snipers);
+`GrenadeLaunchers`, `Miniguns` and `Default` stand in with the Sniper pose and are marked STAND-IN in
+the file — an unposed gun reads worse than a slightly wrong one. Playback is
+`StarterPlayerScripts/WeaponPose.client.lua`, off the `WeaponTool`/`WeaponKey` attributes
+`WeaponToolService` stamps on each Tool.
+
+**The lesson from that build, worth more than the feature.** The first equip of a session visibly
+played Roblox's DEFAULT tool hold before snapping to the real pose. Two fixes were shipped against
+the wrong diagnosis ("the animation is still downloading"): adding the pose ids to the join preload,
+then loading the `AnimationTrack` at tool-BUILD time instead of at Equipped. Both helped slightly,
+which is precisely what should have falsified the theory — a missing animation plays NOTHING, not
+the default hold. It was a RACE: equipping fires locally, where Roblox's own `Animate` plays
+"toolnone" immediately, while a server-played pose has to make a round trip back. Playing it on the
+client removed the gap entirely. Two follow-ups worth keeping:
+- **Priority `Action2`, not `Action`** — one step above what Roblox's tool animations use, so ours
+  wins outright instead of tying and leaving the result to blend weights.
+- **Cosmetic-only client authority is fine here** and does not dent the server-authoritative rule: a
+  pose grants nothing. What a weapon IS, and whether it may fire, never moved.
+- The preload work was NOT wasted (the data is still fetched at join) — but it was not the bug, and
+  shipping it twice before questioning the premise is the thing to avoid next time.
+
+**Where the user is now:** tuning each gun Tool's `Grip`/Handle placement in Studio so the model sits
+right in the posed hand. `ReplicatedStorage.WeaponTools` still needs all 18 real Tools (a Tool with a
+`Handle`; no family shortcut — that is an icon/pose resolver feature only). Until one exists for a
+weapon, equipping gives a grey placeholder box and a warn, by design.
+
+**Still not started:** ENEMY AI variety — three patterns exist (`Chaser`, `Slam`, `Animated`), Phase
+00 step 7 wants three new ones. Plus the `CopperOre` icon, and the two open questions below.
+
+**Session 2026-09-20.** (Superseded by the block above.)
 
 Shipped this session (all committed on `fix/audit-p0-p3`, NOT pushed):
 - **Base lasers persist and kill enemies** — both of last session's open questions, answered by the
