@@ -270,6 +270,13 @@ local function collectConfigIds(into: { any })
 		walk(enemyConfig)
 	end
 
+	local poseConfig = requireShared("WeaponPoseConfig")
+	if poseConfig and type(poseConfig.AllIds) == "function" then
+		for _, id in ipairs(poseConfig.AllIds()) do
+			add(id)
+		end
+	end
+
 	for _, moduleName in ipairs({ "ItemIconConfig", "UiIconConfig" }) do
 		local iconConfig = requireShared(moduleName)
 		if iconConfig and type(iconConfig.Icons) == "table" and type(iconConfig.Get) == "function" then

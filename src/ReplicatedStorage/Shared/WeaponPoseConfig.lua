@@ -73,4 +73,18 @@ function WeaponPoseConfig.Get(weaponKey: string): string?
 	return normalize(WeaponPoseConfig.Poses.Default)
 end
 
+-- Every distinct pose id in the table above, for the join-time preload (LoadingScreen.client.lua).
+-- Deduped, because six families currently point at four animations.
+function WeaponPoseConfig.AllIds(): { string }
+	local seen, ids = {}, {}
+	for _, value in pairs(WeaponPoseConfig.Poses) do
+		local id = normalize(value)
+		if id and not seen[id] then
+			seen[id] = true
+			table.insert(ids, id)
+		end
+	end
+	return ids
+end
+
 return WeaponPoseConfig

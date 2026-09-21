@@ -99,6 +99,67 @@ local POSE_FADE = 0.15 -- seconds, both directions; a hard cut to a pose reads a
 local animationCache: { [string]: Animation } = {}
 local activePose: { [number]: AnimationTrack } = {} -- userId -> the pose track currently playing
 
+-- userId -> animationId -> a track already loaded onto THIS character's Animator.
+--
+-- Why tracks are cached and loaded EARLY: loading a track is what actually fetches the animation
+-- data, and doing it at Equipped time meant the first equip of a session played Roblox's default
+-- hold for a beat before the real pose appeared. So the track is loaded when the gun Tool is
+-- built (SyncEquippedTool) — which also covers every respawn, since the gun is rebuilt from the
+-- profile then — and Equipped only has to :Play() something already resident. The join-time
+-- preload in LoadingScreen covers the download; this covers the per-character load on top of it.
+--
+-- Keyed per character, NOT per player: a track belongs to the Animator it was loaded on, and that
+-- Animator dies with the character, so this is cleared on CharacterAdded rather than reused.
+local poseTracks: { [number]: { [string]: AnimationTrack } } = {}
+
+local function animationFor(animationId: string): Animation
+	local animation = animationCache[animationId]
+	if not animation then
+		animation = Instance.new("Animation")
+		animation.AnimationId = animationId
+		animationCache[animationId] = animation
+	end
+	return animation
+end
+
+-- Loads (and caches) the pose track for weaponKey on the player's current character, without
+-- playing it. Returns nil when there is no pose for this weapon, or no character to load onto yet.
+local function loadPoseTrack(player: Player, weaponKey: string): AnimationTrack?
+	local animationId = WeaponPoseConfig.Get(weaponKey)
+	if not animationId then
+		return nil -- no pose made for this weapon yet; default arms, as before this existed
+	end
+
+	local forPlayer = poseTracks[player.UserId]
+	if forPlayer and forPlayer[animationId] then
+		return forPlayer[animationId]
+	end
+
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	local animator = humanoid and humanoid:FindFirstChildOfClass("Animator")
+	if not animator then
+		return nil
+	end
+
+	local ok, track = pcall(function()
+		return animator:LoadAnimation(animationFor(animationId))
+	end)
+	if not ok or not track then
+		warn(("[WeaponToolService] Could not load the hold pose for %s (%s) — check the animation exists and is owned by whoever owns this place."):format(weaponKey, animationId))
+		return nil
+	end
+
+	-- Priority and Looped are set once, here, rather than at every play.
+	track.Priority = Enum.AnimationPriority.Action
+	track.Looped = true
+
+	forPlayer = forPlayer or {}
+	forPlayer[animationId] = track
+	poseTracks[player.UserId] = forPlayer
+	return track
+end
+
 local function stopPose(player: Player)
 	local track = activePose[player.UserId]
 	activePose[player.UserId] = nil
@@ -113,35 +174,14 @@ end
 local function playPose(player: Player, weaponKey: string)
 	stopPose(player)
 
-	local animationId = WeaponPoseConfig.Get(weaponKey)
-	if not animationId then
-		return -- no pose made for this weapon yet; default arms, exactly as before this existed
-	end
-
-	local character = player.Character
-	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-	local animator = humanoid and humanoid:FindFirstChildOfClass("Animator")
-	if not animator then
+	-- Almost always a cache hit by the time this runs — see loadPoseTrack's comment. It still
+	-- loads on demand as a fallback, for the case where the character wasn't ready when the gun
+	-- was built.
+	local track = loadPoseTrack(player, weaponKey)
+	if not track then
 		return
 	end
 
-	local animation = animationCache[animationId]
-	if not animation then
-		animation = Instance.new("Animation")
-		animation.AnimationId = animationId
-		animationCache[animationId] = animation
-	end
-
-	local ok, track = pcall(function()
-		return animator:LoadAnimation(animation)
-	end)
-	if not ok or not track then
-		warn(("[WeaponToolService] Could not load the hold pose for %s (%s) — check the animation exists and is owned by whoever owns this place."):format(weaponKey, animationId))
-		return
-	end
-
-	track.Priority = Enum.AnimationPriority.Action
-	track.Looped = true
 	track:Play(POSE_FADE)
 	activePose[player.UserId] = track
 end
@@ -220,6 +260,11 @@ function WeaponToolService.SyncEquippedTool(player: Player, weaponInstance)
 		stopPose(player)
 	end)
 
+	-- Load the pose onto this character NOW, while the gun is only sitting in the Backpack, so the
+	-- first Equipped has nothing left to fetch. This is what stops the first equip of a session
+	-- showing Roblox's default hold for a beat before snapping into the real pose.
+	loadPoseTrack(player, weaponInstance.WeaponKey)
+
 	tool.Parent = backpack
 end
 
@@ -246,10 +291,16 @@ end
 
 Players.PlayerRemoving:Connect(function(player: Player)
 	activePose[player.UserId] = nil -- no profile data here, so PlayerRemoving is fine
+	poseTracks[player.UserId] = nil
 end)
 
 Players.PlayerAdded:Connect(function(player: Player)
 	player.CharacterAdded:Connect(function()
+		-- Tracks belong to the old character's Animator, which has just been replaced. Dropping them
+		-- here means SyncEquippedTool below loads fresh ones onto the new Animator.
+		poseTracks[player.UserId] = nil
+		activePose[player.UserId] = nil
+
 		local profile = waitForProfile(player)
 		if not profile or not profile.EquippedWeaponId then
 			return
