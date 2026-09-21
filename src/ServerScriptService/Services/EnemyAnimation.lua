@@ -57,7 +57,9 @@
 ]]
 
 local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local EnemyAwarenessConfig = require(ReplicatedStorage.Shared.EnemyAwarenessConfig)
 local StatusEffects = require(script.Parent.StatusEffects)
 local PlayerSpeed = require(script.Parent.PlayerSpeed)
 local EnemyMovement = require(script.Parent.EnemyMovement)
@@ -990,6 +992,90 @@ function EnemyAnimation.Locomotion(enemy, walking: boolean)
 		end
 	elseif moveTrack.IsPlaying then
 		moveTrack:Stop(0.15)
+	end
+end
+
+----------------------------------------------------------------------
+-- Ambient — how an UNAWARE raid enemy looks while it idles and wanders (EnemyAwareness). Called only
+-- while the enemy hasn't spotted the player; the moment it's alerted, EnemyAwareness calls this with
+-- nil and the pattern's own Locomotion/PlayAttack take over exactly as before this existed.
+--
+--   "Idle" — the type's own Idle if EnemyConfig has one (setupLocomotion already started it, and it
+--            keeps playing underneath everything as always), otherwise Roblox's default R15 idle.
+--   "Walk" — Roblox's default R15 walk, the user's ask: wandering uses "the default player walking
+--            animation", which also reads as a stroll next to a type's own Move (often a charge).
+--   nil    — stop both.
+--
+-- The defaults live in EnemyAwarenessConfig. They only move a rig with standard R15 joint names;
+-- anything else plays nothing and sits in its rest pose — the fix for that is the type's own Idle.
+-- Loaded lazily on the first Ambient call, so an enemy that is never unaware (every wave enemy,
+-- every Ambush/Boss enemy, every always-aware type) never loads them at all.
+----------------------------------------------------------------------
+
+local AMBIENT_FADE = 0.2
+
+local function setupAmbient(enemy, loco)
+	loco.AmbientLoaded = true
+	local humanoid = enemy.Humanoid
+	local animator = humanoid and humanoid:FindFirstChildOfClass("Animator")
+	local typeKey = tostring(enemy.TypeKey)
+	if not animator then
+		warnOnce(warnedFallback, typeKey .. "/Ambient",
+			("[EnemyAnimation] %s has no Animator inside its Humanoid — it idles and wanders unanimated. Add an Animator inside the Humanoid of ServerStorage.EnemyModels.%s."):format(typeKey, tostring(enemy.TypeData and enemy.TypeData.ModelName)))
+		return
+	end
+	if not loco.IdleTrack then
+		loco.AmbientIdle = loadTrack(animator, typeKey, "DefaultIdle", EnemyAwarenessConfig.DefaultIdleAnimation, true, Enum.AnimationPriority.Idle)
+	end
+	loco.AmbientWalk = loadTrack(animator, typeKey, "DefaultWalk", EnemyAwarenessConfig.DefaultWalkAnimation, true, Enum.AnimationPriority.Movement)
+
+	-- setupLocomotion's own Died handler doesn't know about these two; without this they'd keep looping
+	-- on a corpse that died mid-wander (shot before it ever spotted anyone).
+	humanoid.Died:Connect(function()
+		if loco.AmbientIdle then
+			loco.AmbientIdle:Stop()
+		end
+		if loco.AmbientWalk then
+			loco.AmbientWalk:Stop()
+		end
+	end)
+end
+
+function EnemyAnimation.Ambient(enemy, mode: string?)
+	if enemy.Anim then
+		return -- an "Animated" enemy owns every track it has; it's never given an awareness state anyway
+	end
+	if not enemy.Loco then
+		enemy.Loco = setupLocomotion(enemy)
+	end
+	local loco = enemy.Loco
+	if loco.AmbientMode == mode then
+		return
+	end
+	loco.AmbientMode = mode
+	if mode and not loco.AmbientLoaded then
+		setupAmbient(enemy, loco)
+	end
+
+	local idle, walk = loco.AmbientIdle, loco.AmbientWalk
+	if mode == "Walk" then
+		if walk and not walk.IsPlaying then
+			walk:Play(AMBIENT_FADE)
+		end
+	elseif mode == "Idle" then
+		if walk and walk.IsPlaying then
+			walk:Stop(AMBIENT_FADE)
+		end
+		if idle and not idle.IsPlaying then
+			idle:Play(AMBIENT_FADE)
+		end
+	else
+		if walk and walk.IsPlaying then
+			walk:Stop(AMBIENT_FADE)
+		end
+		if idle and idle.IsPlaying then
+			idle:Stop(AMBIENT_FADE)
+		end
 	end
 end
 

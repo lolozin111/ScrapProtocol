@@ -72,6 +72,7 @@
         "RaidMapUpdate": { "$className": "RemoteEvent" },
         "ChooseRaidNode": { "$className": "RemoteEvent" },
         "RaidRoomUpdate": { "$className": "RemoteEvent" },
+        "EnemyAlarm": { "$className": "RemoteEvent" },
         "RaidRoomAction": { "$className": "RemoteEvent" },
         "AbandonRaid": { "$className": "RemoteEvent" },
         "RequestExtractRaid": { "$className": "RemoteEvent" },

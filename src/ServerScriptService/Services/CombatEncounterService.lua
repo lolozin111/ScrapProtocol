@@ -55,6 +55,10 @@ local DataService = require(script.Parent.DataService)
 local CombatMath = require(script.Parent.CombatMath)
 local DamagePipeline = require(script.Parent.DamagePipeline)
 local EnemyAI = require(script.Parent.EnemyAI)
+-- Unaware/idle/wander state for raid enemies (EnemyAwareness.lua). RunWave never calls Init on a
+-- record, so record.Awareness stays nil for every base-defense enemy and IsAware/Tick/OnDamaged
+-- all treat nil as "already aware" — the base-defense loop is untouched by this require existing.
+local EnemyAwareness = require(script.Parent.EnemyAwareness)
 local RobotBehaviors = require(script.Parent.RobotBehaviors)
 local PlotService = require(script.Parent.PlotService)
 local BaseService = require(script.Parent.BaseService)
@@ -703,6 +707,12 @@ local function resolveAndApplyDamage(enemyRecord, baseDamage: number, origin: Ve
 	})
 	enemyRecord.Humanoid:TakeDamage(finalDamage)
 
+	-- Every damage source (player fire, robots, turrets, statuses, explosions, ultimates) resolves
+	-- through this one function — see the file header — so hooking awareness here is the single
+	-- place that guarantees "getting shot wakes you up" holds no matter what did the shooting.
+	-- No-op for a base-defense enemy (record.Awareness is nil there) and for an already-aware one.
+	EnemyAwareness.OnDamaged(enemyRecord)
+
 	-- Training dummies keep a running total on their head. Fed from the SAME number the pipeline
 	-- just produced rather than re-derived, so what the dummy reports and what the enemy actually
 	-- took can never disagree.
@@ -1117,9 +1127,15 @@ end
 -- Room Model — spawn exactly what the room says, exactly where it says. spawnKeys (the ring around
 -- arenaCenter) is spawned TOO when it's non-empty; callers that want only one pass the other empty.
 -- An entry's own Multiplier overrides `multiplier` (a Boss room's escort vs its boss).
+--
+-- options.StartUnaware (optional): when true, every enemy spawned into this encounter — explicit
+-- and ring spawns alike — starts idle/wandering instead of already hunting the player
+-- (EnemyAwareness.Init below); enemies with no EnemyAwarenessConfig entry for their type ignore
+-- this and spawn aware regardless, same as always. Only RaidRoomService's Combat room passes this;
+-- Ambush and Boss rooms omit it on purpose (an ambush and a boss both already know you're there).
 ----------------------------------------------------------------------
 
-function CombatEncounterService.RunRaidCombat(player: Player, arenaCenter: Vector3, spawnKeys: { string }, multiplier: number, onEvent: ((string, any) -> ())?, explicitSpawns: { { Position: Vector3, TypeKey: string } }?): string
+function CombatEncounterService.RunRaidCombat(player: Player, arenaCenter: Vector3, spawnKeys: { string }, multiplier: number, onEvent: ((string, any) -> ())?, explicitSpawns: { { Position: Vector3, TypeKey: string } }?, options: { StartUnaware: boolean? }?): string
 	local character = player.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 	local rootPart = character and character:FindFirstChild("HumanoidRootPart")
@@ -1133,6 +1149,25 @@ function CombatEncounterService.RunRaidCombat(player: Player, arenaCenter: Vecto
 	playerFolder.Parent = encounterFolder
 
 	local enemyByModel = {}
+	-- A stable roster for EnemyAwareness, separate from the tick loop's own `aliveEnemies` below.
+	-- That list is rebuilt as a brand-new table every tick (see the while loop), so a reference to
+	-- it captured once at spawn time would go stale after the very first tick — no good for
+	-- EnemyAwareness.Alert/OnDamaged, which run OUTSIDE the tick loop entirely (a player's shot can
+	-- land between ticks, straight through resolveAndApplyDamage) and need a list that is still
+	-- correct whenever they're called. This one is only ever appended to, never replaced, so it
+	-- stays valid for the life of the encounter; Alert already filters it for "alive" itself.
+	local awarenessRoster = {}
+	-- One helper for both spawn passes below (explicit + ring) so Init is always called with the
+	-- same roster/player and neither pass can forget it — and so a future third spawn pass (mid-
+	-- fight reinforcements) only has to call this, not re-derive the opts table itself.
+	local function registerAwareness(record)
+		table.insert(awarenessRoster, record)
+		EnemyAwareness.Init(record, {
+			StartUnaware = options ~= nil and options.StartUnaware == true,
+			Player = player,
+			Enemies = awarenessRoster,
+		})
+	end
 	if explicitSpawns and #explicitSpawns > 0 then
 		-- Room-authored spawn points — see this function's own header. Every entry here already
 		-- passed RaidRoomService's own EnemyType validation (missing/unknown attributes are warned
@@ -1146,6 +1181,7 @@ function CombatEncounterService.RunRaidCombat(player: Player, arenaCenter: Vecto
 				local record = spawnEnemy(spawnInfo.TypeKey, typeData, spawnInfo.Position, spawnInfo.Multiplier or multiplier, playerFolder, typeData.ContactRange)
 				if record then
 					enemyByModel[record.Model] = record
+					registerAwareness(record)
 				end
 			end
 		end
@@ -1168,6 +1204,7 @@ function CombatEncounterService.RunRaidCombat(player: Player, arenaCenter: Vecto
 				local record = spawnEnemy(typeKey, typeData, spawnPosition, multiplier, playerFolder, typeData.ContactRange)
 				if record then
 					enemyByModel[record.Model] = record
+					registerAwareness(record)
 				end
 			end
 		end
@@ -1352,19 +1389,29 @@ function CombatEncounterService.RunRaidCombat(player: Player, arenaCenter: Vecto
 		end
 
 		for _, record in ipairs(aliveEnemies) do
-			-- Guarded like the RobotBehaviors dispatch below it. Unguarded, an EnemyConfig entry
-			-- naming an AIPattern that doesn't exist in EnemyAI.Patterns (a typo, or a pattern
-			-- planned but not written yet) threw from inside this tick loop — killing the whole
-			-- encounter coroutine and stranding activeRuns/activeEncounters, which locked the
-			-- player out of starting another run for the rest of the session. A missing pattern
-			-- should cost one enemy its brain, not the entire run.
-			local pattern = EnemyAI.Patterns[record.AIPattern]
-			if pattern then
-				pattern(record, aiContext)
-			elseif not warnedMissingPattern[record.AIPattern] then
-				warnedMissingPattern[record.AIPattern] = true
-				warn(("[CombatEncounterService] No EnemyAI pattern named %q (used by enemy type %s) — that enemy will stand still. Add it to EnemyAI.Patterns."):format(
-					tostring(record.AIPattern), tostring(record.TypeKey)))
+			-- EnemyAwareness.Tick handles an unaware (idle/wandering) enemy entirely itself and
+			-- returns true when it did — the normal EnemyAI pattern below only runs for an enemy
+			-- that is already aware, OR that just became aware this very tick (e.g. it spotted the
+			-- player during its own sight check), in which case Tick returns false so the pattern
+			-- picks it up immediately instead of losing a whole tick still standing idle. A record
+			-- with nil Awareness (any raid enemy whose type has no EnemyAwarenessConfig entry) is
+			-- always aware, so Tick is a guaranteed-false no-op for it and this loop behaves exactly
+			-- as it did before EnemyAwareness existed.
+			if not EnemyAwareness.Tick(record, aiContext) then
+				-- Guarded like the RobotBehaviors dispatch below it. Unguarded, an EnemyConfig entry
+				-- naming an AIPattern that doesn't exist in EnemyAI.Patterns (a typo, or a pattern
+				-- planned but not written yet) threw from inside this tick loop — killing the whole
+				-- encounter coroutine and stranding activeRuns/activeEncounters, which locked the
+				-- player out of starting another run for the rest of the session. A missing pattern
+				-- should cost one enemy its brain, not the entire run.
+				local pattern = EnemyAI.Patterns[record.AIPattern]
+				if pattern then
+					pattern(record, aiContext)
+				elseif not warnedMissingPattern[record.AIPattern] then
+					warnedMissingPattern[record.AIPattern] = true
+					warn(("[CombatEncounterService] No EnemyAI pattern named %q (used by enemy type %s) — that enemy will stand still. Add it to EnemyAI.Patterns."):format(
+						tostring(record.AIPattern), tostring(record.TypeKey)))
+				end
 			end
 		end
 

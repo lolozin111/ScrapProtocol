@@ -1296,7 +1296,12 @@ local function beginCombat(state, node)
 			-- named Status, so it survives sitting right next to this — see that file's comment.
 			payload.Status = "Combat" .. eventStatus -- "CombatStart" / "CombatTick" / "CombatEnd"
 			RaidRoomUpdate:FireClient(state.Player, payload)
-		end, explicitSpawns)
+		end, explicitSpawns, {
+			-- A Combat room is the one room type whose enemies haven't seen you yet — they idle and
+			-- wander until they spot you (EnemyAwareness). Ambush and Boss rooms deliberately don't
+			-- pass this: an ambush already knows you're coming, and a boss shouldn't open idling.
+			StartUnaware = true,
+		})
 
 		-- The raid could have already been torn down out from under this task (player disconnected,
 		-- abandoned) while combat was resolving — activeRaids no longer having this entry is the
