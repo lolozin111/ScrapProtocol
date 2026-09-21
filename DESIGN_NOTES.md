@@ -3408,6 +3408,21 @@ so it lands with the Unaware state in step 2.
 
 **Order agreed:** (1) movement fixes → (2) Unaware/Wander + spotting + the Raider alarm → (3) the chest.
 
+**Step 2 BUILT 2026-09-21, NOT yet verified in Studio** — `EnemyAwareness.lua` + `Shared/EnemyAwarenessConfig.lua`
++ `EnemyAlarm.client.lua` + `EnemyAnimation.Ambient`. Raids, Combat rooms only (Ambush/Boss start
+aware by design). Decisions made in the build, all the user's to overturn: Scavenger ANSWERS the
+alarm (the user said the Raider calls "everybody"); alerted lasts the whole room; being damaged by
+anything alerts; a Raider killed by the shot that would have woken it raises NO alarm (stealth kills
+are rewarded); an answering Raider does not re-raise. Watch the `AwarenessState` attribute on enemy
+models in a playtest. If a type T-poses while idling/wandering, its rig doesn't use R15 joint names
+and the default animations can't drive it — give it its own Idle in EnemyConfig. Starting numbers:
+sight Scavenger 110 / Brute 60 / Raider 35 / Siegebreaker 20; wander radius Brute 90, others 8-20.
+
+**Also shipped 2026-09-21 after the user's first movement playtest:** every enemy now gets a hitbox
+(only the Hulk had one — shots at any animated pose passed through the rest-pose mesh collision and
+dealt nothing); a `Staggered` 13%/1.5s slow on the four Snipers-family guns + RailRifle + ArcCannon;
+and `EnemyMovement.Hold` settles instead of nudging forever (the Brute that "never stops").
+
 **Step 1 BUILT 2026-09-21, NOT yet verified in Studio.** `EnemyMovement.lua` (shared utility,
 `WalkTo`/`Hold`/`Stop`) + `Shared/EnemyMovementConfig.lua`; all three straight-line `MoveTo` sites
 now route through it. Things to watch in the first playtest, and the one bug already caught:
