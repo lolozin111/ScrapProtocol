@@ -3408,6 +3408,23 @@ so it lands with the Unaware state in step 2.
 
 **Order agreed:** (1) movement fixes → (2) Unaware/Wander + spotting + the Raider alarm → (3) the chest.
 
+**Step 1 BUILT 2026-09-21, NOT yet verified in Studio.** `EnemyMovement.lua` (shared utility,
+`WalkTo`/`Hold`/`Stop`) + `Shared/EnemyMovementConfig.lua`; all three straight-line `MoveTo` sites
+now route through it. Things to watch in the first playtest, and the one bug already caught:
+- **Caught in review, before any test:** the line-of-sight cast was aimed at the goal's own Y. A
+  wave's goal sits at the plot anchor's height, near the floor, so the cast hit the GROUND and read
+  every open field as blocked — every enemy pathfinding constantly and draining the shared budget.
+  Now cast flat at root height, sphere capped at 1.5 studs (a shapecast ignores whatever it starts
+  overlapping, so a wide sphere would go blind to terrain it touches). Worth remembering for step 2's
+  detection ranges, which are the same kind of cast.
+- **`CombatEnemies` doesn't collide with itself on purpose** (so a crowd can't jam a doorway) — that
+  is WHY enemies overlapped completely, and why spacing had to be steering, not physics.
+- If `[EnemyMovement] X failed to compute a path` shows in Output, that type's goal is unreachable
+  from where it spawned (inside geometry, across a gap) — the enemy still walks straight, so it's a
+  room/spawn layout problem, not a crash.
+- Every number is in `EnemyMovementConfig` — spacing too wide or tight, re-plans too slow, stuck
+  detection too eager are all config edits.
+
 **Earlier in this session (2026-09-21):**
 
 **Gun hold poses — BUILT and verified working by the user.** `WeaponPoseConfig.lua` (Shared) maps a
