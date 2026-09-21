@@ -91,6 +91,20 @@ StatusConfig.Types = {
 		SpeedMultiplier = 0.5,
 	},
 
+	-- A heavy round knocks the target's stride — the user's ask: "once a enemy gets hit by heavy
+	-- things ... they speed gets slowed by 10-15%". Applied through each heavy weapon's OnHitStatus
+	-- (CraftingRecipes): the four Snipers-family guns, the RailRifle and the ArcCannon. Deliberately
+	-- mild and short: it rewards landing the big shot without turning a sniper into a crowd-control
+	-- tool. One stack, refreshed on every hit, so a fast-firing heavy gun holds it on a target
+	-- rather than compounding it. Multiplies with any other slow (GetSpeedMultiplier).
+	Staggered = {
+		DisplayName = "Staggered",
+		MaxStacks = 1,
+		Duration = 1.5,
+		RefreshOnStack = true,
+		SpeedMultiplier = 0.87,
+	},
+
 	-- Two applications become a Stun — the IceThrower's whole gimmick. Handled generically here
 	-- (EscalatesTo/EscalatesAtStacks) rather than as special-case code in the gun, so any future
 	-- status can build to another one the same way.

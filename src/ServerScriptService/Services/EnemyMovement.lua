@@ -571,8 +571,9 @@ end
 
 -- Call every tick an enemy is in attack range and NOT walking. Doesn't hold perfectly still if it's
 -- overlapping a peer — the user's own rule, "keep a distance unless necessary," and being in attack
--- range is exactly the "necessary" case, so this only pushes apart at plain contact (radius sum),
--- not the wider personal-space multiplier WalkTo's Separation uses.
+-- range is exactly the "necessary" case, so this only pushes apart on DEEP overlap (a fraction of the
+-- radius sum, Separation.HoldOverlapStart), then settles — not the wider personal-space multiplier
+-- WalkTo's Separation uses.
 function EnemyMovement.Hold(enemy, context)
 	local model = enemy.Model
 	local humanoid = enemy.Humanoid
@@ -602,24 +603,28 @@ function EnemyMovement.Hold(enemy, context)
 					local delta = Vector3.new(rootPos.X - otherPos.X, 0, rootPos.Z - otherPos.Z)
 					local d = delta.Magnitude
 					local rOther = (other.Movement and other.Movement.Radius) or Pathing.DefaultAgentRadius
-					local minDist = rSelf + rOther -- contact only, not personal space (see header)
-					if d < minDist then
+					local contact = rSelf + rOther -- contact only, not personal space (see header)
+					-- Only DEEP overlap counts while holding — see EnemyMovementConfig's
+					-- HoldOverlapStart for the endless-shuffle bug a plain-contact trigger caused.
+					if d < contact * Separation.HoldOverlapStart then
 						local away = d < 0.01 and randomHorizontalUnit() or (delta / d)
-						overlap += away * (minDist - d)
+						overlap += away * (contact - d)
 					end
 				end
 			end
 		end
 	end
 
-	if overlap.Magnitude > 0.01 then
-		local now = os.clock()
-		if not state.LastHoldMoveAt or now - state.LastHoldMoveAt >= 0.3 then
-			state.LastHoldMoveAt = now
-			local step = math.min(overlap.Magnitude + 0.5, 3)
-			humanoid:MoveTo(rootPos + overlap.Unit * step)
-		end
-	else
+	-- One short nudge, then a settle period (HoldNudgeCooldown) standing still no matter what — a pair
+	-- that bumps once finishes apart instead of trading pushes every tick.
+	local now = os.clock()
+	local settling = state.LastHoldMoveAt and now - state.LastHoldMoveAt < Separation.HoldNudgeCooldown
+	if overlap.Magnitude > 0.01 and not settling then
+		state.LastHoldMoveAt = now
+		local step = math.min(overlap.Magnitude + 0.5, 3)
+		humanoid:MoveTo(rootPos + overlap.Unit * step)
+	elseif not settling or (state.LastHoldMoveAt and now - state.LastHoldMoveAt >= 0.4) then
+		-- Let the nudge itself play out (~0.4s) before braking; after that, hold still.
 		humanoid:Move(Vector3.new(0, 0, 0))
 	end
 end

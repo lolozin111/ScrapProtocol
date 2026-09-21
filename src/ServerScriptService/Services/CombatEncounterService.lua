@@ -367,6 +367,47 @@ end
 -- pickEnemyTemplate above resolves both and this function never needs to know which it got.
 local CollectionService = game:GetService("CollectionService")
 
+-- The body box an enemy type WITHOUT an explicit EnemyConfig Hitbox gets (see spawnEnemy's hitbox
+-- block for why every enemy needs one). Measured in the ROOT'S own space from the freshly cloned
+-- model, which is still in its authored rest pose here — so the box lines up with the root's axes and
+-- follows it through the weld, and the model's world position at this point doesn't matter.
+--
+-- Two things are deliberately LEFT OUT of the box:
+--   The Head. ResolvePlayerHit scores a headshot by hitting a part literally named "Head", and a box
+--   that swallowed the head would catch every shot first — quietly deleting the Bows' 2.2-2.5x
+--   headshot multipliers. A rigid Head part follows its animation already, so it stays hittable on
+--   its own. (A rig with no separate Head part — one skinned mesh — never had headshots to lose.)
+--   Accessories. Hair and hats sit around the head; including them would rebuild the box over it.
+-- Returns nil when there's nothing to measure, and the caller simply skips the box.
+local function measureRestPoseHitbox(model: Model): (Vector3?, Vector3?)
+	local rootPart = model.PrimaryPart
+	if not rootPart then
+		return nil, nil
+	end
+	local rootCFrame = rootPart.CFrame
+	local minP, maxP
+	for _, part in ipairs(model:GetDescendants()) do
+		if part:IsA("BasePart") and part.Name ~= "Head" and part.Name ~= "Hitbox"
+			and not part:FindFirstAncestorOfClass("Accessory") then
+			local half = part.Size * 0.5
+			for _, sx in ipairs({ -1, 1 }) do
+				for _, sy in ipairs({ -1, 1 }) do
+					for _, sz in ipairs({ -1, 1 }) do
+						local corner = rootCFrame:PointToObjectSpace(part.CFrame * Vector3.new(half.X * sx, half.Y * sy, half.Z * sz))
+						minP = minP and minP:Min(corner) or corner
+						maxP = maxP and maxP:Max(corner) or corner
+					end
+				end
+			end
+		end
+	end
+	if not minP then
+		return nil, nil
+	end
+	local size = (maxP - minP):Max(Vector3.new(1, 1, 1))
+	return size, (maxP + minP) / 2
+end
+
 local function spawnEnemy(typeKey: string, typeData, spawnPosition: Vector3, multiplier: number, parentFolder: Instance, contactRange: number)
 	local entry = EnemyModelsFolder:FindFirstChild(typeData.ModelName)
 	if not entry then
@@ -408,7 +449,22 @@ local function spawnEnemy(typeKey: string, typeData, spawnPosition: Vector3, mul
 	-- to its enemy, so nothing else needs to know this exists. Size/Offset are mirrored onto the model
 	-- as "HitboxSize"/"HitboxOffset" Attributes and re-applied whenever those change, so it can be sized
 	-- live in a playtest (server view) and the numbers copied back into EnemyConfig.
+	--
+	-- EVERY enemy gets one now, not just types with a Hitbox entry. It was Hulk-only, and the user hit
+	-- the exact bug the paragraph above describes on every other type: "the bullet passed thru the
+	-- enemy, so there is no damage" — any mid-stride or mid-swing pose puts the visible body somewhere
+	-- the rest-pose collision isn't. A type WITHOUT an entry gets a box measured from its own rest pose
+	-- (see measureRestPoseHitbox), so there is no per-enemy number to hand-tune and a new enemy type is
+	-- covered the moment it exists. An explicit entry still wins, exactly as before.
+	local hitboxSize, hitboxOffset, hitboxIsAuto
 	if typeData.Hitbox then
+		hitboxSize = typeData.Hitbox.Size or model.PrimaryPart.Size
+		hitboxOffset = typeData.Hitbox.Offset or Vector3.zero
+	else
+		hitboxSize, hitboxOffset = measureRestPoseHitbox(model)
+		hitboxIsAuto = true
+	end
+	if hitboxSize then
 		local rootPart = model.PrimaryPart
 		local hitbox = Instance.new("Part")
 		hitbox.Name = "Hitbox"
@@ -420,7 +476,9 @@ local function spawnEnemy(typeKey: string, typeData, spawnPosition: Vector3, mul
 		-- centre of mass in the middle of the visible body. EnemyAnimation turns him with an
 		-- AlignOrientation, and physics rotates about the centre of mass, so this is what makes him turn
 		-- around his body instead of swinging it round the root. The Humanoid scales its forces to mass.
-		hitbox.Massless = false
+		-- An AUTO box is massless instead: every other type walked and turned fine before it existed,
+		-- and adding a body-sized mass to them would change how they move for no reason.
+		hitbox.Massless = hitboxIsAuto == true
 		hitbox.CastShadow = false
 		hitbox.Material = Enum.Material.SmoothPlastic
 		hitbox.Color = Color3.fromRGB(255, 60, 60)
@@ -439,8 +497,8 @@ local function spawnEnemy(typeKey: string, typeData, spawnPosition: Vector3, mul
 			end
 			weld.C0 = CFrame.new(typeof(offset) == "Vector3" and offset or Vector3.zero)
 		end
-		model:SetAttribute("HitboxSize", typeData.Hitbox.Size or rootPart.Size)
-		model:SetAttribute("HitboxOffset", typeData.Hitbox.Offset or Vector3.zero)
+		model:SetAttribute("HitboxSize", hitboxSize)
+		model:SetAttribute("HitboxOffset", hitboxOffset)
 		applyHitbox()
 		hitbox.CFrame = rootPart.CFrame * weld.C0 -- placed before parenting so the weld has nothing to yank
 		hitbox.Parent = model

@@ -38,9 +38,9 @@ WeaponPoseConfig.Poses = {
 	Salvage = 102195291538019, -- PipePistol, ScrapSMG, RailRifle, ArcCannon
 	Flamethrowers = 97724042825106, -- Flamethrower, IceThrower, PoisonThrower
 	Bows = 89159738973224, -- RegularBow, Longbow, ExplosiveBow, StringedBow
-	Snipers = 116766888641307, -- RegularSniper, QuickSniper
+	Snipers = 116766888641307, -- RegularSniper, QuickSniper, Trailblazer, Hellfire
 	GrenadeLaunchers = 116766888641307, -- GrenadeLauncher, StickyGrenade — STAND-IN: the Sniper pose, until a launcher pose exists
-	Miniguns = 116766888641307, -- Trailblazer, Hellfire, Minigun — STAND-IN: the Sniper pose; a hip-fire pose would read better
+	Miniguns = 116766888641307, -- Minigun — STAND-IN: the Sniper pose; a hip-fire pose would read better
 
 	-- Per weapon, optional: add a weapon's own key here (e.g. Minigun = 123) and it beats its
 	-- family, for the one gun that a shared pose reads wrong on.

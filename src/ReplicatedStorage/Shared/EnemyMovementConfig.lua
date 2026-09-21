@@ -86,6 +86,17 @@ EnemyMovementConfig.Separation = {
 	-- tight crowd shuffles apart rather than flinging members sideways.
 	Strength = 1.0,
 	MaxOffset = 6,
+
+	-- HOLDING (in attack range, standing still). The first build nudged apart at plain contact on
+	-- every 0.3s tick, and a crowd ringing the player can't all fit without touching — so each nudge
+	-- pushed one enemy into the next, which nudged back, forever. The user saw it as a Brute that
+	-- "keeps moving and never stops" (the biggest body overlaps the most). Two brakes:
+	--   HoldOverlapStart — only nudge once the overlap is DEEP: centres closer than this fraction of
+	--   plain contact. Touching, or lightly overlapping, is accepted as settled.
+	--   HoldNudgeCooldown — after a nudge, stand still at least this long (seconds) before another,
+	--   so a pair that bumps once settles instead of trading pushes every tick.
+	HoldOverlapStart = 0.6,
+	HoldNudgeCooldown = 1.5,
 }
 
 return EnemyMovementConfig

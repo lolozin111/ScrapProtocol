@@ -68,6 +68,7 @@ CraftingRecipes.Weapons = {
 		Description = "A scavenged electromagnetic rail, jury-rigged to punch through plating.",
 		Projectile = "Rail", -- see ProjectileConfig.lua
 		Family = "Salvage",
+		OnHitStatus = { Key = "Staggered" }, -- heavy round: a short 13% slow, see StatusConfig.Staggered
 		Tier = 3,
 		Cost = { GoldOre = 35, CopperOre = 25 },
 		FireRate = 2, BaseDamage = 13, -- 26 DPS base
@@ -77,6 +78,7 @@ CraftingRecipes.Weapons = {
 		Description = "Overcharged capacitors crammed into a housing that probably shouldn't hold them.",
 		Projectile = "Arc", -- see ProjectileConfig.lua
 		Family = "Salvage",
+		OnHitStatus = { Key = "Staggered" }, -- heavy round: a short 13% slow, see StatusConfig.Staggered
 		Tier = 4,
 		Cost = { PlatinumOre = 20, GoldOre = 50 },
 		FireRate = 1, BaseDamage = 38, -- 38 DPS base
@@ -212,6 +214,7 @@ CraftingRecipes.Weapons = {
 		Description = "Enormous damage, glacial rate of fire, and it fights you every step you take.",
 		Projectile = "Sniper",
 		Family = "Snipers",
+		OnHitStatus = { Key = "Staggered" }, -- heavy round: a short 13% slow, see StatusConfig.Staggered
 		Tier = 3,
 		Cost = { GoldOre = 55, PlatinumOre = 15 },
 		FireRate = 0.5, BaseDamage = 90, -- 45 DPS, but delivered in one hit — burst, not sustain
@@ -224,6 +227,7 @@ CraftingRecipes.Weapons = {
 		Description = "Traded most of the punch for a trigger you can actually pull. Still not an SMG.",
 		Projectile = "QuickSniper",
 		Family = "Snipers",
+		OnHitStatus = { Key = "Staggered" }, -- heavy round: a short 13% slow, see StatusConfig.Staggered
 		Tier = 3,
 		Cost = { GoldOre = 35, CopperOre = 35 },
 		FireRate = 1.6, BaseDamage = 30, -- 48 DPS, spread over enough shots to correct your aim
@@ -280,6 +284,7 @@ CraftingRecipes.Weapons = {
 		Description = "Draws a burning line from muzzle to impact. Anything crossing it bleeds.",
 		Projectile = "Trailblazer",
 		Family = "Snipers",
+		OnHitStatus = { Key = "Staggered" }, -- heavy round: a short 13% slow, see StatusConfig.Staggered
 		Tier = 4,
 		Cost = { GoldOre = 50, PlatinumOre = 30, PlatinumBar = 15 },
 		FireRate = 0.5, BaseDamage = 62, -- less than the Longshot, per the spec; the trail makes it up
@@ -299,6 +304,7 @@ CraftingRecipes.Weapons = {
 		Description = "Four shots, then one straight up — and whatever comes back down is not yours to aim.",
 		Projectile = "Sniper",
 		Family = "Snipers",
+		OnHitStatus = { Key = "Staggered" }, -- heavy round: a short 13% slow, see StatusConfig.Staggered
 		Tier = 5,
 		Cost = { PlatinumOre = 45, VoidiumShard = 15, PlatinumBar = 20 },
 		FireRate = 0.6, BaseDamage = 80,
