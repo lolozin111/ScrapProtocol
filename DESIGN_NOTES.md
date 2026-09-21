@@ -3364,7 +3364,51 @@ and frames.
 
 ### Resuming after a context reset
 
-**NEWEST — 2026-09-21, same session continuing. Start here.** Everything below this block is older.
+**NEWEST — 2026-09-21, ENEMY AI DESIGN ROUND. Start here.** Everything below this block is older.
+
+**The user's enemy AI design — SETTLED 2026-09-21, SUPERSEDES Three Ways In's `Stalker`/`Guardian`/
+`Screamer`.** Those three were never built; the user was shown what they were meant to be and
+replaced them with their own, which fits the enemies the game actually has. Build this, not those.
+
+Raids only for spotting/alarms (the user's call) — in a base-defense wave every enemy is there to
+attack the base, so they stay aggressive and aware. The MOVEMENT fixes below apply everywhere.
+
+| Enemy | Spots you from | Once it spots you | Raider alarm |
+|---|---|---|---|
+| `Scavenger` (the user says "salvagers") | FAR | runs straight at you | — |
+| `Raider` | SHORT | raises the ALARM: calls everyone toward you, plus an effect and a sound on the player so they KNOW they were caught | raises it |
+| `Brute` | normal | WANDERS the map; on spotting, behaves like a Scavenger | always answers |
+| `Siegebreaker` | VERY short | behaves like a Brute | answers with 50% chance |
+
+Unassigned, asked and not yet answered: `ScrapCrawler`, `SentinelDrone`, `VoidwakenHulk`.
+
+**What this needs that does not exist:** an UNAWARE state. Today every raid enemy spawns already
+targeting the player, so there is nothing for "spotting" to transition out of. Idle/Wander → Alerted
+is the core new piece; detection ranges, the alarm broadcast and the 50% answer are config on top.
+Wandering uses the default Roblox walk animation (the user's ask). Rooms must be big enough for a
+detection range to mean anything — worth saying when the user builds rooms for this.
+
+**The chest — recommended YES, not yet built.** Raid rooms have no physical loot, so nothing is worth
+guarding and Siegebreakers/Brutes have no reason to be where they are. A lootable chest gives them
+one. Opening it should take a few seconds (a hold prompt), which makes it an exposed moment. Contents
+would be the room's `RunLocked` ore, which fits Salvage Run's existing stake. Shape still to agree.
+
+**Movement fixes — AGREED as step 1, all enemies, raids AND waves.** The user's diagnosis, correct and
+confirmed against source: there is no `PathfindingService` anywhere in `src/`; `Humanoid:MoveTo`
+walks a straight line, so enemies grind into walls and wedge. Three parts:
+1. **Pathfinding** — the ladder designed in "Movement ladder for the pathfinding" above and never
+   built: clear raycast → walk straight; blocked → path, recompute throttled and STAGGERED across
+   enemies; `AgentRadius` sized per enemy.
+2. **Stuck detection** — moving but not closing distance forces a recompute. The user's own framing.
+3. **Spacing** — the user's words: enemies keep "a sense of distance of one another and they dont
+   get too close to each other unless necessary but they still try not to overlap". So separation
+   that relaxes near the target (close in to attack when needed), never overlapping.
+Wandering is NOT in step 1 — it is meaningless while every enemy always knows where the player is,
+so it lands with the Unaware state in step 2.
+
+**Order agreed:** (1) movement fixes → (2) Unaware/Wander + spotting + the Raider alarm → (3) the chest.
+
+**Earlier in this session (2026-09-21):**
 
 **Gun hold poses — BUILT and verified working by the user.** `WeaponPoseConfig.lua` (Shared) maps a
 weapon to a looping arm-only animation, resolved exact key → `Family` → `Default`, the same shape
