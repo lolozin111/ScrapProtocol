@@ -32,15 +32,15 @@ local WeaponPoseConfig = {}
 WeaponPoseConfig.Poses = {
 	-- Used when a weapon's family has no pose of its own. Also the whole system while only one pose
 	-- exists — every gun uses it until the families below are filled in.
-	Default = 0,
+	Default = 135572728079965, -- the two-handed Sniper pose: the safest catch-all for a gun with no pose of its own
 
 	-- Per family (the same six families the icons use).
-	Salvage = 0,          -- PipePistol, ScrapSMG, RailRifle, ArcCannon
-	Flamethrowers = 0,    -- Flamethrower, IceThrower, PoisonThrower
-	Bows = 0,             -- RegularBow, Longbow, ExplosiveBow, StringedBow
-	Snipers = 0,          -- RegularSniper, QuickSniper
-	GrenadeLaunchers = 0, -- GrenadeLauncher, StickyGrenade
-	Miniguns = 0,         -- Trailblazer, Hellfire, Minigun
+	Salvage = 137890625294422, -- PipePistol, ScrapSMG, RailRifle, ArcCannon
+	Flamethrowers = 132623057769269, -- Flamethrower, IceThrower, PoisonThrower
+	Bows = 125134621015809, -- RegularBow, Longbow, ExplosiveBow, StringedBow
+	Snipers = 135572728079965, -- RegularSniper, QuickSniper
+	GrenadeLaunchers = 135572728079965, -- GrenadeLauncher, StickyGrenade — STAND-IN: the Sniper pose, until a launcher pose exists
+	Miniguns = 135572728079965, -- Trailblazer, Hellfire, Minigun — STAND-IN: the Sniper pose; a hip-fire pose would read better
 
 	-- Per weapon, optional: add a weapon's own key here (e.g. Minigun = 123) and it beats its
 	-- family, for the one gun that a shared pose reads wrong on.
