@@ -26,6 +26,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local CraftingRecipes = require(ReplicatedStorage.Shared.CraftingRecipes)
+local WeaponPoseConfig = require(ReplicatedStorage.Shared.WeaponPoseConfig)
 local PlayerSpeed = require(script.Parent.PlayerSpeed)
 local DataService = require(script.Parent.DataService)
 
@@ -84,6 +85,67 @@ local function getTemplate(weaponKey: string): Tool
 	return buildPlaceholderTool(weaponKey, CraftingRecipes.Weapons[weaponKey])
 end
 
+-- The hold pose (WeaponPoseConfig) — a looping arm-only animation played while a gun is out, so the
+-- player visibly holds it instead of running with empty hands. Layered rather than replacing
+-- anything: Action priority beats the default walk/run on the joints the pose actually keyframes
+-- (the arms) and leaves every other joint to Roblox's own animations, which is why one static pose
+-- covers walking, running, jumping and falling without a clip for each.
+--
+-- Priority is forced HERE rather than trusted from the uploaded asset. An animation published at
+-- the wrong priority fails in one of two silent ways — ignored under the walk, or stopping the legs
+-- outright — and which one is invisible from Studio after upload.
+local POSE_FADE = 0.15 -- seconds, both directions; a hard cut to a pose reads as a snap
+
+local animationCache: { [string]: Animation } = {}
+local activePose: { [number]: AnimationTrack } = {} -- userId -> the pose track currently playing
+
+local function stopPose(player: Player)
+	local track = activePose[player.UserId]
+	activePose[player.UserId] = nil
+	if track then
+		-- The track outlives its Animator on respawn; stopping a dead one throws rather than no-ops.
+		pcall(function()
+			track:Stop(POSE_FADE)
+		end)
+	end
+end
+
+local function playPose(player: Player, weaponKey: string)
+	stopPose(player)
+
+	local animationId = WeaponPoseConfig.Get(weaponKey)
+	if not animationId then
+		return -- no pose made for this weapon yet; default arms, exactly as before this existed
+	end
+
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	local animator = humanoid and humanoid:FindFirstChildOfClass("Animator")
+	if not animator then
+		return
+	end
+
+	local animation = animationCache[animationId]
+	if not animation then
+		animation = Instance.new("Animation")
+		animation.AnimationId = animationId
+		animationCache[animationId] = animation
+	end
+
+	local ok, track = pcall(function()
+		return animator:LoadAnimation(animation)
+	end)
+	if not ok or not track then
+		warn(("[WeaponToolService] Could not load the hold pose for %s (%s) — check the animation exists and is owned by whoever owns this place."):format(weaponKey, animationId))
+		return
+	end
+
+	track.Priority = Enum.AnimationPriority.Action
+	track.Looped = true
+	track:Play(POSE_FADE)
+	activePose[player.UserId] = track
+end
+
 local function isWeaponTool(instance: Instance): boolean
 	return instance:IsA("Tool") and instance:GetAttribute("WeaponTool") == true
 end
@@ -105,6 +167,7 @@ local function clearExistingWeaponTools(player: Player)
 		end
 	end
 	PlayerSpeed.Set(player, "Wield", nil)
+	stopPose(player) -- Unequipped never fires for a held Tool that is destroyed; see above
 end
 
 function WeaponToolService.SyncEquippedTool(player: Player, weaponInstance)
@@ -146,6 +209,17 @@ function WeaponToolService.SyncEquippedTool(player: Player, weaponInstance)
 		end)
 	end
 
+	-- Same pair of events as the wield penalty above, and for the same reason: Equipped/Unequipped
+	-- already cover dropping the gun, dying with it and switching slots. The one case they DON'T
+	-- cover is the tool being destroyed while held — clearExistingWeaponTools handles that, exactly
+	-- as it already has to for the wield penalty.
+	tool.Equipped:Connect(function()
+		playPose(player, weaponInstance.WeaponKey)
+	end)
+	tool.Unequipped:Connect(function()
+		stopPose(player)
+	end)
+
 	tool.Parent = backpack
 end
 
@@ -169,6 +243,10 @@ local function waitForProfile(player: Player)
 	end
 	return profile
 end
+
+Players.PlayerRemoving:Connect(function(player: Player)
+	activePose[player.UserId] = nil -- no profile data here, so PlayerRemoving is fine
+end)
 
 Players.PlayerAdded:Connect(function(player: Player)
 	player.CharacterAdded:Connect(function()
