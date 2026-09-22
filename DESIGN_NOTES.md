@@ -3368,7 +3368,23 @@ and frames.
 
 ### Resuming after a context reset
 
-**NEWEST — raid shop rework: BUILT 2026-09-22, awaiting Studio verification. START HERE.** All five
+**NEWEST — the user's ROADMAP after the shop, given 2026-09-22, in their order.** Do them in this
+sequence unless they say otherwise; each is its own job, and the greenlight rule still applies:
+1. **Boss card redesign** — the post-boss pick still renders as plain coloured buttons
+   (`RaidClient.renderCardChoices`). Rebuild it with the SAME card look as the raid shop, which is
+   the last piece of the shop rework ("after that the shop rework will be done"). IN PROGRESS.
+2. **Mine visual pass.**
+3. **Turret models.** (The user will make gear/turret models themselves later — "i could make some
+   models later but its all good for now". Placeholder neon gear visuals stay for now.)
+4. **Cleanup of the game + security patches** — `sp-remote-scout` sweep is the obvious opener.
+5. **Sound and music, plus weapon effects.**
+6. **Then the game enters its testing phase.**
+
+The icons landed 2026-09-22: all 12 shop icons are uploaded and live in `UiIconConfig` (commit
+66be115), drawn at `ICON_GLYPH_SIZE = 58` after the user found 40 too small. The user confirmed the
+shop "seems to be going great" in Studio — cards, icons, tinting and the 3-4 roll all render.
+
+**Raid shop rework: BUILT 2026-09-22, awaiting full Studio verification.** All five
 BUILD CONTRACT steps below landed (commits fbb6c60, 789b958) — `RunBuffConfig.lua`, `RunBuffService.lua`,
 the combat hooks in `CombatEncounterService`/`DamagePipeline`, `RaidShopPanel.lua` + `RaidClient`
 wiring, and this README pass (`sp-docs-dev`, this session). None of it has been clicked through in

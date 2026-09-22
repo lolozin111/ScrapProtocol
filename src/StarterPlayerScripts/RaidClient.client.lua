@@ -64,6 +64,8 @@ local BossBar = require(script.Parent.BossBar) -- top-centre boss HP bar; see th
 local RaidShopPanel = require(script.Parent.RaidShopPanel) -- the Salvage Run shop screen (cards +
 	-- equipment-slot bar), replacing the old inline ShopCatalog list in roomBody — see the
 	-- "ShopOffers"/"ShopResult"/"RunBuffs" handling below.
+local RunCard = require(script.Parent.RunCard) -- the shared 240x392 card both the shop and the
+	-- post-boss reward pick (below) render themselves with.
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 local RequestStartRaid = Remotes.RequestStartRaid
@@ -497,51 +499,176 @@ local function actionButton(order: number, text: string, color: Color3, onClick:
 	return button
 end
 
--- Boss card-pick UI (RaidRoomService's "BossCleared" status carries the CardChoices RaidConfig
--- .RollCardChoices rolled). One button per card, colored by its Rarity (RaidConfig
--- .CardRarityColors) — "the cards have rarity, and the buff is connected to rarity." Placeholder
--- content only, same as the card system generally — see RaidConfig.lua's own comment.
-local function renderCardChoices(order: number, cardChoices, onChoose: (string) -> ())
-	for _, card in ipairs(cardChoices or {}) do
-		local color = RaidConfig.CardRarityColors[card.Rarity] or COLOR.PanelLight
-		order += 1
-		local button = new("TextButton", {
-			BackgroundColor3 = COLOR.PanelLight,
-			Size = UDim2.new(1, 0, 0, 48),
-			LayoutOrder = order,
-			Font = Enum.Font.SourceSansBold,
-			Text = "",
-			Parent = roomBody,
-		}, { corner(6), stroke(color, 2), new("UIPadding", {
-			PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10),
-		}) })
-		new("TextLabel", {
-			BackgroundTransparency = 1,
-			Position = UDim2.new(0, 0, 0, 4),
-			Size = UDim2.new(1, 0, 0, 18),
-			Font = Enum.Font.SourceSansBold,
-			Text = ("%s — %s"):format(card.DisplayName, card.Rarity),
-			TextColor3 = color,
-			TextSize = 15,
-			TextXAlignment = Enum.TextXAlignment.Left,
-			Parent = button,
-		})
-		new("TextLabel", {
-			BackgroundTransparency = 1,
-			Position = UDim2.new(0, 0, 0, 24),
-			Size = UDim2.new(1, 0, 0, 18),
-			Font = Enum.Font.SourceSans,
-			Text = card.Description or "",
-			TextColor3 = COLOR.Muted,
-			TextSize = 12,
-			TextWrapped = true,
-			TextXAlignment = Enum.TextXAlignment.Left,
-			Parent = button,
-		})
-		button.MouseButton1Click:Connect(function()
-			onChoose(card.Key)
-		end)
+-- Boss reward pick (RaidRoomService's "BossCleared" status carries the CardChoices RaidConfig
+-- .RollCardChoices rolled) — rebuilt on RunCard.lua's shop-card look (it "looks dated next to the
+-- shop" as plain colored buttons) instead of hand-rolled. Same 1280-stage/1120-panel/UIScale-fit
+-- chrome as the raid shop (RaidShopPanel.lua's own header points at design/raid-shop/Main.dc.html)
+-- — recreated here rather than shared, since this is a different SCREEN (a one-off pick, not a
+-- returning shop node) even though the CARD itself is the one thing actually shared, via
+-- RunCard.build. Built once, IIFE-scoped so its construction locals (stage/panel/header pieces)
+-- don't spend this file's own top-level local budget — only the returned {stage, cardsRow} table
+-- and the two functions below do.
+--
+-- Modal: opened with dismissOnScrim = false, because the server is waiting on a "ChooseCard" and
+-- there is no legitimate way to back out of a boss reward once it's rolled.
+local bossPick = (function()
+	local STAGE_W, STAGE_H = 1280, 800 -- same canvas as RaidShopPanel's own stage
+	local PANEL_WIDTH = 1120
+
+	local stage = new("Frame", {
+		Name = "BossCardPick",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.new(0.5, 0, 0.5, 0),
+		Size = UDim2.fromOffset(STAGE_W, STAGE_H),
+		BackgroundColor3 = Color3.fromRGB(11, 9, 8), -- #0B0908, same scrim as RaidShopPanel's stage
+		BackgroundTransparency = 0.35,
+		Visible = false,
+		ZIndex = 5,
+		Parent = Hud.screenGui,
+	})
+	local stageScale = new("UIScale", { Scale = 1, Parent = stage })
+	local function updateScale()
+		local camera = Workspace.CurrentCamera
+		local viewport = camera and camera.ViewportSize or Vector2.new(STAGE_W, STAGE_H)
+		stageScale.Scale = math.min(1, viewport.X / STAGE_W, viewport.Y / STAGE_H)
 	end
+	updateScale()
+	local function hookCamera()
+		local camera = Workspace.CurrentCamera
+		if camera then
+			camera:GetPropertyChangedSignal("ViewportSize"):Connect(updateScale)
+		end
+	end
+	hookCamera()
+	Workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
+		hookCamera()
+		updateScale()
+	end)
+
+	local panel = new("Frame", {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.new(0.5, 0, 0.5, 0),
+		Size = UDim2.new(0, PANEL_WIDTH, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundColor3 = RunCard.COLOR_PANEL_BG,
+		Parent = stage,
+	}, {
+		corner(10),
+		stroke(RunCard.COLOR_LINE, 1),
+		new("UIPadding", { PaddingTop = UDim.new(0, 24), PaddingBottom = UDim.new(0, 24), PaddingLeft = UDim.new(0, 28), PaddingRight = UDim.new(0, 28) }),
+		new("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 18) }),
+	})
+
+	-- Header: eyebrow dot + mono caption, then a big title, then a muted sub-line — same shape as
+	-- the shop's own header, just centered (there's no currency readout to pair it against here).
+	local header = new("Frame", {
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundTransparency = 1,
+		LayoutOrder = 1,
+		Parent = panel,
+	}, { new("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder, HorizontalAlignment = Enum.HorizontalAlignment.Center, Padding = UDim.new(0, 4) }) })
+
+	local eyebrowRow = new("Frame", {
+		Size = UDim2.new(0, 0, 0, 12),
+		AutomaticSize = Enum.AutomaticSize.X,
+		BackgroundTransparency = 1,
+		LayoutOrder = 1,
+		Parent = header,
+	}, { new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, VerticalAlignment = Enum.VerticalAlignment.Center, Padding = UDim.new(0, 10) }) })
+	new("Frame", {
+		Size = UDim2.fromOffset(8, 8),
+		BackgroundColor3 = RunCard.COLOR_ACCENT,
+		LayoutOrder = 1,
+		Parent = eyebrowRow,
+	}, { new("UICorner", { CornerRadius = UDim.new(0.5, 0) }) })
+	new("TextLabel", {
+		Size = UDim2.new(0, 0, 1, 0),
+		AutomaticSize = Enum.AutomaticSize.X,
+		BackgroundTransparency = 1,
+		FontFace = RunCard.FONT.InconsolataBold,
+		Text = "CHOOSE ONE REWARD",
+		TextColor3 = RunCard.COLOR_MUTED,
+		TextSize = 12,
+		LayoutOrder = 2,
+		Parent = eyebrowRow,
+	})
+	new("TextLabel", {
+		Size = UDim2.new(0, 0, 0, 34),
+		AutomaticSize = Enum.AutomaticSize.X,
+		BackgroundTransparency = 1,
+		FontFace = RunCard.FONT.MontserratExtraBold,
+		Text = "BOSS DEFEATED",
+		TextColor3 = RunCard.COLOR_TEXT,
+		TextSize = 28,
+		LayoutOrder = 2,
+		Parent = header,
+	})
+	new("TextLabel", {
+		Size = UDim2.new(0, 0, 0, 18),
+		AutomaticSize = Enum.AutomaticSize.X,
+		BackgroundTransparency = 1,
+		FontFace = RunCard.FONT.SourceSansRegular,
+		Text = "This reward lasts the rest of the raid.",
+		TextColor3 = RunCard.COLOR_MUTED,
+		TextSize = 15,
+		LayoutOrder = 3,
+		Parent = header,
+	})
+
+	local cardsRow = new("Frame", {
+		Size = UDim2.new(1, 0, 0, RunCard.CARD_HEIGHT),
+		BackgroundTransparency = 1,
+		LayoutOrder = 2,
+		Parent = panel,
+	}, { new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, HorizontalAlignment = Enum.HorizontalAlignment.Center, Padding = UDim.new(0, 24) }) })
+
+	return { stage = stage, cardsRow = cardsRow }
+end)()
+
+-- Torn down from the same status paths the old inline renderCardChoices relied on clearRoomBody()
+-- for (Entered/Defeated/Extracted/Abandoned below) — this screen is no longer PART of roomBody, so
+-- hiding roomFrame alone would leave it floating on screen; each of those paths calls this directly.
+local function closeBossPick()
+	Hud.closePanel(bossPick.stage)
+end
+
+-- Rolls RunCard.build's 3 boss cards fresh. Boss cards span Common..Legendary — a wider band than
+-- the shop's own Rare/Epic/Legendary offers — which is fine unchanged: RunCard.rarityLook already
+-- falls through to a muted default for a rarity it doesn't recognize, and RunBuffConfig.RarityColor
+-- (which it calls) resolves Common/Uncommon/Rare/Epic/Legendary alike straight off ModConfig
+-- .Rarities. No pip row for these — they stack without limit and take no equipment slot, so
+-- FootNote takes the pip row's place instead (see RunCard.build's own doc comment).
+local function openBossPick(cardChoices)
+	for _, child in ipairs(bossPick.cardsRow:GetChildren()) do
+		if child:IsA("Frame") then
+			child:Destroy()
+		end
+	end
+	for i, card in ipairs(cardChoices or {}) do
+		local effectLabel, effectValue = RaidConfig.CardEffect(card)
+		RunCard.build({
+			Name = card.DisplayName,
+			Kind = "Boss Reward",
+			Rarity = card.Rarity,
+			IconKey = card.Icon,
+			EffectLabel = effectLabel,
+			EffectFrom = effectValue,
+			FootNote = "STACKS \194\183 NO SLOT", -- "STACKS · NO SLOT"
+			Description = card.Description,
+			LayoutOrder = i,
+			Parent = bossPick.cardsRow,
+			Button = {
+				Text = "TAKE",
+				Variant = "take",
+				OnClick = function()
+					RaidRoomAction:FireServer("ChooseCard", card.Key)
+					closeBossPick()
+				end,
+			},
+		})
+	end
+	Hud.openPanel(bossPick.stage, { onClose = closeBossPick, dismissOnScrim = false })
 end
 
 -- Forward-declared: redrawMap's per-node click handler below calls this (so Go Back To Base hides
@@ -1272,8 +1399,11 @@ RaidRoomUpdate.OnClientEvent:Connect(function(payload)
 		inRaid = true
 		inCombat = false
 		-- Leaving a Shop node (however that happened — LEAVE SHOP, or the map moving on some other
-		-- way) must not leave the shop screen stuck on top of whatever room comes next.
+		-- way) must not leave the shop screen stuck on top of whatever room comes next. Same
+		-- defensive reasoning for the boss-pick modal, even though choosing a card is the only way
+		-- this status is meant to be reached from a pending pick.
 		RaidShopPanel.Close()
+		closeBossPick()
 		-- The map is NOT hidden here any more. It is a permanent panel for the whole raid now, and
 		-- RaidMapUpdate has already moved the "you are here" marker into this room.
 		clearRoomBody()
@@ -1447,7 +1577,7 @@ RaidRoomUpdate.OnClientEvent:Connect(function(payload)
 	elseif status == "BossCleared" then
 		-- Full heal + a rarity-weighted card pick, BEFORE the map moves on — "once the boss fight
 		-- clears, you get healed, and you roll some cards with buffs... pretty roguelike." The
-		-- player has to actually pick one (renderCardChoices' buttons fire "ChooseCard") — there's
+		-- player has to actually pick one (openBossPick's TAKE buttons fire "ChooseCard") — there's
 		-- no "Continue" here, choosing IS what advances.
 		clearRoomBody()
 		local lootParts = {}
@@ -1465,19 +1595,9 @@ RaidRoomUpdate.OnClientEvent:Connect(function(payload)
 			TextWrapped = true,
 			Parent = roomBody,
 		})
-		new("TextLabel", {
-			BackgroundTransparency = 1,
-			Size = UDim2.new(1, 0, 0, 18),
-			LayoutOrder = 2,
-			Font = Enum.Font.SourceSansBold,
-			Text = "Choose one:",
-			TextColor3 = COLOR.Text,
-			TextSize = 15,
-			Parent = roomBody,
-		})
-		renderCardChoices(2, payload.CardChoices, function(cardKey)
-			RaidRoomAction:FireServer("ChooseCard", cardKey)
-		end)
+		-- The actual pick is the modal boss-pick screen now (RunCard-based, see its own comment
+		-- above), not buttons stacked into roomBody — roomBody keeps only the loot summary above.
+		openBossPick(payload.CardChoices)
 
 	elseif status == "CardChosen" then
 		local card = payload.Card
@@ -1521,6 +1641,7 @@ RaidRoomUpdate.OnClientEvent:Connect(function(payload)
 		hideSectorMap()
 		updateRaidButtons()
 		RaidShopPanel.Close()
+		closeBossPick()
 		beaconButton.Visible = false
 		local lost = (payload.LostContraband or 0) + (payload.LostCores or 0) > 0
 			and (" Lost " .. (payload.LostContraband or 0) .. " Contraband and " .. (payload.LostCores or 0) .. " Cores.")
@@ -1535,6 +1656,7 @@ RaidRoomUpdate.OnClientEvent:Connect(function(payload)
 		hideSectorMap()
 		updateRaidButtons()
 		RaidShopPanel.Close()
+		closeBossPick()
 		beaconButton.Visible = false
 		local banked = {}
 		if (payload.Contraband or 0) > 0 then
@@ -1558,6 +1680,7 @@ RaidRoomUpdate.OnClientEvent:Connect(function(payload)
 		hideSectorMap()
 		updateRaidButtons()
 		RaidShopPanel.Close()
+		closeBossPick()
 		beaconButton.Visible = false
 		local walkedAway = (payload.LostContraband or 0) + (payload.LostCores or 0) > 0
 			and ((" Left behind %d Contraband and %d Cores."):format(payload.LostContraband or 0, payload.LostCores or 0))

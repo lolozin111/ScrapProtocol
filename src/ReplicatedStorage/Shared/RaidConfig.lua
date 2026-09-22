@@ -774,37 +774,70 @@ RaidConfig.CardRarityColors = {
 
 -- One card per (stat, rarity) pair. Values are placeholders per the design doc but the ladder shape
 -- is deliberate: each rarity step is roughly a 1.5-1.6x jump over the last, same feel across stats.
+-- `Icon` reuses the run-buff icons already uploaded for the shop side of this rework (UiIconConfig)
+-- instead of commissioning boss-card-specific art — see CARD_STAT_ICONS below for the mapping.
+-- `Description` stays the sub-line text; the effect line itself (label + formatted value, e.g.
+-- "Damage +5%") is DERIVED from `Stats` via RaidConfig.CardEffect() below, not stored per entry, so
+-- retuning a Stats value can't leave a stale hand-typed Effect string behind.
+-- These cards stack WITHOUT limit and take NO equipment slot (unlike shop items, which cap at 4
+-- slots) — the new card UI prints that fact where the shop card prints its level pips.
 RaidConfig.CardPool = {
 	-- Damage
-	{ Key = "DamagePct_Common", DisplayName = "Overcharged Rounds", Rarity = "Common", Description = "+3% damage for the rest of this raid.", Stats = { DamagePct = 0.03 } },
-	{ Key = "DamagePct_Rare", DisplayName = "Overcharged Rounds", Rarity = "Rare", Description = "+5% damage for the rest of this raid.", Stats = { DamagePct = 0.05 } },
-	{ Key = "DamagePct_Epic", DisplayName = "Overcharged Rounds", Rarity = "Epic", Description = "+8% damage for the rest of this raid.", Stats = { DamagePct = 0.08 } },
-	{ Key = "DamagePct_Legendary", DisplayName = "Overcharged Rounds", Rarity = "Legendary", Description = "+12% damage for the rest of this raid.", Stats = { DamagePct = 0.12 } },
+	{ Key = "DamagePct_Common", DisplayName = "Overcharged Rounds", Rarity = "Common", Description = "+3% damage for the rest of this raid.", Icon = "RunOverclockChip", Stats = { DamagePct = 0.03 } },
+	{ Key = "DamagePct_Rare", DisplayName = "Overcharged Rounds", Rarity = "Rare", Description = "+5% damage for the rest of this raid.", Icon = "RunOverclockChip", Stats = { DamagePct = 0.05 } },
+	{ Key = "DamagePct_Epic", DisplayName = "Overcharged Rounds", Rarity = "Epic", Description = "+8% damage for the rest of this raid.", Icon = "RunOverclockChip", Stats = { DamagePct = 0.08 } },
+	{ Key = "DamagePct_Legendary", DisplayName = "Overcharged Rounds", Rarity = "Legendary", Description = "+12% damage for the rest of this raid.", Icon = "RunOverclockChip", Stats = { DamagePct = 0.12 } },
 
 	-- Fire rate
-	{ Key = "FireRatePct_Common", DisplayName = "Combat Stims", Rarity = "Common", Description = "+3% fire rate for the rest of this raid.", Stats = { FireRatePct = 0.03 } },
-	{ Key = "FireRatePct_Rare", DisplayName = "Combat Stims", Rarity = "Rare", Description = "+5% fire rate for the rest of this raid.", Stats = { FireRatePct = 0.05 } },
-	{ Key = "FireRatePct_Epic", DisplayName = "Combat Stims", Rarity = "Epic", Description = "+8% fire rate for the rest of this raid.", Stats = { FireRatePct = 0.08 } },
-	{ Key = "FireRatePct_Legendary", DisplayName = "Combat Stims", Rarity = "Legendary", Description = "+12% fire rate for the rest of this raid.", Stats = { FireRatePct = 0.12 } },
+	{ Key = "FireRatePct_Common", DisplayName = "Combat Stims", Rarity = "Common", Description = "+3% fire rate for the rest of this raid.", Icon = "RunRapidFeeder", Stats = { FireRatePct = 0.03 } },
+	{ Key = "FireRatePct_Rare", DisplayName = "Combat Stims", Rarity = "Rare", Description = "+5% fire rate for the rest of this raid.", Icon = "RunRapidFeeder", Stats = { FireRatePct = 0.05 } },
+	{ Key = "FireRatePct_Epic", DisplayName = "Combat Stims", Rarity = "Epic", Description = "+8% fire rate for the rest of this raid.", Icon = "RunRapidFeeder", Stats = { FireRatePct = 0.08 } },
+	{ Key = "FireRatePct_Legendary", DisplayName = "Combat Stims", Rarity = "Legendary", Description = "+12% fire rate for the rest of this raid.", Icon = "RunRapidFeeder", Stats = { FireRatePct = 0.12 } },
 
 	-- Max HP
-	{ Key = "MaxHpPct_Common", DisplayName = "Reinforced Plating", Rarity = "Common", Description = "+5% max HP for the rest of this raid.", Stats = { MaxHpPct = 0.05 } },
-	{ Key = "MaxHpPct_Rare", DisplayName = "Reinforced Plating", Rarity = "Rare", Description = "+8% max HP for the rest of this raid.", Stats = { MaxHpPct = 0.08 } },
-	{ Key = "MaxHpPct_Epic", DisplayName = "Reinforced Plating", Rarity = "Epic", Description = "+12% max HP for the rest of this raid.", Stats = { MaxHpPct = 0.12 } },
-	{ Key = "MaxHpPct_Legendary", DisplayName = "Reinforced Plating", Rarity = "Legendary", Description = "+18% max HP for the rest of this raid.", Stats = { MaxHpPct = 0.18 } },
+	{ Key = "MaxHpPct_Common", DisplayName = "Reinforced Plating", Rarity = "Common", Description = "+5% max HP for the rest of this raid.", Icon = "RunPlatedVest", Stats = { MaxHpPct = 0.05 } },
+	{ Key = "MaxHpPct_Rare", DisplayName = "Reinforced Plating", Rarity = "Rare", Description = "+8% max HP for the rest of this raid.", Icon = "RunPlatedVest", Stats = { MaxHpPct = 0.08 } },
+	{ Key = "MaxHpPct_Epic", DisplayName = "Reinforced Plating", Rarity = "Epic", Description = "+12% max HP for the rest of this raid.", Icon = "RunPlatedVest", Stats = { MaxHpPct = 0.12 } },
+	{ Key = "MaxHpPct_Legendary", DisplayName = "Reinforced Plating", Rarity = "Legendary", Description = "+18% max HP for the rest of this raid.", Icon = "RunPlatedVest", Stats = { MaxHpPct = 0.18 } },
 
 	-- Loot
-	{ Key = "LootPct_Common", DisplayName = "Scavenger's Instinct", Rarity = "Common", Description = "+5% ore and Scrap from drops for the rest of this raid.", Stats = { LootPct = 0.05 } },
-	{ Key = "LootPct_Rare", DisplayName = "Scavenger's Instinct", Rarity = "Rare", Description = "+8% ore and Scrap from drops for the rest of this raid.", Stats = { LootPct = 0.08 } },
-	{ Key = "LootPct_Epic", DisplayName = "Scavenger's Instinct", Rarity = "Epic", Description = "+12% ore and Scrap from drops for the rest of this raid.", Stats = { LootPct = 0.12 } },
-	{ Key = "LootPct_Legendary", DisplayName = "Scavenger's Instinct", Rarity = "Legendary", Description = "+18% ore and Scrap from drops for the rest of this raid.", Stats = { LootPct = 0.18 } },
+	{ Key = "LootPct_Common", DisplayName = "Scavenger's Instinct", Rarity = "Common", Description = "+5% ore and Scrap from drops for the rest of this raid.", Icon = "RunScavengersLens", Stats = { LootPct = 0.05 } },
+	{ Key = "LootPct_Rare", DisplayName = "Scavenger's Instinct", Rarity = "Rare", Description = "+8% ore and Scrap from drops for the rest of this raid.", Icon = "RunScavengersLens", Stats = { LootPct = 0.08 } },
+	{ Key = "LootPct_Epic", DisplayName = "Scavenger's Instinct", Rarity = "Epic", Description = "+12% ore and Scrap from drops for the rest of this raid.", Icon = "RunScavengersLens", Stats = { LootPct = 0.12 } },
+	{ Key = "LootPct_Legendary", DisplayName = "Scavenger's Instinct", Rarity = "Legendary", Description = "+18% ore and Scrap from drops for the rest of this raid.", Icon = "RunScavengersLens", Stats = { LootPct = 0.18 } },
 
-	-- Crit chance
-	{ Key = "CritChance_Common", DisplayName = "Weak Point Sense", Rarity = "Common", Description = "+2% crit chance for the rest of this raid.", Stats = { CritChance = 0.02 } },
-	{ Key = "CritChance_Rare", DisplayName = "Weak Point Sense", Rarity = "Rare", Description = "+4% crit chance for the rest of this raid.", Stats = { CritChance = 0.04 } },
-	{ Key = "CritChance_Epic", DisplayName = "Weak Point Sense", Rarity = "Epic", Description = "+6% crit chance for the rest of this raid.", Stats = { CritChance = 0.06 } },
-	{ Key = "CritChance_Legendary", DisplayName = "Weak Point Sense", Rarity = "Legendary", Description = "+10% crit chance for the rest of this raid.", Stats = { CritChance = 0.10 } },
+	-- Crit chance. No shop item rolls CritChance, so there's no RunBuffConfig icon for it either —
+	-- borrows the damage chip (RunOverclockChip) until dedicated crit art exists.
+	{ Key = "CritChance_Common", DisplayName = "Weak Point Sense", Rarity = "Common", Description = "+2% crit chance for the rest of this raid.", Icon = "RunOverclockChip", Stats = { CritChance = 0.02 } },
+	{ Key = "CritChance_Rare", DisplayName = "Weak Point Sense", Rarity = "Rare", Description = "+4% crit chance for the rest of this raid.", Icon = "RunOverclockChip", Stats = { CritChance = 0.04 } },
+	{ Key = "CritChance_Epic", DisplayName = "Weak Point Sense", Rarity = "Epic", Description = "+6% crit chance for the rest of this raid.", Icon = "RunOverclockChip", Stats = { CritChance = 0.06 } },
+	{ Key = "CritChance_Legendary", DisplayName = "Weak Point Sense", Rarity = "Legendary", Description = "+10% crit chance for the rest of this raid.", Icon = "RunOverclockChip", Stats = { CritChance = 0.10 } },
 }
+
+-- Stat key -> display label, matching the wording RunBuffConfig.Items' own `Card.Label` uses for
+-- the same stat key (DamagePct/FireRatePct/MaxHpPct/LootPct) so the boss-card UI and the shop-card
+-- UI never call the same stat two different names. CritChance has no RunBuffConfig equivalent (no
+-- shop item rolls it) — "Crit Chance" here is boss-card-only wording, not borrowed from anywhere.
+local CARD_STAT_LABELS = {
+	DamagePct = "Damage",
+	FireRatePct = "Fire Rate",
+	MaxHpPct = "Max HP",
+	LootPct = "Loot Bonus",
+	CritChance = "Crit Chance",
+}
+
+-- Returns (label, formattedValue) for a CardPool entry's effect line, e.g. ("Damage", "+5%") —
+-- computed FROM card.Stats (today, always exactly one stat per card) rather than stored as a
+-- separate field, so the printed value can never drift from the actual effect the card grants.
+-- Every CardPool stat today is a plain percent; formatting mirrors RunBuffConfig.CardValue's
+-- "Percent" branch. Add a Format lookup here (same shape as RunBuffConfig.Items[*].Card.Format) if
+-- a non-percent boss-card stat is ever introduced.
+function RaidConfig.CardEffect(card)
+	local statKey, value = next(card.Stats)
+	local label = CARD_STAT_LABELS[statKey] or statKey
+	local formatted = string.format("+%d%%", math.floor(value * 100 + 0.5))
+	return label, formatted
+end
 
 -- Rolls `count` DISTINCT cards out of CardPool, weighted by CardRarityWeights (re-normalized as the
 -- pool shrinks each pick, so removing a card doesn't skew the remaining odds). Distinct so the same
