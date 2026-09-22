@@ -59,6 +59,10 @@ local Separation = EnemyMovementConfig.Separation
 -- here too.
 local ENEMY_COLLISION_GROUP = "CombatEnemies"
 
+-- The narrowest agent a failed path is retried at (see requestPath). Same floor measureAgentSize
+-- clamps to, so a retry never asks for something smaller than any enemy is ever measured as.
+local MIN_PATH_RADIUS = 1.5
+
 local EnemyMovement = {}
 
 ----------------------------------------------------------------------
@@ -120,13 +124,28 @@ local function measureAgentSize(enemy): (number, number)
 		return math.clamp(configRadius, 1.5, 8), math.clamp(configHeight, 3, 20)
 	end
 
-	-- Falls back to measuring the rig itself: cheap corner-sampling of every BasePart's OBB into one
-	-- overall bounding box, good enough for an agent-size estimate since this only runs once per
-	-- enemy rather than per tick. Explicitly SKIPS any part named "Hitbox" — spawnEnemy
-	-- (CombatEncounterService) welds an oversized, query-only hitbox onto some types (VoidwakenHulk's
-	-- is 26x18x30, well past its actual body) that has nothing to do with the rig's real footprint;
-	-- measuring it in would make this enemy path and steer like it's twice its actual size.
+	-- Measured from the BODY CORE — the root part and the Humanoid's hip height — not the whole model.
+	-- The first version took the bounding box of every part, and a Raider carrying a long spear came
+	-- out several studs "wide": the navmesh then judged every doorway too narrow for it, ComputeAsync
+	-- returned NoPath from inside a building, and the Raider fell back to walking straight into the
+	-- wall — "enemy still get stuck inside buildings", with the spear visible in the user's screenshot.
+	-- The body fits the door (that's how it walked in); only the measurement didn't. Held weapons,
+	-- raised arms and big shoulder pieces all inflate a full bounding box the same way, so the root is
+	-- the honest footprint. A type whose root genuinely misrepresents it sets AgentRadius/AgentHeight
+	-- in EnemyConfig (checked above).
 	local model = enemy.Model
+	local rootPart = model and model.PrimaryPart
+	local humanoid = enemy.Humanoid
+	if rootPart then
+		local radius = math.max(rootPart.Size.X, rootPart.Size.Z) * 0.5 + 0.5
+		local hip = humanoid and humanoid.HipHeight or rootPart.Size.Y
+		local height = (hip + rootPart.Size.Y) * 1.25
+		return math.clamp(configRadius or radius, 1.5, 4), math.clamp(configHeight or height, 3, 12)
+	end
+
+	-- No root to measure from (shouldn't happen — spawnEnemy refuses a model without a PrimaryPart):
+	-- fall back to the whole-model bounding box, skipping any part named "Hitbox" — spawnEnemy welds
+	-- a body-sized query-only hitbox onto every type, and VoidwakenHulk's (26x18x30) is far past its body.
 	local minX, maxX, minY, maxY, minZ, maxZ
 	local ok = model and pcall(function()
 		for _, part in ipairs(model:GetDescendants()) do
@@ -321,7 +340,9 @@ local function requestPath(enemy, state, rootPart, goal, now): boolean
 	if not state.PathObject then
 		local ok, path = pcall(function()
 			return PathfindingService:CreatePath({
-				AgentRadius = state.Radius,
+				-- PathRadius, when set, is the narrowed retry size (see the failure branch below);
+				-- Radius itself is left alone because Separation reads it too.
+				AgentRadius = state.PathRadius or state.Radius,
 				AgentHeight = state.Height,
 				AgentCanJump = Pathing.AgentCanJump,
 				WaypointSpacing = Pathing.WaypointSpacing,
@@ -377,6 +398,14 @@ local function requestPath(enemy, state, rootPart, goal, now): boolean
 			state.Waypoints = path:GetWaypoints()
 			state.WaypointIndex = 2
 			state.PathGoal = goal
+		elseif not state.PathRadius and state.Radius > MIN_PATH_RADIUS then
+			-- No route at this size — try once more at the narrowest before giving up. A doorway the
+			-- navmesh rejects for a 3-stud agent it will often accept for a 1.5-stud one, and an
+			-- enemy that squeezes a tight door beats one pinned inside a building. Kept for this
+			-- enemy from now on: a fresh Path object at the new radius, requested again right away.
+			state.PathRadius = MIN_PATH_RADIUS
+			state.PathObject = nil
+			state.ForceRepath = true
 		else
 			warnPathFailure(enemy, tostring(path.Status))
 			state.PathRetryAt = os.clock() + Pathing.RecomputeInterval * 2
