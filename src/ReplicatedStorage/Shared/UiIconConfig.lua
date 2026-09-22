@@ -81,6 +81,23 @@ UiIconConfig.Icons = {
 	-- bottom-left. White, tinted per element at runtime, so this one asset is every angular panel,
 	-- button and tile in the HUD. See HudKit.plate for the SliceCenter it is drawn with.
 	panelframe = 	107592152687673,
+
+	-- Raid shop cards (RaidShopPanel.lua). One per RunBuffConfig item, plus the Scrap nut on every
+	-- price button. White line art on transparency: the card TINTS each one to its rarity colour
+	-- (blue Rare / purple Epic / gold Legendary), which only works on a white source image. At 0 the
+	-- card draws a tinted circle with the item's initials instead, so the shop is usable unfilled.
+	RunOverclockChip = 0,
+	RunRapidFeeder = 0,
+	RunPlatedVest = 0,
+	RunNanoRepair = 0,
+	RunKineticBarrier = 0,
+	RunScavengersLens = 0,
+	RunScorchAura = 0,
+	RunOrbitBlades = 0,
+	RunLaserDrone = 0,
+	RunExtractionBeacon = 0,
+	RunSalvageInsurance = 0,
+	RunScrap = 0,
 }
 
 -- Normalizes whatever is in the table above into an Image string, or nil when unset.

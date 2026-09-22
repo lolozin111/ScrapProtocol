@@ -195,7 +195,7 @@ local function buildIconPlate(parent: Instance, displayName: string, iconKey: st
 		Image = "",
 		Parent = plate,
 	})
-	if not Hud.applyIcon(image, iconKey, "UiIcons") then
+	if not Hud.applyIcon(image, iconKey) then
 		image.Visible = false
 		warnMissingIconOnce(iconKey)
 		new("TextLabel", {
@@ -223,7 +223,7 @@ local function buildScrapGlyph(parent: Instance, size: number, color: Color3, la
 		LayoutOrder = layoutOrder or 0,
 		Parent = parent,
 	})
-	if not Hud.applyIcon(image, "RunScrap", "UiIcons") then
+	if not Hud.applyIcon(image, "RunScrap") then
 		image.Visible = false
 		warnMissingIconOnce("RunScrap")
 		new("TextLabel", {
