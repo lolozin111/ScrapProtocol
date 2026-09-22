@@ -1,0 +1,886 @@
+--[[
+	RunBuffService.lua
+	Per-player RUN STATE for the Salvage Run shop rework (DESIGN_NOTES.md, "Raid shop rework —
+	SPEC SETTLED 2026-09-22" / "Round 2 answers" / "BUILD CONTRACT"). A shared utility, not a
+	service — no remotes of its own, same shape as `RaidHealBudget.lua` (which this file sits right
+	next to in both purpose and lifecycle): `RaidRoomService` drives Begin/NewRoom/NewMap/End, and
+	whoever needs a run-buff number just calls in.
+
+	Everything a raid perk/gear/boss-card can do lives here so combat code (owned by sp-combat-dev,
+	off limits to this file) never has to know `RunBuffConfig`'s shape — it calls
+	`RunBuffService.DamageMultiplier(player)` etc. and gets a NEUTRAL value (1, false, {}, nil — see
+	each function's own comment) for a player who isn't mid-raid, exactly like `RaidHealBudget.Get`
+	returning nil outside a raid. No active record = not in a raid = every buff is off.
+
+	State per player (records[userId]):
+	  Owned        — { [itemKey] = { Rarity, Level, Paid } }, perks/gear bought this run.
+	  Escape       — { [itemKey] = true }, one-use Escape items held this run.
+	  BossCards    — array of RaidConfig.CardPool entries picked this run (unlimited, no slot).
+	  Stats        — RunBuffConfig.Aggregate(Owned, BossCards), recomputed on every change so every
+	                 query below is a plain field read, never a live re-sum.
+	  RoomHealed/MapHealed — fractions of max HP already healed through Heal() this room/map, capped
+	                 by RunBuffConfig.ShopHealCap (separate from RaidHealBudget's drone cap).
+	  ShotCount    — persists for the whole raid, not reset per room — Overclock Chip's "every 10th
+	                 shot" reads as "every 10th shot fired this raid," which is the more legible rule.
+	  FightStartClock/FrenzyUntil — Rapid Feeder's opening burst and kill-frenzy windows.
+	  VestShieldUsedThisRoom — Plated Vest Lv5, once per room.
+	  BarrierLastDamageClock — Kinetic Barrier Lv4's "hasn't been hit in N seconds" refill.
+	  GearVisuals/GearState — per-gear-item Instances and runtime bookkeeping (blade angle, drone
+	                 aim clock, per-enemy hit cooldowns), destroyed and rebuilt lazily — see TickGear.
+
+	Gear visuals fall back to plain Neon placeholders when `ServerStorage.RunGearModels` doesn't have
+	a matching model, same "missing art never breaks the loop" contract every other content-driven
+	system in this codebase follows (see CLAUDE.md).
+]]
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerStorage = game:GetService("ServerStorage")
+local Workspace = game:GetService("Workspace")
+local Debris = game:GetService("Debris")
+
+local RunBuffConfig = require(ReplicatedStorage.Shared.RunBuffConfig)
+local EnemyConfig = require(ReplicatedStorage.Shared.EnemyConfig)
+local StatusEffects = require(script.Parent.StatusEffects)
+
+local RunBuffService = {}
+
+local RUN_GEAR_MODEL_FOLDER = "RunGearModels"
+local BASE_MAX_HEALTH_ATTRIBUTE = "RunBaseMaxHealth"
+local FIRE_RATE_ATTRIBUTE = "RunFireRateMult"
+
+local records: { [number]: any } = {}
+
+----------------------------------------------------------------------
+-- Small internal helpers
+----------------------------------------------------------------------
+
+local function slotsUsedFor(record): number
+	local count = 0
+	for _ in pairs(record.Owned) do
+		count += 1
+	end
+	return count
+end
+
+local function recomputeStats(record)
+	record.Stats = RunBuffConfig.Aggregate(record.Owned, record.BossCards)
+end
+
+-- Restamps MaxHealth off the player's captured pre-raid base (BASE_MAX_HEALTH_ATTRIBUTE), keeping
+-- Health proportional rather than snapping it — a level-up mid-fight must never kill (ratio > 1 on
+-- a max-health INCREASE can't drop Health) or overheal past the new cap (clamp below).
+local function applyMaxHealth(player: Player, record)
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if not humanoid then
+		return
+	end
+
+	local base = player:GetAttribute(BASE_MAX_HEALTH_ATTRIBUTE)
+	if not base then
+		base = humanoid.MaxHealth
+		player:SetAttribute(BASE_MAX_HEALTH_ATTRIBUTE, base)
+	end
+
+	local newMax = base * (1 + (record.Stats.MaxHpPct or 0))
+	if math.abs(newMax - humanoid.MaxHealth) < 0.01 then
+		return
+	end
+
+	local ratio = humanoid.MaxHealth > 0 and (humanoid.Health / humanoid.MaxHealth) or 1
+	humanoid.MaxHealth = newMax
+	humanoid.Health = math.clamp(newMax * ratio, 0, newMax)
+end
+
+local function computeFireRateMultiplier(record): number
+	local stats = record.Stats
+	local mult = 1 + (stats.FireRatePct or 0)
+	local now = os.clock()
+	if stats.OpeningBurstPct and record.FightStartClock and (now - record.FightStartClock) <= (stats.OpeningBurstSeconds or 0) then
+		mult += stats.OpeningBurstPct
+	end
+	if now < record.FrenzyUntil then
+		mult += (stats.KillFrenzyPct or 0)
+	end
+	return mult
+end
+
+----------------------------------------------------------------------
+-- Gear visuals — lazily created the first time TickGear runs with a real `ctx.Root`, destroyed on
+-- Sell, on End, and on every NewRoom (no Root to hang them on between rooms, and a stale aura/blade/
+-- drone left floating in a room the player already left would look like a bug, not a feature).
+----------------------------------------------------------------------
+
+local function buildPlaceholderGearVisual(itemKey: string): Model?
+	if itemKey == "ScorchAura" then
+		local model = Instance.new("Model")
+		model.Name = "ScorchAura_Visual"
+		local ring = Instance.new("Part")
+		ring.Name = "AuraRing"
+		ring.Shape = Enum.PartType.Cylinder
+		ring.Size = Vector3.new(0.3, 10, 10) -- resized to match radius every tick, see updateAuraVisual
+		ring.Color = Color3.fromRGB(255, 110, 40)
+		ring.Material = Enum.Material.Neon
+		ring.Transparency = 0.55
+		ring.Parent = model
+		model.PrimaryPart = ring
+		return model
+	elseif itemKey == "LaserDrone" then
+		local model = Instance.new("Model")
+		model.Name = "LaserDrone_Visual"
+		local drone = Instance.new("Part")
+		drone.Name = "Drone"
+		drone.Shape = Enum.PartType.Ball
+		drone.Size = Vector3.new(1, 1, 1)
+		drone.Color = Color3.fromRGB(90, 210, 255)
+		drone.Material = Enum.Material.Neon
+		drone.Parent = model
+		model.PrimaryPart = drone
+		return model
+	end
+	warn(("[RunBuffService] No placeholder visual builder for gear item %q."):format(itemKey))
+	return nil
+end
+
+local function sanitizeVisualParts(model: Model)
+	for _, part in ipairs(model:GetDescendants()) do
+		if part:IsA("BasePart") then
+			part.Anchored = true
+			part.CanCollide = false
+			part.CanQuery = false
+			part.CanTouch = false
+			part.Massless = true
+		end
+	end
+end
+
+-- Generic single-model gear visual (ScorchAura ring, LaserDrone body) — NOT OrbitBlades, whose part
+-- count varies with level and gets its own builder below.
+local function ensureGearVisual(record, itemKey: string, root: BasePart): Model?
+	local visual = record.GearVisuals[itemKey]
+	if visual and visual.Parent then
+		return visual
+	end
+	if visual then
+		visual:Destroy()
+	end
+
+	local folder = ServerStorage:FindFirstChild(RUN_GEAR_MODEL_FOLDER)
+	local template = folder and folder:FindFirstChild(itemKey)
+	local model = (template and template:IsA("Model") and template:Clone()) or buildPlaceholderGearVisual(itemKey)
+	if not model then
+		return nil
+	end
+	sanitizeVisualParts(model)
+	model.Parent = root.Parent or Workspace
+	record.GearVisuals[itemKey] = model
+	return model
+end
+
+local function ensureOrbitBladesVisual(record, root: BasePart, count: number): Model?
+	local visual = record.GearVisuals.OrbitBlades
+	if visual and visual.Parent and visual:GetAttribute("BladeCount") == count then
+		return visual
+	end
+	if visual then
+		visual:Destroy()
+	end
+
+	local folder = ServerStorage:FindFirstChild(RUN_GEAR_MODEL_FOLDER)
+	local template = folder and folder:FindFirstChild("OrbitBlades")
+
+	local model = Instance.new("Model")
+	model.Name = "OrbitBlades_Visual"
+	model:SetAttribute("BladeCount", count)
+	for i = 1, count do
+		local blade
+		if template and template:IsA("BasePart") then
+			blade = template:Clone()
+		else
+			blade = Instance.new("WedgePart")
+			blade.Size = Vector3.new(1, 0.4, 2)
+			blade.Color = Color3.fromRGB(255, 90, 60)
+			blade.Material = Enum.Material.Neon
+		end
+		blade.Name = "Blade" .. tostring(i)
+		blade.Parent = model
+	end
+	sanitizeVisualParts(model)
+	model.Parent = root.Parent or Workspace
+	record.GearVisuals.OrbitBlades = model
+	return model
+end
+
+local function updateAuraVisual(visual: Model, radius: number, root: BasePart)
+	local ring = visual.PrimaryPart or visual:FindFirstChild("AuraRing")
+	if ring and ring:IsA("BasePart") then
+		ring.Size = Vector3.new(0.3, radius * 2, radius * 2)
+		-- A flat approximation is fine here — this is a placeholder, replaced wholesale by a real
+		-- model the moment ServerStorage.RunGearModels.ScorchAura exists.
+		ring.CFrame = CFrame.new(root.Position - Vector3.new(0, 3, 0)) * CFrame.Angles(math.rad(90), 0, 0)
+	end
+end
+
+local function drawBeam(visual: Model, targetPosition: Vector3)
+	local drone = visual:FindFirstChild("Drone")
+	if not (drone and drone:IsA("BasePart")) then
+		return
+	end
+	local from = drone.Position
+	local distance = (targetPosition - from).Magnitude
+	if distance < 0.1 then
+		return
+	end
+	local beam = Instance.new("Part")
+	beam.Name = "Beam"
+	beam.Anchored = true
+	beam.CanCollide = false
+	beam.CanQuery = false
+	beam.CanTouch = false
+	beam.Massless = true
+	beam.Material = Enum.Material.Neon
+	beam.Color = Color3.fromRGB(90, 210, 255)
+	beam.Size = Vector3.new(0.15, 0.15, distance)
+	beam.CFrame = CFrame.new(from, targetPosition) * CFrame.new(0, 0, -distance / 2)
+	beam.Parent = visual
+	Debris:AddItem(beam, 0.12)
+end
+
+local function destroyGearVisual(record, itemKey: string)
+	local visual = record.GearVisuals[itemKey]
+	if visual then
+		visual:Destroy()
+		record.GearVisuals[itemKey] = nil
+	end
+	record.GearState[itemKey] = nil
+end
+
+----------------------------------------------------------------------
+-- Gear behaviors — flat table of named strategies keyed by item key, the project's standard shape
+-- (CLAUDE.md: EnemyAI.Patterns/RobotBehaviors precedent). TickGear below guards the lookup and warns
+-- on a miss rather than erroring mid-encounter.
+----------------------------------------------------------------------
+
+local GearBehaviors = {}
+
+GearBehaviors.ScorchAura = function(record, owned, dt: number, ctx)
+	local item = RunBuffConfig.Items.ScorchAura
+	local levelStats = RunBuffConfig.LevelStats("ScorchAura", owned.Level)
+	local radius = item.Base.Radius * (1 + (levelStats.RadiusPct or 0))
+	local tickSeconds = item.Base.TickSeconds
+	local dps = levelStats.DamagePerSecond or 0
+
+	local state = record.GearState.ScorchAura
+	if not state then
+		state = { NextTick = 0 }
+		record.GearState.ScorchAura = state
+	end
+
+	if ctx.Root then
+		local visual = ensureGearVisual(record, "ScorchAura", ctx.Root)
+		if visual then
+			updateAuraVisual(visual, radius, ctx.Root)
+		end
+	end
+
+	local now = os.clock()
+	if now < state.NextTick or not ctx.Root or dps <= 0 then
+		return
+	end
+	state.NextTick = now + tickSeconds
+
+	local damage = dps * tickSeconds
+	for _, enemyRecord in ipairs(ctx.Enemies or {}) do
+		local part = enemyRecord.Model and enemyRecord.Model.PrimaryPart
+		if part and enemyRecord.Humanoid and enemyRecord.Humanoid.Health > 0 then
+			if (part.Position - ctx.Root.Position).Magnitude <= radius then
+				ctx.DealDamage(enemyRecord, damage, "ScorchAura")
+				if levelStats.Status then
+					ctx.ApplyStatus(enemyRecord, levelStats.Status)
+				end
+			end
+		end
+	end
+end
+
+GearBehaviors.OrbitBlades = function(record, owned, dt: number, ctx)
+	local item = RunBuffConfig.Items.OrbitBlades
+	local levelStats = RunBuffConfig.LevelStats("OrbitBlades", owned.Level)
+	local bladeCount = item.Base.Blades + (levelStats.ExtraBlades or 0)
+	local radius = item.Base.OrbitRadius
+	local hitCooldown = item.Base.HitCooldown
+	local damagePerHit = levelStats.DamagePerHit or 0
+	local hitRadius = 3 -- studs; a blade "passes within ~3 studs" per the design ask, not worth a config entry
+
+	if not ctx.Root then
+		return
+	end
+
+	local state = record.GearState.OrbitBlades
+	if not state then
+		state = { Angle = 0, HitClocks = {} }
+		record.GearState.OrbitBlades = state
+	end
+	state.Angle += dt * 2 -- fixed 2 rad/s orbit speed — cosmetic, not a balance number
+
+	local visual = ensureOrbitBladesVisual(record, ctx.Root, bladeCount)
+	if not visual then
+		return
+	end
+
+	local now = os.clock()
+	for i, blade in ipairs(visual:GetChildren()) do
+		if blade:IsA("BasePart") then
+			local angle = state.Angle + (i - 1) * (2 * math.pi / bladeCount)
+			local offset = Vector3.new(math.cos(angle) * radius, 0, math.sin(angle) * radius)
+			blade.CFrame = CFrame.new(ctx.Root.Position + offset)
+
+			for _, enemyRecord in ipairs(ctx.Enemies or {}) do
+				local part = enemyRecord.Model and enemyRecord.Model.PrimaryPart
+				if part and enemyRecord.Humanoid and enemyRecord.Humanoid.Health > 0 then
+					if (part.Position - blade.Position).Magnitude <= hitRadius then
+						local key = tostring(enemyRecord.Model) .. "#" .. tostring(i)
+						local last = state.HitClocks[key] or 0
+						if now - last >= hitCooldown then
+							state.HitClocks[key] = now
+							ctx.DealDamage(enemyRecord, damagePerHit, "OrbitBlades")
+							if levelStats.Status then
+								ctx.ApplyStatus(enemyRecord, levelStats.Status)
+							end
+						end
+					end
+				end
+			end
+		end
+	end
+end
+
+GearBehaviors.LaserDrone = function(record, owned, dt: number, ctx)
+	local item = RunBuffConfig.Items.LaserDrone
+	local levelStats = RunBuffConfig.LevelStats("LaserDrone", owned.Level)
+	local range = item.Base.Range
+	local shotsPerSecond = item.Base.ShotsPerSecond * (1 + (levelStats.FireRatePct or 0))
+	local damagePerShot = levelStats.DamagePerShot or 0
+	local extraBeams = levelStats.ExtraBeams or 0
+
+	if not ctx.Root then
+		return
+	end
+
+	local state = record.GearState.LaserDrone
+	if not state then
+		state = { NextShot = 0 }
+		record.GearState.LaserDrone = state
+	end
+
+	local visual = ensureGearVisual(record, "LaserDrone", ctx.Root)
+	if visual and visual.PrimaryPart then
+		visual.PrimaryPart.CFrame = ctx.Root.CFrame * CFrame.new(2, 3, 0)
+	end
+
+	local now = os.clock()
+	if now < state.NextShot or shotsPerSecond <= 0 or damagePerShot <= 0 then
+		return
+	end
+
+	local candidates = {}
+	for _, enemyRecord in ipairs(ctx.Enemies or {}) do
+		local part = enemyRecord.Model and enemyRecord.Model.PrimaryPart
+		if part and enemyRecord.Humanoid and enemyRecord.Humanoid.Health > 0 then
+			local distance = (part.Position - ctx.Root.Position).Magnitude
+			if distance <= range then
+				table.insert(candidates, { Record = enemyRecord, Part = part, Distance = distance })
+			end
+		end
+	end
+	if #candidates == 0 then
+		return
+	end
+	table.sort(candidates, function(a, b)
+		return a.Distance < b.Distance
+	end)
+
+	state.NextShot = now + 1 / shotsPerSecond
+	local shots = math.min(1 + extraBeams, #candidates)
+	for i = 1, shots do
+		local target = candidates[i]
+		ctx.DealDamage(target.Record, damagePerShot, "LaserDrone")
+		if visual then
+			drawBeam(visual, target.Part.Position)
+		end
+	end
+end
+
+----------------------------------------------------------------------
+-- Lifecycle
+----------------------------------------------------------------------
+
+function RunBuffService.Begin(player: Player)
+	records[player.UserId] = {
+		Player = player,
+		Owned = {},
+		Escape = {},
+		BossCards = {},
+		Stats = {},
+		RoomHealed = 0,
+		MapHealed = 0,
+		ShotCount = 0, -- persists the whole raid, deliberately not reset per room — see header comment
+		FightStartClock = nil :: number?,
+		FrenzyUntil = 0,
+		VestShieldUsedThisRoom = false,
+		BarrierLastDamageClock = os.clock(),
+		GearVisuals = {},
+		GearState = {},
+	}
+	player:SetAttribute(FIRE_RATE_ATTRIBUTE, 1)
+	applyMaxHealth(player, records[player.UserId])
+end
+
+function RunBuffService.End(player: Player)
+	local record = records[player.UserId]
+	if record then
+		for itemKey in pairs(record.GearVisuals) do
+			destroyGearVisual(record, itemKey)
+		end
+	end
+
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	local base = player:GetAttribute(BASE_MAX_HEALTH_ATTRIBUTE)
+	if humanoid and base then
+		local ratio = humanoid.MaxHealth > 0 and (humanoid.Health / humanoid.MaxHealth) or 1
+		humanoid.MaxHealth = base
+		humanoid.Health = math.clamp(base * ratio, 0, base)
+	end
+	player:SetAttribute(BASE_MAX_HEALTH_ATTRIBUTE, nil)
+	player:SetAttribute(FIRE_RATE_ATTRIBUTE, nil)
+	records[player.UserId] = nil
+end
+
+-- Every node entry (Start/Combat/Ambush/Heal/Shop/Boss alike), same as RaidHealBudget.NewNode — the
+-- per-room heal allowance refills and one-per-room triggers (Vest Lv5) reset. Gear visuals are torn
+-- down here too; TickGear rebuilds them lazily the moment the next combat encounter has a Root.
+function RunBuffService.NewRoom(player: Player)
+	local record = records[player.UserId]
+	if not record then
+		return
+	end
+	record.RoomHealed = 0
+	record.VestShieldUsedThisRoom = false
+	for itemKey in pairs(record.GearVisuals) do
+		destroyGearVisual(record, itemKey)
+	end
+end
+
+function RunBuffService.NewMap(player: Player)
+	local record = records[player.UserId]
+	if not record then
+		return
+	end
+	record.RoomHealed = 0
+	record.MapHealed = 0
+	record.VestShieldUsedThisRoom = false
+end
+
+function RunBuffService.Get(player: Player)
+	return records[player.UserId]
+end
+
+----------------------------------------------------------------------
+-- Mutations
+----------------------------------------------------------------------
+
+-- offer: { ItemKey: string, Rarity: string, Price: number } — always server-built (RaidRoomService
+-- looks it up by OfferId from its own rolled stock), never taken raw from the client.
+function RunBuffService.Buy(player: Player, offer): (boolean, string?)
+	local record = records[player.UserId]
+	if not record then
+		return false, "NotInRaid"
+	end
+	local item = RunBuffConfig.Items[offer.ItemKey]
+	if not item then
+		return false, "UnknownItem"
+	end
+
+	if item.Kind == "Escape" then
+		local preview = RunBuffConfig.PreviewOffer(record.Escape[offer.ItemKey], offer, slotsUsedFor(record))
+		if preview.Blocked then
+			return false, preview.Blocked
+		end
+		record.Escape[offer.ItemKey] = true
+		return true
+	end
+
+	local owned = record.Owned[offer.ItemKey]
+	local preview = RunBuffConfig.PreviewOffer(owned, offer, slotsUsedFor(record))
+	if preview.Blocked then
+		return false, preview.Blocked
+	end
+
+	if preview.IsNew then
+		record.Owned[offer.ItemKey] = { Rarity = offer.Rarity, Level = 1, Paid = offer.Price }
+	elseif preview.RarityUp then
+		owned.Rarity = offer.Rarity
+		owned.Paid += offer.Price
+	else
+		owned.Level = preview.ToLv
+		owned.Paid += offer.Price
+	end
+
+	recomputeStats(record)
+	applyMaxHealth(player, record)
+	return true
+end
+
+function RunBuffService.Sell(player: Player, itemKey: string): (boolean, number)
+	local record = records[player.UserId]
+	if not record then
+		return false, 0
+	end
+	local owned = record.Owned[itemKey]
+	if not owned then
+		return false, 0
+	end
+
+	local refund = math.floor(owned.Paid * RunBuffConfig.SellRefund)
+	record.Owned[itemKey] = nil
+	destroyGearVisual(record, itemKey)
+	recomputeStats(record)
+	applyMaxHealth(player, record)
+	return true, refund
+end
+
+function RunBuffService.AddBossCard(player: Player, card)
+	local record = records[player.UserId]
+	if not record then
+		return
+	end
+	table.insert(record.BossCards, card)
+	recomputeStats(record)
+	applyMaxHealth(player, record)
+end
+
+function RunBuffService.ConsumeEscape(player: Player, itemKey: string): boolean
+	local record = records[player.UserId]
+	if not record or not record.Escape[itemKey] then
+		return false
+	end
+	record.Escape[itemKey] = nil
+	return true
+end
+
+function RunBuffService.SlotsUsed(player: Player): number
+	local record = records[player.UserId]
+	if not record then
+		return 0
+	end
+	return slotsUsedFor(record)
+end
+
+----------------------------------------------------------------------
+-- Combat queries — every one below is a neutral value (1 / false / 0 / nil, as noted) for a player
+-- with no active record, so combat code never has to special-case "not in a raid" itself.
+----------------------------------------------------------------------
+
+function RunBuffService.DamageMultiplier(player: Player): number
+	local record = records[player.UserId]
+	if not record then
+		return 1
+	end
+	return 1 + (record.Stats.DamagePct or 0)
+end
+
+-- Rolls a crit for one shot: increments the persistent shot counter (Overclock Chip Lv5's "every
+-- Nth shot"), then a guaranteed crit check, then the flat CritChance roll (Lv4+). Returns
+-- isCrit, mult — mult is always RunBuffConfig.CritMultiplier when isCrit, 1 otherwise, so a caller
+-- can multiply unconditionally.
+function RunBuffService.RollCrit(player: Player): (boolean, number)
+	local record = records[player.UserId]
+	if not record then
+		return false, 1
+	end
+	record.ShotCount += 1
+	local stats = record.Stats
+
+	local every = stats.GuaranteedCritEvery
+	if every and every > 0 and record.ShotCount % every == 0 then
+		return true, RunBuffConfig.CritMultiplier
+	end
+	local chance = stats.CritChance or 0
+	if chance > 0 and math.random() < chance then
+		return true, RunBuffConfig.CritMultiplier
+	end
+	return false, 1
+end
+
+function RunBuffService.FireRateMultiplier(player: Player): number
+	local record = records[player.UserId]
+	if not record then
+		return 1
+	end
+	local mult = computeFireRateMultiplier(record)
+	player:SetAttribute(FIRE_RATE_ATTRIBUTE, mult)
+	return mult
+end
+
+-- Elite/boss damage reduction (Plated Vest Lv4). `enemyRecord.TypeKey` is checked against BOTH
+-- EnemyConfig.EliteTypes and BossTypes since either can hit a raid player — see EnemyConfig's own
+-- comment on why the two pools are split but a raid Combat room can still roll an elite.
+function RunBuffService.DamageTakenMultiplier(player: Player, enemyRecord): number
+	local record = records[player.UserId]
+	if not record or not enemyRecord then
+		return 1
+	end
+	local pct = record.Stats.EliteBossDamageTakenPct
+	if not pct then
+		return 1
+	end
+	local typeKey = enemyRecord.TypeKey
+	if typeKey and (EnemyConfig.EliteTypes[typeKey] or EnemyConfig.BossTypes[typeKey]) then
+		return math.max(0, 1 + pct) -- pct is negative (e.g. -0.10); clamped so a future stack can't invert damage
+	end
+	return 1
+end
+
+function RunBuffService.LootMultiplier(player: Player): number
+	local record = records[player.UserId]
+	if not record then
+		return 1
+	end
+	return 1 + (record.Stats.LootPct or 0)
+end
+
+function RunBuffService.ChestHoldSeconds(player: Player): number?
+	local record = records[player.UserId]
+	if not record then
+		return nil
+	end
+	return record.Stats.ChestHoldSeconds
+end
+
+function RunBuffService.ChestBonusItems(player: Player): number
+	local record = records[player.UserId]
+	if not record then
+		return 0
+	end
+	return record.Stats.ChestBonusItems or 0
+end
+
+----------------------------------------------------------------------
+-- Combat hooks — called by CombatEncounterService/DamagePipeline (sp-combat-dev's files); this
+-- module never calls into them.
+----------------------------------------------------------------------
+
+-- playerState: CombatEncounterService's per-encounter table (has a `.Shield` field the damage
+-- pipeline already reads/writes — see that file's damageTarget). Stamps the fight-start clock
+-- (Rapid Feeder's opening burst) and grants Kinetic Barrier's shield, topped up rather than
+-- overwritten so a Barrier applied mid-fight (a card, say) never LOWERS an existing shield.
+function RunBuffService.OnFightStart(player: Player, playerState)
+	local record = records[player.UserId]
+	if not record then
+		return
+	end
+	record.FightStartClock = os.clock()
+	record.FrenzyUntil = 0
+	record.BarrierLastDamageClock = os.clock()
+	-- Kept so OnRoomCleared (called from RaidRoomService, which has no playerState) can still land
+	-- Nano Repair Lv5's overheal shield on the encounter that just ended.
+	record.PlayerState = playerState
+
+	local shieldPct = record.Stats.ShieldPctOfMaxHp
+	if shieldPct and shieldPct > 0 and playerState then
+		local character = player.Character
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		local maxHealth = (humanoid and humanoid.MaxHealth) or 100
+		playerState.Shield = math.max(playerState.Shield or 0, shieldPct * maxHealth)
+	end
+
+	RunBuffService.FireRateMultiplier(player) -- refresh the client attribute at the new fight's t=0
+end
+
+-- Marks the last-damage clock (Barrier Lv4's refill timer) and fires Plated Vest Lv5's once-per-room
+-- low-HP shield. `humanoid` is passed in rather than re-resolved from `player.Character` because the
+-- caller already has it mid-damage-pipeline.
+function RunBuffService.OnPlayerDamaged(player: Player, playerState, humanoid: Humanoid?)
+	local record = records[player.UserId]
+	if not record then
+		return
+	end
+	record.BarrierLastDamageClock = os.clock()
+
+	local stats = record.Stats
+	if stats.LowHpShieldThreshold and stats.LowHpShieldPct and not record.VestShieldUsedThisRoom
+		and humanoid and humanoid.MaxHealth > 0 then
+		if (humanoid.Health / humanoid.MaxHealth) < stats.LowHpShieldThreshold then
+			record.VestShieldUsedThisRoom = true
+			if playerState then
+				playerState.Shield = (playerState.Shield or 0) + stats.LowHpShieldPct * humanoid.MaxHealth
+			end
+		end
+	end
+end
+
+-- Kinetic Barrier Lv5: the shield breaking knocks nearby enemies back. ctx = { Enemies, Root }.
+-- Kept simple per the build contract — a velocity shove plus a brief Stun, not a full physics
+-- impulse system.
+function RunBuffService.OnShieldBroken(player: Player, ctx)
+	local record = records[player.UserId]
+	if not record or not ctx or not ctx.Root then
+		return
+	end
+	local radius = record.Stats.BreakKnockbackRadius
+	local force = record.Stats.BreakKnockbackForce
+	if not radius or not force then
+		return
+	end
+
+	for _, enemyRecord in ipairs(ctx.Enemies or {}) do
+		local part = enemyRecord.Model and enemyRecord.Model.PrimaryPart
+		if part and enemyRecord.Humanoid and enemyRecord.Humanoid.Health > 0 then
+			local offset = part.Position - ctx.Root.Position
+			local distance = offset.Magnitude
+			if distance <= radius then
+				local direction = distance > 0.1 and offset.Unit or Vector3.new(1, 0, 0)
+				pcall(function()
+					part.AssemblyLinearVelocity = direction * force + Vector3.new(0, force * 0.25, 0)
+				end)
+				StatusEffects.Apply(enemyRecord, "Stun", { Duration = 0.6 })
+			end
+		end
+	end
+end
+
+-- Per-tick upkeep: refreshes the fire-rate attribute (so an opening burst/frenzy window's END shows
+-- up on the client even between shots) and Kinetic Barrier Lv4's mid-room refill.
+function RunBuffService.Tick(player: Player, dt: number, playerState)
+	local record = records[player.UserId]
+	if not record then
+		return
+	end
+	RunBuffService.FireRateMultiplier(player)
+
+	local stats = record.Stats
+	if stats.RefillAfterSeconds and stats.ShieldPctOfMaxHp and playerState and (playerState.Shield or 0) <= 0 then
+		local now = os.clock()
+		if now - record.BarrierLastDamageClock >= stats.RefillAfterSeconds then
+			local character = player.Character
+			local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+			local maxHealth = (humanoid and humanoid.MaxHealth) or 100
+			playerState.Shield = stats.ShieldPctOfMaxHp * maxHealth
+			record.BarrierLastDamageClock = now -- don't re-refill every tick once topped up
+		end
+	end
+end
+
+function RunBuffService.OnKill(player: Player, enemyRecord)
+	local record = records[player.UserId]
+	if not record then
+		return
+	end
+	local stats = record.Stats
+	if stats.KillHealPct and stats.KillHealPct > 0 then
+		RunBuffService.Heal(player, stats.KillHealPct)
+	end
+	if stats.KillFrenzyPct and stats.KillFrenzySeconds then
+		record.FrenzyUntil = os.clock() + stats.KillFrenzySeconds
+		RunBuffService.FireRateMultiplier(player)
+	end
+end
+
+-- Nano Repair's room-clear heal. `playerState` is optional and only reachable from a call site
+-- INSIDE CombatEncounterService's own cleared branch — RaidRoomService's call (Combat/Ambush/Boss
+-- cleared) doesn't have one in scope, since RunRaidCombat's playerState is local to that function.
+-- Without it, Lv5's overheal-to-shield simply doesn't trigger — it's a bonus on top of the heal, not
+-- the heal itself, so skipping it there costs nothing but that one edge case.
+function RunBuffService.OnRoomCleared(player: Player, playerState)
+	local record = records[player.UserId]
+	if not record then
+		return
+	end
+	local stats = record.Stats
+	if not (stats.RoomClearHealPct and stats.RoomClearHealPct > 0) then
+		return
+	end
+	local _, overflow = RunBuffService.Heal(player, stats.RoomClearHealPct)
+	-- Nano Repair Lv5: the part of the heal that had no missing HP to fill becomes shield instead of
+	-- being wasted. Heal() already charged the budget for it, so the 25%/room cap still holds.
+	playerState = playerState or record.PlayerState
+	if stats.OverhealToShield and playerState and overflow > 0 then
+		playerState.Shield = (playerState.Shield or 0) + overflow
+	end
+end
+
+-- Heals `fraction` of max HP, clamped by RunBuffConfig.ShopHealCap's PerRoom/PerMap budgets (separate
+-- pool from RaidHealBudget's drone cap — see this file's header). Returns the actual HP restored.
+function RunBuffService.Heal(player: Player, fraction: number): (number, number)
+	local record = records[player.UserId]
+	if not record or fraction <= 0 then
+		return 0, 0
+	end
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if not humanoid or humanoid.Health <= 0 or humanoid.MaxHealth <= 0 then
+		return 0, 0
+	end
+
+	local roomRemaining = math.max(0, RunBuffConfig.ShopHealCap.PerRoom - record.RoomHealed)
+	local mapRemaining = math.max(0, RunBuffConfig.ShopHealCap.PerMap - record.MapHealed)
+	local allowedFraction = math.min(fraction, roomRemaining, mapRemaining)
+	if allowedFraction <= 0 then
+		return 0, 0
+	end
+
+	local allowedAmount = allowedFraction * humanoid.MaxHealth
+	local newHealth = math.min(humanoid.MaxHealth, humanoid.Health + allowedAmount)
+	local actualAmount = newHealth - humanoid.Health
+	humanoid.Health = newHealth
+
+	-- Only Nano Repair Lv5 turns the overflow into shield, and only then is it spent from the budget;
+	-- everyone else is charged for what actually landed.
+	local overflow = 0
+	local chargedFraction = actualAmount / humanoid.MaxHealth
+	if record.Stats.OverhealToShield then
+		overflow = allowedAmount - actualAmount
+		chargedFraction = allowedFraction
+	end
+	record.RoomHealed += chargedFraction
+	record.MapHealed += chargedFraction
+	return actualAmount, overflow
+end
+
+-- ctx = { Root: BasePart, Enemies: {enemyRecord,...}, DealDamage: (record, amount, sourceTag) -> (),
+--         ApplyStatus: (record, statusKey) -> () }. Ticks every owned Gear item through
+-- GearBehaviors, guarded + warned on a missing entry (CLAUDE.md's strategy-table convention).
+function RunBuffService.TickGear(player: Player, dt: number, ctx)
+	local record = records[player.UserId]
+	if not record then
+		return
+	end
+	for itemKey, owned in pairs(record.Owned) do
+		local item = RunBuffConfig.Items[itemKey]
+		if item and item.Kind == "Gear" then
+			local behavior = GearBehaviors[itemKey]
+			if behavior then
+				behavior(record, owned, dt, ctx)
+			else
+				warn(("[RunBuffService] No GearBehaviors entry for gear item %q — it does nothing this tick."):format(itemKey))
+			end
+		end
+	end
+end
+
+----------------------------------------------------------------------
+-- Disconnect backstop — cleanupRaid's RaidRoomService.End(player) call already handles every normal
+-- exit path (Extract/Defeat/Abandon/PlayerSaving-triggered teardown); this is the same redundant
+-- safety net RaidHealBudget keeps for the same reason: nothing here should be able to outlive the
+-- player instance itself.
+----------------------------------------------------------------------
+
+Players.PlayerRemoving:Connect(function(player)
+	if records[player.UserId] then
+		RunBuffService.End(player)
+	end
+end)
+
+return RunBuffService

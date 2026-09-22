@@ -23,12 +23,13 @@ local NodeConfig = {}
 -- run ends WITHOUT a clean Extract (Defeated or Abandoned) — a RunLocked drop is lost on that kind
 -- of exit ("if they abandon it they lose such run items"), UNLESS Permanent is ALSO set on the same
 -- entry, which carries it over regardless ("unless the item has a tag called permanent, where it
--- can be carried over"). Neither tag is set on anything below yet — every drop here currently
--- behaves exactly as it always has (always kept) until specific entries are tagged later. This only
--- applies to Raid Rooms; Expedition's older Combat Outposts read these same tables but don't have
--- any concept of a "run" to lock things to, so the tags are simply inert there. Scrap/Cores
--- currency loot is exempt from RunLocked entirely regardless of the tag — see RaidRoomService's own
--- comment on why currency is always kept.
+-- can be carried over"). Every `Kind = "Ore"` entry below IS tagged RunLocked = true now — "Stakes
+-- switched ON with this round: raid ORE is lost on Defeat AND Abandon; only a clean extract keeps
+-- it" (DESIGN_NOTES.md, raid shop rework spec, 2026-09-22) — this is what gives Salvage Insurance
+-- and the Extraction Beacon a job. This only applies to Raid Rooms; Expedition's older Combat
+-- Outposts read these same tables but don't have any concept of a "run" to lock things to, so the
+-- tag is simply inert there. Scrap/Cores currency loot is exempt from RunLocked entirely regardless
+-- of the tag — see RaidRoomService's own comment on why currency is always kept.
 NodeConfig.CombatTiers = {
 	[1] = {
 		Name = "Scrap Camp",
@@ -36,9 +37,9 @@ NodeConfig.CombatTiers = {
 		DamagePerSecond = 3,
 		CooldownSeconds = 45,
 		Loot = {
-			{ Kind = "Ore", OreKey = "IronOre", Min = 15, Max = 30, Chance = 1.0 },
+			{ Kind = "Ore", OreKey = "IronOre", Min = 15, Max = 30, Chance = 1.0, RunLocked = true },
 			{ Kind = "Currency", CurrencyKey = "Scrap", Min = 5, Max = 15, Chance = 1.0 },
-			{ Kind = "Ore", OreKey = "CopperOre", Min = 5, Max = 10, Chance = 0.4 },
+			{ Kind = "Ore", OreKey = "CopperOre", Min = 5, Max = 10, Chance = 0.4, RunLocked = true },
 		},
 	},
 	[2] = {
@@ -47,7 +48,7 @@ NodeConfig.CombatTiers = {
 		DamagePerSecond = 4,
 		CooldownSeconds = 75,
 		Loot = {
-			{ Kind = "Ore", OreKey = "GoldOre", Min = 10, Max = 20, Chance = 1.0 },
+			{ Kind = "Ore", OreKey = "GoldOre", Min = 10, Max = 20, Chance = 1.0, RunLocked = true },
 			{ Kind = "Currency", CurrencyKey = "Scrap", Min = 15, Max = 30, Chance = 1.0 },
 		},
 	},
@@ -57,7 +58,7 @@ NodeConfig.CombatTiers = {
 		DamagePerSecond = 8,
 		CooldownSeconds = 120,
 		Loot = {
-			{ Kind = "Ore", OreKey = "PlatinumOre", Min = 5, Max = 12, Chance = 1.0 },
+			{ Kind = "Ore", OreKey = "PlatinumOre", Min = 5, Max = 12, Chance = 1.0, RunLocked = true },
 			{ Kind = "Currency", CurrencyKey = "Scrap", Min = 30, Max = 60, Chance = 1.0 },
 		},
 	},
@@ -71,7 +72,7 @@ NodeConfig.CombatTiers = {
 ----------------------------------------------------------------------
 
 NodeConfig.BossLoot = {
-	{ Kind = "Ore", OreKey = "PlatinumOre", Min = 10, Max = 20, Chance = 1.0 },
+	{ Kind = "Ore", OreKey = "PlatinumOre", Min = 10, Max = 20, Chance = 1.0, RunLocked = true },
 	{ Kind = "Currency", CurrencyKey = "Scrap", Min = 50, Max = 90, Chance = 1.0 },
 }
 
@@ -85,6 +86,10 @@ NodeConfig.HealCooldownSeconds = 20 -- free, but not spammable mid-raid
 -- Shop — the actual sink for the run's collected Scrap. Deliberately Scrap-only: Cores are no
 -- longer collected room by room (see RaidConfig.ExtractionRewards), so a Cores price here would be
 -- unbuyable until the first map clear, and Cores are meant to be a prize you carry home anyway.
+--
+-- NOTE: Raid Shop rooms no longer read this catalog — the raid shop rework replaced it with
+-- `RunBuffConfig`'s rotating perk/gear/escape offers. NodeService's older Expedition outpost shop
+-- (not raid-only) still reads ShopCatalog below as-is.
 ----------------------------------------------------------------------
 
 NodeConfig.ShopCatalog = {

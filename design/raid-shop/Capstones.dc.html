@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Item levels and capstones</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inconsolata:wght@500;700&amp;family=Montserrat:wght@500;700;800&amp;family=Source+Sans+3:wght@400;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0B0908}
+</style>
+</helmet>
+<div style="width: 1280px; height: 860px; box-sizing: border-box; padding: 40px 64px; display: flex; flex-direction: column; gap: 20px; background: #0B0908; font-family: 'Source Sans 3', sans-serif; color: #EDE7DC;">
+<div style="display: flex; flex-direction: column; gap: 6px;">
+<h2 style="margin: 0; font-family: Montserrat, sans-serif; font-weight: 800; font-size: 24px; letter-spacing: 0.04em;">LEVELS AND CAPSTONES</h2>
+<div style="font-size: 16px; color: #A79C8C;">Lv 1–3 grow the stat. Epic unlocks a Lv 4 bonus; Legendary adds the Lv 5 capstone. All numbers are placeholders.</div>
+</div>
+<div style="display: flex; flex-direction: column; background: #16120F; border: 1px solid #3C352F; border-radius: 10px; overflow: hidden;">
+<div style="display: grid; grid-template-columns: 210px 250px minmax(0, 1fr) minmax(0, 1fr); gap: 20px; align-items: center; height: 40px; padding: 0 20px; background: #201B17; border-bottom: 1px solid #3C352F;">
+<span style="font-family: Inconsolata, monospace; font-weight: 700; font-size: 12px; letter-spacing: 0.12em; color: #A79C8C;">ITEM</span>
+<span style="font-family: Inconsolata, monospace; font-weight: 700; font-size: 12px; letter-spacing: 0.12em; color: #5A96DC;">LV 1–3 · EVERY RARITY</span>
+<span style="font-family: Inconsolata, monospace; font-weight: 700; font-size: 12px; letter-spacing: 0.12em; color: #AA64DC;">LV 4 BONUS · EPIC+</span>
+<span style="font-family: Inconsolata, monospace; font-weight: 700; font-size: 12px; letter-spacing: 0.12em; color: #E6AF3C;">LV 5 CAPSTONE · LEGENDARY</span>
+</div>
+<sc-for list="{{rows}}" as="row" hint-placeholder-count="9">
+<div style="display: grid; grid-template-columns: 210px 250px minmax(0, 1fr) minmax(0, 1fr); gap: 20px; align-items: center; min-height: 66px; padding: 8px 20px; box-sizing: border-box; border-bottom: 1px solid #28231F;">
+<div style="display: flex; flex-direction: column; gap: 2px;">
+<span style="font-family: Montserrat, sans-serif; font-weight: 700; font-size: 15px;">{{row.name}}</span>
+<span style="font-family: Inconsolata, monospace; font-weight: 700; font-size: 11px; letter-spacing: 0.12em; color: #A79C8C;">{{row.kind}}</span>
+</div>
+<span style="font-size: 15px; line-height: 1.3; color: #EDE7DC;">{{row.base}}</span>
+<span style="font-size: 15px; line-height: 1.3; color: #CDB8E6;">{{row.lv4}}</span>
+<span style="font-size: 15px; line-height: 1.3; color: #F0D48F;">{{row.lv5}}</span>
+</div>
+</sc-for>
+</div>
+<div style="font-size: 14px; color: #A79C8C;">Escape items (Extraction Beacon, Salvage Insurance) have no levels and take no slot. Boss cards reuse these same effects, stack without limit and take no slot.</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":860}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      rows: [
+        { name: 'Overclock Chip', kind: 'PERK', base: '+8% damage per level', lv4: '+5% crit chance', lv5: 'Every 10th shot is a guaranteed crit' },
+        { name: 'Rapid Feeder', kind: 'PERK', base: '+7% fire rate per level', lv4: '+30% fire rate for the first 3 s of every fight', lv5: 'Each kill: +25% fire rate for 2 s' },
+        { name: 'Plated Vest', kind: 'PERK', base: '+10% max HP per level', lv4: '−10% damage taken from elites and bosses', lv5: 'Once per room, dropping under 25% HP gives you a shield' },
+        { name: 'Nano Repair', kind: 'PERK', base: 'Heal 5% HP on room clear per level (cap 25% / room, 100% / map)', lv4: 'Kills heal 1% HP (same cap)', lv5: 'Healing past full HP becomes a small shield' },
+        { name: 'Kinetic Barrier', kind: 'PERK', base: 'Shield worth 8% max HP per level, refills each room', lv4: 'Refills mid-room after 8 s without taking damage', lv5: 'Breaking knocks nearby enemies back' },
+        { name: 'Scavenger’s Lens', kind: 'PERK', base: '+10% ore and Scrap from drops and chests per level', lv4: 'Chests open in 2 s instead of 3', lv5: 'Every chest drops one extra item' },
+        { name: 'Scorch Aura', kind: 'GEAR', base: 'A ring around you burns enemies inside; damage per level', lv4: 'Ring radius +30%', lv5: 'Enemies inside the ring are slowed' },
+        { name: 'Orbit Blades', kind: 'GEAR', base: '2 blades circle you; damage per level', lv4: '+1 blade', lv5: 'Blade hits apply Staggered' },
+        { name: 'Laser Drone', kind: 'GEAR', base: 'Drone shoots the nearest enemy; damage per level', lv4: 'Fires 30% faster', lv5: 'Fires a second beam' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

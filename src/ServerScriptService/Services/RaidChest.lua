@@ -64,7 +64,12 @@ end
 -- Returns a list of { Kind, Key, Amount, RunLocked } — the shape addRunReward and the client's loot
 -- toast already use. Each item is DIFFERENT: the pool is built flat (every possible item with its
 -- per-draw weight) and drawn from without replacement.
-function RaidChest.RollLoot()
+--
+-- bonusCount (optional): Scavenger's Lens Lv5's "every chest drops one extra item" — added straight
+-- onto the rolled count before the draw loop below, which already stops early
+-- ("fewer distinct items exist than the count rolled") once the pool runs out, so this is
+-- automatically capped by the pool size with no extra bookkeeping.
+function RaidChest.RollLoot(bonusCount: number?)
 	local categoryWeights = RaidChestConfig.CategoryWeights
 
 	-- The ore share is split across the ore table in proportion, so "Ore = 40" really does mean 40%
@@ -92,7 +97,7 @@ function RaidChest.RollLoot()
 		end
 	end
 
-	local count = weightedPick(RaidChestConfig.ItemCountWeights) or 1
+	local count = (weightedPick(RaidChestConfig.ItemCountWeights) or 1) + (bonusCount or 0)
 	local loot = {}
 	for _ = 1, count do
 		local id = weightedPick(pool)
@@ -310,9 +315,13 @@ local function openLid(chest: Model)
 	end
 end
 
--- opts: { Player: Player, IsCurrent: () -> boolean, OnOpened: (loot) -> () }
+-- opts: { Player: Player, IsCurrent: () -> boolean, OnOpened: (loot) -> (), HoldSeconds: number?,
+--         BonusItems: number? }
 -- IsCurrent is RaidRoomService's check that this raid and this room are still the live ones — the same
 -- stale-prompt guard the Heal/Shop InteractPoint uses. Opens once, for the raid's own player only.
+-- HoldSeconds/BonusItems are Scavenger's Lens' Lv4/Lv5 params (RunBuffService.ChestHoldSeconds/
+-- ChestBonusItems) — both optional, falling back to the base config numbers/no bonus for a player who
+-- doesn't have the perk (or isn't in a raid run at all, e.g. a future non-Salvage-Run caller).
 function RaidChest.Arm(chest: Model, opts)
 	local anchor = chest.PrimaryPart
 	if not anchor then
@@ -322,7 +331,7 @@ function RaidChest.Arm(chest: Model, opts)
 	prompt.Name = "ChestPrompt"
 	prompt.ActionText = RaidChestConfig.ActionText
 	prompt.ObjectText = RaidChestConfig.ObjectText
-	prompt.HoldDuration = RaidChestConfig.HoldSeconds
+	prompt.HoldDuration = opts.HoldSeconds or RaidChestConfig.HoldSeconds
 	prompt.MaxActivationDistance = RaidChestConfig.PromptDistance
 	prompt.RequiresLineOfSight = false
 	prompt.Parent = anchor
@@ -338,7 +347,7 @@ function RaidChest.Arm(chest: Model, opts)
 		opened = true
 		prompt:Destroy()
 		openLid(chest)
-		opts.OnOpened(RaidChest.RollLoot())
+		opts.OnOpened(RaidChest.RollLoot(opts.BonusItems))
 	end)
 end
 

@@ -67,12 +67,14 @@ RaidChestConfig.Amounts = {
 }
 
 -- Whether each category is LOST on a Defeat/Abandon (RaidRoomService.settleRunLoot's RunLocked tag).
--- All false today to MATCH every other raid drop — nothing in NodeConfig's loot tables is RunLocked
--- yet, and a chest that followed stricter rules than the room around it would be an odd exception.
--- When Salvage Run's "ore is lost if you die" stake is switched on, flip Ore here with it. (Scrap and
--- Cores are exempt from RunLocked regardless — see RaidRoomService.addRunReward.)
+-- Ore now MATCHES every other raid ore drop — NodeConfig's CombatTiers/BossLoot ore entries are all
+-- RunLocked = true as of the raid shop rework ("Stakes switched ON with this round: raid ORE is lost
+-- on Defeat AND Abandon; only a clean extract keeps it" — DESIGN_NOTES.md, 2026-09-22), so a chest
+-- that kept its ore on death would be a loophole around the same stake. Contraband stays false — it
+-- wasn't part of that stake and nothing else in raids treats it as run-only. (Scrap and Cores are
+-- exempt from RunLocked entirely regardless of this table — see RaidRoomService.addRunReward.)
 RaidChestConfig.RunLocked = {
-	Ore = false,
+	Ore = true,
 	Contraband = false,
 }
 

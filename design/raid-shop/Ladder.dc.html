@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Rarity ladder</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inconsolata:wght@500;700&amp;family=Montserrat:wght@500;700;800&amp;family=Source+Sans+3:wght@400;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0B0908}
+</style>
+</helmet>
+<div style="width: 1280px; height: 600px; box-sizing: border-box; padding: 40px 64px; display: flex; flex-direction: column; gap: 28px; background: #0B0908; font-family: 'Source Sans 3', sans-serif; color: #EDE7DC;">
+<div style="display: flex; flex-direction: column; gap: 6px;">
+<h2 style="margin: 0; font-family: Montserrat, sans-serif; font-weight: 800; font-size: 24px; letter-spacing: 0.04em;">ONE ITEM, THREE RARITIES</h2>
+<div style="font-size: 16px; color: #A79C8C;">Rarity sets the level cap. Finding a higher rarity keeps your level and raises the cap.</div>
+</div>
+<div style="display: flex; gap: 40px; align-items: flex-start;">
+<sc-for list="{{cards}}" as="card" hint-placeholder-count="3">
+<div style="display: flex; flex-direction: column; gap: 12px;">
+<dc-import name="Card" card="{{card.data}}" hint-size="240px,392px"></dc-import>
+<div style="font-family: Inconsolata, monospace; font-weight: 700; font-size: 13px; letter-spacing: 0.08em; color: {{card.color}};">{{card.caption}}</div>
+</div>
+</sc-for>
+<div style="display: flex; flex-direction: column; gap: 14px; width: 300px; padding: 18px; background: #16120F; border: 1px solid #3C352F; border-radius: 10px;">
+<div style="font-family: Montserrat, sans-serif; font-weight: 700; font-size: 15px;">Pip states</div>
+<div style="display: flex; align-items: center; gap: 10px;"><div style="width: 28px; height: 8px; border-radius: 2px; background: #AA64DC;"></div><span style="font-size: 14px; color: #A79C8C;">Levels you own</span></div>
+<div style="display: flex; align-items: center; gap: 10px;"><div style="width: 28px; height: 8px; border-radius: 2px; box-sizing: border-box; background: #AA64DC; border: 1px solid #EDE7DC;"></div><span style="font-size: 14px; color: #A79C8C;">The level this buy adds</span></div>
+<div style="display: flex; align-items: center; gap: 10px;"><div style="width: 28px; height: 8px; border-radius: 2px; box-sizing: border-box; border: 1px solid rgba(170,100,220,0.55);"></div><span style="font-size: 14px; color: #A79C8C;">Room to grow at this rarity</span></div>
+<div style="display: flex; align-items: center; gap: 10px;"><div style="width: 28px; height: 8px; border-radius: 2px; box-sizing: border-box; background: rgba(230,175,60,0.14); border: 1px solid #E6AF3C;"></div><span style="font-size: 14px; color: #A79C8C;">Levels a rarity-up unlocks</span></div>
+<div style="display: flex; align-items: center; gap: 10px;"><div style="width: 28px; height: 8px; border-radius: 2px; box-sizing: border-box; background: #16120F; border: 1px dashed #3C352F;"></div><span style="font-size: 14px; color: #A79C8C;">Needs a higher rarity</span></div>
+</div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":600}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      cards: [
+        { color: '#5A96DC', caption: 'RARE · MAX LV 3', data: { name: 'Plated Vest', kind: 'PERK', rarity: 'Rare', icon: 'hp', effectLabel: 'Max HP', effectFrom: '+10%', effectTo: '+20%', fromLv: 1, toLv: 2, price: 100, affordable: true } },
+        { color: '#AA64DC', caption: 'EPIC · MAX LV 4', data: { name: 'Plated Vest', kind: 'PERK', rarity: 'Epic', icon: 'hp', effectLabel: 'Max HP', effectFrom: '+20%', effectTo: '+30%', fromLv: 2, toLv: 3, price: 150, affordable: true } },
+        { color: '#E6AF3C', caption: 'LEGENDARY · MAX LV 5', data: { name: 'Plated Vest', kind: 'PERK', rarity: 'Legendary', icon: 'hp', effectLabel: 'Max HP', effectFrom: '+20%', fromLv: 2, toLv: 2, prevCap: 3, rarityUp: true, price: 260, affordable: true } }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

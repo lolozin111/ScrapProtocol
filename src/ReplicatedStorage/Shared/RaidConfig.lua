@@ -747,11 +747,13 @@ end
 ----------------------------------------------------------------------
 -- Card system — the post-Boss reward pick. "You get healed, and you roll some cards with buffs,
 -- and the cards have rarity, and the buff is connected to rarity, and you can only pick one, pretty
--- roguelike." PLACEHOLDER CONTENT ONLY — "just make it a placeholder for now... so I can manually
--- add it later, or I just tell exactly what I want, I will make a list/table for you to add later."
--- One stub card per rarity below, no real buff effects wired up yet (RaidRoomService.lua just
--- records what was picked onto state.CollectedCards) — this proves out the rarity + roll + pick-one
--- flow so real cards/effects are a data change here later, not a new system.
+-- roguelike." Real cards, wired in as part of the Raid shop rework (DESIGN_NOTES.md, "Round 2
+-- answers, same day": "Boss cards: wire them in THIS rework... reuse the shop's run-buff system,
+-- stack WITHOUT limit and take NO slots"). Each card's `Stats` table uses the SAME stat keys
+-- `RunBuffConfig.Items[*].PerLevel`/`Lv4`/`Lv5` use (DamagePct, FireRatePct, MaxHpPct, LootPct,
+-- CritChance) so `RunBuffConfig.Aggregate(owned, pickedCards)` can sum shop perks and boss cards
+-- into one flat total without special-casing either source. Small, rarity-scaled, no cap — a boss
+-- card never competes with a shop item for one of the 4 equipment slots.
 ----------------------------------------------------------------------
 
 RaidConfig.CardRarities = { "Common", "Rare", "Epic", "Legendary" }
@@ -770,11 +772,38 @@ RaidConfig.CardRarityColors = {
 	Legendary = Color3.fromRGB(230, 175, 45),
 }
 
+-- One card per (stat, rarity) pair. Values are placeholders per the design doc but the ladder shape
+-- is deliberate: each rarity step is roughly a 1.5-1.6x jump over the last, same feel across stats.
 RaidConfig.CardPool = {
-	{ Key = "PlaceholderCommon", DisplayName = "Placeholder Buff", Rarity = "Common", Description = "Stub card — swap for a real buff later." },
-	{ Key = "PlaceholderRare", DisplayName = "Placeholder Buff", Rarity = "Rare", Description = "Stub card — swap for a real buff later." },
-	{ Key = "PlaceholderEpic", DisplayName = "Placeholder Buff", Rarity = "Epic", Description = "Stub card — swap for a real buff later." },
-	{ Key = "PlaceholderLegendary", DisplayName = "Placeholder Buff", Rarity = "Legendary", Description = "Stub card — swap for a real buff later." },
+	-- Damage
+	{ Key = "DamagePct_Common", DisplayName = "Overcharged Rounds", Rarity = "Common", Description = "+3% damage for the rest of this raid.", Stats = { DamagePct = 0.03 } },
+	{ Key = "DamagePct_Rare", DisplayName = "Overcharged Rounds", Rarity = "Rare", Description = "+5% damage for the rest of this raid.", Stats = { DamagePct = 0.05 } },
+	{ Key = "DamagePct_Epic", DisplayName = "Overcharged Rounds", Rarity = "Epic", Description = "+8% damage for the rest of this raid.", Stats = { DamagePct = 0.08 } },
+	{ Key = "DamagePct_Legendary", DisplayName = "Overcharged Rounds", Rarity = "Legendary", Description = "+12% damage for the rest of this raid.", Stats = { DamagePct = 0.12 } },
+
+	-- Fire rate
+	{ Key = "FireRatePct_Common", DisplayName = "Combat Stims", Rarity = "Common", Description = "+3% fire rate for the rest of this raid.", Stats = { FireRatePct = 0.03 } },
+	{ Key = "FireRatePct_Rare", DisplayName = "Combat Stims", Rarity = "Rare", Description = "+5% fire rate for the rest of this raid.", Stats = { FireRatePct = 0.05 } },
+	{ Key = "FireRatePct_Epic", DisplayName = "Combat Stims", Rarity = "Epic", Description = "+8% fire rate for the rest of this raid.", Stats = { FireRatePct = 0.08 } },
+	{ Key = "FireRatePct_Legendary", DisplayName = "Combat Stims", Rarity = "Legendary", Description = "+12% fire rate for the rest of this raid.", Stats = { FireRatePct = 0.12 } },
+
+	-- Max HP
+	{ Key = "MaxHpPct_Common", DisplayName = "Reinforced Plating", Rarity = "Common", Description = "+5% max HP for the rest of this raid.", Stats = { MaxHpPct = 0.05 } },
+	{ Key = "MaxHpPct_Rare", DisplayName = "Reinforced Plating", Rarity = "Rare", Description = "+8% max HP for the rest of this raid.", Stats = { MaxHpPct = 0.08 } },
+	{ Key = "MaxHpPct_Epic", DisplayName = "Reinforced Plating", Rarity = "Epic", Description = "+12% max HP for the rest of this raid.", Stats = { MaxHpPct = 0.12 } },
+	{ Key = "MaxHpPct_Legendary", DisplayName = "Reinforced Plating", Rarity = "Legendary", Description = "+18% max HP for the rest of this raid.", Stats = { MaxHpPct = 0.18 } },
+
+	-- Loot
+	{ Key = "LootPct_Common", DisplayName = "Scavenger's Instinct", Rarity = "Common", Description = "+5% ore and Scrap from drops for the rest of this raid.", Stats = { LootPct = 0.05 } },
+	{ Key = "LootPct_Rare", DisplayName = "Scavenger's Instinct", Rarity = "Rare", Description = "+8% ore and Scrap from drops for the rest of this raid.", Stats = { LootPct = 0.08 } },
+	{ Key = "LootPct_Epic", DisplayName = "Scavenger's Instinct", Rarity = "Epic", Description = "+12% ore and Scrap from drops for the rest of this raid.", Stats = { LootPct = 0.12 } },
+	{ Key = "LootPct_Legendary", DisplayName = "Scavenger's Instinct", Rarity = "Legendary", Description = "+18% ore and Scrap from drops for the rest of this raid.", Stats = { LootPct = 0.18 } },
+
+	-- Crit chance
+	{ Key = "CritChance_Common", DisplayName = "Weak Point Sense", Rarity = "Common", Description = "+2% crit chance for the rest of this raid.", Stats = { CritChance = 0.02 } },
+	{ Key = "CritChance_Rare", DisplayName = "Weak Point Sense", Rarity = "Rare", Description = "+4% crit chance for the rest of this raid.", Stats = { CritChance = 0.04 } },
+	{ Key = "CritChance_Epic", DisplayName = "Weak Point Sense", Rarity = "Epic", Description = "+6% crit chance for the rest of this raid.", Stats = { CritChance = 0.06 } },
+	{ Key = "CritChance_Legendary", DisplayName = "Weak Point Sense", Rarity = "Legendary", Description = "+10% crit chance for the rest of this raid.", Stats = { CritChance = 0.10 } },
 }
 
 -- Rolls `count` DISTINCT cards out of CardPool, weighted by CardRarityWeights (re-normalized as the

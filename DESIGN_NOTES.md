@@ -3411,6 +3411,39 @@ build (greenlight first).
 - **Boss cards: wire them in THIS rework.** `RaidConfig.CardPool` is 4 effectless stubs today (checked
   2026-09-22) — the user believed boss buffs already worked. They reuse the shop's run-buff system,
   stack WITHOUT limit and take NO slots ("limitless scalability that is not OP").
+- **Capstone sheet APPROVED as drawn** (`design/raid-shop/Capstones.dc.html`). GREENLIT to build.
+
+**BUILD CONTRACT (2026-09-22) — the shared shape every implementer builds against.**
+Design references (copied into the repo so they survive): `design/raid-shop/*.dc.html` — `Card.dc.html`
+is the card, `Main.dc.html` the shop screen + slot bar, `SlotsFull.dc.html` the full state,
+`Capstones.dc.html` the item list. Build the UI from these EXACTLY (sizes, colors, fonts, pip states).
+
+Build order (one implementer per file; each step's result feeds the next):
+1. **Config** (`sp-config-dev`) — new `Shared/RunBuffConfig.lua`: rarity caps (Rare 3 / Epic 4 /
+   Legendary 5), offer rarity weights, `OffersPerShop` 3-4, `Slots = 4`, `SellRefund = 0.5`,
+   `ShopHealCap` 25% room / 100% map, `CritMultiplier`, and `Items` — the 9 levelled items + 2 escape
+   items from the capstone sheet, each with Kind, Icon key, Price per rarity, per-level stats, Lv4/Lv5
+   params and card display (label + value per level). Pure shared helpers the HUD and server BOTH use:
+   `PreviewOffer(owned, offer, slotsUsed)` (new / +1 level / rarity-up keeps level / Maxed / SlotsFull)
+   and `Aggregate(owned, bossCards)` (summed stat totals). `RaidConfig.CardPool` → real boss cards
+   carrying the same stat keys (small, rarity-scaled, unlimited). Ore loot entries in `NodeConfig`
+   (CombatTiers, BossLoot) and `RaidChestConfig.RunLocked.Ore` → `RunLocked = true`.
+2. **Server** (`sp-server-dev`) — new `Services/RunBuffService.lua` (utility, no remotes): per-player run
+   buff state (Begin/End, owned items with Rarity/Level/Paid, held escape items, boss cards, shop heal
+   budget), stat queries for combat, gear tick, on-kill/on-damaged/fight-start/room-clear hooks, MaxHP
+   apply/restore, `RunFireRateMult` Player attribute for the client. `RaidRoomService`: Shop rolls
+   offers per visit (stored on state), `RaidRoomAction` "Buy"/"Sell"/"UseBeacon" through RateLimiter,
+   boss "ChooseCard" applies the card, Lens multiplier in grantRunLoot + chest payout, Insurance in
+   settleRunLoot (forfeit keeps KeepOrePct of RunLocked ore), lifecycle calls. `RaidChest.Arm`: per-run
+   hold time + bonus item count.
+3. **Combat** (`sp-combat-dev`) — `CombatEncounterService`/`DamagePipeline`: damage mult + crit on
+   player shots, fire-rate cooldown uses the buff, damage-taken mult (elite/boss), Barrier shield via
+   existing `playerState.Shield`, Vest Lv5 trigger, on-kill hook, gear ticking in the raid loop (placeholder
+   neon visuals, optional `ServerStorage.RunGearModels`). Buffs are neutral outside a raid run.
+4. **Client** (`sp-server-dev`, parallel with 3 — disjoint files) — new `StarterPlayerScripts/RaidShopPanel.lua`
+   (the cards + slot bar, icons via `HudKit.applyIcon(…, "UiIcons")` with a placeholder fallback),
+   `RaidClient` wiring + Use Beacon button + real boss card text, `CombatClient` reads `RunFireRateMult`.
+5. **Docs** (`sp-docs-dev`) — README section 4 steps; UiIcons key list for the user's icon upload.
 
 **Older — end of session 2026-09-22 (first session).** Everything below this block is older.
 

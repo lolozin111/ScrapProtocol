@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Raid shop</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inconsolata:wght@500;700&amp;family=Montserrat:wght@500;700;800&amp;family=Source+Sans+3:wght@400;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0B0908}
+</style>
+</helmet>
+<div style="width: 1280px; height: 800px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; background: #0B0908; font-family: 'Source Sans 3', sans-serif; color: #EDE7DC;">
+<div style="width: 1120px; box-sizing: border-box; padding: 24px 28px; display: flex; flex-direction: column; gap: 18px; background: #16120F; border: 1px solid #3C352F; border-radius: 10px;">
+<div style="display: flex; align-items: flex-start; justify-content: space-between;">
+<div style="display: flex; flex-direction: column; gap: 4px;">
+<div style="display: flex; align-items: center; gap: 10px;">
+<div style="width: 8px; height: 8px; border-radius: 4px; background: #E07A3B;"></div>
+<span style="font-family: Inconsolata, monospace; font-weight: 700; font-size: 12px; letter-spacing: 0.16em; color: #A79C8C;">SHOP NODE · STOCK ROLLED FOR THIS VISIT</span>
+</div>
+<h1 style="margin: 0; font-family: Montserrat, sans-serif; font-weight: 800; font-size: 28px; letter-spacing: 0.04em;">SALVAGE EXCHANGE</h1>
+<div style="font-size: 15px; color: #A79C8C;">Perks and gear last until this run ends.</div>
+</div>
+<div style="display: flex; gap: 10px;">
+<div style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px; padding: 8px 14px; background: #201B17; border: 1px solid #3C352F; border-radius: 6px;">
+<span style="font-family: Inconsolata, monospace; font-weight: 700; font-size: 11px; letter-spacing: 0.12em; color: #A79C8C;">ORE AT RISK</span>
+<span style="font-family: Inconsolata, monospace; font-weight: 700; font-size: 20px; color: #D9776A;">142</span>
+</div>
+<div style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px; padding: 8px 14px; background: #201B17; border: 1px solid #3C352F; border-radius: 6px;">
+<span style="font-family: Inconsolata, monospace; font-weight: 700; font-size: 11px; letter-spacing: 0.12em; color: #A79C8C;">SCRAP</span>
+<div style="display: flex; align-items: center; gap: 6px;">
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#E07A3B" stroke-width="2.2" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.5l8.2 4.75v9.5L12 21.5l-8.2-4.75v-9.5z"></path><circle cx="12" cy="12" r="3.2"></circle></svg>
+<span style="font-family: Inconsolata, monospace; font-weight: 700; font-size: 20px; color: #EDE7DC;">240</span>
+</div>
+</div>
+</div>
+</div>
+<div style="display: flex; gap: 24px; justify-content: center;">
+<sc-for list="{{cards}}" as="card" hint-placeholder-count="4">
+<dc-import name="Card" card="{{card}}" hint-size="240px,392px"></dc-import>
+</sc-for>
+</div>
+<div style="display: flex; flex-direction: column; gap: 8px; padding-top: 14px; border-top: 1px solid #3C352F;">
+<div style="width: 1032px; align-self: center; display: flex; justify-content: space-between; align-items: baseline;">
+<span style="font-family: Inconsolata, monospace; font-weight: 700; font-size: 12px; letter-spacing: 0.12em; color: #A79C8C;">EQUIPMENT SLOTS <span style="color: #EDE7DC;">{{slotCount}}</span></span>
+<span style="font-family: Inconsolata, monospace; font-weight: 500; font-size: 12px; color: #A79C8C;">SELL REFUNDS 50% · ENDS WITH THE RUN</span>
+</div>
+<div style="display: flex; gap: 24px; justify-content: center;">
+<sc-for list="{{slots}}" as="s" hint-placeholder-count="4">
+<sc-if value="{{s.filled}}" hint-placeholder-val="{{ true }}">
+<div style="width: 240px; height: 60px; box-sizing: border-box; display: flex; align-items: center; gap: 10px; padding: 0 8px 0 12px; background: #201B17; border: 1px solid {{s.border}}; border-radius: 8px;">
+<div style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px;">
+<div style="display: flex; align-items: baseline; justify-content: space-between; gap: 6px;">
+<span style="font-family: Montserrat, sans-serif; font-weight: 700; font-size: 14px; white-space: nowrap;">{{s.name}}</span>
+<span style="font-family: Inconsolata, monospace; font-weight: 700; font-size: 11px; letter-spacing: 0.06em; color: {{s.color}}; white-space: nowrap;">{{s.lv}}</span>
+</div>
+<div style="display: flex; gap: 4px;">
+<sc-for list="{{s.pips}}" as="pip" hint-placeholder-count="5">
+<div style="{{pip.style}}"></div>
+</sc-for>
+</div>
+</div>
+<button type="button" style="width: 60px; height: 44px; flex-shrink: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; border: 1px solid #3C352F; border-radius: 6px; background: #28231F; color: #EDE7DC; cursor: pointer;">
+<span style="font-family: Montserrat, sans-serif; font-weight: 700; font-size: 11px; letter-spacing: 0.08em;">SELL</span>
+<span style="font-family: Inconsolata, monospace; font-weight: 700; font-size: 12px; color: #7BC0A0;">{{s.refund}}</span>
+</button>
+</div>
+</sc-if>
+<sc-if value="{{s.empty}}" hint-placeholder-val="{{ false }}">
+<div style="width: 240px; height: 60px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; border: 1px dashed #3C352F; border-radius: 8px;">
+<span style="font-family: Inconsolata, monospace; font-weight: 700; font-size: 12px; letter-spacing: 0.12em; color: #A79C8C;">EMPTY SLOT</span>
+</div>
+</sc-if>
+</sc-for>
+</div>
+<div style="width: 1032px; align-self: center; display: flex; align-items: center; justify-content: space-between; margin-top: 6px;">
+<div style="display: flex; align-items: center; gap: 10px;">
+<span style="font-family: Inconsolata, monospace; font-weight: 700; font-size: 12px; letter-spacing: 0.12em; color: #A79C8C;">NO SLOT</span>
+<div style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; background: #201B17; border: 1px solid #3C352F; border-radius: 6px;">
+<div style="width: 8px; height: 8px; border-radius: 4px; background: #AA64DC;"></div>
+<span style="font-size: 14px; font-weight: 600;">Salvage Insurance</span>
+<span style="font-family: Inconsolata, monospace; font-weight: 700; font-size: 12px; color: #AA64DC;">KEEP 40% ORE</span>
+</div>
+</div>
+<button type="button" style="height: 44px; padding: 0 22px; border: 1px solid #3C352F; border-radius: 6px; background: #28231F; color: #EDE7DC; font-family: Montserrat, sans-serif; font-weight: 700; font-size: 14px; letter-spacing: 0.06em; cursor: pointer;">LEAVE SHOP</button>
+</div>
+</div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"full":{"editor":"boolean","default":false},"$preview":{"width":1280,"height":800}}'>
+class Component extends DCLogic {
+  renderVals() {
+    var full = !!this.props.full;
+    var R = {
+      Rare: { color: '#5A96DC', tint: 'rgba(90,150,220,0.14)', border: 'rgba(90,150,220,0.55)', cap: 3 },
+      Epic: { color: '#AA64DC', tint: 'rgba(170,100,220,0.14)', border: 'rgba(170,100,220,0.55)', cap: 4 },
+      Legendary: { color: '#E6AF3C', tint: 'rgba(230,175,60,0.14)', border: 'rgba(230,175,60,0.7)', cap: 5 }
+    };
+    function slot(name, rarity, lv, refund) {
+      var r = R[rarity];
+      var pips = [1, 2, 3, 4, 5].map(function (i) {
+        var s = 'flex: 1; height: 4px; border-radius: 1px; box-sizing: border-box; ';
+        if (i <= lv) s += 'background: ' + r.color + ';';
+        else if (i <= r.cap) s += 'border: 1px solid ' + r.border + ';';
+        else s += 'border: 1px dashed #3C352F;';
+        return { style: s };
+      });
+      return { filled: true, empty: false, name: name, lv: rarity.toUpperCase() + ' · LV ' + lv, color: r.color, border: r.border, pips: pips, refund: '+' + refund };
+    }
+    var slots = [
+      slot('Overclock Chip', 'Epic', 2, 70),
+      slot('Plated Vest', 'Rare', 2, 50),
+      slot('Laser Drone', 'Rare', 1, 90),
+      full ? slot('Scorch Aura', 'Rare', 1, 80) : { filled: false, empty: true }
+    ];
+    return {
+      slotCount: full ? '4/4' : '3/4',
+      slots: slots,
+      cards: [
+        { name: 'Overclock Chip', kind: 'PERK', rarity: 'Epic', icon: 'damage', effectLabel: 'Damage', effectFrom: '+16%', effectTo: '+24%', fromLv: 2, toLv: 3, price: 140, affordable: true },
+        { name: 'Orbit Blades', kind: 'GEAR', rarity: 'Rare', icon: 'orbit', effectLabel: 'Blades circling you', effectFrom: '2', fromLv: 0, toLv: 1, price: 180, affordable: true, full: full },
+        { name: 'Plated Vest', kind: 'PERK', rarity: 'Legendary', icon: 'hp', effectLabel: 'Max HP', effectFrom: '+20%', fromLv: 2, toLv: 2, prevCap: 3, rarityUp: true, price: 260, affordable: false },
+        { name: 'Extraction Beacon', kind: 'ESCAPE', rarity: 'Epic', icon: 'beacon', effectLabel: 'Leave the raid now', oneUse: true, fromLv: 0, toLv: 0, price: 220, affordable: true }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -28,9 +28,10 @@
 	  Heal       -> waits for the player to interact with a RaidConfig.InteractPointName Part in the
 	                room (see beginInteractGated below), THEN full-heals the player's Humanoid, then
 	                waits for a "Continue" RaidRoomAction before advancing.
-	  Shop       -> same interact-gate as Heal, then shows NodeConfig.ShopCatalog (spendable only
-	                against this run's OWN collected currency — see RUN ECONOMY below), waits for
-	                "Buy" (repeatable) and "Continue" RaidRoomActions.
+	  Shop       -> same interact-gate as Heal, then rolls RunBuffConfig.OffersPerShop random perk/
+	                gear/Escape offers for THIS node (rollShopOffers — see the Salvage Run shop rework
+	                in DESIGN_NOTES.md), spendable only against this run's OWN collected Scrap (see RUN
+	                ECONOMY below), waits for "Buy"/"Sell" (repeatable) and "Continue" RaidRoomActions.
 	  Boss       -> RaidConfig.GenerateMap already picked which nodes are Boss (see that file's
 	                placeBossNodes) — this just runs one tougher RunRaidCombat encounter off
 	                RaidConfig.BossComposition/EnemyConfig.BossTypes (beginBoss below). Cleared
@@ -69,6 +70,7 @@ local RaidConfig = require(ReplicatedStorage.Shared.RaidConfig)
 local NodeConfig = require(ReplicatedStorage.Shared.NodeConfig)
 local WaveConfig = require(ReplicatedStorage.Shared.WaveConfig)
 local EnemyConfig = require(ReplicatedStorage.Shared.EnemyConfig)
+local RunBuffConfig = require(ReplicatedStorage.Shared.RunBuffConfig)
 local DevShortcuts = require(script.Parent.DevShortcuts)
 local DataService = require(script.Parent.DataService)
 local RaidEnergyService = require(script.Parent.RaidEnergyService)
@@ -78,6 +80,8 @@ local PlayerActivityService = require(script.Parent.PlayerActivityService)
 local RaidHealBudget = require(script.Parent.RaidHealBudget)
 local RaidChest = require(script.Parent.RaidChest)
 local RaidChestConfig = require(ReplicatedStorage.Shared.RaidChestConfig)
+local RunBuffService = require(script.Parent.RunBuffService)
+local RateLimiter = require(script.Parent.RateLimiter)
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 local RequestStartRaid = Remotes.RequestStartRaid
@@ -718,6 +722,49 @@ local function addPendingReward(state, contraband: number, cores: number)
 	pushRunCurrencyUpdate(state)
 end
 
+-- One snapshot of the run's Salvage Run buff/economy state — what the Shop panel and the HUD's
+-- "ore at risk" readout both need, built once here so every place that changes Scrap/ore-at-risk
+-- (a buy, a sell, a card pick, a loot grant) can hand the client the SAME shape rather than each
+-- hand-rolling a subset of these fields (the exact InventoryUpdate-drift problem CLAUDE.md warns
+-- about, just for raid state instead of the profile).
+local function runSnapshot(state)
+	local record = RunBuffService.Get(state.Player)
+	local owned = {}
+	local escape = {}
+	if record then
+		for itemKey, entry in pairs(record.Owned) do
+			owned[itemKey] = { Rarity = entry.Rarity, Level = entry.Level, Paid = entry.Paid }
+		end
+		for itemKey in pairs(record.Escape) do
+			escape[itemKey] = true
+		end
+	end
+
+	local oreAtRisk = 0
+	for _, entry in ipairs(state.RunLoot) do
+		if entry.Kind == "Ore" and entry.RunLocked and not entry.Permanent then
+			oreAtRisk += entry.Amount
+		end
+	end
+
+	return {
+		Owned = owned,
+		Escape = escape,
+		SlotsUsed = RunBuffService.SlotsUsed(state.Player),
+		Slots = RunBuffConfig.Slots,
+		Scrap = state.RunCurrencyCollected.Scrap,
+		OreAtRisk = oreAtRisk,
+	}
+end
+
+-- Fired after every buy/sell/card pick/loot grant that can move Scrap or ore-at-risk, so the Shop
+-- panel's slot bar and the ore-at-risk readout never go stale between the events that already carry
+-- a Run field of their own (ShopOffers/ShopResult) and the ones that don't (Cleared/AmbushWaveCleared/
+-- BossCleared/ChestOpened).
+local function pushRunBuffs(state)
+	RaidRoomUpdate:FireClient(state.Player, { Status = "RunBuffs", Run = runSnapshot(state) })
+end
+
 -- One shared sink for anything earned this run — a Combat/Ambush/Boss loot roll, or a Shop
 -- purchase's Grant. Scrap/Cores go straight into the live, run-only currency pool (spendable again
 -- this same run at the Shop, always banked in full at raid end — see settleRunLoot) since they're
@@ -736,10 +783,13 @@ end
 
 -- Rolls a NodeConfig-style loot table (Chance/Min/Max per entry) into the run's own pools via
 -- addRunReward above, scaling every rolled amount by `multiplier` (RaidConfig.GetLootMultiplier —
--- "make that the rewards scale with difficulty"). Returns the granted list in the same
--- {Kind, Key, Amount} shape the client's toast rendering already expects.
+-- "make that the rewards scale with difficulty") AND Scavenger's Lens' LootPct — every entry in
+-- these tables is Ore or Scrap (see NodeConfig.CombatTiers/BossLoot's own header), never Cores, so
+-- folding the Lens multiplier in here covers "ore and Scrap" without needing a per-Kind branch.
+-- Returns the granted list in the same {Kind, Key, Amount} shape the client's toast rendering
+-- already expects.
 local function grantRunLoot(state, lootTable, multiplier: number?)
-	multiplier = multiplier or 1
+	multiplier = (multiplier or 1) * RunBuffService.LootMultiplier(state.Player)
 	local granted = {}
 	for _, entry in ipairs(lootTable) do
 		if math.random() <= entry.Chance then
@@ -759,22 +809,44 @@ end
 -- false) keeps everything; a Defeat/Abandon (isForfeit = true) drops anything RunLocked UNLESS it's
 -- also Permanent — "they just get everything that they collected thru the run, EXCEPT run locked
 -- items... unless the item has a tag called permanent."
+-- Salvage Insurance (Escape item): on a forfeit, keep KeepOrePct of RunLocked ore instead of losing
+-- it all. Read BEFORE RunBuffService.End clears the run record — every call site of settleRunLoot
+-- runs it ahead of cleanupRaid (which calls End), so the record is guaranteed to still exist here.
+local function insuranceKeepOrePct(state, isForfeit: boolean): number
+	if not isForfeit then
+		return 0
+	end
+	local record = RunBuffService.Get(state.Player)
+	if not (record and record.Escape.SalvageInsurance) then
+		return 0
+	end
+	return RunBuffConfig.Items.SalvageInsurance.KeepOrePct or 0
+end
+
 local function settleRunLoot(state, isForfeit: boolean)
 	local profile = DataService.Get(state.Player)
 	if not profile then
 		return
 	end
+	local keepOrePct = insuranceKeepOrePct(state, isForfeit)
+
 	for currencyKey, amount in pairs(state.RunCurrencyCollected) do
 		if amount > 0 then
 			DataService.AddCurrency(state.Player, currencyKey, amount)
 		end
 	end
 	for _, entry in ipairs(state.RunLoot) do
-		if not (isForfeit and entry.RunLocked and not entry.Permanent) then
+		local forfeited = isForfeit and entry.RunLocked and not entry.Permanent
+		if not forfeited then
 			if entry.Kind == "Ore" then
 				DataService.AddOre(state.Player, entry.Key, entry.Amount)
 			elseif entry.Kind == "Currency" then
 				DataService.AddCurrency(state.Player, entry.Key, entry.Amount)
+			end
+		elseif entry.Kind == "Ore" and keepOrePct > 0 then
+			local kept = math.floor(entry.Amount * keepOrePct)
+			if kept > 0 then
+				DataService.AddOre(state.Player, entry.Key, kept)
 			end
 		end
 	end
@@ -1019,18 +1091,89 @@ local function modeOf(state)
 	return RaidConfig.Modes[state.RaidMode] or RaidConfig.Modes[RaidConfig.DefaultMode]
 end
 
--- The Shop node's catalog for this raid's mode. The mode names a NodeConfig table (see
--- RaidConfig.Modes); an unknown name warns and falls back to the default catalog rather than leaving
--- a Shop room with nothing to sell.
-local function shopCatalogFor(state)
-	local name = modeOf(state).ShopCatalog
-	local catalog = name and NodeConfig[name]
-	if type(catalog) ~= "table" then
-		warn(("[RaidRoomService] Raid mode %s names ShopCatalog %q, which isn't a NodeConfig table — using NodeConfig.ShopCatalog."):format(
-			tostring(state.RaidMode), tostring(name)))
-		return NodeConfig.ShopCatalog
+-- Raid Shop rooms no longer read a fixed NodeConfig catalog (RaidConfig.Modes' ShopCatalog field is
+-- now dead data, left in place for sp-config-dev to remove/repurpose) — see rollShopOffers below.
+
+-- Stable per-server counter for OfferId — only needs to be unique within one running server, never
+-- persisted, so a plain incrementing number (not a GUID) is enough.
+local nextShopOfferId = 0
+local function newShopOfferId(): string
+	nextShopOfferId += 1
+	return "Offer" .. tostring(nextShopOfferId)
+end
+
+-- Rolls RunBuffConfig.OffersPerShop.Min..Max DISTINCT item offers for the CURRENT node, stored on
+-- state.ShopOffers[nodeId] so re-entering the same Shop room shows the SAME stock rather than
+-- rerolling underneath a player who stepped away and came back. Rarity per offer is drawn from
+-- RunBuffConfig.OfferRarityWeights, restricted to whichever rarities the item can even be offered at
+-- (item.Rarities); an offer that PreviewOffer would reject outright (Maxed/AlreadyHeld — SlotsFull is
+-- NOT filtered here, since being full now shouldn't hide what a player could buy after selling
+-- something) is skipped so the shop never shows a card with no legal outcome.
+local function rollShopOffers(state)
+	local nodeId = state.CurrentNodeId
+	local record = RunBuffService.Get(state.Player)
+	local ownedByKey = record and record.Owned or {}
+	local escapeByKey = record and record.Escape or {}
+	local slotsUsed = RunBuffService.SlotsUsed(state.Player)
+
+	local candidateKeys = {}
+	for itemKey in pairs(RunBuffConfig.Items) do
+		table.insert(candidateKeys, itemKey)
 	end
-	return catalog
+	-- Fisher-Yates so the walk below isn't biased toward pairs()' iteration order.
+	for i = #candidateKeys, 2, -1 do
+		local j = math.random(i)
+		candidateKeys[i], candidateKeys[j] = candidateKeys[j], candidateKeys[i]
+	end
+
+	local count = math.random(RunBuffConfig.OffersPerShop.Min, RunBuffConfig.OffersPerShop.Max)
+	local offers = {}
+	local escapeOffered = 0
+
+	for _, itemKey in ipairs(candidateKeys) do
+		if #offers >= count then
+			break
+		end
+		local item = RunBuffConfig.Items[itemKey]
+		if not (item.Kind == "Escape" and escapeOffered >= RunBuffConfig.MaxEscapeOffersPerShop) then
+			local weights = {}
+			local totalWeight = 0
+			for _, rarity in ipairs(item.Rarities) do
+				local w = RunBuffConfig.OfferRarityWeights[rarity] or 0
+				weights[rarity] = w
+				totalWeight += w
+			end
+
+			if totalWeight > 0 then
+				local roll = math.random() * totalWeight
+				local rarity = item.Rarities[1]
+				local cumulative = 0
+				for _, r in ipairs(item.Rarities) do
+					cumulative += weights[r]
+					if roll <= cumulative then
+						rarity = r
+						break
+					end
+				end
+
+				local owned = (item.Kind == "Escape") and (escapeByKey[itemKey] or nil) or ownedByKey[itemKey]
+				local preview = RunBuffConfig.PreviewOffer(owned, { ItemKey = itemKey, Rarity = rarity }, slotsUsed)
+				if preview.Blocked ~= "Maxed" and preview.Blocked ~= "AlreadyHeld" then
+					if item.Kind == "Escape" then
+						escapeOffered += 1
+					end
+					table.insert(offers, {
+						OfferId = newShopOfferId(),
+						ItemKey = itemKey,
+						Rarity = rarity,
+						Price = item.Price[rarity],
+					})
+				end
+			end
+		end
+	end
+
+	state.ShopOffers[nodeId] = offers
 end
 
 local function applyDevBossFirst(player: Player, map)
@@ -1052,6 +1195,7 @@ local function onMapCleared(state)
 	state.MapsCleared += 1
 	-- A fresh map, a fresh 75% drone heal allowance (the user's call: pushing deeper stays survivable).
 	RaidHealBudget.NewMap(state.Player)
+	RunBuffService.NewMap(state.Player) -- fresh 100%/map Shop heal budget too
 	local justUnlocked = not state.ExtractUnlocked
 	state.ExtractUnlocked = true
 
@@ -1093,6 +1237,7 @@ end
 local function cleanupRaid(state, sendReturnHome: boolean?)
 	activeRaids[state.Player.UserId] = nil
 	RaidHealBudget.End(state.Player) -- back home, the Support Core heals uncapped again
+	RunBuffService.End(state.Player) -- restores base MaxHealth, clears gear visuals/attributes
 	PlayerActivityService.Release(state.Player, PlayerActivityService.Activities.Raid)
 	if state.RoomFolder then
 		state.RoomFolder:Destroy()
@@ -1314,13 +1459,26 @@ local function beginCombat(state, node)
 					IsCurrent = function()
 						return activeRaids[state.Player.UserId] == state and state.CurrentNodeId == nodeIdAtEntry
 					end,
+					-- Scavenger's Lens Lv4/Lv5 — faster hold, one extra distinct item.
+					HoldSeconds = RunBuffService.ChestHoldSeconds(state.Player),
+					BonusItems = RunBuffService.ChestBonusItems(state.Player),
 					OnOpened = function(loot)
 						-- The same sink as every other raid drop, so chest loot follows whatever
-						-- keep-on-death rules raid loot follows (RaidChestConfig.RunLocked).
+						-- keep-on-death rules raid loot follows (RaidChestConfig.RunLocked). Lens'
+						-- LootPct applies to Ore and Scrap only, same carve-out as grantRunLoot — a
+						-- chest's Cores/Contraband draws stay exactly what was rolled.
+						local lootMultiplier = RunBuffService.LootMultiplier(state.Player)
+						local granted = {}
 						for _, item in ipairs(loot) do
-							addRunReward(state, item.Kind, item.Key, item.Amount, item.RunLocked, false)
+							local amount = item.Amount
+							if item.Kind == "Ore" or (item.Kind == "Currency" and item.Key == "Scrap") then
+								amount = math.max(1, math.floor(amount * lootMultiplier + 0.5))
+							end
+							addRunReward(state, item.Kind, item.Key, amount, item.RunLocked, false)
+							table.insert(granted, { Kind = item.Kind, Key = item.Key, Amount = amount })
 						end
-						RaidRoomUpdate:FireClient(state.Player, { Status = "ChestOpened", Loot = loot })
+						RaidRoomUpdate:FireClient(state.Player, { Status = "ChestOpened", Loot = granted })
+						pushRunBuffs(state)
 					end,
 				})
 				explicitSpawns = explicitSpawns or {}
@@ -1363,6 +1521,8 @@ local function beginCombat(state, node)
 			else
 				RaidRoomUpdate:FireClient(state.Player, { Status = "Cleared", Loot = {} })
 			end
+			RunBuffService.OnRoomCleared(state.Player) -- Nano Repair's room-clear heal
+			pushRunBuffs(state)
 			advanceFromNode(state)
 		elseif status == "Defeated" then
 			failRaid(state, "Your gear couldn't hold against this room.")
@@ -1470,6 +1630,10 @@ local function beginAmbush(state, node)
 			else
 				RaidRoomUpdate:FireClient(state.Player, { Status = "AmbushWaveCleared", Wave = waveIndex, WaveTotal = waveCount, Loot = {} })
 			end
+			-- Each wave is its own encounter-clear, same as a Combat room — Nano Repair heals per wave,
+			-- still capped by the same per-room/per-map budget across the whole Ambush node.
+			RunBuffService.OnRoomCleared(state.Player)
+			pushRunBuffs(state)
 
 			if waveIndex < waveCount then
 				task.wait(2)
@@ -1494,8 +1658,15 @@ local function doHeal(state)
 end
 
 local function revealShop(state)
-	RaidRoomUpdate:FireClient(state.Player, { Status = "ShopCatalog", Catalog = shopCatalogFor(state) })
-	-- Waits for "Buy" (any number of times) and "Continue" — see RaidRoomAction handler below.
+	if not state.ShopOffers[state.CurrentNodeId] then
+		rollShopOffers(state)
+	end
+	RaidRoomUpdate:FireClient(state.Player, {
+		Status = "ShopOffers",
+		Offers = state.ShopOffers[state.CurrentNodeId],
+		Run = runSnapshot(state),
+	})
+	-- Waits for "Buy"/"Sell" (any number of times) and "Continue" — see RaidRoomAction handler below.
 end
 
 -- Heal/Shop used to trigger the instant the room was entered; now they wait for the player to
@@ -1627,6 +1798,11 @@ local function beginBoss(state, node)
 			state.BossesDefeated += 1
 			local bossContraband, bossCores = RaidConfig.RollBossReward()
 			addPendingReward(state, bossContraband, bossCores)
+			-- Already at full HP above, so this is a no-op heal in practice — called anyway for
+			-- consistency (every Cleared branch calls it) and because a future item without the
+			-- full-heal-on-boss behavior shouldn't need this line added retroactively.
+			RunBuffService.OnRoomCleared(state.Player)
+			pushRunBuffs(state)
 
 			-- Mode rule: a mode without cards skips the pick and moves on. UNTESTED path, since the only
 			-- mode today (Standard) has cards on; the client's BossCleared handler has only ever seen
@@ -1672,6 +1848,7 @@ enterNode = function(state, nodeId: number)
 	end
 	state.CurrentNodeId = nodeId
 	RaidHealBudget.NewNode(state.Player) -- each room refills the drone's 15% per-room heal allowance
+	RunBuffService.NewRoom(state.Player) -- refills the Shop heal budget's per-room slice, resets Vest Lv5
 	if node.Type ~= "Start" then
 		-- Persists across map regenerations (state itself outlives any one state.Map) — the counter
 		-- Ambush's wave count/strength and every encounter's loot payout scale off, see
@@ -1806,12 +1983,15 @@ RequestStartRaid.OnServerEvent:Connect(function(player: Player, requestedMode: a
 			-- multiplier ("encourages players on doing bosses nodes")
 		PendingCardChoice = nil :: any, -- set by beginBoss right after a Boss clear, cleared by
 			-- RaidRoomAction's "ChooseCard" handler
-		CollectedCards = {}, -- placeholder record of what's been picked — no real buff effects
-			-- wired up yet, see RaidConfig.lua's own "Card system" comment
+		CollectedCards = {}, -- boss cards picked this run — real effects via RunBuffService.AddBossCard,
+			-- kept here too as the display-order record RaidRoomAction's "ChooseCard" already built
+		ShopOffers = {}, -- [nodeId] = { {OfferId, ItemKey, Rarity, Price}, ... } — rolled ONCE per Shop
+			-- node visit (see rollShopOffers) so re-opening the same room shows the same stock
 	}
 	activeRaids[player.UserId] = state
 	-- The Support Core drone's per-room / per-map heal allowance starts full with the raid.
 	RaidHealBudget.Begin(player)
+	RunBuffService.Begin(player)
 
 	-- Authoritative 0/0 the instant the raid actually begins — the client resets its own "Scraps
 	-- Collected" display off this, NOT off every "Entered a Start node" (onMapCleared's regenerated
@@ -1839,10 +2019,29 @@ ChooseRaidNode.OnServerEvent:Connect(function(player: Player, nodeId: number)
 end)
 
 ----------------------------------------------------------------------
--- In-room actions (Heal "Continue", Shop "Buy"/"Continue")
+-- In-room actions (Heal "Continue", Shop "Buy"/"Sell"/"Continue"/"UseBeacon", Boss "ChooseCard")
 ----------------------------------------------------------------------
 
+-- RunBuffConfig.PreviewOffer's Blocked codes, translated into something a player reads as a reason
+-- rather than an internal enum — see RunBuffConfig.PreviewOffer's own comment for what each means.
+local BUY_BLOCKED_REASONS = {
+	Maxed = "Already maxed out",
+	SlotsFull = "Slots full — sell something first",
+	AlreadyHeld = "Already held",
+}
+
 RaidRoomAction.OnServerEvent:Connect(function(player: Player, actionKey: string, payload: any)
+	if typeof(actionKey) ~= "string" then
+		return
+	end
+	-- Every branch below either spends the run's own currency, mutates run-buff state, or ends the
+	-- run outright — all spammable from a modified client with nothing else standing between this
+	-- remote and repeated firing (RaidChest/StationService-style distance or station gates don't
+	-- apply here; this IS the gate). One shared cooldown key covers every action.
+	if not RateLimiter.Check(player, "RaidRoomAction", 0.25) then
+		return
+	end
+
 	local state = activeRaids[player.UserId]
 	if not state or state.InCombat then
 		return
@@ -1857,36 +2056,83 @@ RaidRoomAction.OnServerEvent:Connect(function(player: Player, actionKey: string,
 			advanceFromNode(state)
 		end
 	elseif actionKey == "Buy" then
-		-- Spends against THIS RAID's own collected currency (state.RunCurrencyCollected), not the
+		-- Spends against THIS RAID's own collected Scrap (state.RunCurrencyCollected), not the
 		-- player's real profile — "you are only able to purchase stuff with the scraps collected
 		-- through the entire run, instead of the scraps that you currently have as a player, in
-		-- your base." The purchased item's Grant itself becomes a run reward via addRunReward (same
-		-- path Combat/Ambush/Boss loot goes through), so it's subject to the same RunLocked
-		-- forfeiture rule on a non-clean exit if the catalog ever tags one that way.
+		-- your base." payload is an OfferId, resolved against THIS node's own rolled stock
+		-- (state.ShopOffers) so a Buy can never resolve against an offer that isn't on screen.
 		if node.Type ~= "Shop" or typeof(payload) ~= "string" then
 			return
 		end
-		-- The same mode catalog revealShop showed, so a Buy can never resolve against a different list
-		-- than the one on screen.
-		local item = shopCatalogFor(state)[payload]
-		if not item then
-			RaidRoomUpdate:FireClient(player, { Status = "ShopResult", Success = false, Reason = "Unknown item" })
+		local offers = state.ShopOffers[state.CurrentNodeId] or {}
+		local offerIndex, offer = nil, nil
+		for i, candidate in ipairs(offers) do
+			if candidate.OfferId == payload then
+				offerIndex, offer = i, candidate
+				break
+			end
+		end
+		if not offer then
+			RaidRoomUpdate:FireClient(player, { Status = "ShopResult", Success = false, Reason = "That offer is gone." })
 			return
 		end
-		local have = state.RunCurrencyCollected[item.CostCurrency] or 0
-		if have < item.CostAmount then
-			RaidRoomUpdate:FireClient(player, { Status = "ShopResult", Success = false, Reason = ("Not enough %s collected this run"):format(item.CostCurrency) })
+
+		local have = state.RunCurrencyCollected.Scrap or 0
+		if have < offer.Price then
+			RaidRoomUpdate:FireClient(player, { Status = "ShopResult", Success = false, Reason = "Not enough Scrap" })
 			return
 		end
-		state.RunCurrencyCollected[item.CostCurrency] = have - item.CostAmount
+
+		-- Charge only AFTER RunBuffService confirms the purchase is legal (slots/rarity/level), so a
+		-- rejected Buy never costs Scrap — same ordering RequestStartRaid uses for Energy vs. slot
+		-- allocation, for the same reason.
+		local ok, reason = RunBuffService.Buy(player, offer)
+		if not ok then
+			RaidRoomUpdate:FireClient(player, { Status = "ShopResult", Success = false, Reason = BUY_BLOCKED_REASONS[reason] or "Can't buy that right now" })
+			return
+		end
+
+		state.RunCurrencyCollected.Scrap = have - offer.Price
+		table.remove(offers, offerIndex)
 		pushRunCurrencyUpdate(state)
-		local grant = item.Grant
-		addRunReward(state, grant.Kind, grant.OreKey or grant.CurrencyKey, grant.Amount, grant.RunLocked, grant.Permanent)
-		RaidRoomUpdate:FireClient(player, { Status = "ShopResult", Success = true, ItemKey = payload })
+		RaidRoomUpdate:FireClient(player, { Status = "ShopResult", Success = true, Offers = offers, Run = runSnapshot(state) })
+		pushRunBuffs(state)
+	elseif actionKey == "Sell" then
+		-- Only at a Shop node — selling isn't a loadout action the way equip/mod-slot changes are
+		-- (CLAUDE.md's "ungated" list is base loadout actions specifically), it's a run-economy
+		-- transaction against this raid's own Scrap pool, same gate as Buy.
+		if node.Type ~= "Shop" or typeof(payload) ~= "string" then
+			return
+		end
+		local ok, refund = RunBuffService.Sell(player, payload)
+		if not ok then
+			RaidRoomUpdate:FireClient(player, { Status = "ShopResult", Success = false, Reason = "You don't have that." })
+			return
+		end
+		state.RunCurrencyCollected.Scrap = (state.RunCurrencyCollected.Scrap or 0) + refund
+		pushRunCurrencyUpdate(state)
+		RaidRoomUpdate:FireClient(player, {
+			Status = "ShopResult",
+			Success = true,
+			Offers = state.ShopOffers[state.CurrentNodeId] or {},
+			Run = runSnapshot(state),
+		})
+		pushRunBuffs(state)
+	elseif actionKey == "UseBeacon" then
+		-- "Leave the raid now. Counts as a clean extract." — routes straight through completeRaid,
+		-- deliberately bypassing state.ExtractUnlocked (RequestExtractRaid's own gate): the whole
+		-- point of the Beacon is leaving cleanly even before a map's first clear. completeRaid is
+		-- safe to call from here — it's the same single teardown funnel RequestExtractRaid already
+		-- uses, and this handler already checked `state.InCombat` above, so there's no path where
+		-- both a beacon extract and a combat-loss failRaid could race on the same state.
+		local record = RunBuffService.Get(player)
+		if not (record and record.Escape.ExtractionBeacon) then
+			RaidRoomUpdate:FireClient(player, { Status = "ShopResult", Success = false, Reason = "No Extraction Beacon held." })
+			return
+		end
+		RunBuffService.ConsumeEscape(player, "ExtractionBeacon")
+		completeRaid(state)
 	elseif actionKey == "ChooseCard" then
-		-- Placeholder only — records what was picked, applies no real buff effect yet. "for the...
-		-- card system after boss, just make it a placeholder for now... I will make a list/table
-		-- for you to add later." Wire real effects onto state.CollectedCards once that list exists.
 		if node.Type ~= "Boss" or not state.PendingCardChoice or typeof(payload) ~= "string" then
 			return
 		end
@@ -1902,7 +2148,12 @@ RaidRoomAction.OnServerEvent:Connect(function(player: Player, actionKey: string,
 		end
 		table.insert(state.CollectedCards, chosen)
 		state.PendingCardChoice = nil
+		-- Boss cards reuse the shop's run-buff system, stack without limit, take no slots (Round 2
+		-- answers, 2026-09-22) — RunBuffConfig.Aggregate sums their Stats table right alongside owned
+		-- items' LevelStats, so nothing downstream has to know a card isn't a purchased item.
+		RunBuffService.AddBossCard(player, chosen)
 		RaidRoomUpdate:FireClient(player, { Status = "CardChosen", Card = chosen })
+		pushRunBuffs(state)
 		advanceFromNode(state)
 	end
 end)
