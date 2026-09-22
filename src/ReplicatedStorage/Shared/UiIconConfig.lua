@@ -86,18 +86,20 @@ UiIconConfig.Icons = {
 	-- price button. White line art on transparency: the card TINTS each one to its rarity colour
 	-- (blue Rare / purple Epic / gold Legendary), which only works on a white source image. At 0 the
 	-- card draws a tinted circle with the item's initials instead, so the shop is usable unfilled.
-	RunOverclockChip = 0,
-	RunRapidFeeder = 0,
-	RunPlatedVest = 0,
-	RunNanoRepair = 0,
-	RunKineticBarrier = 0,
-	RunScavengersLens = 0,
-	RunScorchAura = 0,
-	RunOrbitBlades = 0,
-	RunLaserDrone = 0,
-	RunExtractionBeacon = 0,
-	RunSalvageInsurance = 0,
-	RunScrap = 0,
+	RunOverclockChip = 112980469749874,
+	RunRapidFeeder = 108274666859774,
+	RunPlatedVest = 96130684538449,
+	RunNanoRepair = 83115240546062,
+	RunKineticBarrier = 104652211993739,
+	-- Uploaded as "RunScavengerLens" (no possessive s); the KEY here is what the card looks up, and
+	-- RunBuffConfig's item spells it RunScavengersLens, so the id is filed under that spelling.
+	RunScavengersLens = 135678285743776,
+	RunScorchAura = 109984281680756,
+	RunOrbitBlades = 76975515768418,
+	RunLaserDrone = 92831119833678,
+	RunExtractionBeacon = 97036269787216,
+	RunSalvageInsurance = 83164477263696,
+	RunScrap = 89381756287505,
 }
 
 -- Normalizes whatever is in the table above into an Image string, or nil when unset.
