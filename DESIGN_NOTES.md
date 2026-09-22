@@ -3364,7 +3364,40 @@ and frames.
 
 ### Resuming after a context reset
 
-**NEWEST — end of session 2026-09-22. START HERE.** Everything below this block is older.
+**NEWEST — raid shop rework DESIGN ROUND, 2026-09-22 (second session). START HERE.** Spec below is
+the user's answers; nothing is built yet. Next step: a card-shop mockup for the user to approve, then
+build (greenlight first).
+
+**Raid shop rework — SPEC SETTLED 2026-09-22 (the user's answers; numbers marked ~ are placeholders).**
+- **Direction: a MIX** — mostly run perks, plus escape items. Scrap-only prices (settled earlier).
+- **Stock rotates:** each Shop room rolls **3-4 random offers** from the pool. No fixed menu.
+- **Shown as CARDS**, pretty — "i want the design of the game to look good". Card mockup gets agreed
+  before building (build-the-reference-exactly rule).
+- **Rarity tiers Rare / Epic / Legendary set the LEVEL CEILING:** Rare max Lv3, Epic max Lv4,
+  Legendary max Lv5. Buying the same item again = +1 level, up to your rarity's ceiling. Buying a
+  HIGHER rarity of an item you own keeps your level and raises the ceiling ("a rare at level 2, then
+  you find legendary at the shop, you upgrade your current one to legendary at level 2"). At Lv5
+  (Legendary max) it can't be bought again. Rarity colors: reuse `ModConfig.Rarities`.
+  - OPEN, my assumption until the user says otherwise: rarity changes ONLY the ceiling, not the
+    per-level strength; a lower-rarity card of an item you own at a higher rarity still gives +1 level.
+- **Perks (stack by level):** damage boost, fire rate boost, more max HP, healing, shield, loot
+  multiplier.
+- **Healing has ITS OWN cap**, separate from the Support Core drone's 15%/room / 75%/map (user's call).
+  Cap numbers not given yet.
+- **Run GEAR (all three wanted):** a damage AURA ring around you; ORBITING BLADES; a LASER DRONE
+  attached to you that auto-shoots nearby enemies. Assumed to level 1-5 like perks.
+- **Escape:** Extraction Beacon (leave now as a clean extract, keep ore) and Salvage Insurance (keep
+  part of your ore if you die).
+- **Stakes switched ON with this round:** raid ORE is lost on Defeat AND Abandon; only a clean
+  extract keeps it. Currency stays exempt (existing rule). This is what gives the escape items a job
+  — tag the ore loot entries `RunLocked` (settleRunLoot already honours it; chest ore via
+  `RaidChestConfig.RunLocked`).
+- **NO Permanent / carry-over items yet** ("do not do permanent stuff just yet"). When they come,
+  the carry-over is a RARE MATERIAL tagged `Permanent`.
+- Perks/gear live on the RUN STATE, not as inventory items, so no new `RunOnly` tag is needed —
+  they end with the run by construction.
+
+**Older — end of session 2026-09-22 (first session).** Everything below this block is older.
 
 **Where to pick up: the Salvage Run RAID SHOP REWORK — agreed as the next job, NOT started, not yet
 designed with the user.** Start it as a design round, not a build: ask, then build. What's already
