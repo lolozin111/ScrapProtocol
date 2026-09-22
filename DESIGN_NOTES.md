@@ -3382,6 +3382,22 @@ and frames.
 - **Stakes:** chest loot flows through the SAME grant paths as other raid loot, so Salvage Run's rules
   (ore RunLocked, currency exempt) hold — a chest that paid out differently would be a loophole.
 
+**BUILT 2026-09-22, NOT yet verified in Studio** — `RaidChest.lua` + `Shared/RaidChestConfig.lua`,
+driven from `RaidRoomService.beginCombat` (inside its task.spawn, BEFORE `RunRaidCombat`), with a
+`ServerStorage.RaidProps.Chest` slot for real art (placeholder crate otherwise). Implementation facts
+worth keeping:
+- **No raid drop is RunLocked yet** — checked against source: nothing in `NodeConfig`'s loot tables sets
+  it. So chest ore is kept on death too, matching the room. `RaidChestConfig.RunLocked` has one switch
+  per category for when Salvage Run's "ore is lost if you die" stake is actually turned on.
+- **Placement's real guarantee is the walkable-path check** from where the player entered (no jumping):
+  a clear flat surface alone would happily put a chest on a shelf or a roof.
+- **Guards carry `GuardPoint`/`GuardWanderRadius`** through `explicitSpawns` → the spawned record →
+  `EnemyAwareness.Init`, so they idle/wander around the chest (8 studs), not their own spawn.
+- **A Combat room with a chest now passes BOTH `explicitSpawns` (the guards) and `spawnKeys`**
+  (the room's normal ring). RunRaidCombat honours both — that path already existed for Boss escorts.
+- **Bosses in base defense — already impossible, no change made.** `VoidwakenHulk` is only in
+  `EnemyConfig.BossTypes`, which waves never read; a wave "boss wave" is an elite wave (Siegebreaker).
+
 **The user's other answers, same round:**
 - `ScrapCrawler` / `SentinelDrone` are NOT in the release patch — no behaviour to design for v1.
   `VoidwakenHulk`'s current behaviour is right; leave it.
