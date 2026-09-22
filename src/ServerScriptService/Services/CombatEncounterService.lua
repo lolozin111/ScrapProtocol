@@ -1181,6 +1181,12 @@ function CombatEncounterService.RunRaidCombat(player: Player, arenaCenter: Vecto
 				local record = spawnEnemy(spawnInfo.TypeKey, typeData, spawnInfo.Position, spawnInfo.Multiplier or multiplier, playerFolder, typeData.ContactRange)
 				if record then
 					enemyByModel[record.Model] = record
+					-- A chest guard (RaidChest.GuardSpawns) carries the spot it guards; EnemyAwareness
+					-- wanders it around THAT instead of its own spawn, within a guard-sized radius, so a
+					-- Brute on guard duty doesn't roam its usual 90 studs away from the chest. Set before
+					-- registerAwareness, which is what reads it.
+					record.GuardPoint = spawnInfo.GuardPoint
+					record.GuardWanderRadius = spawnInfo.GuardWanderRadius
 					registerAwareness(record)
 				end
 			end

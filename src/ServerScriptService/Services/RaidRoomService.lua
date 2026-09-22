@@ -76,6 +76,8 @@ local CombatEncounterService = require(script.Parent.CombatEncounterService)
 local BlackMarketService = require(script.Parent.BlackMarketService)
 local PlayerActivityService = require(script.Parent.PlayerActivityService)
 local RaidHealBudget = require(script.Parent.RaidHealBudget)
+local RaidChest = require(script.Parent.RaidChest)
+local RaidChestConfig = require(ReplicatedStorage.Shared.RaidChestConfig)
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 local RequestStartRaid = Remotes.RequestStartRaid
@@ -1291,6 +1293,43 @@ local function beginCombat(state, node)
 	end
 
 	task.spawn(function()
+		-- The chest comes FIRST, before a single enemy exists (the user: "spawn the chest first before
+		-- enemies") — its guards are spawned around it as part of this same encounter, and nothing else
+		-- is in the room yet to get in the way of finding it a spot. Inside this task.spawn because
+		-- placement yields (a walkability path check), and beginCombat itself must not.
+		if math.random() < RaidChestConfig.ChancePerCombatRoom then
+			local character = state.Player.Character
+			local entryRoot = character and character:FindFirstChild("HumanoidRootPart")
+			local ignore = { character }
+			local chest, chestFloor = RaidChest.TryPlace(state.RoomFolder, roomCenter, entryRoot and entryRoot.Position, state.RoomFolder, ignore)
+			if activeRaids[state.Player.UserId] ~= state then
+				return -- torn down while placement was yielding
+			end
+			if chest then
+				local nodeIdAtEntry = state.CurrentNodeId
+				RaidChest.Arm(chest, {
+					Player = state.Player,
+					-- Same stale-prompt guard as the Heal/Shop InteractPoint: a prompt from a room the
+					-- player has already left must never pay out.
+					IsCurrent = function()
+						return activeRaids[state.Player.UserId] == state and state.CurrentNodeId == nodeIdAtEntry
+					end,
+					OnOpened = function(loot)
+						-- The same sink as every other raid drop, so chest loot follows whatever
+						-- keep-on-death rules raid loot follows (RaidChestConfig.RunLocked).
+						for _, item in ipairs(loot) do
+							addRunReward(state, item.Kind, item.Key, item.Amount, item.RunLocked, false)
+						end
+						RaidRoomUpdate:FireClient(state.Player, { Status = "ChestOpened", Loot = loot })
+					end,
+				})
+				explicitSpawns = explicitSpawns or {}
+				for _, guard in ipairs(RaidChest.GuardSpawns(chestFloor, ignore)) do
+					table.insert(explicitSpawns, guard)
+				end
+			end
+		end
+
 		local status = CombatEncounterService.RunRaidCombat(state.Player, roomCenter, spawnKeys, composition.Multiplier, function(eventStatus, payload)
 			payload = payload or {}
 			-- Stamps this file's own Status vocabulary ("CombatStart"/"CombatTick"/"CombatEnd") onto

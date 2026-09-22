@@ -1355,6 +1355,17 @@ RaidRoomUpdate.OnClientEvent:Connect(function(payload)
 		-- inCombat off at the end of each individual wave would flash Abandon/Extract back on
 		-- between waves just to have the server reject the click a moment later.
 
+	-- A raid chest was opened (RaidChest.lua). Names through Hud.costString — the same formatter every
+	-- cost line uses — so "VoidiumShard" reads as its display name, not the raw key the older loot
+	-- toasts above still show.
+	elseif status == "ChestOpened" then
+		local found = {}
+		for _, entry in ipairs(payload.Loot or {}) do
+			found[entry.Key] = (found[entry.Key] or 0) + entry.Amount
+		end
+		local text = next(found) and ("Chest: " .. Hud.costString(found)) or "The chest was empty."
+		showToast(text, 4)
+
 	elseif status == "AmbushWaveCleared" then
 		local lootParts = {}
 		for _, entry in ipairs(payload.Loot or {}) do

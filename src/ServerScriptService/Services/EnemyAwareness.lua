@@ -183,7 +183,10 @@ function EnemyAwareness.Init(record, opts)
 	local now = os.clock()
 	record.Awareness = {
 		State = "Idle",
-		SpawnPosition = rootPart.Position,
+		-- A chest guard (see CombatEncounterService's explicit-spawn loop) wanders round the chest it
+		-- guards, not wherever it happened to spawn.
+		SpawnPosition = record.GuardPoint or rootPart.Position,
+		WanderRadius = record.GuardWanderRadius,
 		IdleUntil = now + randomIdleSeconds(),
 		-- Staggered so a room of enemies spawned on the same frame doesn't raycast on the same frame.
 		NextSightAt = now + math.random() * EnemyAwarenessConfig.SightCheckInterval,
@@ -235,7 +238,7 @@ function EnemyAwareness.Tick(record, context): boolean
 		if now >= awareness.IdleUntil then
 			local angle = math.random() * math.pi * 2
 			-- sqrt for a uniform spread across the disc; plain random() * radius bunches points at the centre.
-			local distance = math.sqrt(math.random()) * (config.WanderRadius or 0)
+			local distance = math.sqrt(math.random()) * (awareness.WanderRadius or config.WanderRadius or 0)
 			awareness.WanderPoint = awareness.SpawnPosition + Vector3.new(math.cos(angle) * distance, 0, math.sin(angle) * distance)
 			awareness.WanderGiveUpAt = now + EnemyAwarenessConfig.WanderGiveUpSeconds
 			setState(record, "Wander")

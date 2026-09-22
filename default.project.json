@@ -97,6 +97,9 @@
       "EnemyModels": {
         "$className": "Folder"
       },
+      "RaidProps": {
+        "$className": "Folder"
+      },
       "RaidRoomModels": {
         "$className": "Folder"
       },

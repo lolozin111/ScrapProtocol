@@ -3364,7 +3364,34 @@ and frames.
 
 ### Resuming after a context reset
 
-**NEWEST — 2026-09-21, ENEMY AI DESIGN ROUND. Start here.** Everything below this block is older.
+**NEWEST — 2026-09-22, RAID CHEST DESIGN. Start here.** Everything below this block is older.
+
+**Raid chests — SPEC SETTLED 2026-09-22 (the user's words, then the numbers derived from them).**
+- **Loot:** "regular loot" — 1 to 5 DIFFERENT items per chest. The chance of more than one falls off
+  exponentially, 5 items ≈ 10%: weights 1:33.4 / 2:24.7 / 3:18.3 / 4:13.5 / 5:10.0 (ratio ≈0.74 per
+  step, which is what lands 5 on 10%). Each draw is a distinct item, sampled without replacement.
+- **Categories:** currency (Scrap) "more than not"; Cores "really rarely"; Contraband "even more
+  rare"; ores through their OWN loot table, Voidium "hella rare". Amounts per item: currency 70-200,
+  rare currency (Cores, Contraband) 2-5, ores 5-20.
+- **Opening:** hold a button for 3 seconds.
+- **Placement:** the game decides — never inside anything, and the chest is placed BEFORE enemies
+  spawn. The user's answers to the asked numbers: a chest in ~50% of Combat rooms; 1-2 guards.
+- **Guards:** NOT the Siegebreaker ("an elite unit i dont want to pop around every single time") —
+  a Brute usually, sometimes another enemy. Guards must stay near the chest (a Brute's normal 90-stud
+  roam would walk it off the post).
+- **Stakes:** chest loot flows through the SAME grant paths as other raid loot, so Salvage Run's rules
+  (ore RunLocked, currency exempt) hold — a chest that paid out differently would be a loophole.
+
+**The user's other answers, same round:**
+- `ScrapCrawler` / `SentinelDrone` are NOT in the release patch — no behaviour to design for v1.
+  `VoidwakenHulk`'s current behaviour is right; leave it.
+- **Bosses are RAID ONLY** — the Voidwaken Hulk "should not even spawn in base defense", at least for
+  now. That also answers the laser question: no boss ever reaches a base, so boss immunity is moot.
+- Base models match their tier footprints — no config change needed.
+- **PINNED NEXT, after the chest: the Salvage Run raid shop rework** (capacity and escape, replacing
+  the fixed ore-bundle vending machine).
+
+**Session 2026-09-21, ENEMY AI DESIGN ROUND.** (Superseded by the block above.)
 
 **The user's enemy AI design — SETTLED 2026-09-21, SUPERSEDES Three Ways In's `Stalker`/`Guardian`/
 `Screamer`.** Those three were never built; the user was shown what they were meant to be and
