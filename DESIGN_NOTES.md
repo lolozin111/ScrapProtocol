@@ -3408,7 +3408,7 @@ so it lands with the Unaware state in step 2.
 
 **Order agreed:** (1) movement fixes → (2) Unaware/Wander + spotting + the Raider alarm → (3) the chest.
 
-**Step 2 BUILT 2026-09-21, NOT yet verified in Studio** — `EnemyAwareness.lua` + `Shared/EnemyAwarenessConfig.lua`
+**Step 2 BUILT 2026-09-21, VERIFIED by the user 2026-09-22 ("looks pretty good")** — `EnemyAwareness.lua` + `Shared/EnemyAwarenessConfig.lua`
 + `EnemyAlarm.client.lua` + `EnemyAnimation.Ambient`. Raids, Combat rooms only (Ambush/Boss start
 aware by design). Decisions made in the build, all the user's to overturn: Scavenger ANSWERS the
 alarm (the user said the Raider calls "everybody"); alerted lasts the whole room; being damaged by
@@ -3423,7 +3423,7 @@ sight Scavenger 110 / Brute 60 / Raider 35 / Siegebreaker 20; wander radius Brut
 dealt nothing); a `Staggered` 13%/1.5s slow on the four Snipers-family guns + RailRifle + ArcCannon;
 and `EnemyMovement.Hold` settles instead of nudging forever (the Brute that "never stops").
 
-**Step 1 BUILT 2026-09-21, NOT yet verified in Studio.** `EnemyMovement.lua` (shared utility,
+**Step 1 BUILT 2026-09-21, VERIFIED by the user 2026-09-22.** Follow-up the same day: agent size now measured from the body core, not the whole model — a spear made a Raider too "wide" for doorways and it got trapped inside buildings. Support Core drone heal capped in raids (15%/room, 75%/map of max HP), also verified. `EnemyMovement.lua` (shared utility,
 `WalkTo`/`Hold`/`Stop`) + `Shared/EnemyMovementConfig.lua`; all three straight-line `MoveTo` sites
 now route through it. Things to watch in the first playtest, and the one bug already caught:
 - **Caught in review, before any test:** the line-of-sight cast was aimed at the goal's own Y. A
