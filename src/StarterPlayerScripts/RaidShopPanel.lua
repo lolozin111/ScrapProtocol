@@ -1307,7 +1307,7 @@ end
 function RaidShopPanel.Open(payload)
 	currentOffers = payload.Offers or {}
 	currentRun = payload.Run or currentRun
-	stage.Visible = true
+	Hud.openPanel(stage, { onClose = RaidShopPanel.Close })
 	renderAll()
 end
 
@@ -1334,7 +1334,7 @@ function RaidShopPanel.Update(payload)
 end
 
 function RaidShopPanel.Close()
-	stage.Visible = false
+	Hud.closePanel(stage)
 end
 
 -- The latest Run snapshot this panel has seen, for RaidClient's own "USE BEACON" button (which must

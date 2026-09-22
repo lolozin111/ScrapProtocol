@@ -106,7 +106,7 @@ function ResearchPanel.new(statusPanel: Frame)
 	})
 
 	local function closeResearchPanel()
-		research.frame.Visible = false
+		Hud.closePanel(research.frame)
 	end
 
 	-- panelHeader owns the header Frame's construction, but renderResearchPanel() still needs to
@@ -215,8 +215,10 @@ function ResearchPanel.new(statusPanel: Frame)
 	end
 
 	research.button.MouseButton1Click:Connect(function()
-		research.frame.Visible = not research.frame.Visible
 		if research.frame.Visible then
+			closeResearchPanel()
+		else
+			Hud.openPanel(research.frame, { onClose = closeResearchPanel })
 			renderResearchPanel()
 		end
 	end)

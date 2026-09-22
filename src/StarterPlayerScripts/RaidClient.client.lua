@@ -124,6 +124,8 @@ end
 
 local screenGui = new("ScreenGui", {
 	Name = "RaidGui",
+	DisplayOrder = Hud.LAYER.Raid, -- named layer table, HudKit.lua — previously the Roblox default
+		-- (0), which ties with several other HUD ScreenGuis and leaves their paint order undefined
 	ResetOnSpawn = false,
 	ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
 	Parent = LocalPlayer:WaitForChild("PlayerGui"),
@@ -624,6 +626,14 @@ local MAP_COLLAPSED_POSITION = UDim2.new(1, -16, 0, 16)
 -- NOTE THE ORDER: HudKit.plate returns (surface, shell), surface first — the thing you parent
 -- content into is what a caller almost always wants, and the shell is only needed afterwards to
 -- move/resize/hide the panel as a whole. `props` above is applied to the SHELL.
+--
+-- DELIBERATELY NOT ROUTED THROUGH HudKit.openPanel: the Sector Map is the raid's main navigation
+-- screen, up for the whole raid rather than opened-and-closed like a popup (hideSectorMap only ever
+-- hides it when the raid itself ends) — "one panel at a time" would fight that the moment a real
+-- panel (the raid shop) opens ON TOP of it, since exclusivity would close the map right back down.
+-- It stays a plain layer at LAYER.Raid instead, and simply sits BELOW LAYER.Panel — see
+-- HudKit.LAYER — so an open panel still correctly draws over it. Its own node-click handler below
+-- still calls HudKit.isPanelOpen() to stop clicks reaching it while something IS open on top.
 local mapSurface, mapFrame = Hud.plate({
 	Name = "SectorMap",
 	AnchorPoint = MAP_EXPANDED_ANCHOR,
@@ -1143,6 +1153,13 @@ local function redrawMap(payload)
 			-- unconditionally would put two competing ways to leave a room on screen at once.
 			if allowNodeClick and isReachable then
 				circle.MouseButton1Click:Connect(function()
+					-- The Sector Map is a persistent layer, not something opened through
+					-- HudKit.openPanel (see this file's own header on why), so `isPanelOpen()` here
+					-- only ever means some OTHER panel (the raid shop, most commonly) is up over it —
+					-- never the map blocking itself.
+					if Hud.isPanelOpen() then
+						return
+					end
 					ChooseRaidNode:FireServer(id)
 				end)
 			end

@@ -44,10 +44,16 @@ turretPanel.surface, turretPanel.frame = Hud.plate({
 -- re-render it in place (a placed/upgraded/unplaced turret changes what this panel should show).
 turretPanel.state = { slotIndex = nil :: number? }
 
+-- The one place turretPanel.frame's visibility/parent/ZIndex actually changes — see
+-- HudKit.openPanel's own comment on why every close path routes through one function instead of
+-- setting turretPanel.frame.Visible directly. Exposed as TurretPanel.Close too, since HudKit's
+-- exclusivity cascade needs a way to close this panel from the outside (opening some other panel
+-- while this one's up).
 local function closeTurretPanel()
-	turretPanel.frame.Visible = false
+	Hud.closePanel(turretPanel.frame)
 	turretPanel.state.slotIndex = nil
 end
+TurretPanel.Close = closeTurretPanel
 
 -- panelHeader owns the header Frame's construction, but renderTurretPanel() still needs to
 -- rewrite the title text per slot ("TURRET SLOT 3") — pull the TextLabel back out rather than
@@ -188,7 +194,7 @@ end
 function TurretPanel.Open(slotIndex: number)
 	turretPanel.state.slotIndex = slotIndex
 	renderTurretPanel()
-	turretPanel.frame.Visible = true
+	Hud.openPanel(turretPanel.frame, { onClose = closeTurretPanel })
 end
 
 -- Called from the InventoryUpdate handler to keep an open panel current — upgrading a turret

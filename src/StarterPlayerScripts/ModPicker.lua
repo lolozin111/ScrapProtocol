@@ -91,7 +91,7 @@ local modPickerList = Hud.new("ScrollingFrame", {
 local modPickerState = { tree = nil, itemKey = nil, slotIndex = nil }
 
 function ModPicker.closeModPicker()
-	modPickerFrame.Visible = false
+	Hud.closePanel(modPickerFrame)
 	modPickerState.tree = nil
 	modPickerState.itemKey = nil
 	modPickerState.slotIndex = nil
@@ -148,7 +148,11 @@ function ModPicker.openModPicker(tree: string, itemKey: string, slotIndex: numbe
 	modPickerState.itemKey = itemKey
 	modPickerState.slotIndex = slotIndex
 	renderModPickerList()
-	modPickerFrame.Visible = true
+	-- stacked = true: this always opens OVER an already-open panel (Inventory's detail view or the
+	-- Welding Station's owned-item rows), not instead of it — see HudPanelOptions' own comment on
+	-- `stacked` in HudKit.lua. Moving into the shared layer alongside it (rather than staying on
+	-- HudKit.screenGui) keeps it drawing on top once that parent panel is relocated there too.
+	Hud.openPanel(modPickerFrame, { stacked = true, onClose = ModPicker.closeModPicker })
 end
 
 return ModPicker

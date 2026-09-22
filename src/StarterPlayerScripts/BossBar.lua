@@ -60,6 +60,8 @@ local DEATH_HOLD_SECONDS = 1 -- pause at 0 HP before fading the whole bar out
 
 local screenGui = Hud.new("ScreenGui", {
 	Name = "BossBarGui",
+	DisplayOrder = Hud.LAYER.Boss, -- named layer table, HudKit.lua — previously the Roblox default
+		-- (0), which ties with several other HUD ScreenGuis and leaves their paint order undefined
 	ResetOnSpawn = false,
 	ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
 	Parent = LocalPlayer:WaitForChild("PlayerGui"),

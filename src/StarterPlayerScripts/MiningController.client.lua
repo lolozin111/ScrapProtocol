@@ -17,6 +17,8 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local CollectionService = game:GetService("CollectionService")
 
+local Hud = require(script.Parent.HudKit)
+
 local MineNode = ReplicatedStorage.Remotes.MineNode
 local MineFailed = ReplicatedStorage.Remotes.MineFailed
 
@@ -50,9 +52,17 @@ local function setupNode(node: Instance)
 	end)
 
 	prompt.Triggered:Connect(function(player)
-		if player == Players.LocalPlayer then
-			MineNode:FireServer(node)
+		if player ~= Players.LocalPlayer then
+			return
 		end
+		-- A ProximityPrompt reads straight off the Workspace regardless of what's drawn on top of
+		-- it, so an open panel (Inventory, the Workbench, ...) doesn't stop this from firing on its
+		-- own — see HudKit.lua's panel-layer section header for why every world input handler needs
+		-- this same guard.
+		if Hud.isPanelOpen() then
+			return
+		end
+		MineNode:FireServer(node)
 	end)
 end
 

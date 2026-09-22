@@ -135,11 +135,18 @@ function InventoryPanel.new(context)
 	-- sets the title's Font to Hud.FONT.Display; the caller just needs to pass the text upper-cased,
 	-- same as every other panel/tab-label change in this pass. Never do this to dynamic content
 	-- (item/weapon/ore names) — those stay exactly as the server/config spells them.
-	Hud.panelHeader(inv.surface, "INVENTORY", function()
-		inv.frame.Visible = false
+	-- The one place inv.frame's visibility/parent/ZIndex actually changes — see HudKit.openPanel's
+	-- own comment on why every close path (this header's X, HudKit's scrim/exclusivity, and
+	-- openInventory's own re-open guard) routes through one function. Also the cascade that closes
+	-- this panel's stacked children (the detail side-panel, ModPicker) so neither is left orphaned
+	-- open behind a closed Inventory.
+	local function closeInventory()
+		Hud.closePanel(inv.frame)
 		closeInvDetail()
-		ModPicker.closeModPicker() -- don't leave the mod picker orphaned open behind a closed Inventory
-	end)
+		ModPicker.closeModPicker()
+	end
+
+	Hud.panelHeader(inv.surface, "INVENTORY", closeInventory)
 
 	-- REVERTED THIS PASS: tabs went icon-over-caption for one session, then back to plain text per the
 	-- approved design reference (plain uppercase labels in pill buttons, no icons at all). Text-only
@@ -446,7 +453,7 @@ function InventoryPanel.new(context)
 	-- detail panel's own header, both already captured `closeInvDetail` as a closure before this
 	-- function existed.
 	closeInvDetail = function()
-		inv.detailFrame.Visible = false
+		Hud.closePanel(inv.detailFrame)
 		inv.detailState.category = nil
 		inv.detailState.key = nil
 	end
@@ -539,7 +546,11 @@ function InventoryPanel.new(context)
 		end
 
 		inv.detailImage.Image = Hud.getItemIcon(iconKey) or ""
-		inv.detailFrame.Visible = true
+		-- stacked = true: this sits beside the main Inventory panel, not instead of it (see
+		-- HudPanelOptions' `stacked` comment in HudKit.lua) — it moves into the shared layer
+		-- alongside inv.frame so it keeps drawing correctly once that's relocated there too, but
+		-- doesn't take part in the one-panel-at-a-time rule or touch the scrim itself.
+		Hud.openPanel(inv.detailFrame, { stacked = true, onClose = closeInvDetail })
 	end
 
 	-- Called whenever InventoryUpdate patches Hud.profile — keeps the detail panel's Equip/Deploy button
@@ -906,14 +917,15 @@ function InventoryPanel.new(context)
 	end
 
 	local function openInventory()
-		inv.frame.Visible = true
+		Hud.openPanel(inv.frame, { onClose = closeInventory })
 		closeInvDetail()
 		renderInvList()
 	end
 
 	-- The main panel's close button (built by Hud.panelHeader, up where inv.surface was created)
-	-- already runs inv.frame.Visible = false / closeInvDetail() / ModPicker.closeModPicker() as its
-	-- onClose callback — nothing left to wire up here.
+	-- already runs closeInventory() — which itself closes the detail side-panel and ModPicker — as
+	-- its onClose callback, and the same closeInventory is what HudKit's scrim/exclusivity paths call
+	-- too. Nothing left to wire up here.
 
 	return {
 		openInventory = openInventory,

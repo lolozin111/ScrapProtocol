@@ -22,6 +22,7 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
+local GuiService = game:GetService("GuiService")
 
 local CraftingRecipes = require(ReplicatedStorage.Shared.CraftingRecipes)
 local RaidEnergyConfig = require(ReplicatedStorage.Shared.RaidEnergyConfig)
@@ -167,8 +168,37 @@ function HudKit.stroke()
 	return HudKit.new("UIStroke", { Color = COLOR.Line, Thickness = 1 })
 end
 
+----------------------------------------------------------------------
+-- Layers
+----------------------------------------------------------------------
+-- Named DisplayOrder per ScreenGui, so ordering between them is DECIDED rather than accidental.
+-- Before this table, five of the six ScreenGuis in the game (this one, MainHud's WalletGui,
+-- BossBar.lua's BossBarGui, RaidClient's RaidGui, and — until HudKit.modal needed better —
+-- SalvageModals) all sat at the Roblox default of DisplayOrder 0, and ordering between two
+-- ScreenGuis at the SAME DisplayOrder is undefined under ZIndexBehavior.Sibling: which one painted
+-- on top depended on creation order, which is exactly why a raid Sector Map node label or a mining
+-- tooltip could draw OVER an open shop panel. Every ScreenGui below now sets its DisplayOrder
+-- explicitly from this table instead of leaving it at the default.
+--
+-- ReplicatedFirst's LoadingScreen.client.lua is the one ScreenGui NOT listed here — it deliberately
+-- stays at DisplayOrder 1000 (see its own file), above everything, and runs before HudKit even exists
+-- to require it.
+--
+-- Panel (see HudKit.openPanel below) sits well above the ordinary HUD layers so any open panel
+-- covers all of them; Modal sits above Panel so a confirm popup raised FROM an open panel (discard an
+-- Epic roll, end an expedition) is never hidden behind the panel it was raised from.
+HudKit.LAYER = {
+	Boss = 2,
+	Raid = 3,
+	Hud = 5,
+	Wallet = 6,
+	Panel = 50,
+	Modal = 60,
+}
+
 HudKit.screenGui = HudKit.new("ScreenGui", {
 	Name = "SalvageHUD",
+	DisplayOrder = HudKit.LAYER.Hud,
 	ResetOnSpawn = false,
 	ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
 	Parent = LocalPlayer:WaitForChild("PlayerGui"),
@@ -212,6 +242,20 @@ end
 
 -- Every failure path used to be a bare warn(), which writes to the Studio OUTPUT WINDOW and is
 -- invisible to someone actually playing — so a refused action looked identical to a dead button.
+--
+-- Its own ScreenGui, one tier above LAYER.Modal, rather than living on HudKit.screenGui (LAYER.Hud):
+-- a failure toast fired from INSIDE an open panel (LAYER.Panel) — a shop purchase that fails, say —
+-- or while answering a HudKit.modal (LAYER.Modal) must stay readable over both, not sit underneath
+-- either one at HudKit.screenGui's much lower order.
+local toastGui = HudKit.new("ScreenGui", {
+	Name = "SalvageToast",
+	DisplayOrder = HudKit.LAYER.Modal + 1,
+	IgnoreGuiInset = true,
+	ResetOnSpawn = false,
+	ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+	Parent = LocalPlayer:WaitForChild("PlayerGui"),
+})
+
 local toastLabel = HudKit.new("TextLabel", {
 	Name = "Toast",
 	BackgroundColor3 = COLOR.Panel,
@@ -220,13 +264,12 @@ local toastLabel = HudKit.new("TextLabel", {
 	Size = UDim2.new(0, 420, 0, 0),
 	AutomaticSize = Enum.AutomaticSize.Y,
 	Visible = false,
-	ZIndex = 20, -- above the craft/inventory panels, which is exactly when these fire
 	Font = Enum.Font.SourceSans,
 	Text = "",
 	TextColor3 = COLOR.Text,
 	TextSize = 16,
 	TextWrapped = true,
-	Parent = HudKit.screenGui,
+	Parent = toastGui,
 }, { HudKit.corner(6), HudKit.stroke(), HudKit.new("UIPadding", {
 	PaddingTop = UDim.new(0, 10), PaddingBottom = UDim.new(0, 10),
 	PaddingLeft = UDim.new(0, 14), PaddingRight = UDim.new(0, 14),
@@ -1741,6 +1784,265 @@ function HudKit.dashedBox(parent: Instance, opts: HudDashBoxOptions): Frame
 end
 
 ----------------------------------------------------------------------
+-- Panel layer — every open/close panel shares ONE ScreenGui, ONE scrim, and a one-at-a-time rule
+----------------------------------------------------------------------
+-- Every panel (Inventory, Shop, Turret, the Workbench/Forge/Welding/Decode station menu, Research,
+-- the raid shop) used to just flip its own `.Visible` inside whichever plain ScreenGui it happened to
+-- be built in — mostly HudKit.screenGui, which sat at the SAME undefined-order DisplayOrder as
+-- BossBarGui/RaidGui/WalletGui (see the LAYER table above). Nothing closed a competing panel when a
+-- new one opened, and nothing stopped a click from reaching a world ProximityPrompt/ClickDetector
+-- behind an open menu.
+--
+-- HudKit.openPanel/closePanel fix both: they move `frame` into ONE shared ScreenGui at LAYER.Panel —
+-- above every ordinary HUD layer, below only HudKit.modal's popups (LAYER.Modal) — with a full-screen
+-- scrim underneath that dims the world and, simply by covering it, makes every lower-DisplayOrder
+-- ScreenGui's buttons unreachable without this module touching any of them individually. Opening a
+-- second (non-stacked) panel closes whatever was already open first, so "one panel at a time" holds
+-- even if some caller forgets to close its own.
+--
+-- The scrim only stops clicks from reaching OTHER GUIs — a 3D-world ProximityPrompt or ClickDetector
+-- reads straight off the Workspace regardless of what's drawn on top of it, so world input handlers
+-- additionally guard themselves with `if HudKit.isPanelOpen() then return end` (see
+-- MiningController.client.lua, MainHud.client.lua, and RaidClient.client.lua for the call sites).
+local panelGui: ScreenGui? = nil
+local panelScrim: TextButton? = nil
+local panelStage: Frame? = nil
+
+export type HudPanelOptions = {
+	onClose: (() -> ())?, -- expected to itself call HudKit.closePanel(frame) — see openPanel's
+		-- comment on why closing never happens anywhere else
+	dismissOnScrim: boolean?, -- default true; clicking the scrim runs onClose same as the panel's own close button
+	scrim: boolean?, -- default true; false for a panel that must never dim what's behind it
+	-- A nested popup over an ALREADY-open panel (ModPicker over Inventory/Welding, the Inventory
+	-- detail side-panel next to the Inventory list) passes stacked = true: it still moves into the
+	-- shared layer, so it stays visually on top once its parent panel is relocated there too, but it
+	-- does not take part in the one-at-a-time rule, does not touch the scrim, and closing the panel
+	-- underneath it remains that panel's own job — exactly as it already was before this change (see
+	-- e.g. InventoryPanel's header close, which already calls closeInvDetail() and
+	-- ModPicker.closeModPicker() itself).
+	stacked: boolean?,
+	-- Fallback for a frame positioned relative to some OTHER, non-full-screen parent (a Frame inside
+	-- a different panel) rather than directly under a full-screen ScreenGui — reparenting a frame
+	-- like that would evaluate its Scale-based Position/Size against the wrong parent size and
+	-- visibly move/resize it. Pass the ScreenGui that actually owns `frame` here and openPanel raises
+	-- THAT ScreenGui's DisplayOrder instead of moving `frame` at all. Surveyed every panel this
+	-- rewrite touches for this: none of them currently need it — even ResearchPanel's popup, which
+	-- looked like a candidate, turned out to be parented straight to Hud.screenGui already; only its
+	-- docked BUTTON lives inside the status panel. Kept in the API for whatever panel needs it next.
+	raiseOwner: ScreenGui?,
+}
+
+type HudPanelEntry = {
+	frame: Frame,
+	onClose: (() -> ())?,
+	dismissOnScrim: boolean,
+	raiseOwner: ScreenGui?,
+	ownerOriginalDisplayOrder: number?,
+	originalParent: Instance?,
+	originalZIndex: number?,
+}
+
+local currentPanelEntry: HudPanelEntry? = nil
+local stackedEntries: { [Frame]: HudPanelEntry } = {}
+
+-- One above LAYER.Panel, deliberately not equal to it: the raiseOwner path has to draw OVER the
+-- shared scrim (which lives in the ScreenGui actually sitting AT LAYER.Panel), and two ScreenGuis at
+-- the same DisplayOrder is exactly the undefined-ordering bug this whole layer exists to fix.
+local RAISED_OWNER_DISPLAY_ORDER = HudKit.LAYER.Panel + 1
+
+local function ensurePanelLayer()
+	if panelGui then
+		return
+	end
+	panelGui = HudKit.new("ScreenGui", {
+		Name = "SalvagePanels",
+		DisplayOrder = HudKit.LAYER.Panel,
+		IgnoreGuiInset = true, -- the scrim has to reach under Roblox's own top bar, same reasoning as
+			-- HudKit.modal's SalvageModals below; panelStage compensates so a reparented panel
+			-- doesn't visibly shift because of it (see its own comment)
+		ResetOnSpawn = false,
+		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+		Parent = LocalPlayer:WaitForChild("PlayerGui"),
+	})
+
+	panelScrim = HudKit.new("TextButton", {
+		Name = "Scrim",
+		Active = true, -- swallows clicks aimed at the HUD/world underneath; see this section's header
+		AutoButtonColor = false,
+		BackgroundColor3 = Color3.new(0, 0, 0),
+		BackgroundTransparency = 0.45,
+		BorderSizePixel = 0,
+		Size = UDim2.fromScale(1, 1),
+		Text = "",
+		Visible = false,
+		ZIndex = 1,
+		Parent = panelGui,
+	})
+	panelScrim.MouseButton1Click:Connect(function()
+		local entry = currentPanelEntry
+		if not entry or not entry.dismissOnScrim then
+			return
+		end
+		if entry.onClose then
+			entry.onClose()
+		else
+			HudKit.closePanel(entry.frame)
+		end
+	end)
+
+	-- Matches the CLIENT area HudKit.screenGui exposes to its own children (below the top bar) even
+	-- though panelGui itself ignores the inset above — otherwise every AnchorPoint(0.5,0.5)-centred
+	-- panel would jump up by half the inset height (~18px) the instant it's reparented here, which
+	-- would break the "reparenting must be visually neutral" requirement this API is built to honor.
+	local inset = GuiService:GetGuiInset()
+	panelStage = HudKit.new("Frame", {
+		Name = "Stage",
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0, 0, 0, inset.Y),
+		Size = UDim2.new(1, 0, 1, -inset.Y),
+		ZIndex = 2, -- above the scrim (1); see the "child unconditionally drawn in front of its
+			-- parent" ZIndexBehavior.Sibling rule explained at length in HudKit.button above
+		Parent = panelGui,
+	})
+end
+
+-- True while ANY non-stacked panel is open. World input handlers (a ProximityPrompt.Triggered, a
+-- ClickDetector.MouseClick, a drag start) guard themselves with this — see this section's own header
+-- comment for why the scrim alone can't stop them.
+function HudKit.isPanelOpen(): boolean
+	return currentPanelEntry ~= nil
+end
+
+function HudKit.currentPanel(): Frame?
+	return currentPanelEntry and currentPanelEntry.frame or nil
+end
+
+-- Undoes exactly what openPanel did for this entry (reparent OR raiseOwner) and hides `frame`. Shared
+-- by both registries; does not touch the scrim, since a stacked entry closing must never hide the
+-- scrim a still-open primary panel needs.
+local function restoreEntry(entry: HudPanelEntry)
+	if entry.raiseOwner then
+		if entry.ownerOriginalDisplayOrder then
+			entry.raiseOwner.DisplayOrder = entry.ownerOriginalDisplayOrder
+		end
+	else
+		entry.frame.Parent = entry.originalParent
+		entry.frame.ZIndex = entry.originalZIndex :: number
+	end
+	entry.frame.Visible = false
+end
+
+-- Opens `frame` through the shared layer. See HudPanelOptions above for `stacked`/`raiseOwner`.
+--
+-- `onClose` is never called BY this module except from the scrim-click handler above and the
+-- exclusivity cascade just below — every other close path (a panel's own header X button, a station
+-- switching tabs, this file's callers in general) is expected to call HudKit.closePanel(frame)
+-- directly, exactly once, from whatever function it already uses as its public "Close". Passing that
+-- SAME function back in as `onClose` is what lets the scrim/exclusivity paths reach it too, without
+-- HudKit needing to know any panel's own cascade logic (e.g. InventoryPanel closing also has to close
+-- ModPicker and its own detail panel — HudKit doesn't need to know that, InventoryPanel's Close does).
+function HudKit.openPanel(frame: Frame, opts: HudPanelOptions?)
+	opts = opts or {}
+	ensurePanelLayer()
+
+	if opts.stacked then
+		-- Idempotent re-open: a caller firing Open a second time while already open (RaidShopPanel
+		-- re-rendering on a fresh server payload, say) must NOT recapture originalParent/ZIndex —
+		-- doing so would capture the frame's ALREADY-relocated state and strand it in the panel layer
+		-- forever once it finally closes.
+		local existing = stackedEntries[frame]
+		if existing then
+			existing.onClose = opts.onClose or existing.onClose
+			frame.Visible = true
+			return
+		end
+		local entry: HudPanelEntry = {
+			frame = frame,
+			onClose = opts.onClose,
+			dismissOnScrim = false,
+		}
+		if opts.raiseOwner then
+			entry.raiseOwner = opts.raiseOwner
+			entry.ownerOriginalDisplayOrder = opts.raiseOwner.DisplayOrder
+			opts.raiseOwner.DisplayOrder = RAISED_OWNER_DISPLAY_ORDER
+		else
+			entry.originalParent = frame.Parent
+			entry.originalZIndex = frame.ZIndex
+			frame.Parent = panelStage
+		end
+		stackedEntries[frame] = entry
+		frame.Visible = true
+		return
+	end
+
+	-- Same idempotency guard as above, for the non-stacked registry.
+	if currentPanelEntry and currentPanelEntry.frame == frame then
+		currentPanelEntry.onClose = opts.onClose or currentPanelEntry.onClose
+		currentPanelEntry.dismissOnScrim = opts.dismissOnScrim ~= false
+		frame.Visible = true
+		if opts.scrim ~= false and panelScrim then
+			panelScrim.Visible = true
+		end
+		return
+	end
+
+	-- Exclusivity: at most one non-stacked panel at a time. Close whatever's open first — through ITS
+	-- onClose, which is what cascades into closing that panel's own stacked children (see the doc
+	-- comment on this function) — before this one takes over.
+	if currentPanelEntry then
+		local previous = currentPanelEntry
+		if previous.onClose then
+			previous.onClose()
+		else
+			HudKit.closePanel(previous.frame)
+		end
+	end
+
+	local entry: HudPanelEntry = {
+		frame = frame,
+		onClose = opts.onClose,
+		dismissOnScrim = opts.dismissOnScrim ~= false,
+	}
+	if opts.raiseOwner then
+		entry.raiseOwner = opts.raiseOwner
+		entry.ownerOriginalDisplayOrder = opts.raiseOwner.DisplayOrder
+		opts.raiseOwner.DisplayOrder = RAISED_OWNER_DISPLAY_ORDER
+	else
+		entry.originalParent = frame.Parent
+		entry.originalZIndex = frame.ZIndex
+		frame.Parent = panelStage
+	end
+
+	frame.Visible = true
+	if opts.scrim ~= false and panelScrim then
+		panelScrim.Visible = true
+	end
+	currentPanelEntry = entry
+end
+
+-- Hides `frame` and restores its original parent/ZIndex (or its owner's original DisplayOrder, for
+-- the raiseOwner path) exactly. A no-op, not an error, if `frame` isn't the currently open panel (or
+-- a currently open stacked overlay) — callers are allowed to call this defensively.
+function HudKit.closePanel(frame: Frame)
+	local stacked = stackedEntries[frame]
+	if stacked then
+		stackedEntries[frame] = nil
+		restoreEntry(stacked)
+		return
+	end
+
+	if not currentPanelEntry or currentPanelEntry.frame ~= frame then
+		return
+	end
+	local entry = currentPanelEntry
+	currentPanelEntry = nil
+	restoreEntry(entry)
+	if panelScrim then
+		panelScrim.Visible = false
+	end
+end
+
+----------------------------------------------------------------------
 -- Modal — the shared popup plate
 ----------------------------------------------------------------------
 -- HUD phase 3, section D ("Popups B — lifted slabs"): every popup is its own plate on a scrim, with
@@ -1749,15 +2051,16 @@ end
 -- and the case-opening flow had four separate hand-rolled treatments, and the moment one of them
 -- gained a behaviour (input blocking, say) the other three silently didn't.
 --
--- WHY ITS OWN ScreenGui. HudKit.screenGui and MainHud's walletGui are BOTH DisplayOrder 0, and
--- ordering between two ScreenGuis at the same DisplayOrder is not defined by tree order the way
--- sibling frames inside one GUI are. A scrim parented to either one would cover the HUD but leave
--- the other GUI's contents punched through it — the wallet strip floating on top of a dimmed screen.
--- A third ScreenGui at a higher DisplayOrder is the only arrangement that reliably covers both.
+-- WHY ITS OWN ScreenGui. This sits ABOVE HudKit.openPanel's own shared panel layer (LAYER.Modal >
+-- LAYER.Panel) so a confirm popup raised from inside an open panel (discard an Epic roll, end an
+-- expedition) is never hidden behind it, and above every ordinary HUD layer for the same reason a
+-- scrim parented to any ONE of them would leave every OTHER GUI's contents punched through it — the
+-- wallet strip floating on top of a dimmed screen, say. A dedicated ScreenGui at the highest
+-- DisplayOrder is the only arrangement that reliably covers all of them at once.
 -- Created lazily so a session that never raises a popup never builds it.
 local modalGui: ScreenGui? = nil
 
-local MODAL_DISPLAY_ORDER = 10 -- above HudKit.screenGui and walletGui, both of which are 0
+local MODAL_DISPLAY_ORDER = HudKit.LAYER.Modal
 -- Must match the bar HudKit.accentCap actually builds (its Size's Y offset). Duplicated as a named
 -- constant rather than read off the returned Frame because the content column is positioned before
 -- a layout pass has run, when AbsoluteSize is still zero.

@@ -107,6 +107,8 @@ local runActive = false
 -- corners generally); top-centre, where this strip is anchored, is clear of it.
 local walletGui = Hud.new("ScreenGui", {
 	Name = "WalletGui",
+	DisplayOrder = Hud.LAYER.Wallet, -- named layer table, HudKit.lua — previously the Roblox default
+		-- (0), which ties with several other HUD ScreenGuis and leaves their paint order undefined
 	IgnoreGuiInset = true,
 	ResetOnSpawn = false,
 	ZIndexBehavior = Enum.ZIndexBehavior.Sibling, -- matches Hud.screenGui's, same reasoning as that
@@ -2178,6 +2180,18 @@ renderSmeltingTab = function()
 				return
 			end
 
+			-- This track only exists while the Workbench (craftFrame) is itself the open panel — it's
+			-- the Smelting tab's own content — so a bare `Hud.isPanelOpen()` would always be true here
+			-- and disable the slider outright. Only ignore the drag START if some OTHER panel became
+			-- current (in practice: never, today — nothing currently opens on top of the Smelting tab
+			-- — but this keeps the control honest if that ever changes) instead of blocking on this
+			-- panel being open at all. An in-progress drag is untouched either way: InputChanged/
+			-- InputEnded below are unconditional once a drag has actually started, per the "must still
+			-- finish/cancel cleanly" rule.
+			if Hud.isPanelOpen() and Hud.currentPanel() ~= craftFrame then
+				return
+			end
+
 			dragging = true
 			applySmeltQuantity(quantityAt(input.Position.X))
 
@@ -2748,7 +2762,7 @@ actionRow = Hud.new("Frame", {
 -- The station panels' header readouts need no hiding here: they are parented INSIDE the plate, so
 -- they go with it.
 craftClose = function()
-	craftFrame.Visible = false
+	Hud.closePanel(craftFrame)
 	ModPicker.closeModPicker() -- don't leave the mod picker orphaned open behind a closed Workbench
 end
 
@@ -3359,6 +3373,10 @@ local function setupNode(node: Instance)
 	if nodeType == "Heal" then
 		clickDetector.MouseClick:Connect(function(player)
 			if player ~= LocalPlayer then return end
+			-- A world ClickDetector reads straight off the Workspace regardless of what's drawn on
+			-- top of it — see HudKit.lua's panel-layer section header for why every world input
+			-- handler needs this same guard.
+			if Hud.isPanelOpen() then return end
 			if not isNodeCurrentlyAccessible(node) then
 				Hud.showFailure("Locked", "That node is further down the queue — clear the one in front of you first.")
 				return
@@ -3375,6 +3393,7 @@ local function setupNode(node: Instance)
 	elseif nodeType == "Combat" then
 		clickDetector.MouseClick:Connect(function(player)
 			if player ~= LocalPlayer then return end
+			if Hud.isPanelOpen() then return end
 			if not isNodeCurrentlyAccessible(node) then
 				Hud.showFailure("Locked", "That node is further down the queue — clear the one in front of you first.")
 				return
@@ -3384,6 +3403,7 @@ local function setupNode(node: Instance)
 	elseif nodeType == "Shop" then
 		clickDetector.MouseClick:Connect(function(player)
 			if player ~= LocalPlayer then return end
+			if Hud.isPanelOpen() then return end
 			if not isNodeCurrentlyAccessible(node) then
 				Hud.showFailure("Locked", "That node is further down the queue — clear the one in front of you first.")
 				return
@@ -3417,6 +3437,9 @@ local function setupLever(lever: Instance)
 	prompt.Parent = lever
 	prompt.Triggered:Connect(function(player)
 		if player ~= LocalPlayer then return end
+		-- A ProximityPrompt reads straight off the Workspace regardless of what's drawn on top of
+		-- it — same guard as MiningController.client.lua's ore prompts.
+		if Hud.isPanelOpen() then return end
 		Remotes.RegenerateExpedition:FireServer(lever)
 	end)
 end
@@ -3462,7 +3485,7 @@ local function openStationMenu(stationData)
 
 	rebuildTabs(stationData.Tabs)
 	craftTitleLabel.Text = stationData.DisplayName:upper() -- static chrome; see craftTitleLabel's own comment
-	craftFrame.Visible = true
+	Hud.openPanel(craftFrame, { onClose = craftClose })
 	selectTab(stationData.DefaultTab)
 end
 
@@ -3502,6 +3525,13 @@ local function setupStation(station: Instance)
 
 	clickDetector.MouseClick:Connect(function(player)
 		if player ~= LocalPlayer then return end
+		-- A world ClickDetector reads straight off the Workspace regardless of what's drawn on top
+		-- of it — see HudKit.lua's panel-layer section header for why every world input handler
+		-- needs this same guard. (openStationMenu itself would just close-then-reopen the SAME
+		-- craftFrame if this were missing and the Workbench were already open on a different
+		-- station's tabs — mostly harmless, but this stops a station click from doing anything at
+		-- all while some OTHER panel, e.g. Inventory, is up, matching every other world handler.)
+		if Hud.isPanelOpen() then return end
 		if not stationData.DefaultTab then
 			Hud.showFailure("Nothing here yet", ("%s doesn't do anything yet — check back later."):format(stationData.DisplayName))
 			return
@@ -3574,6 +3604,9 @@ local function setupTurretSlot(slot: Instance)
 
 	clickDetector.MouseClick:Connect(function(player)
 		if player ~= LocalPlayer then return end
+		-- Same world-input guard as the expedition node/station handlers above — a ClickDetector
+		-- reads straight off the Workspace regardless of what's drawn on top of it.
+		if Hud.isPanelOpen() then return end
 		local slotIndex = slot:GetAttribute("SlotIndex")
 		if type(slotIndex) ~= "number" then
 			return

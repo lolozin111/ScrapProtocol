@@ -36,6 +36,7 @@ local CollectionService = game:GetService("CollectionService")
 local MineShaftHit = ReplicatedStorage.Remotes.MineShaftHit
 local MineFailed = ReplicatedStorage.Remotes.MineFailed -- shared with MiningService's failures, same UX
 local OreConfig = require(ReplicatedStorage.Shared.OreConfig)
+local Hud = require(script.Parent.HudKit)
 
 local BLOCK_TAG = "ShaftBlock"
 local CLICK_DISTANCE = 12 -- studs; matches MineShaftService's MAX_MINING_DISTANCE server-side check
@@ -147,6 +148,11 @@ local function setupBlock(block: Instance)
 	end)
 
 	clickDetector.MouseClick:Connect(function(player)
+		-- Same guard as MiningController's ore prompt: a click that lands through an open panel is a
+		-- misclick on whatever the panel is covering, not a swing at this block.
+		if Hud.isPanelOpen() then
+			return
+		end
 		if player == LocalPlayer then
 			MineShaftHit:FireServer(block)
 		end

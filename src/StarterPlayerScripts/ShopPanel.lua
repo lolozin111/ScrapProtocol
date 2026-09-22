@@ -37,7 +37,7 @@ shopUI.surface, shopUI.frame = Hud.plate({
 -- upper-cases the text to match. Item names inside the list (renderShopList below) are dynamic
 -- (NodeConfig.ShopCatalog) and stay exactly as configured.
 Hud.panelHeader(shopUI.surface, "OUTPOST SHOP", function()
-	shopUI.frame.Visible = false
+	ShopPanel.Close()
 end)
 
 -- Position moved 44 -> 52: Hud.panelHeader is a fixed 48px tall (PANEL_HEADER_HEIGHT in
@@ -91,7 +91,7 @@ local function renderShopList()
 				if not result.Success then
 					Hud.showFailure("Purchase failed", result.Reason)
 				else
-					shopUI.frame.Visible = false -- expedition shop nodes are consumed on purchase — nothing left to browse
+					ShopPanel.Close() -- expedition shop nodes are consumed on purchase — nothing left to browse
 				end
 			end
 		).Parent = shopUI.listFrame
@@ -102,14 +102,14 @@ shopUI.skipButton.MouseButton1Click:Connect(function()
 	if currentShopNode then
 		Remotes.SkipNode:FireServer(currentShopNode)
 	end
-	shopUI.frame.Visible = false
+	ShopPanel.Close()
 end)
 
 -- Called from the Shop-node ClickDetector in MainHud.client.lua once it's already verified the
 -- node is accessible and no raid is in progress.
 function ShopPanel.Open(node: Instance)
 	currentShopNode = node
-	shopUI.frame.Visible = true
+	Hud.openPanel(shopUI.frame, { onClose = ShopPanel.Close })
 	renderShopList()
 
 	if shopUI.nodeDestroyingConn then
@@ -117,13 +117,16 @@ function ShopPanel.Open(node: Instance)
 	end
 	shopUI.nodeDestroyingConn = node.Destroying:Connect(function()
 		if currentShopNode == node then
-			shopUI.frame.Visible = false
+			ShopPanel.Close()
 		end
 	end)
 end
 
+-- The one place shopUI.frame's visibility/parent/ZIndex actually changes — see HudKit.openPanel's
+-- own comment on why every close path (header X, skip, a purchase, the node vanishing) routes
+-- through this single function instead of setting shopUI.frame.Visible directly.
 function ShopPanel.Close()
-	shopUI.frame.Visible = false
+	Hud.closePanel(shopUI.frame)
 end
 
 return ShopPanel
