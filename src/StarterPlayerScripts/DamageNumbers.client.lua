@@ -32,6 +32,9 @@ local LocalPlayer = Players.LocalPlayer
 local KINDS = {
 	Normal    = { Color = Color3.fromRGB(255, 255, 255), Size = 20 },
 	Headshot  = { Color = Color3.fromRGB(255, 220, 90),  Size = 26, Prefix = "" },
+	-- Raid shop crits (Overclock Chip, crit boss cards). Legendary gold, a step bigger than a headshot,
+	-- because a crit you can't tell apart from a normal hit is a perk that reads as doing nothing.
+	Crit      = { Color = Color3.fromRGB(230, 175, 60),  Size = 28, Prefix = "" },
 	-- Blast damage. Its own colour because a grenade in a crowd is otherwise a wall of white
 	-- numbers indistinguishable from gunfire — and how many enemies a throw actually caught is the
 	-- only thing worth knowing about a grenade launcher.

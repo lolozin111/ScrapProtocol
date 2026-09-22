@@ -43,6 +43,7 @@ local ServerStorage = game:GetService("ServerStorage")
 local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local PhysicsService = game:GetService("PhysicsService")
+local RunService = game:GetService("RunService")
 
 local EnemyConfig = require(ReplicatedStorage.Shared.EnemyConfig)
 local WaveConfig = require(ReplicatedStorage.Shared.WaveConfig)
@@ -73,6 +74,16 @@ local WeaponBehaviors = require(script.Parent.WeaponBehaviors)
 local DroneService = require(script.Parent.DroneService)
 local ProjectileConfig = require(ReplicatedStorage.Shared.ProjectileConfig)
 local DevShortcuts = require(script.Parent.DevShortcuts)
+-- Salvage Run shop rework (DESIGN_NOTES.md "BUILD CONTRACT"). A shared utility like CombatMath,
+-- not a service — every query on it is a NEUTRAL value (1 / false / nil) for a player with no
+-- active run record, so every hook below is called UNCONDITIONALLY from the shared player-fire
+-- path (RequestFireWeapon serves base defense, raids and training dummies alike) and only wired
+-- into the raid-specific loop (RunRaidCombat) where a per-tick/per-hit hook has no base-defense
+-- equivalent to stay neutral about (WallHP damage, robot/turret damage to enemies). RunWave's own
+-- WallHP `damageTarget` is deliberately left untouched — see this file's header on why base
+-- defense damages a wall pool, not the player's Humanoid, so none of the player-damage hooks below
+-- apply to it at all.
+local RunBuffService = require(script.Parent.RunBuffService)
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 local RequestFireWeapon = Remotes.RequestFireWeapon
@@ -123,6 +134,16 @@ local WALL_STOP_MARGIN = 6
 local ORIGIN_SANITY_STUDS = 12 -- how far a client-claimed fire Origin may drift from the player's
 	-- actual server-known position before the shot is rejected outright — not full anti-cheat,
 	-- just enough to catch an obviously spoofed value. See RequestFireWeapon handler below.
+
+-- Grace factor on the server's fire-rate cooldown check, applied on top of
+-- RunBuffService.FireRateMultiplier's effective rate — see RequestFireWeapon below. Rapid Feeder's
+-- opening-burst/kill-frenzy windows are wall-clock deadlines (os.clock() comparisons inside
+-- RunBuffService), and the client paces its own fire requests off the SAME RunFireRateMult
+-- attribute but reads it at a slightly different instant than the server re-derives it here — right
+-- at a window's edge that gap can make a legitimately-buffed shot arrive a few milliseconds before
+-- the server's own recomputation still sees the buff active. A flat 10% grace on the cooldown
+-- absorbs that jitter without meaningfully loosening the rate limit itself.
+local FIRE_RATE_COOLDOWN_TOLERANCE = 0.9
 
 local CombatEncounterService = {}
 
@@ -682,6 +703,27 @@ local function isEnemyAlive(record): boolean
 end
 
 ----------------------------------------------------------------------
+-- RunBuffService call guard — same reasoning as the guarded EnemyAI.Patterns/RobotBehaviors table
+-- dispatch elsewhere in this file, just for a named function call instead of a table lookup: this
+-- is a brand-new system (2026-09-22) with no combat mileage on it yet, and a bug inside it must
+-- degrade to "that one buff didn't apply" rather than an uncaught error unwinding this tick loop or
+-- the RequestFireWeapon handler and stranding activeEncounters for the rest of the session — the
+-- exact failure mode the unguarded-pattern-lookup comment above already describes for a different
+-- cause. `label` names the call site in the warn so a real bug is diagnosable from Output instead
+-- of just "combat stopped." Every caller below already has its own neutral fallback (1, false,
+-- nothing) for the failure case, same values RunBuffService itself returns for a non-raid player.
+----------------------------------------------------------------------
+
+local function safeRunBuff(label: string, fn, ...)
+	local ok, a, b = pcall(fn, ...)
+	if not ok then
+		warn(("[CombatEncounterService] RunBuffService.%s error: %s"):format(label, tostring(a)))
+		return nil, nil
+	end
+	return a, b
+end
+
+----------------------------------------------------------------------
 -- Damage application (shared by player fire and robot ticks)
 ----------------------------------------------------------------------
 
@@ -693,6 +735,10 @@ end
 -- every caller in this file passes them, because a damage source the player cannot see is a
 -- damage source they cannot tell is broken.
 local function resolveAndApplyDamage(enemyRecord, baseDamage: number, origin: Vector3, hitPosition: Vector3, rangeProfile, penetration: number?, feedbackPlayer: Player?, feedbackKind: string?)
+	-- Captured before TakeDamage — see the kill-credit block below, which needs to know whether
+	-- THIS hit is what took the enemy from alive to dead, not just that it's dead now.
+	local wasAlive = enemyRecord.Humanoid.Health > 0
+
 	local finalDamage = DamagePipeline.Resolve({
 		BaseDamage = baseDamage,
 		Origin = origin,
@@ -730,6 +776,20 @@ local function resolveAndApplyDamage(enemyRecord, baseDamage: number, origin: Ve
 			enemyRecord.Model.PrimaryPart.Position + Vector3.new(0, 3, 0),
 			finalDamage,
 			feedbackKind or "Normal")
+	end
+
+	-- Kill credit for the Salvage Run shop rework's on-kill hooks (Nano Repair's kill-heal, Rapid
+	-- Feeder's kill-frenzy window, etc.) — centralized HERE rather than at each of this function's
+	-- call sites, because every damage source that can credit a player (player fire, robots,
+	-- gear via RunBuffService.TickGear's DealDamage, statuses, Ultimates, turrets) already funnels
+	-- through this one function with `feedbackPlayer` set to who to credit — see this file's header
+	-- on why that invariant exists. One check here covers "anything credited to the player" per the
+	-- build contract without duplicating the wasAlive/now-dead comparison at every call site, and
+	-- it's neutral (no-op) for a feedbackPlayer not currently in a raid — RunBuffService.OnKill
+	-- itself no-ops with no active run record, so base-defense/turret kills routing through here
+	-- cost nothing.
+	if feedbackPlayer and wasAlive and enemyRecord.Humanoid.Health <= 0 then
+		safeRunBuff("OnKill", RunBuffService.OnKill, feedbackPlayer, enemyRecord)
 	end
 
 	return finalDamage
@@ -1263,10 +1323,30 @@ function CombatEncounterService.RunRaidCombat(player: Player, arenaCenter: Vecto
 		SpeedBoostUntil = 0,
 	}
 
+	-- Latest alive-enemy list from the main tick loop below, kept as an upvalue (not a fresh local
+	-- re-read from inside the loop) so both damageTarget (Kinetic Barrier Lv5's OnShieldBroken
+	-- knockback) and the RunBuffService.TickGear Heartbeat connection (set up further down) can see
+	-- "who's alive right now" without either keeping its own second copy that could drift from the
+	-- tick loop's own. Declared here, BEFORE damageTarget, so damageTarget closes over THIS local —
+	-- a Lua closure can only capture a local already in scope at the point it's defined, and
+	-- referencing a not-yet-declared local would silently resolve to a global instead.
+	local latestAliveEnemies = {}
+
 	-- Drains Shield first, then the player's own Humanoid directly — same absorb-then-real-health
 	-- shape RunWave uses for WallHP, just protecting the player themselves since there's no wall
 	-- to stand in for them here.
-	local function damageTarget(amount: number)
+	--
+	-- attackerRecord (optional): the enemy record that dealt this specific hit, when the call site
+	-- has one handy — EnemyAI's contact/slam damage always does (see the per-enemy aiContext built
+	-- in the tick loop below); a status DOT or anything else without a specific attacker passes
+	-- nothing. RunBuffService.DamageTakenMultiplier is neutral (1) for both "not in a raid" and "no
+	-- attacker record", so omitting it just means Plated Vest Lv4's elite/boss damage reduction
+	-- can't apply to that one hit — never a crash, just a buff that quietly can't identify its
+	-- target for a source this file didn't thread an attacker through for.
+	local function damageTarget(amount: number, attackerRecord)
+		amount *= safeRunBuff("DamageTakenMultiplier", RunBuffService.DamageTakenMultiplier, player, attackerRecord) or 1
+
+		local shieldWasUp = playerState.Shield > 0
 		if playerState.Shield > 0 then
 			local absorbed = math.min(playerState.Shield, amount)
 			playerState.Shield -= absorbed
@@ -1275,6 +1355,19 @@ function CombatEncounterService.RunRaidCombat(player: Player, arenaCenter: Vecto
 		if amount > 0 then
 			humanoid:TakeDamage(amount)
 		end
+
+		-- Kinetic Barrier Lv5: fires only on the hit that actually BREAKS the shield (was up, now
+		-- isn't) — never on every subsequent hit while it's already down. Root is the outer `rootPart`
+		-- upvalue, refreshed once per main-loop tick further down; it can lag a live position by up
+		-- to one tick (TICK_SECONDS), same staleness every other per-hit read of it already accepts.
+		if shieldWasUp and playerState.Shield <= 0 then
+			safeRunBuff("OnShieldBroken", RunBuffService.OnShieldBroken, player, { Enemies = latestAliveEnemies, Root = rootPart })
+		end
+
+		-- Fires on every hit that reaches here at all, whether or not the shield fully absorbed it —
+		-- Kinetic Barrier Lv4's "hasn't been hit in N seconds" refill timer (BarrierLastDamageClock)
+		-- needs to reset on a shielded hit too, since the shield taking a hit is still "being hit."
+		safeRunBuff("OnPlayerDamaged", RunBuffService.OnPlayerDamaged, player, playerState, humanoid)
 	end
 
 	-- Routed through PlayerSpeed rather than written straight onto the Humanoid, so a boost and a
@@ -1300,6 +1393,42 @@ function CombatEncounterService.RunRaidCombat(player: Player, arenaCenter: Vecto
 		warn(("[CombatEncounterService] Overwriting a live encounter for %s — two combat systems think they own this player. See PlayerActivityService."):format(player.Name))
 	end
 	activeEncounters[player.UserId] = encounter
+
+	-- Salvage Run shop rework: stamps the fight-start clock (Rapid Feeder's opening burst) and
+	-- grants Kinetic Barrier's shield onto this encounter's playerState. No-op for a player not
+	-- mid-raid (RunBuffService.Get returns nil), so this is safe to call unconditionally — but it's
+	-- only WIRED here, in RunRaidCombat, because RunWave's playerState has no Shield-for-the-player
+	-- concept (its Shield protects WallHP instead) for this to sensibly land on.
+	safeRunBuff("OnFightStart", RunBuffService.OnFightStart, player, playerState)
+
+	-- Gear (Scorch Aura / Orbit Blades / Laser Drone) ticks off RunService.Heartbeat, NOT this
+	-- function's own TICK_SECONDS loop below: TICK_SECONDS is 0.15s, and Orbit Blades' visual angle
+	-- (state.Angle += dt * 2 in RunBuffService's GearBehaviors) advancing in 150ms steps would read
+	-- as a choppy, stepping orbit rather than a smooth one. Root/Enemies read the same outer
+	-- upvalues (`rootPart`, `latestAliveEnemies`) the main loop below keeps current, so this
+	-- connection never needs its own copy to keep in sync. DealDamage/ApplyStatus route through the
+	-- SAME resolveAndApplyDamage/StatusEffects.Apply every other damage source in this file uses —
+	-- see this function's own header invariant on why nothing bypasses that pipeline. Disconnected
+	-- unconditionally right after the tick loop below ends, whichever status it ends with.
+	local runBuffGearConnection = RunService.Heartbeat:Connect(function(dt: number)
+		if not rootPart or not rootPart.Parent then
+			return -- character gone; the main loop notices on its own next tick and ends the encounter
+		end
+		local ok, err = pcall(RunBuffService.TickGear, player, dt, {
+			Root = rootPart,
+			Enemies = latestAliveEnemies,
+			DealDamage = function(enemyRecord, amount: number, sourceTag: string?)
+				local at = (enemyRecord.Model and enemyRecord.Model.PrimaryPart and enemyRecord.Model.PrimaryPart.Position) or rootPart.Position
+				resolveAndApplyDamage(enemyRecord, amount, rootPart.Position, at, nil, 0, player, sourceTag)
+			end,
+			ApplyStatus = function(enemyRecord, key: string, overrides)
+				StatusEffects.Apply(enemyRecord, key, overrides)
+			end,
+		})
+		if not ok then
+			warn(("[CombatEncounterService] RunBuffService.TickGear error for %s: %s"):format(player.Name, tostring(err)))
+		end
+	end)
 
 	local status = "Cleared"
 	local lastBroadcast = 0
@@ -1348,6 +1477,14 @@ function CombatEncounterService.RunRaidCombat(player: Player, arenaCenter: Vecto
 			return (a.Model.PrimaryPart.Position - rootPart.Position).Magnitude
 				< (b.Model.PrimaryPart.Position - rootPart.Position).Magnitude
 		end)
+		-- Published for damageTarget's OnShieldBroken and the RunBuffService.TickGear Heartbeat
+		-- connection above — see latestAliveEnemies' own declaration comment.
+		latestAliveEnemies = aliveEnemies
+
+		-- Per-tick upkeep: refreshes the RunFireRateMult attribute (so an opening-burst/frenzy
+		-- window's END shows up between shots, not just at the next one) and Kinetic Barrier Lv4's
+		-- mid-room refill timer. No-op off-raid.
+		safeRunBuff("Tick", RunBuffService.Tick, player, TICK_SECONDS, playerState)
 
 		if now - lastBroadcast >= BROADCAST_INTERVAL then
 			lastBroadcast = now
@@ -1395,6 +1532,26 @@ function CombatEncounterService.RunRaidCombat(player: Player, arenaCenter: Vecto
 		end
 
 		for _, record in ipairs(aliveEnemies) do
+			-- A per-ENEMY context, not the shared `aiContext` above — this enemy's own DamageTarget
+			-- closure needs to identify itself as the attacker (RunBuffService.DamageTakenMultiplier's
+			-- elite/boss check, see damageTarget's own comment), and mutating one shared
+			-- aiContext.DamageTarget field per enemy would break EnemyAnimation.lua's boss-only
+			-- Animated pattern: it snapshots a REFERENCE to the whole context table (`anim.Context`)
+			-- for an animation-marker hit that resolves ASYNCHRONOUSLY, sometimes ticks later — by
+			-- which point a shared table's DamageTarget field would already have been overwritten by
+			-- whichever OTHER enemy this loop reached next, silently misattributing the hit. A fresh
+			-- table per enemy, same field values, its own closure, side-steps that entirely: whichever
+			-- table EnemyAnimation snapshots is THIS enemy's own and this loop never writes to it again.
+			local enemyAiContext = {
+				TargetPosition = aiContext.TargetPosition,
+				Now = aiContext.Now,
+				TargetPart = aiContext.TargetPart,
+				TargetPlayer = aiContext.TargetPlayer,
+				Enemies = aiContext.Enemies,
+				DamageTarget = function(amount: number)
+					damageTarget(amount, record)
+				end,
+			}
 			-- EnemyAwareness.Tick handles an unaware (idle/wandering) enemy entirely itself and
 			-- returns true when it did — the normal EnemyAI pattern below only runs for an enemy
 			-- that is already aware, OR that just became aware this very tick (e.g. it spotted the
@@ -1403,7 +1560,7 @@ function CombatEncounterService.RunRaidCombat(player: Player, arenaCenter: Vecto
 			-- with nil Awareness (any raid enemy whose type has no EnemyAwarenessConfig entry) is
 			-- always aware, so Tick is a guaranteed-false no-op for it and this loop behaves exactly
 			-- as it did before EnemyAwareness existed.
-			if not EnemyAwareness.Tick(record, aiContext) then
+			if not EnemyAwareness.Tick(record, enemyAiContext) then
 				-- Guarded like the RobotBehaviors dispatch below it. Unguarded, an EnemyConfig entry
 				-- naming an AIPattern that doesn't exist in EnemyAI.Patterns (a typo, or a pattern
 				-- planned but not written yet) threw from inside this tick loop — killing the whole
@@ -1412,7 +1569,7 @@ function CombatEncounterService.RunRaidCombat(player: Player, arenaCenter: Vecto
 				-- should cost one enemy its brain, not the entire run.
 				local pattern = EnemyAI.Patterns[record.AIPattern]
 				if pattern then
-					pattern(record, aiContext)
+					pattern(record, enemyAiContext)
 				elseif not warnedMissingPattern[record.AIPattern] then
 					warnedMissingPattern[record.AIPattern] = true
 					warn(("[CombatEncounterService] No EnemyAI pattern named %q (used by enemy type %s) — that enemy will stand still. Add it to EnemyAI.Patterns."):format(
@@ -1439,6 +1596,10 @@ function CombatEncounterService.RunRaidCombat(player: Player, arenaCenter: Vecto
 
 		task.wait(TICK_SECONDS)
 	end
+
+	-- Every loop exit (Cleared/Defeated/Interrupted `break` above) falls through to here, so one
+	-- disconnect covers all three — see the connection's own setup comment.
+	runBuffGearConnection:Disconnect()
 
 	if playerState.SpeedBoostUntil > 0 then
 		PlayerSpeed.Set(player, "SpeedBoost", nil)
@@ -1589,9 +1750,22 @@ function CombatEncounterService.ResolvePlayerHit(player: Player, hitInstance: In
 	local headshotMultiplier = spec.HeadshotMultiplier or 1
 	local isHeadshot = headshotMultiplier > 1 and hitInstance ~= nil and hitInstance.Name == "Head"
 
+	-- Damage-number feedback tag: Headshot wins if both happen on the same shot (it already had its
+	-- own gold styling before crits existed — see the comment above). spec.IsCrit is stamped once
+	-- per shot in RequestFireWeapon (RunBuffService.RollCrit), not re-rolled per pellet/hit here.
+	-- "Crit" has no KINDS entry of its own yet in DamageNumbers.client.lua — that file's own
+	-- `KINDS[kind or "Normal"] or KINDS.Normal` fallback means an unrecognized kind just renders as
+	-- Normal, so this is safe to send today and free to light up the moment that entry exists.
+	local feedbackKind = "Normal"
+	if isHeadshot then
+		feedbackKind = "Headshot"
+	elseif spec.IsCrit then
+		feedbackKind = "Crit"
+	end
+
 	local dealt = resolveAndApplyDamage(
 		enemyRecord, spec.Damage * (isHeadshot and headshotMultiplier or 1), origin, hitPosition,
-		spec.RangeProfile, spec.Penetration, player, isHeadshot and "Headshot" or "Normal")
+		spec.RangeProfile, spec.Penetration, player, feedbackKind)
 
 	-- Contact status (burn, frostbite, poison...). Applied AFTER damage so a status that kills has
 	-- already had the bullet's own damage counted against the same target.
@@ -1932,7 +2106,15 @@ RequestFireWeapon.OnServerEvent:Connect(function(player: Player, claimedOrigin: 
 	end
 
 	-- Rate limit, server-side and authoritative. The client paces itself too, but only for feel.
-	local cooldown = 1 / math.max(stats.FireRate, 0.01)
+	-- Salvage Run's Rapid Feeder perk multiplies the EFFECTIVE fire rate here, not just the client's
+	-- own throttle — RunBuffService.FireRateMultiplier is neutral (1) outside a raid, so this is
+	-- safe to call unconditionally for base defense and training-dummy fire too. It also re-stamps
+	-- the RunFireRateMult Player attribute the client reads to pace its OWN requests (see that
+	-- function's own comment); FIRE_RATE_COOLDOWN_TOLERANCE absorbs the small timing gap between
+	-- the client reading that attribute and the server re-deriving the same multiplier a beat later.
+	local fireRateMultiplier = safeRunBuff("FireRateMultiplier", RunBuffService.FireRateMultiplier, player) or 1
+	local effectiveFireRate = stats.FireRate * fireRateMultiplier
+	local cooldown = (1 / math.max(effectiveFireRate, 0.01)) * FIRE_RATE_COOLDOWN_TOLERANCE
 	local now = os.clock()
 	if now - (lastFireTime[player.UserId] or 0) < cooldown then
 		return
@@ -1942,10 +2124,22 @@ RequestFireWeapon.OnServerEvent:Connect(function(player: Player, claimedOrigin: 
 	local recipe = CraftingRecipes.Weapons[weaponInstance.WeaponKey]
 	local shotNumber = bumpShotCount(player, weaponInstance.WeaponKey)
 
+	-- Salvage Run's Overclock Chip: a flat damage multiplier plus a per-shot crit roll, both neutral
+	-- (1 / false,1) outside a raid. Rolled/applied ONCE here, per trigger pull, rather than inside
+	-- ResolvePlayerHit — a shotgun-style weapon's Pellets split `spec.Damage` AFTER this (see
+	-- ProjectileService.Fire: `perPellet = spec.Damage / pellets`), so baking the buff and crit into
+	-- spec.Damage now means every pellet from this one shot shares the same crit result, matching
+	-- "roll once per shot, not per pellet."
+	local damageMultiplier = safeRunBuff("DamageMultiplier", RunBuffService.DamageMultiplier, player) or 1
+	local isCrit, critMultiplier = safeRunBuff("RollCrit", RunBuffService.RollCrit, player)
+	isCrit = isCrit or false
+	critMultiplier = critMultiplier or 1
+
 	-- Everything the shot will need on impact, captured NOW — see ResolvePlayerHit's own comment on
 	-- why a projectile resolves against the loadout that fired it.
 	local spec = {
-		Damage = stats.Damage,
+		Damage = stats.Damage * damageMultiplier * critMultiplier,
+		IsCrit = isCrit,
 		WeaponKey = weaponInstance.WeaponKey,
 		UltimateKey = (profile.EquippedUltimate or {})[weaponInstance.WeaponKey],
 		RangeProfile = recipe and recipe.RangeProfile,

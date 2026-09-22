@@ -61,6 +61,9 @@ local Hud = require(script.Parent.HudKit) -- the Start Raid button (see its own 
 	-- re-binding its tables would just move the register-savings problem back into this file.
 local BossBar = require(script.Parent.BossBar) -- top-centre boss HP bar; see this file's header
 	-- and BossBar's own for how it finds the fight and why the room panel defers to it.
+local RaidShopPanel = require(script.Parent.RaidShopPanel) -- the Salvage Run shop screen (cards +
+	-- equipment-slot bar), replacing the old inline ShopCatalog list in roomBody — see the
+	-- "ShopOffers"/"ShopResult"/"RunBuffs" handling below.
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 local RequestStartRaid = Remotes.RequestStartRaid
@@ -244,6 +247,32 @@ coresRow.Visible = false
 local multiplierRow, multiplierValueLabel = currencyRow(4, "EXTRACT BONUS")
 multiplierValueLabel.TextColor3 = COLOR.Good
 multiplierRow.Visible = false
+
+-- "USE BEACON" — the Extraction Beacon Salvage Run escape item, usable ANYWHERE in the raid (not
+-- only back at the Shop that sold it), so it lives on this always-visible currency panel rather
+-- than inside RaidShopPanel, which only exists while a Shop node is open. A 5th row in the same
+-- auto-sizing list as the four currency rows above, so the plate grows to fit it for free.
+local beaconButton = Hud.button({
+	text = "Use Beacon",
+	variant = "primary",
+	size = UDim2.new(1, 0, 0, 32),
+	layoutOrder = 5,
+	parent = runCurrencyBody,
+	onClick = function()
+		RaidRoomAction:FireServer("UseBeacon")
+	end,
+})
+beaconButton.Visible = false
+
+-- Every RaidRoomUpdate status that carries a `Run` snapshot (ShopOffers/ShopResult/RunBuffs) funnels
+-- through here so this button and RaidShopPanel never disagree about what's currently held — same
+-- "one shared snapshot, one place that reads it" reasoning as RaidRoomService's own runSnapshot.
+local function updateRunEscapeState(run)
+	if not run then
+		return
+	end
+	beaconButton.Visible = (run.Escape and run.Escape.ExtractionBeacon) or false
+end
 
 local function updateRunCurrencyLabel(runCurrencyCollected, pendingRewards, extractMultiplier)
 	local scrap = (runCurrencyCollected and runCurrencyCollected.Scrap) or 0
@@ -1225,6 +1254,9 @@ RaidRoomUpdate.OnClientEvent:Connect(function(payload)
 	if status == "Entered" then
 		inRaid = true
 		inCombat = false
+		-- Leaving a Shop node (however that happened — LEAVE SHOP, or the map moving on some other
+		-- way) must not leave the shop screen stuck on top of whatever room comes next.
+		RaidShopPanel.Close()
 		-- The map is NOT hidden here any more. It is a permanent panel for the whole raid now, and
 		-- RaidMapUpdate has already moved the "you are here" marker into this room.
 		clearRoomBody()
@@ -1288,29 +1320,25 @@ RaidRoomUpdate.OnClientEvent:Connect(function(payload)
 			RaidRoomAction:FireServer("Continue")
 		end)
 
-	elseif status == "ShopCatalog" then
-		clearRoomBody()
-		local order = 1
-		local catalog = payload.Catalog or {}
-		local keys = {}
-		for itemKey in pairs(catalog) do
-			table.insert(keys, itemKey)
-		end
-		table.sort(keys)
-		for _, itemKey in ipairs(keys) do
-			local item = catalog[itemKey]
-			order += 1
-			actionButton(order, ("%s — %d %s"):format(item.DisplayName, item.CostAmount, item.CostCurrency), COLOR.PanelLight, function()
-				RaidRoomAction:FireServer("Buy", itemKey)
-			end)
-		end
-		order += 1
-		actionButton(order, "Continue", COLOR.AccentDark, function()
-			RaidRoomAction:FireServer("Continue")
-		end)
+	-- The Salvage Run shop — RaidRoomService.revealShop's rolled offers. RaidShopPanel (its own file,
+	-- a literal translation of the approved mockup) owns the whole interactive surface from here;
+	-- this room panel's own body just keeps showing the node's title/description underneath it
+	-- (set already by "Entered"/"AwaitingInteraction" above), same as every other node type.
+	elseif status == "ShopOffers" then
+		RaidShopPanel.Open(payload)
+		updateRunEscapeState(payload.Run)
 
 	elseif status == "ShopResult" then
-		showToast(payload.Success and "Purchased." or ("Couldn't buy that — " .. (payload.Reason or "")), 2.5)
+		RaidShopPanel.Update(payload) -- toasts the failure itself (Hud.showFailure) on Success = false
+		if payload.Success then
+			updateRunEscapeState(payload.Run)
+		end
+
+	-- Anything else that moved Scrap/ore-at-risk/held items while a Shop might be open (a chest
+	-- found mid-detour, a boss card picked earlier this map) — see RaidRoomService's pushRunBuffs.
+	elseif status == "RunBuffs" then
+		RaidShopPanel.Update(payload)
+		updateRunEscapeState(payload.Run)
 
 	elseif status == "CombatStart" then
 		inCombat = true
@@ -1475,6 +1503,8 @@ RaidRoomUpdate.OnClientEvent:Connect(function(payload)
 		roomFrame.Visible = false
 		hideSectorMap()
 		updateRaidButtons()
+		RaidShopPanel.Close()
+		beaconButton.Visible = false
 		local lost = (payload.LostContraband or 0) + (payload.LostCores or 0) > 0
 			and (" Lost " .. (payload.LostContraband or 0) .. " Contraband and " .. (payload.LostCores or 0) .. " Cores.")
 			or ""
@@ -1487,6 +1517,8 @@ RaidRoomUpdate.OnClientEvent:Connect(function(payload)
 		roomFrame.Visible = false
 		hideSectorMap()
 		updateRaidButtons()
+		RaidShopPanel.Close()
+		beaconButton.Visible = false
 		local banked = {}
 		if (payload.Contraband or 0) > 0 then
 			table.insert(banked, payload.Contraband .. " Contraband")
@@ -1508,6 +1540,8 @@ RaidRoomUpdate.OnClientEvent:Connect(function(payload)
 		roomFrame.Visible = false
 		hideSectorMap()
 		updateRaidButtons()
+		RaidShopPanel.Close()
+		beaconButton.Visible = false
 		local walkedAway = (payload.LostContraband or 0) + (payload.LostCores or 0) > 0
 			and ((" Left behind %d Contraband and %d Cores."):format(payload.LostContraband or 0, payload.LostCores or 0))
 			or ""
