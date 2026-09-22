@@ -1753,9 +1753,7 @@ function CombatEncounterService.ResolvePlayerHit(player: Player, hitInstance: In
 	-- Damage-number feedback tag: Headshot wins if both happen on the same shot (it already had its
 	-- own gold styling before crits existed — see the comment above). spec.IsCrit is stamped once
 	-- per shot in RequestFireWeapon (RunBuffService.RollCrit), not re-rolled per pellet/hit here.
-	-- "Crit" has no KINDS entry of its own yet in DamageNumbers.client.lua — that file's own
-	-- `KINDS[kind or "Normal"] or KINDS.Normal` fallback means an unrecognized kind just renders as
-	-- Normal, so this is safe to send today and free to light up the moment that entry exists.
+	-- "Crit" is styled by DamageNumbers.client.lua's KINDS.Crit (Legendary gold, size 28).
 	local feedbackKind = "Normal"
 	if isHeadshot then
 		feedbackKind = "Headshot"

@@ -44,6 +44,11 @@ local KINDS = {
 	Turret    = { Color = Color3.fromRGB(120, 200, 255), Size = 18 },
 	Robot     = { Color = Color3.fromRGB(180, 180, 190), Size = 16 },
 	Drone     = { Color = Color3.fromRGB(255, 160, 120), Size = 18 }, -- your companion, not a turret
+	-- Raid shop gear (RunBuffService.TickGear's sourceTag). Smaller than gunfire: it ticks constantly,
+	-- and a crowd under the aura should read as a background hum, not drown out your own shots.
+	ScorchAura  = { Color = Color3.fromRGB(255, 110, 40),  Size = 15 },
+	OrbitBlades = { Color = Color3.fromRGB(200, 205, 215), Size = 15 },
+	LaserDrone  = { Color = Color3.fromRGB(90, 210, 255),  Size = 16 },
 	-- The one entry that is not damage. A Support Core's whole output is a slowly rising health
 	-- bar, which is the least legible thing in the game until it has a number on it.
 	Heal      = { Color = Color3.fromRGB(120, 235, 150), Size = 20, Prefix = "+" },

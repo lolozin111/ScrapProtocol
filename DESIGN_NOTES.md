@@ -33,7 +33,7 @@ already made (numbers, mechanics, sequencing), not just vague direction.
 | Animation pass | **Hulk DONE and verified 2026-09-15** — Idle `113796712422007`, Walk `103708147649106`, heavy combo `137947497885396` (`ImpactR` ×2 + `ImpactRFinal`), left sweep `105875185230848` (`SweepLStart`/`SweepLEnd`), all playing through `AIPattern = "Animated"` (`EnemyAnimation.lua`). No death or turn animation, by the user's choice. Next animation: the player's DASH (`DashConfig.AnimationId`, user is making it). Other enemies still have no attack tell. Details in "Resuming after a context reset" |
 | Stamina & dash | **Built 2026-09-15, verified working by the user** — 3 charges, 1 per 5s, Q/B/touch; see "Stamina & dash" |
 | Early-game pacing & onboarding | **Partially built** — item 1 (ore sells for Scrap) shipped in the ore rework; starter objectives (item 2) still planned, not built — see below |
-| Raid shop rework (run-only perks) | **Planned, not built** — half the tag plumbing exists |
+| Raid shop rework (run-only perks) | **Built 2026-09-22, NOT YET VERIFIED IN STUDIO** — cards, buying/leveling/rarity-up, 4 equipment slots + Sell, Extraction Beacon/Salvage Insurance, raid ore now `RunLocked`, boss cards wired to real stats, crits, gear (aura/blades/drone) — see "Resuming after a context reset" |
 | PvP base invasion | **Recommended cut from v1** — see "Road to release" below |
 
 Agreed build order (most recent discussion): Raid Energy → Mining zone rework → weapon mod
@@ -2847,9 +2847,13 @@ past instruction: **base defense pays no Scrap or Cores at all**, which makes it
 end despite being the mode most likely to be a new player's first real activity.
 `WaveConfig.GetScrapReward` is still defined and unused if this is ever revisited.
 
-## Raid shop rework — PLANNED, NOT BUILT
+## Raid shop rework — PLANNED, NOT BUILT (SUPERSEDED — see "Resuming after a context reset"'s
+## "Raid shop rework — SPEC SETTLED 2026-09-22" / "BUILD CONTRACT" for what actually got built)
 
-Requested in an earlier session, never built there either. Recorded properly this time.
+Requested in an earlier session, never built there either. Recorded properly this time. Kept below as
+the record of the ORIGINAL idea (a third `RunOnly`/`Consumed` tag, `StatusConfig`/`ModConfig`-shaped
+accessories) — the settled spec took a different shape (perks/gear live on run state, not as tagged
+inventory items, so no third tag was needed after all) and is what was actually built.
 
 **The idea:** the raid Shop node should stop selling ore bundles and instead sell **accessories that
 grant perks for the duration of the run** — things that help you push deeper on THIS raid and then
@@ -3364,9 +3368,32 @@ and frames.
 
 ### Resuming after a context reset
 
-**NEWEST — raid shop rework DESIGN ROUND, 2026-09-22 (second session). START HERE.** Spec below is
-the user's answers; nothing is built yet. Next step: a card-shop mockup for the user to approve, then
-build (greenlight first).
+**NEWEST — raid shop rework: BUILT 2026-09-22, awaiting Studio verification. START HERE.** All five
+BUILD CONTRACT steps below landed (commits fbb6c60, 789b958) — `RunBuffConfig.lua`, `RunBuffService.lua`,
+the combat hooks in `CombatEncounterService`/`DamagePipeline`, `RaidShopPanel.lua` + `RaidClient`
+wiring, and this README pass (`sp-docs-dev`, this session). None of it has been clicked through in
+Studio yet. Known platform deviations from the approved mockup, worth knowing before anything gets
+reported as a bug: Roblox `TextLabel`s have no letter-spacing equivalent, so the mockup's tracked-out
+headers render tighter than the reference; the full-screen shop background is a 65% scrim
+(`BackgroundTransparency = 0.35`) rather than a solid takeover, so the raid room stays visible behind
+it on purpose; badge text (**NEW**/**RARITY UP**) pads itself with literal leading/trailing spaces
+around the string rather than CSS padding; the pip "glow" ring on a level-up pip is a second `UIStroke`
+layered outside the first, not a CSS box-shadow; and dashed pips/slot borders (`HudKit.dashedBox`) are
+straight-edged dashes, not the mockup's rounded dash caps. Two numbers to watch in the first playtest:
+`FIRE_RATE_COOLDOWN_TOLERANCE = 0.9` in `CombatEncounterService.lua` (a guessed 10% grace on the
+fire-rate cooldown to absorb the client/server timing gap around Rapid Feeder's buffed rate — may need
+retuning either direction) and `beginAmbush`'s `RunBuffService.OnRoomCleared` call, which fires once
+PER WAVE inside the wave loop, not once for the whole Ambush node — so Nano Repair's room-clear heal
+should trigger after every wave of an Ambush, same as a real Combat room, not just once at the end.
+Also: `RaidConfig.Modes.Standard.ShopCatalog` (`"ShopCatalog"`) is now dead data — Shop rooms roll from
+`RunBuffConfig.Items` instead — left in place for `sp-config-dev` to remove or repurpose rather than
+deleted mid-build. **The user's next-named job, not yet started:** "the necessary building blocks for
+the visual designs for those cards" — the 12 `UiIcons` images (exported from the mockup SVGs: 9 perk/
+gear icons, 2 Escape icons, the Scrap glyph — see README's icons paragraph for the exact key list) and
+the three optional `ServerStorage.RunGearModels` (`ScorchAura`/`OrbitBlades`/`LaserDrone`).
+
+**Below this point is the DESIGN ROUND that produced the spec above — kept as the record of what was
+agreed and why, not as a to-do list anymore.**
 
 **Raid shop rework — SPEC SETTLED 2026-09-22 (the user's answers; numbers marked ~ are placeholders).**
 - **Direction: a MIX** — mostly run perks, plus escape items. Scrap-only prices (settled earlier).

@@ -446,8 +446,22 @@ no manual copy-pasting scripts into Studio.
   the detail panel. A sibling empty Folder, `ReplicatedStorage.UiIcons`, also exists in
   `default.project.json` now, resolved through `HudKit.getUiIcon`/`applyIcon` the same way — for
   chrome/button glyphs rather than inventory items, kept as a separate folder so the two naming
-  schemes can't collide. Nothing currently reads from it (no panel calls `HudKit.button`'s optional
-  `icon` yet), so it's an empty foundation today, not a feature you can click through.
+  schemes can't collide. **The Salvage Run raid shop (step 27) is the first thing that actually reads
+  from it** — `RaidShopPanel.lua` calls `Hud.applyIcon(image, key, "UiIcons")` for twelve keys: the
+  nine perk/gear items, the two Escape items, and the Scrap glyph — `RunOverclockChip`,
+  `RunRapidFeeder`, `RunPlatedVest`, `RunNanoRepair`, `RunKineticBarrier`, `RunScavengersLens`,
+  `RunScorchAura`, `RunOrbitBlades`, `RunLaserDrone`, `RunExtractionBeacon`, `RunSalvageInsurance`,
+  `RunScrap`. A missing key falls back to a tinted circle showing the item's initials (e.g.
+  "Overclock Chip" → "OC") with one `warn()` per missing key, not one per re-render, so leaving all
+  twelve unset doesn't spam Output — add `ImageLabel`s named exactly those keys inside `UiIcons` to
+  test the real art path. Separately, the three Gear items' in-raid visuals (the Scorch Aura ring, the
+  Orbit Blades, the Laser Drone) look for a Model named exactly `ScorchAura`, `OrbitBlades`, or
+  `LaserDrone` inside `ServerStorage.RunGearModels` — an optional Folder **not yet declared in
+  `default.project.json`**, so create it by hand in Studio if you want real gear art; without it (or
+  without a matching model) `RunBuffService.lua` silently builds a plain Neon placeholder instead (an
+  orange cylinder ring for the Aura, red neon wedges for the Blades, a cyan ball plus short-lived beam
+  parts for the Drone) — unlike the icon fallback above, there's no `warn()` for a missing gear model,
+  since the placeholder is considered a normal look for this feature, not a stopgap.
 - **Auto-Miner** — `AutoMinerService.lua` handles a one-time-craftable "Mini Particle
   Accelerator" (Workbench → Auto-Miner tab, cost in `AutoMinerConfig.lua`) that passively grants
   a small amount of Iron Ore on a timer for every player who's built one, whether they're
@@ -1091,8 +1105,8 @@ to end:
     gun/robots work here too). Clear it and confirm a "Room cleared!" toast naming whatever loot
     dropped, and that the map's "you are here" marker stays put until you actually walk through a
     door. Pick a Heal node: confirms an instant "Fully healed." message and a **Continue** button.
-    Pick a Shop node: confirms a list of buy buttons (same catalog as the Expedition Shop node) plus
-    **Continue**; buying with insufficient currency should toast a rejection instead of charging you.
+    Pick a Shop node: this is the Salvage Run shop rework now, not the old fixed catalog — see step
+    27 below for the full test (cards, buying, slots, escape items, boss cards).
     Pick an Ambush node (rarer — you may need a couple of raids before one shows up): confirms the
     same panel but prefixed **"Wave X/Y"**, with a toast after each wave and another fight starting a
     couple of seconds later, for however many waves got rolled.
@@ -1151,16 +1165,20 @@ to end:
     raid and returns you home. Try starting a second raid with Energy at 0 (see step 9) and confirm
     a "Not enough Energy" toast instead of teleporting you anywhere.
 
-    **Extraction rewards (the point of a raid).** Combat rooms now pay only Scrap and Ore, which you
-    always keep. **Contraband and Cores come only from clearing a map and from beating a Boss node**,
+    **Extraction rewards (the point of a raid).** Combat rooms pay Scrap and Ore. Scrap is always kept
+    — it's this run's own spendable pool at the Shop (step 27) and is banked in full no matter how the
+    raid ends. **Ore is NOT always kept anymore, as of the raid shop rework:** every raid ore drop
+    (Combat/Ambush/Boss loot and chest loot alike) is now `RunLocked`, so it only comes home on a clean
+    Extract or Beacon use — a Defeat or an Abandon loses it, unless you bought Salvage Insurance (see
+    step 27). **Contraband and Cores come only from clearing a map and from beating a Boss node**,
     and they are HELD, not banked: the top-left panel shows them as **AT RISK** in orange. Confirm the
     "Map cleared!" toast names what you earned, that the at-risk rows go up, and that each later clear
     pays more than the one before (`RaidConfig.ExtractionRewards.MapGrowthPerClear`, +35% per clear).
     Beat a Boss node and confirm an **EXTRACT BONUS** row appears at `x1.25`, rising 0.25 per boss to a
     cap of `x2`. Then Extract and confirm the toast names the multiplied total, and that your real
-    Contraband and Cores go up by exactly that. Finally, do a run the other way: earn some, then die
-    or Abandon, and confirm the toast says what you lost and that **none** of it reaches your profile.
-    The raid Shop is Scrap-only now, so a first-room purchase must still be possible.
+    Contraband and Cores go up by exactly that. Finally, do a run the other way: mine some raid ore,
+    don't buy Insurance, then die or Abandon, and confirm the toast says what you lost and that
+    **none** of the ore (or the at-risk Contraband/Cores) reaches your profile.
 
     **Player spawn marker (optional):** in a Combat Room Model under `ServerStorage.RaidRoomModels`
     (a Model with a `PrimaryPart`), place a Part named exactly `PlayerSpawn` somewhere in the room and
@@ -1284,7 +1302,12 @@ to end:
     you with a bit of lag rather than being welded on, and survives a respawn and a raid teleport.
     Start a wave and confirm it turns to face what it shoots and lands orange damage numbers. Swap
     to **Support**, take some damage, and confirm it does NOT heal you while you're being hit, then
-    starts ticking green `+` numbers about 4 seconds after the shooting stops. **Scavenger** — go
+    starts ticking green `+` numbers about 4 seconds after the shooting stops. **In a raid the drone's
+    heal is capped** (`RaidHealBudget.lua`, the user's rule: "so heal places arent useless") at 15% of
+    max HP per room and 75% per map — this is a SEPARATE budget from the Shop's Nano Repair perk (25%
+    room / 100% map, step 27), so both can be spent independently; take heavy, repeated damage in one
+    raid room and confirm the drone's healing visibly tapers off well before you're topped up, then
+    recovers on the next node. Base-defense waves are uncapped, unaffected by this. **Scavenger** — go
     mine; roughly one hit in four should toast "Scavenger Core salvaged N extra …". **Recon** — start
     a wave and confirm nearby enemies glow blue through walls and their DEF drops (visible on a
     `/dummy`'s billboard, though note dummies only work outside a wave). Only one Core can be
@@ -1390,6 +1413,125 @@ to end:
     download over the network instead of resolving instantly off disk. Check Output for
     `[LoadingScreen]` warnings (a bad preload id, or a missing `EnemyConfig`) — neither should appear
     on a clean sync.
+
+27. **The Salvage Run shop rework (`RunBuffConfig.lua`/`RunBuffService.lua`/`RaidShopPanel.lua`),
+    BUILT but not yet verified in Studio.** Reach a Shop node the same way as before (walk into the
+    room and hold the interact prompt at its `InteractPoint`) and confirm the panel that opens now is
+    a full-screen card screen headed **SALVAGE EXCHANGE**, over a scrim that still shows the room
+    behind it (not a solid blackout — that's the mockup's own canvas background, deliberately not
+    treated as an instruction to hide the world). The header's right side shows two readouts: **ORE AT
+    RISK** (this run's `RunLocked` ore collected so far, in red) and **SCRAP** (this run's own
+    collected Scrap — the same pool `RaidClient`'s "Scraps Collected" row shows, NOT your real
+    profile's Scrap).
+
+    **Cards.** Confirms 3-4 cards laid out left to right (`RunBuffConfig.OffersPerShop`, Min 3/Max 4),
+    re-rolled fresh each time you enter a NEW Shop node but stable if you leave the map open and come
+    back to the same one. Each card has a rarity header (RARE/EPIC/LEGENDARY, colored off
+    `ModConfig.Rarities` — the same palette the Forge uses), an icon plate (tinted-initials fallback
+    until `UiIcons` is filled in — see the icons paragraph above), a name, an effect line, and — for
+    everything except the two Escape cards — a 5-pip level bar and a button reading **BUY <price>** in
+    orange in Scrap, **NEED <price>** in red if this run's Scrap can't cover it, or **SLOTS FULL** if
+    buying would need a new equipment slot and all 4 are already used. Buy a card you don't own: it
+    should charge this run's Scrap (not your profile's), take one of the 4 **EQUIPMENT SLOTS** in the
+    footer, and start at **LV 1** with a lit first pip. Buy the SAME item again from a later Shop visit
+    (same run) and confirm it reads **LV 1 → 2** and levels up in place — no new slot — capped at its
+    rarity's ceiling (Rare max Lv3, Epic max Lv4, Legendary max Lv5; a maxed card's button toasts
+    "Already maxed out" instead of charging you). Find a HIGHER-rarity offer of an item you already own
+    and confirm it shows a **RARITY UP** badge, keeps your current level, raises the level cap
+    (`MAX <old> → <new>`), and costs no new slot. `/give Scrap 5000` (Hub Shop step 23's command still
+    works everywhere) does NOT help here — it only affects your real profile, not this run's Scrap
+    pool, so test affordability by actually clearing rooms first.
+
+    **Selling and slots.** With all 4 slots used, confirm every new-item card shows **SLOTS FULL**
+    (even one you could otherwise afford) and that a filled slot in the footer has a **SELL** button
+    quoting a refund (`RunBuffConfig.SellRefund`, 50% of total Scrap paid, floored). Click it and
+    confirm the slot empties, the refund lands in this run's Scrap, and a previously SLOTS-FULL card
+    becomes buyable again.
+
+    **Escape items** (`ExtractionBeacon`/`SalvageInsurance` — Epic-only offers, no level, no slot; a
+    shop visit rolls AT MOST ONE Escape-kind offer total, so don't expect to see both in the same
+    visit). Buy an Extraction Beacon and confirm it appears
+    as a chip in the footer's **NO SLOT** row reading READY, and that a new **Use Beacon** button
+    appears on the always-on raid currency panel (`RaidClient`'s "Scraps Collected" plate, not just
+    inside this Shop screen — it must work from anywhere in the raid). Click **Use Beacon** OUTSIDE
+    combat and confirm it ends the raid immediately as a clean extract — your ore comes home exactly
+    like walking out through Extract, but without needing the map's first clear. Confirm it's refused
+    (or simply does nothing, per `state.InCombat`'s gate) while a fight is running. Separately, buy
+    Salvage Insurance, then let a raid END BADLY (die to an enemy, or Abandon) while holding some
+    `RunLocked` ore: confirm the loss toast says you kept roughly 40% of that ore instead of all of it
+    (`SalvageInsurance.KeepOrePct`) — compare against a run with no Insurance, where the same kind of
+    ore is lost completely.
+
+    **Boss cards now do something.** Clear a Boss node (step 15) and confirm the familiar "Choose one:"
+    picker still appears, but picking one now visibly changes your stats — these route through the
+    same `RunBuffService`/`RunBuffConfig.Aggregate` system as the shop's own perks, stack WITHOUT any
+    cap, and take no equipment slot. Boss cards are on their OWN separate rarity ladder from shop
+    items (`RaidConfig.CardRarityWeights`: Common/Rare/Epic/Legendary, 5 stat categories — Damage, Fire
+    Rate, Max HP, Loot, and Crit Chance — 4 rarities each, 20 cards total) — a Common boss card is not
+    the same thing as a Rare shop card, so don't expect their numbers to line up. Pick a `CritChance`
+    or `DamagePct` card, or buy Overclock Chip to Lv4+ (its own `CritChance` bonus, or a guaranteed
+    crit every 10th shot at Lv5), then shoot a `/dummy`: confirm crit hits show as **gold** numbers
+    (`DamageNumbers.client.lua`'s `Crit` kind — distinct from the existing gold **Headshot** numbers;
+    a shot that's both shows as a headshot, not double-tagged) rather than the usual white.
+
+    **Gear** (Scorch Aura / Orbit Blades / Laser Drone — buy any of the three, then start a fight).
+    Confirm a visible effect appears on/around your character with no `ServerStorage.RunGearModels`
+    art placed (a translucent orange cylinder ring for the Aura, red neon wedges circling you for the
+    Blades, a small cyan ball with flickering beam segments for the Drone — see the icons paragraph
+    above for the optional real-model folder) and that it actually damages nearby enemies: Scorch Aura
+    ticks everything standing inside its ring, Orbit Blades hit whatever a blade passes near, and the
+    Laser Drone auto-fires at the nearest enemy in range. Their damage numbers currently render as
+    plain WHITE (`Normal`) rather than a dedicated color — `RunBuffService`'s gear tags
+    ("ScorchAura"/"OrbitBlades"/"LaserDrone") aren't in `DamageNumbers.client.lua`'s `KINDS` table yet,
+    so this is the documented fallback, not a bug. Level one up across a couple of shop visits and
+    confirm its effect visibly grows (Orbit Blades gains a blade at Lv4, its Lv5 hit applies Staggered;
+    Scorch Aura's ring widens at Lv4 and Slows at Lv5; the Laser Drone fires faster at Lv4 and fires a
+    second beam at Lv5). All three gear visuals tear down between rooms and rebuild on the next fight —
+    don't expect one to still be circling you while reading a Heal/Shop node's text.
+
+    **Known platform deviations from the approved card mockup**, worth knowing before reporting one as
+    a bug: no CSS letter-spacing equivalent exists on a Roblox `TextLabel`, so the mockup's tracked-out
+    headers render tighter than the reference image; badge text (**NEW**/**RARITY UP**) pads itself
+    with literal spaces around the string rather than CSS padding; and dashed pip/slot borders
+    (`HudKit.dashedBox`) are straight-edged dashes, not the mockup's rounded dash caps.
+
+28. **Raid enemy awareness, pathing, spacing, and the Raider alarm** (`EnemyAwareness.lua`/
+    `Shared/EnemyAwarenessConfig.lua`, `EnemyMovement.lua`/`Shared/EnemyMovementConfig.lua`,
+    `EnemyAlarm.client.lua`) — shipped and VERIFIED by the user in the session before the raid shop
+    rework (2026-09-21/22), but never folded into this testing script until now. Raids only, and only in Combat rooms (Ambush and
+    Boss rooms start every enemy already aware, by design). Enter a Combat room and confirm enemies do
+    NOT beeline for you on sight the way they used to: a Scavenger/Raider/Brute/Siegebreaker should
+    idle, then wander a short random hop every few seconds, until it either spots you (distance +
+    line-of-sight — Scavenger 110 studs, Brute 60, Raider 35, Siegebreaker 20), takes a hit, or answers
+    another enemy's alarm. Watch the `AwarenessState` Attribute on an enemy Model in the Explorer while
+    it plays out (`Idle`/`Wander`/`Alerted`). Get spotted by a **Raider** specifically and confirm it
+    raises the alarm: a sound plays, a `!` marker floats over the Raider that spotted you, and a red
+    flash hits your screen edge (`EnemyAlarm.client.lua`) — then confirm every other enemy in the room
+    answers and beelines in (Scavenger and Brute always answer; a Siegebreaker only has a 50% chance
+    per alarm, so try a couple of rooms to see both outcomes). A Raider or Scavenger you kill in one
+    shot before it notices you should raise NO alarm (a rewarded stealth kill). Separately, confirm
+    enemies now path AROUND obstacles instead of grinding into a wall or a doorway corner, keep a
+    visible gap from each other while approaching (`EnemyMovementConfig.Separation`) without ever fully
+    overlapping, and don't jitter in place once several of them are standing around you in melee range.
+    If `[EnemyMovement] X failed to compute a path` shows in Output, that enemy's goal is unreachable
+    from where it spawned — a room/spawn layout issue, not a crash; it still falls back to walking
+    straight. If a type T-poses while idling/wandering, its rig doesn't use R15 joint names and needs
+    its own Idle/Move animation in `EnemyConfig` — the default wander animations only drive R15 rigs.
+
+29. **Raid chests** (`RaidChest.lua`/`Shared/RaidChestConfig.lua`) — also shipped and VERIFIED by the
+    user in that same earlier session, undocumented until now. Run several raid Combat rooms (about
+    half should get one, `RaidChestConfig.ChancePerCombatRoom`) and confirm a chest — a plain crate by
+    default, or a real Model if you've placed one named exactly `Chest` inside an optional
+    `ServerStorage.RaidProps` Folder (already declared in `default.project.json`; a part named `Lid`
+    inside it will tip back on open) — sits somewhere clear and reachable, placed BEFORE any enemies
+    spawn, at least 30 studs from where you entered. It should have 1-2 guards stationed near it
+    (usually a Brute, sometimes a Raider or Scavenger — never a Siegebreaker) that wander only a short
+    radius around the chest rather than their type's normal range, so killing the room doesn't require
+    chasing a roamer across the whole map. Walk up and hold the prompt for 3 seconds (`HoldSeconds`);
+    confirm a toast lists what it paid out (1-5 different items — mostly Scrap, sometimes an ore,
+    rarely Cores or Contraband, "hella rarely" Voidium Shard) through the same loot path as any other
+    raid drop, meaning any ore it pays is `RunLocked` exactly like Combat/Boss ore — lost on a bad exit
+    the same way (step 15's "Extraction rewards" paragraph above), not a loophole around that stake.
 
 ## 5. Environment effects (optional polish)
 
