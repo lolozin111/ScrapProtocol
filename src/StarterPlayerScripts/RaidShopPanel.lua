@@ -164,15 +164,18 @@ local function rarityLook(rarity: string): (Color3, number, number, number)
 end
 
 ----------------------------------------------------------------------
--- Icons — HudKit.applyIcon against the UiIcons folder explicitly (the third argument), per the
--- task's instruction: this skips UiIconConfig and reads ReplicatedStorage.UiIcons directly, which is
--- where the user will drop the uploaded PNGs (see this file's header / the caller's UiIcons key
--- list). Falls back to a tinted circle with the item's initials — "missing art never breaks the
--- loop" (CLAUDE.md) — with exactly one warn per missing key.
+-- Icons — HudKit.applyIcon with no folder argument, so UiIconConfig's ids win and the hand-built
+-- ReplicatedStorage.UiIcons folder stays a fallback (the project's stated convention: HUD chrome is
+-- code, and belongs where Rojo syncs it). Falls back to a tinted circle with the item's initials —
+-- "missing art never breaks the loop" (CLAUDE.md) — with exactly one warn per missing key.
 ----------------------------------------------------------------------
 
 local ICON_PLATE_SIZE = 76 -- Card.dc.html's icon-plate: 76x76, radius 38 (a perfect circle)
-local ICON_GLYPH_SIZE = 40 -- the mockup's inline <svg width="40" height="40">
+-- The mockup's inline <svg> was 40 in a 76 plate, but that svg drew edge to edge; the uploaded PNGs
+-- carry their own margin inside the square, so at 40 the glyph read visibly smaller than the
+-- reference ("they a little small", 2026-09-22). 58 makes the drawn strokes land where the mockup's
+-- did. Change this, not the plate, if a future icon set is redrawn tighter.
+local ICON_GLYPH_SIZE = 58
 
 local function buildIconPlate(parent: Instance, displayName: string, iconKey: string, rarityColor: Color3, fillTr: number, borderTr: number)
 	local plate = new("Frame", {
@@ -377,7 +380,7 @@ local function buildCardButton(parent: Instance, offer, preview, run)
 	local labelText = if slotsFull then "SLOTS FULL" elseif affordable then ("BUY  %d"):format(offer.Price) else ("NEED %d"):format(offer.Price)
 
 	if not slotsFull then
-		buildScrapGlyph(row, 16, textColor, 1)
+		buildScrapGlyph(row, 20, textColor, 1)
 	end
 	new("TextLabel", {
 		BackgroundTransparency = 1,
@@ -863,7 +866,7 @@ local scrapRow = new("Frame", {
 	LayoutOrder = 2,
 	Parent = scrapBox,
 }, { new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, VerticalAlignment = Enum.VerticalAlignment.Center, Padding = UDim.new(0, 6) }) })
-buildScrapGlyph(scrapRow, 16, COLOR_ACCENT, 1)
+buildScrapGlyph(scrapRow, 20, COLOR_ACCENT, 1)
 local scrapValue = new("TextLabel", {
 	Size = UDim2.new(0, 0, 1, 0),
 	AutomaticSize = Enum.AutomaticSize.X,
