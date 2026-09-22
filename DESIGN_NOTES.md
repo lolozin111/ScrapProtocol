@@ -3397,6 +3397,21 @@ build (greenlight first).
 - Perks/gear live on the RUN STATE, not as inventory items, so no new `RunOnly` tag is needed —
   they end with the run by construction.
 
+**Round 2 answers, same day:**
+- **Card design APPROVED — build it 100% as drawn** ("be 100% loyal... make them the same as the
+  reference"). Reference: artifact "Raid Shop Cards" https://claude.ai/artifact/7fQAAZjT5RXviqtB81UG1q,
+  `project/Card.dc.html`. Icons must become PNGs in `ReplicatedStorage.UiIcons` (user uploads; I export).
+  Fonts map: Montserrat → `FONT.Display`, Inconsolata → `Enum.Font.Code`, Source Sans → `SourceSans`.
+- Rarity = level cap only (assumption confirmed). **Plus capstones:** every item gets a bonus passive at
+  Lv4 and a signature capstone at Lv5 — so Epic reaches one, Legendary both. Per-item list proposed on
+  the canvas, awaiting approval.
+- **Heal cap: 25% per room / 100% per map**, separate from the drone's.
+- **4 equipment SLOTS per raid.** Sell refunds 50% of what you paid. Escape items (Beacon, Insurance)
+  take NO slot. A rarity-up of an owned item takes no new slot.
+- **Boss cards: wire them in THIS rework.** `RaidConfig.CardPool` is 4 effectless stubs today (checked
+  2026-09-22) — the user believed boss buffs already worked. They reuse the shop's run-buff system,
+  stack WITHOUT limit and take NO slots ("limitless scalability that is not OP").
+
 **Older — end of session 2026-09-22 (first session).** Everything below this block is older.
 
 **Where to pick up: the Salvage Run RAID SHOP REWORK — agreed as the next job, NOT started, not yet
