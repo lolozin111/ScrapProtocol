@@ -75,6 +75,7 @@ local RaidEnergyService = require(script.Parent.RaidEnergyService)
 local CombatEncounterService = require(script.Parent.CombatEncounterService)
 local BlackMarketService = require(script.Parent.BlackMarketService)
 local PlayerActivityService = require(script.Parent.PlayerActivityService)
+local RaidHealBudget = require(script.Parent.RaidHealBudget)
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 local RequestStartRaid = Remotes.RequestStartRaid
@@ -1047,6 +1048,8 @@ end
 
 local function onMapCleared(state)
 	state.MapsCleared += 1
+	-- A fresh map, a fresh 75% drone heal allowance (the user's call: pushing deeper stays survivable).
+	RaidHealBudget.NewMap(state.Player)
 	local justUnlocked = not state.ExtractUnlocked
 	state.ExtractUnlocked = true
 
@@ -1087,6 +1090,7 @@ end
 -- branch left where the activity could leak and soft-lock the player out of raiding.
 local function cleanupRaid(state, sendReturnHome: boolean?)
 	activeRaids[state.Player.UserId] = nil
+	RaidHealBudget.End(state.Player) -- back home, the Support Core heals uncapped again
 	PlayerActivityService.Release(state.Player, PlayerActivityService.Activities.Raid)
 	if state.RoomFolder then
 		state.RoomFolder:Destroy()
@@ -1628,6 +1632,7 @@ enterNode = function(state, nodeId: number)
 		return
 	end
 	state.CurrentNodeId = nodeId
+	RaidHealBudget.NewNode(state.Player) -- each room refills the drone's 15% per-room heal allowance
 	if node.Type ~= "Start" then
 		-- Persists across map regenerations (state itself outlives any one state.Map) — the counter
 		-- Ambush's wave count/strength and every encounter's loot payout scale off, see
@@ -1766,6 +1771,8 @@ RequestStartRaid.OnServerEvent:Connect(function(player: Player, requestedMode: a
 			-- wired up yet, see RaidConfig.lua's own "Card system" comment
 	}
 	activeRaids[player.UserId] = state
+	-- The Support Core drone's per-room / per-map heal allowance starts full with the raid.
+	RaidHealBudget.Begin(player)
 
 	-- Authoritative 0/0 the instant the raid actually begins — the client resets its own "Scraps
 	-- Collected" display off this, NOT off every "Entered a Start node" (onMapCleared's regenerated

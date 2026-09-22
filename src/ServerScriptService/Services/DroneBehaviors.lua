@@ -31,6 +31,10 @@
 	here: a drone must not be able to bypass DamagePipeline any more than an Ultimate can.
 ]]
 
+-- The only require here: a pure bookkeeping module with no requires of its own, so it can't form a
+-- cycle with DroneService (which requires this file).
+local RaidHealBudget = require(script.Parent.RaidHealBudget)
+
 local DroneBehaviors = {}
 
 DroneBehaviors.Tick = {}
@@ -93,6 +97,33 @@ DroneBehaviors.Tick.Support = function(ctx)
 
 	local amount = humanoid.MaxHealth * (ctx.Params.HealFraction or 0.04)
 	local healed = math.min(amount, humanoid.MaxHealth - humanoid.Health)
+
+	-- In a raid, a hard budget on top (DroneConfig's RaidRoomHealCap / RaidMapHealCap, counted by
+	-- RaidHealBudget) so the drone can't make Heal rooms pointless. nil outside a raid = no cap.
+	local budget = ctx.Player and RaidHealBudget.Get(ctx.Player)
+	if budget then
+		local maxHealth = humanoid.MaxHealth
+		local roomLeft = maxHealth * (ctx.Params.RaidRoomHealCap or 1) - budget.NodeHealed
+		local mapLeft = maxHealth * (ctx.Params.RaidMapHealCap or 1) - budget.MapHealed
+		local left = math.min(roomLeft, mapLeft)
+		if left <= 0.01 then
+			-- Said ONCE per room / once per map, not every tick: a drone that just stops healing with
+			-- no explanation is indistinguishable from a broken one (the project's silent-failure rule).
+			if mapLeft <= roomLeft and not budget.ToastedMap then
+				budget.ToastedMap = true
+				budget.ToastedNode = true
+				ctx.Toast("Support Core spent for this map — find a Heal room")
+			elseif not budget.ToastedNode then
+				budget.ToastedNode = true
+				ctx.Toast("Support Core spent for this room")
+			end
+			return
+		end
+		healed = math.min(healed, left)
+		budget.NodeHealed += healed
+		budget.MapHealed += healed
+	end
+
 	humanoid.Health += healed
 	ctx.ShowHeal(healed)
 end

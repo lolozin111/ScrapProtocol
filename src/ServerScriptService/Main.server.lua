@@ -96,7 +96,7 @@ do
 	end
 	-- Required transitively by the list above rather than directly — still genuinely loaded, so
 	-- not a bug, just not visible in the require list.
-	for _, name in ipairs({ "CombatEncounterService", "CombatMath", "DamagePipeline", "EnemyAI", "EnemyAnimation", "RobotBehaviors", "WeaponToolService", "OreGate", "UltimateEffects", "StatusEffects", "ProjectileService", "GroundEffectService", "WeaponBehaviors", "DroneBehaviors", "DevShortcuts", "EnemyMovement", "EnemyAwareness" }) do
+	for _, name in ipairs({ "CombatEncounterService", "CombatMath", "DamagePipeline", "EnemyAI", "EnemyAnimation", "RobotBehaviors", "WeaponToolService", "OreGate", "UltimateEffects", "StatusEffects", "ProjectileService", "GroundEffectService", "WeaponBehaviors", "DroneBehaviors", "DevShortcuts", "EnemyMovement", "EnemyAwareness", "RaidHealBudget" }) do
 		loaded[name] = true
 	end
 

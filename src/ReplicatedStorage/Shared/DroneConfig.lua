@@ -98,6 +98,15 @@ DroneConfig.Cores = {
 			-- Held off while you are actively being shot at, so it tops you up BETWEEN fights instead
 			-- of quietly out-healing incoming damage and making waves unlosable.
 			SuppressedForSeconds = 4,
+			-- IN RAIDS ONLY, a hard budget on top of the trickle — the user's rule, so Heal rooms
+			-- aren't made pointless by a drone that tops you up for free between every fight. Both are
+			-- fractions of MAX health (the user's call, 2026-09-22): at most RaidRoomHealCap back per
+			-- room (reset on entering each node), and at most RaidMapHealCap across a whole map (reset
+			-- when a map is cleared, so pushing onto the next map stays survivable). Heal rooms
+			-- themselves are untouched and don't count against either. Base waves: no cap at all.
+			-- Deliberately NOT in Scales below — a higher tier heals faster, never more in total.
+			RaidRoomHealCap = 0.15,
+			RaidMapHealCap = 0.75,
 		},
 		-- The heal scales; the suppression window does NOT. Shortening it with tier would erode the
 		-- one thing keeping this from out-healing a fight, which is the property that has to hold at
@@ -206,8 +215,11 @@ function DroneConfig.EffectSummary(coreKey: string, profile): string
 	if coreKey == "Combat" then
 		return ("%d damage every %.1fs, up to %d studs"):format(p.Damage, core.TickInterval, p.Range)
 	elseif coreKey == "Support" then
-		return ("+%.0f%% max HP every %.0fs, %.0fs after being hit"):format(
-			p.HealFraction * 100, core.TickInterval, p.SuppressedForSeconds)
+		-- The raid limits are on the card too: a drone that silently stops healing mid-raid reads as
+		-- broken unless the player was told up front that it would.
+		return ("+%.0f%% max HP every %.0fs, %.0fs after being hit. In raids: up to %.0f%% per room, %.0f%% per map"):format(
+			p.HealFraction * 100, core.TickInterval, p.SuppressedForSeconds,
+			(p.RaidRoomHealCap or 0) * 100, (p.RaidMapHealCap or 0) * 100)
 	elseif coreKey == "Scavenger" then
 		return ("%.0f%% chance to double any ore you mine"):format(p.Chance * 100)
 	elseif coreKey == "Recon" then
