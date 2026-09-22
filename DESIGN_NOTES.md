@@ -3364,7 +3364,36 @@ and frames.
 
 ### Resuming after a context reset
 
-**NEWEST — 2026-09-22, RAID CHEST DESIGN. Start here.** Everything below this block is older.
+**NEWEST — end of session 2026-09-22. START HERE.** Everything below this block is older.
+
+**Where to pick up: the Salvage Run RAID SHOP REWORK — agreed as the next job, NOT started, not yet
+designed with the user.** Start it as a design round, not a build: ask, then build. What's already
+known, so the round doesn't have to rediscover it:
+- **Today's shop** is `NodeConfig.ShopCatalog` (NodeConfig.lua ~91): the same fixed ore bundles every
+  run, no rotation — a vending machine selling the very resource you came to farm.
+- **What it was meant to become** (Three Ways In, Salvage Run's column): "capacity and escape — bag
+  upgrades, a speed boost, one-shot extraction beacons". Treat that as a starting suggestion — the user
+  replaced the old enemy-AI plan wholesale when shown it, and may do the same here.
+- **A catch to raise early:** "bag upgrades" assume a CARRY CAP, and there isn't one — checked
+  2026-09-22, no ore cap is enforced anywhere in raid code. Likewise NOTHING in raids is `RunLocked`
+  yet, so there is currently no risk for "escape" items to protect against. Both are Salvage Run
+  stakes that were designed but never switched on; the shop's shape depends on whether they are.
+- **Plumbing that exists:** the shop is a Heal/Shop-style `InteractPoint` room (`beginInteractGated`
+  in RaidRoomService); a purchase's Grant goes through `addRunReward` (RaidRoomService ~1845), the same
+  sink as all raid loot; it's paid for from the run's own currency pool (`state.RunCurrencyCollected`,
+  Scrap/Cores earned this run).
+
+**This session's work, ALL VERIFIED in Studio by the user and committed** (see the blocks below for
+detail): enemy pathfinding + stuck detection + spacing; the awareness states (idle / wander / spotting)
++ the Raider alarm; every enemy gets a hitbox; the Staggered slow on heavy guns; the Support Core's
+raid heal cap (15% per room / 75% per map); and raid chests (the user: "it works").
+
+**Debt from this session:** README.md section 4 (the numbered Studio testing script) describes none of
+it — no step for enemy pathing/spacing, awareness + alarm, the chest, or the heal cap, and no mention
+of the new `ServerStorage.RaidProps` folder or the `EnemyAlarm` remote. Worth one `sp-docs-dev` pass
+before release; not urgent enough to block the shop round.
+
+**Raid chests — BUILT and VERIFIED 2026-09-22.**
 
 **Raid chests — SPEC SETTLED 2026-09-22 (the user's words, then the numbers derived from them).**
 - **Loot:** "regular loot" — 1 to 5 DIFFERENT items per chest. The chance of more than one falls off
@@ -3382,7 +3411,7 @@ and frames.
 - **Stakes:** chest loot flows through the SAME grant paths as other raid loot, so Salvage Run's rules
   (ore RunLocked, currency exempt) hold — a chest that paid out differently would be a loophole.
 
-**BUILT 2026-09-22, NOT yet verified in Studio** — `RaidChest.lua` + `Shared/RaidChestConfig.lua`,
+**BUILT 2026-09-22, VERIFIED by the user the same day** — `RaidChest.lua` + `Shared/RaidChestConfig.lua`,
 driven from `RaidRoomService.beginCombat` (inside its task.spawn, BEFORE `RunRaidCombat`), with a
 `ServerStorage.RaidProps.Chest` slot for real art (placeholder crate otherwise). Implementation facts
 worth keeping:
