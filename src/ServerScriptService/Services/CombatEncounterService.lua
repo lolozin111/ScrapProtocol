@@ -84,6 +84,11 @@ local DevShortcuts = require(script.Parent.DevShortcuts)
 -- defense damages a wall pool, not the player's Humanoid, so none of the player-damage hooks below
 -- apply to it at all.
 local RunBuffService = require(script.Parent.RunBuffService)
+-- Dash i-frames (DashConfig.IFrameSeconds, the user's call 2026-09-22 — "make it when you dash that
+-- you have some iframes during the dash"). Only consulted from RunRaidCombat's own damageTarget
+-- below: RunWave's damageTarget hits WallHP, not the player's Humanoid (see the comment above this
+-- one), so a dashing player has nothing there to be invulnerable FROM in the first place.
+local DashService = require(script.Parent.DashService)
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 local RequestFireWeapon = Remotes.RequestFireWeapon
@@ -723,6 +728,21 @@ local function safeRunBuff(label: string, fn, ...)
 	return a, b
 end
 
+-- Same reasoning as safeRunBuff immediately above, for DashService.IsInvulnerable: a bug (or a
+-- momentarily missing function, if DashService's own i-frame support lands in a later sync than
+-- this call site) must degrade to "this one hit wasn't dodged" rather than throwing inside
+-- RunRaidCombat's tick loop and stranding activeEncounters for the rest of the session.
+local function safeIsInvulnerable(player: Player): boolean
+	local ok, result = pcall(function()
+		return DashService.IsInvulnerable(player)
+	end)
+	if not ok then
+		warn(("[CombatEncounterService] DashService.IsInvulnerable error for %s: %s"):format(player.Name, tostring(result)))
+		return false
+	end
+	return result == true
+end
+
 ----------------------------------------------------------------------
 -- Damage application (shared by player fire and robot ticks)
 ----------------------------------------------------------------------
@@ -987,6 +1007,11 @@ function CombatEncounterService.RunWave(player: Player, waveNumber: number, opts
 
 	-- Drains Shield first, then the wall itself — same absorb-pool-before-real-health shape the
 	-- old player-HP version used, just protecting WallHP instead of a Humanoid now.
+	--
+	-- DELIBERATELY no dash-i-frame check here (contrast RunRaidCombat's own damageTarget): this pool
+	-- is the WALL's health, not the player's — see this file's header and the RunBuffService require
+	-- comment above. Dashing makes the PLAYER briefly undamageable; it has never had anything to say
+	-- about whether an enemy's swing at the base connects.
 	local function damageTarget(amount: number)
 		if playerState.Shield > 0 then
 			local absorbed = math.min(playerState.Shield, amount)
@@ -1344,6 +1369,16 @@ function CombatEncounterService.RunRaidCombat(player: Player, arenaCenter: Vecto
 	-- can't apply to that one hit — never a crash, just a buff that quietly can't identify its
 	-- target for a source this file didn't thread an attacker through for.
 	local function damageTarget(amount: number, attackerRecord)
+		-- I-FRAMES: a dash-invulnerable player dodges the hit entirely — no Shield drained, no
+		-- Humanoid damage, and none of the RunBuffService hooks below run, exactly as if the hit
+		-- never landed (see DashConfig.IFrameSeconds's own comment: only DAMAGE is skipped, so this
+		-- must sit before every other side effect of a hit, not just before TakeDamage). A status
+		-- effect already ticking on the player is untouched by this — it goes through StatusEffects,
+		-- never through this closure, so i-frames correctly have no opinion on it.
+		if safeIsInvulnerable(player) then
+			return
+		end
+
 		amount *= safeRunBuff("DamageTakenMultiplier", RunBuffService.DamageTakenMultiplier, player, attackerRecord) or 1
 
 		local shieldWasUp = playerState.Shield > 0

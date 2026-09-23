@@ -118,6 +118,23 @@ function DashService.GetCharges(player: Player): number
 	return state.Charges
 end
 
+-- I-FRAMES. A Player Attribute (DashConfig.IFrameSeconds' comment — 2026-09-22, "some iframes
+-- during the dash") rather than a private table here, for the same reason DepthUpdate's Depth
+-- Attribute lives on the block instead of a lookup table: combat code (DamagePipeline et al.) needs
+-- to read this, and an Attribute replicates/reads for free without this module having to expose a
+-- bespoke getter that every caller has to remember exists. IsInvulnerable below IS that getter
+-- anyway — named so combat code reads "DashService.IsInvulnerable(player)" instead of the raw
+-- attribute string, but it's just a thin wrapper, not the source of truth.
+local DASH_INVULNERABLE_ATTRIBUTE = "DashInvulnerableUntil"
+
+-- Reads the attribute stamped by the grant below. False once IFrameSeconds elapses OR while it's
+-- configured to 0 (DashConfig.IFrameSeconds' comment: "Set to 0 to turn i-frames off entirely") —
+-- covers both "never stamped" (attribute nil) and "stamped, but in the past" with the same check.
+function DashService.IsInvulnerable(player: Player): boolean
+	local until_ = player:GetAttribute(DASH_INVULNERABLE_ATTRIBUTE)
+	return typeof(until_) == "number" and os.clock() < until_
+end
+
 RequestDash.OnServerEvent:Connect(function(player: Player, ...: any)
 	-- Deliberately ignores every argument the client sent — see the header. Anything past `player`
 	-- here is a modified client trying to pass something; there's nothing legitimate to read.
@@ -153,6 +170,19 @@ RequestDash.OnServerEvent:Connect(function(player: Player, ...: any)
 		-- The recharge timer only starts once there's a hole to fill; a full bar has nothing
 		-- ticking (see `settle`'s early-return), so spending the first charge is what starts it.
 		state.RechargeStartedAt = now
+	end
+
+	-- The dash is granted at this point (a charge was actually spent) — stamp the i-frame window
+	-- now, not earlier: the rate-limit and empty-tank branches above both return before here, and
+	-- neither of those should extend/refresh invulnerability for a dash that didn't happen. 0
+	-- clears rather than sets a past-dated attribute, matching the config's "set to 0 to turn
+	-- i-frames off entirely" — `player:SetAttribute(_, nil)` would just leave whatever was already
+	-- there (see InventoryUpdate's own "nil vanishes" idiom elsewhere in this codebase), so an
+	-- explicit `or false`-shaped branch is used instead of relying on a bare nil to clear it.
+	if DashConfig.IFrameSeconds > 0 then
+		player:SetAttribute(DASH_INVULNERABLE_ATTRIBUTE, now + DashConfig.IFrameSeconds)
+	else
+		player:SetAttribute(DASH_INVULNERABLE_ATTRIBUTE, false)
 	end
 
 	pushUpdate(player, state, now)

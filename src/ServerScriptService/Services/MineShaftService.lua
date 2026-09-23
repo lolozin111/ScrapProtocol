@@ -146,6 +146,26 @@ local performReset
 local getPlayerDepth
 
 ----------------------------------------------------------------------
+-- Reset-progress broadcast — MineResetBar.lua's top-centre "N / Threshold BLOCKS" bar. Fires on a
+-- cheap periodic loop (below) rather than once per mined block: a block hit already fires
+-- InventoryUpdate for the miner alone, but this goes to every client (the bar is visible to anyone
+-- currently in the mine, not just whoever swung last), so doing it per-hit would be one
+-- FireAllClients per swing across every player in the shaft. RESET_PROGRESS_INTERVAL is a
+-- broadcast-rate constant, not a gameplay tunable — same reasoning MAX_MINING_DISTANCE above gets
+-- for staying a local instead of a MineShaftConfig entry.
+local RESET_PROGRESS_INTERVAL = 1 -- seconds between periodic snapshots; state-change call sites
+                                    -- below (lock starting, reset finishing) broadcast immediately
+                                    -- on top of this so those two transitions never wait out the tick
+
+local function broadcastResetProgress()
+	Remotes.MineResetUpdate:FireAllClients({
+		MinedCount = totalMinedCount,
+		Threshold = MineShaftConfig.ResetBlockThreshold,
+		Locked = isLocked,
+	})
+end
+
+----------------------------------------------------------------------
 -- Rolling what a cell is, and (if Ore) which ore
 ----------------------------------------------------------------------
 
@@ -652,6 +672,8 @@ performReset = function()
 		return -- a reset is already underway (e.g. the timer and the block threshold landed at once)
 	end
 	isLocked = true
+	broadcastResetProgress() -- immediate, not the next periodic tick — "RESETTING…" should appear
+		-- the instant the lock starts, not up to RESET_PROGRESS_INTERVAL seconds late
 	print("[MineShaftService] Resetting the mine...")
 
 	for _, player in ipairs(Players:GetPlayers()) do
@@ -673,6 +695,8 @@ performReset = function()
 
 	regenerateDepthZero()
 	isLocked = false
+	broadcastResetProgress() -- immediate, same reasoning as the lock-start call above: a fresh
+		-- 0 / Threshold bar the instant mining is legal again, not up to a second late
 	print("[MineShaftService] Mine reset complete")
 end
 
@@ -684,6 +708,17 @@ task.spawn(function()
 	while true do
 		task.wait(MineShaftConfig.ResetIntervalSeconds)
 		performReset()
+	end
+end)
+
+-- Periodic reset-progress snapshot for MineResetBar.lua — see RESET_PROGRESS_INTERVAL's comment
+-- above for why this is a broadcast to everyone rather than tied to whoever's actually mining.
+-- Also the mechanism that gives a player who joins (or was AFK at the surface) a correct bar
+-- within one tick, instead of a stale zero until the next block happens to get mined.
+task.spawn(function()
+	while true do
+		broadcastResetProgress()
+		task.wait(RESET_PROGRESS_INTERVAL)
 	end
 end)
 

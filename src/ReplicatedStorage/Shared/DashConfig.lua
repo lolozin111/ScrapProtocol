@@ -40,6 +40,14 @@ DashConfig.RefillOnRespawn = true
 DashConfig.Speed = 80
 DashConfig.Duration = 0.22
 
+-- I-FRAMES: seconds of invulnerability starting the moment a dash is granted (the user's call,
+-- 2026-09-22 — "make it when you dash that you have some iframes during the dash"). Slightly longer
+-- than Duration on purpose: a dash that ends a hair before a swing lands still reads to the player as
+-- "I dodged that", and the gap between client-side dash start and the server seeing it is real. Set
+-- to 0 to turn i-frames off entirely. Only the DASHING player is protected, and only from damage —
+-- status effects already ticking on them keep ticking.
+DashConfig.IFrameSeconds = 0.3
+
 -- Minimum seconds between two dashes, even with charges to spare, so all three can't fire on the same
 -- frame. The server's rate limit uses a slightly shorter window (ServerCooldownFactor) so ordinary
 -- network jitter between two honest dashes is never rejected.
