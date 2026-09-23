@@ -136,6 +136,15 @@ local function setCrosshairVisible(visible: boolean)
 	crosshairRoot.Visible = visible and AimCameraConfig.ShowCrosshair == true
 end
 
+-- Mouse state is ONE call, never two: locking the cursor to the centre without also hiding its icon
+-- leaves the pointer hand parked on top of the crosshair, which is what it looked like in play. The
+-- two properties are the same decision, so they are set in the same place — and restoring the icon
+-- is as important as restoring the behaviour, since a hidden cursor in a menu is unusable.
+local function setMouseAiming(aiming: boolean)
+	UserInputService.MouseBehavior = if aiming then Enum.MouseBehavior.LockCenter else Enum.MouseBehavior.Default
+	UserInputService.MouseIconEnabled = not aiming
+end
+
 ----------------------------------------------------------------------
 -- Rig — the joints and their ORIGINAL C0s, captured once per character. Every per-frame pitch write
 -- multiplies onto these originals, never onto the live C0 — see onRenderStep below for why.
@@ -296,7 +305,7 @@ local function disengage()
 
 	LocalPlayer.CameraMinZoomDistance = AimCameraConfig.DefaultMinZoom
 	LocalPlayer.CameraMaxZoomDistance = AimCameraConfig.DefaultMaxZoom
-	UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+	setMouseAiming(false)
 	setCrosshairVisible(false)
 	currentPitch = 0
 end
@@ -363,12 +372,12 @@ local function onRenderStep(dt: number)
 	-- zoom lock and AutoRotate stay put so re-opening the crosshair on panel-close is instant rather
 	-- than re-running the whole tween.
 	if Hud.isPanelOpen() then
-		UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+		setMouseAiming(false)
 		setCrosshairVisible(false)
 		return
 	end
 
-	UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
+	setMouseAiming(true)
 	setCrosshairVisible(true)
 
 	local lookVector = camera.CFrame.LookVector
@@ -421,7 +430,7 @@ local function onCharacterAdded(character: Model)
 	currentYaw = 0
 	currentPitch = 0
 	setCrosshairVisible(false)
-	UserInputService.MouseBehavior = Enum.MouseBehavior.Default -- in case a respawn happens mid-aim
+	setMouseAiming(false) -- in case a respawn happens mid-aim
 
 	local humanoid = character:WaitForChild("Humanoid", 10) :: Humanoid?
 	local rootPart = character:WaitForChild("HumanoidRootPart", 10)
