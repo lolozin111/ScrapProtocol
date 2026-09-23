@@ -141,12 +141,17 @@ end
 -- multiplies onto these originals, never onto the live C0 — see onRenderStep below for why.
 ----------------------------------------------------------------------
 
+-- `waist` is OPTIONAL because R6 has no waist joint to bend: its legs hang off the Torso, so the
+-- only joint above the hips is the Neck, and pitching anything lower swings the legs with it. On R6
+-- the head does all the looking and the body stays upright — the camera and the facing lock work
+-- exactly the same either way. (Switching the place to R15 in Game Settings > Avatar is what buys
+-- the full torso lean.)
 type Rig = {
 	humanoid: Humanoid,
 	rootPart: BasePart,
-	waist: Motor6D,
+	waist: Motor6D?,
 	neck: Motor6D,
-	originalWaistC0: CFrame,
+	originalWaistC0: CFrame?,
 	originalNeckC0: CFrame,
 }
 
@@ -160,26 +165,57 @@ local offsetTween: Tween? = nil
 -- warnedAnimationFailure: a rig that isn't R15 fails this the same way on every single respawn, and
 -- spamming Output on each one teaches nobody anything a single line didn't already say.
 local warnedBadRig = false
+-- Separate flag: an R6 rig is a SUPPORTED case (head-only pitch), not a failure, so it says its one
+-- line without burning the "this rig is broken" warning that would then never fire for a real one.
+local warnedR6Once = false
 
-local function buildRig(humanoid: Humanoid?, rootPart: Instance?, upperTorso: Instance?, head: Instance?): Rig?
+-- Finds the look joints on EITHER rig. R15 keeps Neck in the Head and Waist in the UpperTorso; R6
+-- keeps its one Neck joint in the Torso and has no waist at all. Looked up by walking the character
+-- rather than by name-guessing a part, so a rig with unusual part names still resolves as long as
+-- the joints are where Roblox puts them.
+local function findLookJoints(character: Model, humanoid: Humanoid): (Motor6D?, Motor6D?)
+	local head = character:FindFirstChild("Head")
+	local upperTorso = character:FindFirstChild("UpperTorso")
+	local torso = character:FindFirstChild("Torso")
+
+	local neck = (head and head:FindFirstChild("Neck")) or (torso and torso:FindFirstChild("Neck"))
 	local waist = upperTorso and upperTorso:FindFirstChild("Waist")
-	local neck = head and head:FindFirstChild("Neck")
 
-	if not (humanoid and rootPart and rootPart:IsA("BasePart") and waist and waist:IsA("Motor6D") and neck and neck:IsA("Motor6D")) then
+	if humanoid.RigType == Enum.HumanoidRigType.R6 then
+		waist = nil -- see the Rig type's comment: R6 has no joint between hips and shoulders
+	end
+
+	return (waist and waist:IsA("Motor6D")) and waist or nil, (neck and neck:IsA("Motor6D")) and neck or nil
+end
+
+local function buildRig(character: Model, humanoid: Humanoid?, rootPart: Instance?): Rig?
+	if not (humanoid and rootPart and rootPart:IsA("BasePart")) then
 		if not warnedBadRig then
 			warnedBadRig = true
-			warn("[AimCamera] Character is missing Humanoid/HumanoidRootPart/Waist/Neck (not an R15 rig?) — leaving the camera in ordinary free-look for this character instead of guessing.")
+			warn("[AimCamera] Character has no Humanoid/HumanoidRootPart — leaving the camera in ordinary free-look for this character instead of guessing.")
 		end
 		return nil
 	end
 
+	local waist, neck = findLookJoints(character, humanoid :: Humanoid)
+	if not neck then
+		if not warnedBadRig then
+			warnedBadRig = true
+			warn("[AimCamera] Character has no Neck Motor6D (Head.Neck on R15, Torso.Neck on R6) — the shoulder camera and facing lock still run, but nothing can pitch with your aim.")
+		end
+	end
+	if not waist and (humanoid :: Humanoid).RigType == Enum.HumanoidRigType.R6 and not warnedR6Once then
+		warnedR6Once = true
+		warn("[AimCamera] R6 rig: the head pitches with your aim but the torso stays upright — R6 has no waist joint, and bending anything lower would swing the legs too. Set the place's avatar type to R15 for the full torso lean.")
+	end
+
 	return {
-		humanoid = humanoid,
+		humanoid = humanoid :: Humanoid,
 		rootPart = rootPart :: BasePart,
-		waist = waist :: Motor6D,
+		waist = waist,
 		neck = neck :: Motor6D,
-		originalWaistC0 = (waist :: Motor6D).C0,
-		originalNeckC0 = (neck :: Motor6D).C0,
+		originalWaistC0 = waist and waist.C0 or nil,
+		originalNeckC0 = neck and neck.C0 or CFrame.new(),
 	}
 end
 
@@ -218,8 +254,12 @@ local function disengage()
 		rig.humanoid.AutoRotate = true
 		-- Snapped, not tweened — TorsoPitchFollowSeconds already smoothed the lean IN; unwinding it a
 		-- second time on the way out would just be the same pose taking twice as long to leave.
-		rig.waist.C0 = rig.originalWaistC0
-		rig.neck.C0 = rig.originalNeckC0
+		if rig.waist and rig.originalWaistC0 then
+			rig.waist.C0 = rig.originalWaistC0
+		end
+		if rig.neck then
+			rig.neck.C0 = rig.originalNeckC0
+		end
 	end
 
 	LocalPlayer.CameraMinZoomDistance = AimCameraConfig.DefaultMinZoom
@@ -325,9 +365,15 @@ local function onRenderStep(dt: number)
 	local pitchTarget = math.clamp(math.asin(math.clamp(lookVector.Y, -1, 1)), -maxPitch, maxPitch)
 	currentPitch = approachAngle(currentPitch, pitchTarget, AimCameraConfig.TorsoPitchFollowSeconds, dt)
 
-	local neckShare = AimCameraConfig.NeckPitchShare
-	rig.waist.C0 = rig.originalWaistC0 * CFrame.Angles(currentPitch * (1 - neckShare), 0, 0)
-	rig.neck.C0 = rig.originalNeckC0 * CFrame.Angles(currentPitch * neckShare, 0, 0)
+	-- With no waist (R6), the neck takes the whole pitch instead of its share — otherwise an R6
+	-- character would only ever look a third of the way up.
+	local neckShare = if rig.waist then AimCameraConfig.NeckPitchShare else 1
+	if rig.waist and rig.originalWaistC0 then
+		rig.waist.C0 = rig.originalWaistC0 * CFrame.Angles(currentPitch * (1 - neckShare), 0, 0)
+	end
+	if rig.neck then
+		rig.neck.C0 = rig.originalNeckC0 * CFrame.Angles(currentPitch * neckShare, 0, 0)
+	end
 end
 
 RunService:BindToRenderStep("AimCameraFacing", Enum.RenderPriority.Character.Value + 1, onRenderStep)
@@ -347,9 +393,16 @@ local function onCharacterAdded(character: Model)
 
 	local humanoid = character:WaitForChild("Humanoid", 10) :: Humanoid?
 	local rootPart = character:WaitForChild("HumanoidRootPart", 10)
-	local upperTorso = character:WaitForChild("UpperTorso", 5)
-	local head = character:WaitForChild("Head", 5)
-	currentRig = buildRig(humanoid, rootPart, upperTorso, head)
+	-- Head on both rigs, then whichever torso this rig has — waiting on "UpperTorso" alone stalled
+	-- five seconds and then failed outright on an R6 character, which is what "not an R15 rig?" in
+	-- Output actually was.
+	character:WaitForChild("Head", 5)
+	if humanoid and humanoid.RigType == Enum.HumanoidRigType.R6 then
+		character:WaitForChild("Torso", 5)
+	else
+		character:WaitForChild("UpperTorso", 5)
+	end
+	currentRig = buildRig(character, humanoid, rootPart)
 
 	if humanoid then
 		humanoid.Died:Connect(disengage)
