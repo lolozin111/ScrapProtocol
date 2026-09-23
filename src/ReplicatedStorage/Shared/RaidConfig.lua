@@ -537,6 +537,15 @@ RaidConfig.AutoAdvanceSeconds = 1.2 -- how long the travel transition holds befo
 	-- read this same number rather than each keeping their own copy.
 RaidConfig.AutoAdvanceBlockedTypes = { Shop = true, Heal = true }
 
+-- Which room type every first-pickable node becomes for a player holding the dev shortcuts, so a
+-- room you want to test is one raid away instead of however many the map RNG takes to hand you one.
+-- Any key of NodeTypes; set it to nil to leave the generated map alone. It was hard-coded to "Boss"
+-- when this shortcut only existed to reach the boss card pick — a config key now, because the
+-- answer to "which room am I testing today" changes more often than the code around it does.
+-- Applied at raid start only, NOT when a cleared map regenerates: the point is a fast way IN to a
+-- room type, not a run made entirely of it.
+RaidConfig.DevFirstNodeType = "Shop"
+
 -- How long a clean Extract will hold the player in the raid room waiting for them to dismiss the
 -- end-of-run summary before sending them home anyway. Purely a safety net — the Continue button is
 -- the intended exit — but without it an alt-tabbed or disconnected-looking player would sit in a

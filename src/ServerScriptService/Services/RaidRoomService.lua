@@ -1190,16 +1190,31 @@ local function rollShopOffers(state)
 	state.ShopOffers[nodeId] = offers
 end
 
-local function applyDevBossFirst(player: Player, map)
-	if not DevShortcuts.Active(player) then
+-- Retypes every node the player can pick FIRST, so a room type you want to test is one raid away
+-- rather than however many maps the RNG takes to offer one. Behind DevShortcuts.Active, not plain
+-- IsAdmin: this changes how the game PLAYS, so a Player Test Session has to stay an honest look at
+-- the real map. Which type it forces is RaidConfig.DevFirstNodeType (nil leaves the map alone).
+local function applyDevFirstNode(player: Player, map)
+	local forced = RaidConfig.DevFirstNodeType
+	if not forced or not DevShortcuts.Active(player) then
+		return map
+	end
+	if not RaidConfig.NodeTypes[forced] then
+		-- A typo here would otherwise produce rooms with no DisplayName or Description and no hint
+		-- as to why — the silent-failure shape this codebase keeps getting bitten by.
+		warn(("[RaidRoomService] RaidConfig.DevFirstNodeType = %q is not a RaidConfig.NodeTypes key — leaving the map alone."):format(tostring(forced)))
 		return map
 	end
 	local start = map.Nodes[map.StartNodeId]
 	for _, id in ipairs(start and start.Connections or {}) do
 		local node = map.Nodes[id]
 		if node then
-			node.Type = "Boss"
-			node.Tier = RaidConfig.BossTier
+			node.Type = forced
+			-- Tier only means something to the types that fight you, and Boss is always the
+			-- toughest regardless of depth. Forcing a Shop or Heal leaves the generated tier alone.
+			if forced == "Boss" then
+				node.Tier = RaidConfig.BossTier
+			end
 		end
 	end
 	return map
@@ -2112,7 +2127,7 @@ RequestStartRaid.OnServerEvent:Connect(function(player: Player, requestedMode: a
 		InstanceFolder = instanceFolder,
 		RoomFolder = nil :: Instance?,
 		RaidMode = modeKey, -- fixed for the whole run; every mode rule is read through modeOf(state)
-		Map = applyDevBossFirst(player, RaidConfig.GenerateMap(mode.Map)),
+		Map = applyDevFirstNode(player, RaidConfig.GenerateMap(mode.Map)),
 		CurrentNodeId = nil :: number?,
 		InCombat = false,
 		StartedAt = os.clock(), -- for the end-of-run summary's TIME line. os.clock, not os.time: this
