@@ -168,13 +168,15 @@ local SIGN_HEIGHT_ABOVE_SURFACE = 40 -- studs above the Depth-0 floor's top surf
 	-- derived from MineShaftConfig.SurfaceGuardHeight: that value only sizes the low guard rail
 	-- around the floor's edge and has nothing to do with how high a sign needs to float to be seen
 	-- across a 192x192 footprint, so this stays its own constant rather than reusing that one.
-local SIGN_WIDTH_STUDS = 34  -- BillboardGui.Size, unlike every other GuiObject's, is denominated in
-local SIGN_HEIGHT_STUDS = 13 -- STUDS even for its Offset component — this IS "sized in studs,
-	-- readable from 100+ studs away": a fixed world-space size that shrinks with distance like any
-	-- other object, not a fixed on-screen pixel size the way a ScreenGui's would be.
-local SIGN_MAX_VIEW_DISTANCE = 650 -- studs; generous enough to spot the sign from most of the
-	-- surface footprint and back up through a dug shaft, without rendering it for a player clear
-	-- across the map who has no reason to care about the mine's reset timer.
+local SIGN_WIDTH_STUDS = 120 -- BillboardGui.Size, unlike every other GuiObject's, is denominated in
+local SIGN_HEIGHT_STUDS = 30 -- STUDS even for its Offset component — a fixed world-space size that
+	-- shrinks with distance like any other object, not a fixed on-screen pixel size the way a
+	-- ScreenGui's would be. First pass was 34x13 and the user could not read it at all from the pit's
+	-- edge ("its too small, i cant see anything, make it a big rectangle"): against a 192-stud
+	-- footprint, a 34-stud sign is barely a sixth of the pit's width. 120 makes it read as signage
+	-- over the quarry — deliberately more than half the footprint wide.
+local SIGN_MAX_VIEW_DISTANCE = 1200 -- studs; the sign is big enough now to be worth seeing from
+	-- across the map, and 650 cut it off well before it stopped being legible.
 
 -- HudKit lives under StarterPlayerScripts — a client-only container this server-side file can't
 -- (and shouldn't) require across — so this mirrors the handful of palette values it needs, exactly
@@ -252,11 +254,14 @@ local function buildResetSign(footprintLength: number)
 	plateStroke.Color = SIGN_LINE_COLOR
 	plateStroke.Thickness = 2
 	plateStroke.Parent = plate
+	-- Scale, not offset: a BillboardGui's children measure in the same units as its Size, so a fixed
+	-- padding that looked right on the first 34x13 sign would eat a differently-sized one. As a
+	-- fraction it survives any future change to SIGN_WIDTH_STUDS/SIGN_HEIGHT_STUDS.
 	local platePadding = Instance.new("UIPadding")
-	platePadding.PaddingLeft = UDim.new(0, 10)
-	platePadding.PaddingRight = UDim.new(0, 10)
-	platePadding.PaddingTop = UDim.new(0, 8)
-	platePadding.PaddingBottom = UDim.new(0, 8)
+	platePadding.PaddingLeft = UDim.new(0.03, 0)
+	platePadding.PaddingRight = UDim.new(0.03, 0)
+	platePadding.PaddingTop = UDim.new(0.06, 0)
+	platePadding.PaddingBottom = UDim.new(0.06, 0)
 	platePadding.Parent = plate
 
 	-- BillboardGui text has no meaningful pixel/stud relationship, so every label here is
