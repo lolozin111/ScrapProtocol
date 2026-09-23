@@ -827,6 +827,17 @@ local function insuranceKeepOrePct(state, isForfeit: boolean): number
 end
 
 local function settleRunLoot(state, isForfeit: boolean)
+	-- Runs exactly once per raid, whatever happens afterwards. This became load-bearing when a clean
+	-- Extract started HOLDING the player in the room to show them their run (see completeRaid): the
+	-- loot is banked before that screen appears, so anything that can still end the raid during the
+	-- hold — a disconnect reaching DataService.PlayerSaving, an Abandon fired from a stale client —
+	-- would otherwise pay the whole run out a second time. Guarding here rather than at each of
+	-- those call sites means a future fourth path cannot reintroduce it.
+	if state.LootSettled then
+		return
+	end
+	state.LootSettled = true
+
 	local profile = DataService.Get(state.Player)
 	if not profile then
 		return
@@ -1306,18 +1317,79 @@ local function cleanupRaid(state, sendReturnHome: boolean?)
 	end
 end
 
+----------------------------------------------------------------------
+-- End-of-run summary — the stats screen every ending routes through
+--
+-- "in sequence the run number pop up, like total scrap collected, total ore, time on the run, how
+-- many nodes defeated and all... and then on the end it adds the multiplier". The reveal ORDER is
+-- the client's business; this just hands over every number it could want, already totalled, so the
+-- screen never has to work anything out for itself and can never disagree with what was banked.
+--
+-- Built BEFORE cleanupRaid on every path, because cleanupRaid calls RunBuffService.End, which drops
+-- the record the kill/damage tallies live on.
+----------------------------------------------------------------------
+
+local function buildRunSummary(state, outcome: string, payout)
+	local kills, damageDealt, bestRoomDamage = RunBuffService.RunTallies(state.Player)
+
+	-- Ore is summed across the whole RunLoot pile rather than reported per key: the screen wants one
+	-- "ORE RECOVERED" line, and the inventory already itemises what actually landed.
+	local oreTotal = 0
+	for _, entry in ipairs(state.RunLoot) do
+		if entry.Kind == "Ore" then
+			oreTotal += entry.Amount
+		end
+	end
+
+	return {
+		Outcome = outcome, -- "Extracted" | "Defeated" | "Abandoned"
+		Seconds = math.max(0, os.clock() - (state.StartedAt or os.clock())),
+		ScrapCollected = math.floor(state.RunCurrencyCollected.Scrap or 0),
+		OreCollected = oreTotal,
+		NodesVisited = state.TotalNodesVisited,
+		MapsCleared = state.MapsCleared,
+		BossesDefeated = state.BossesDefeated,
+		CardsTaken = #state.CollectedCards,
+		Kills = kills,
+		DamageDealt = math.floor(damageDealt + 0.5),
+		BestRoomDamage = math.floor(bestRoomDamage + 0.5),
+		-- The held pile as it stood, then what it actually became. On a loss the multiplier is moot
+		-- and Contraband/Cores are what was THROWN AWAY — the screen says which from Outcome.
+		HeldContraband = state.PendingRewards.Contraband,
+		HeldCores = state.PendingRewards.Cores,
+		Multiplier = payout and payout.Multiplier or nil,
+		Contraband = payout and payout.Contraband or 0,
+		Cores = payout and payout.Cores or 0,
+	}
+end
+
+-- The two ways a summary reaches the player, and they are deliberately different.
+--
+-- A DEFEAT or an ABANDON tears the raid down first and shows the numbers over the top of the base:
+-- the player is either dead or has chosen to walk, and holding a corpse in a finished room while
+-- Roblox's own respawn timer runs underneath is a fight over the character nobody wins.
+--
+-- A clean EXTRACT holds them in the room until they press Continue, because that is the ask —
+-- "after the player check their stats they can click on continue and they will be extracted back to
+-- base". The wait is bounded by RaidConfig.SummaryTimeoutSeconds so an alt-tabbed player can't sit
+-- in a finished raid forever holding an instance slot and their activity.
+--
+-- Both build the summary BEFORE cleanupRaid, because cleanupRaid calls RunBuffService.End and that
+-- drops the record the kill and damage tallies live on.
+local function endWithSummary(state, outcome: string, payout, reason: string?)
+	local summary = buildRunSummary(state, outcome, payout)
+	summary.Reason = reason
+	local player = state.Player
+	cleanupRaid(state, true)
+	RaidRoomUpdate:FireClient(player, { Status = "RunSummary", Summary = summary })
+end
+
 local function failRaid(state, reason: string)
 	settleRunLoot(state, true) -- forfeit: dying counts the same as abandoning for RunLocked drops
 	-- The held pile dies with the run. Reported rather than silently dropped: losing it IS the
-	-- consequence the whole reward design is built around, so the player has to see what it cost.
-	local lost = state.PendingRewards
-	RaidRoomUpdate:FireClient(state.Player, {
-		Status = "Defeated",
-		Reason = reason,
-		LostContraband = lost.Contraband,
-		LostCores = lost.Cores,
-	})
-	cleanupRaid(state, true)
+	-- consequence the whole reward design is built around, so the player has to see what it cost —
+	-- the summary's HeldContraband/HeldCores lines are that report now.
+	endWithSummary(state, "Defeated", nil, reason)
 end
 
 local function completeRaid(state)
@@ -1341,14 +1413,27 @@ local function completeRaid(state)
 	-- never happened (see CLAUDE.md on PushWallet).
 	DataService.PushWallet(state.Player)
 
+	-- Held in the room, NOT torn down: the player reads their run, then presses Continue, and
+	-- RaidRoomAction's "CloseSummary" does the teardown. Everything above has already landed on the
+	-- profile, so nothing about the payout depends on them ever pressing it — the worst case is the
+	-- timeout below sending them home with the money already in their pocket.
+	state.AwaitingSummary = true
 	RaidRoomUpdate:FireClient(state.Player, {
-		Status = "Extracted",
-		Contraband = contraband,
-		Cores = cores,
-		Multiplier = multiplier,
-		BossesDefeated = state.BossesDefeated,
+		Status = "RunSummary",
+		Summary = buildRunSummary(state, "Extracted", {
+			Multiplier = multiplier,
+			Contraband = contraband,
+			Cores = cores,
+		}),
+		HoldsForContinue = true,
 	})
-	cleanupRaid(state, true)
+
+	local player = state.Player
+	task.delay(RaidConfig.SummaryTimeoutSeconds, function()
+		if activeRaids[player.UserId] == state and state.AwaitingSummary then
+			cleanupRaid(state, true)
+		end
+	end)
 end
 
 -- Picks `count` random type keys from WaveConfig.EnemyTypes — same pool base defense draws from,
@@ -2030,6 +2115,8 @@ RequestStartRaid.OnServerEvent:Connect(function(player: Player, requestedMode: a
 		Map = applyDevBossFirst(player, RaidConfig.GenerateMap(mode.Map)),
 		CurrentNodeId = nil :: number?,
 		InCombat = false,
+		StartedAt = os.clock(), -- for the end-of-run summary's TIME line. os.clock, not os.time: this
+			-- is an elapsed duration on one server, never a date, and never persisted.
 		MapsCleared = 0, -- how many map chapters this raid has finished so far — see onMapCleared
 		ExtractUnlocked = false, -- true once the first map's been cleared — see RequestExtractRaid
 		TotalNodesVisited = 0, -- persists across map regenerations — drives Ambush/loot scaling for
@@ -2111,6 +2198,18 @@ RaidRoomAction.OnServerEvent:Connect(function(player: Player, actionKey: string,
 	end
 	local node = state.Map.Nodes[state.CurrentNodeId]
 	if not node then
+		return
+	end
+
+	-- A finished Extract is held in the room while the player reads their run (see completeRaid).
+	-- Dismissing it is the only thing they may do from here: the run is over, the payout has already
+	-- landed, and every other branch below would be acting on a raid that no longer exists in any
+	-- meaningful sense — buying from a shop whose node they have notionally left, taking a card, or
+	-- extracting a second time.
+	if state.AwaitingSummary then
+		if actionKey == "CloseSummary" then
+			cleanupRaid(state, true)
+		end
 		return
 	end
 
@@ -2232,18 +2331,14 @@ end)
 
 AbandonRaid.OnServerEvent:Connect(function(player: Player)
 	local state = activeRaids[player.UserId]
-	if not state or state.InCombat then
+	if not state or state.InCombat or state.AwaitingSummary then
 		return
 	end
 	settleRunLoot(state, true) -- forfeit: RunLocked (non-Permanent) drops are lost on Abandon
 	-- Same as a Defeat for the held pile: walking out early loses every map-clear and Boss payout,
-	-- which is exactly what Extract exists to protect (see RaidConfig.ExtractionRewards).
-	RaidRoomUpdate:FireClient(player, {
-		Status = "Abandoned",
-		LostContraband = state.PendingRewards.Contraband,
-		LostCores = state.PendingRewards.Cores,
-	})
-	cleanupRaid(state, true)
+	-- which is exactly what Extract exists to protect (see RaidConfig.ExtractionRewards). The
+	-- summary's HeldContraband/HeldCores lines are what report that now.
+	endWithSummary(state, "Abandoned", nil)
 end)
 
 ----------------------------------------------------------------------
@@ -2254,7 +2349,7 @@ end)
 
 RequestExtractRaid.OnServerEvent:Connect(function(player: Player)
 	local state = activeRaids[player.UserId]
-	if not state or state.InCombat or not state.ExtractUnlocked then
+	if not state or state.InCombat or state.AwaitingSummary or not state.ExtractUnlocked then
 		return
 	end
 	completeRaid(state)

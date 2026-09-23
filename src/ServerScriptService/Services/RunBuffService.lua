@@ -444,6 +444,15 @@ function RunBuffService.Begin(player: Player)
 		RoomHealed = 0,
 		MapHealed = 0,
 		ShotCount = 0, -- persists the whole raid, deliberately not reset per room — see header comment
+		-- Run tallies for the end-of-run summary screen. They live on THIS record rather than on the
+		-- raid state because everything that produces them already reaches RunBuffService: kills go
+		-- through OnKill, which the damage funnel already calls on exactly the hits that count, and
+		-- NewRoom below is already the per-room boundary BestRoomDamage needs. Putting them on the
+		-- raid state instead would have meant a second hook alongside each of those.
+		Kills = 0,
+		DamageDealt = 0,
+		RoomDamage = 0, -- current room only; folded into BestRoomDamage and reset by NewRoom
+		BestRoomDamage = 0,
 		FightStartClock = nil :: number?,
 		FrenzyUntil = 0,
 		VestShieldUsedThisRoom = false,
@@ -488,9 +497,40 @@ function RunBuffService.NewRoom(player: Player)
 	end
 	record.RoomHealed = 0
 	record.VestShieldUsedThisRoom = false
+	-- Close out the room that just ended before zeroing: this is the only boundary that knows where
+	-- one room's damage stops, so "best room" is banked here rather than recomputed later.
+	if record.RoomDamage > record.BestRoomDamage then
+		record.BestRoomDamage = record.RoomDamage
+	end
+	record.RoomDamage = 0
 	for itemKey in pairs(record.GearVisuals) do
 		destroyGearVisual(record, itemKey)
 	end
+end
+
+-- Run tallies for the end-of-run summary. Called from the one place every credited hit already
+-- funnels through (CombatEncounterService.resolveAndApplyDamage), so nothing that can damage an
+-- enemy on the player's behalf — guns, robots, gear, statuses, Ultimates, turrets — is missed.
+-- No-ops outside a raid, same as every other entry point here.
+function RunBuffService.RecordDamage(player: Player, amount: number)
+	local record = records[player.UserId]
+	if not record or type(amount) ~= "number" or amount ~= amount or amount <= 0 then
+		return
+	end
+	record.DamageDealt += amount
+	record.RoomDamage += amount
+end
+
+-- What the summary screen reports. Returns zeros rather than nil outside a raid so the caller never
+-- has to branch. BestRoomDamage is max'd against the CURRENT room here because the run usually ends
+-- inside a room rather than on a NewRoom boundary — without this, the room you extracted from (very
+-- often the biggest one) would never be considered.
+function RunBuffService.RunTallies(player: Player): (number, number, number)
+	local record = records[player.UserId]
+	if not record then
+		return 0, 0, 0
+	end
+	return record.Kills, record.DamageDealt, math.max(record.BestRoomDamage, record.RoomDamage)
 end
 
 function RunBuffService.NewMap(player: Player)
@@ -802,6 +842,10 @@ function RunBuffService.OnKill(player: Player, enemyRecord)
 	if not record then
 		return
 	end
+	-- Counted here rather than through a hook of its own: the damage funnel already calls this on
+	-- exactly the hits that take an enemy from alive to dead and are credited to a player, which is
+	-- the definition the summary screen wants anyway.
+	record.Kills += 1
 	local stats = record.Stats
 	if stats.KillHealPct and stats.KillHealPct > 0 then
 		RunBuffService.Heal(player, stats.KillHealPct)

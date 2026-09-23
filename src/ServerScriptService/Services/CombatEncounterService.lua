@@ -858,6 +858,14 @@ local function resolveAndApplyDamage(enemyRecord, baseDamage: number, origin: Ve
 	-- it's neutral (no-op) for a feedbackPlayer not currently in a raid — RunBuffService.OnKill
 	-- itself no-ops with no active run record, so base-defense/turret kills routing through here
 	-- cost nothing.
+	-- Run tallies for the end-of-run summary ride the same invariant as the kill credit below: every
+	-- damage source that can be credited to a player passes through here with feedbackPlayer set,
+	-- so one call covers guns, robots, gear, statuses, Ultimates and turrets alike. Dummies are
+	-- excluded — training-range practice is not part of a raid's numbers.
+	if feedbackPlayer and not enemyRecord.IsDummy then
+		safeRunBuff("RecordDamage", RunBuffService.RecordDamage, feedbackPlayer, finalDamage)
+	end
+
 	if feedbackPlayer and wasAlive and enemyRecord.Humanoid.Health <= 0 then
 		safeRunBuff("OnKill", RunBuffService.OnKill, feedbackPlayer, enemyRecord)
 	end

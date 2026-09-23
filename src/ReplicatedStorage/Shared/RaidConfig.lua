@@ -537,6 +537,13 @@ RaidConfig.AutoAdvanceSeconds = 1.2 -- how long the travel transition holds befo
 	-- read this same number rather than each keeping their own copy.
 RaidConfig.AutoAdvanceBlockedTypes = { Shop = true, Heal = true }
 
+-- How long a clean Extract will hold the player in the raid room waiting for them to dismiss the
+-- end-of-run summary before sending them home anyway. Purely a safety net — the Continue button is
+-- the intended exit — but without it an alt-tabbed or disconnected-looking player would sit in a
+-- finished raid forever, still holding their activity and an instance slot. Generous on purpose:
+-- reading your own run's numbers is the reward, and nobody should be hurried through it.
+RaidConfig.SummaryTimeoutSeconds = 180
+
 function RaidConfig.GetRunProgressionCountBonus(totalNodesVisited: number): number
 	return math.min(
 		RaidConfig.RunProgressionMaxExtraEnemies,

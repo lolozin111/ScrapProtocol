@@ -66,6 +66,9 @@ local RaidShopPanel = require(script.Parent.RaidShopPanel) -- the Salvage Run sh
 	-- "ShopOffers"/"ShopResult"/"RunBuffs" handling below.
 local RunCard = require(script.Parent.RunCard) -- the shared 240x392 card both the shop and the
 	-- post-boss reward pick (below) render themselves with.
+local RunSummaryPanel = require(script.Parent.RunSummaryPanel) -- the end-of-run stats screen; every
+	-- way a raid can end now routes through its one "RunSummary" status, replacing the three
+	-- near-identical Extracted/Defeated/Abandoned toasts that used to sit below.
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 local RequestStartRaid = Remotes.RequestStartRaid
@@ -1752,7 +1755,16 @@ RaidRoomUpdate.OnClientEvent:Connect(function(payload)
 		showToast((payload.JustUnlocked and "Map cleared! Extract is now available whenever you are ready."
 			or "Map cleared — moving to a new area.") .. earnedText, payload.JustUnlocked and 5 or 4)
 
-	elseif status == "Defeated" then
+	elseif status == "RunSummary" then
+		-- ONE ending for all three outcomes. This used to be three branches -- Extracted, Defeated,
+		-- Abandoned -- whose first nine lines were identical teardown and whose last few built a
+		-- slightly different toast. The toast IS the stats screen now, and which of the three it
+		-- reads as comes from Summary.Outcome, so the duplication had nothing left to justify it.
+		--
+		-- The teardown still runs immediately on every outcome, including a clean Extract where the
+		-- player is physically still standing in the raid room: the RUN is over the moment this
+		-- arrives, so the raid HUD should stop claiming otherwise. Only the character's trip home
+		-- waits on Continue, and RunSummaryPanel fires that itself.
 		inRaid = false
 		inCombat = false
 		endTravelWipe() -- a run can end mid-wipe (abandon, extract, or death during the travel beat)
@@ -1763,51 +1775,7 @@ RaidRoomUpdate.OnClientEvent:Connect(function(payload)
 		RaidShopPanel.Close()
 		closeBossPick()
 		beaconButton.Visible = false
-		local lost = (payload.LostContraband or 0) + (payload.LostCores or 0) > 0
-			and (" Lost " .. (payload.LostContraband or 0) .. " Contraband and " .. (payload.LostCores or 0) .. " Cores.")
-			or ""
-		showToast("Raid failed — " .. (payload.Reason or "you went down.") .. lost .. " Back to base.", 5)
-
-	elseif status == "Extracted" then
-		inRaid = false
-		inCombat = false
-		endTravelWipe() -- a run can end mid-wipe (abandon, extract, or death during the travel beat)
-		extractUnlocked = false
-		roomFrame.Visible = false
-		hideSectorMap()
-		updateRaidButtons()
-		RaidShopPanel.Close()
-		closeBossPick()
-		beaconButton.Visible = false
-		local banked = {}
-		if (payload.Contraband or 0) > 0 then
-			table.insert(banked, payload.Contraband .. " Contraband")
-		end
-		if (payload.Cores or 0) > 0 then
-			table.insert(banked, payload.Cores .. " Cores")
-		end
-		local bonus = (payload.Multiplier or 1) > 1
-			and ((" (x%.2f for %d bosses)"):format(payload.Multiplier, payload.BossesDefeated or 0))
-			or ""
-		showToast(#banked > 0
-			and ("Extracted with " .. table.concat(banked, " and ") .. bonus .. ".")
-			or "Extracted! Made it out clean.", 5)
-
-	elseif status == "Abandoned" then
-		inRaid = false
-		inCombat = false
-		endTravelWipe() -- a run can end mid-wipe (abandon, extract, or death during the travel beat)
-		extractUnlocked = false
-		roomFrame.Visible = false
-		hideSectorMap()
-		updateRaidButtons()
-		RaidShopPanel.Close()
-		closeBossPick()
-		beaconButton.Visible = false
-		local walkedAway = (payload.LostContraband or 0) + (payload.LostCores or 0) > 0
-			and ((" Left behind %d Contraband and %d Cores."):format(payload.LostContraband or 0, payload.LostCores or 0))
-			or ""
-		showToast("Raid abandoned." .. walkedAway, 4)
+		RunSummaryPanel.Show(payload.Summary)
 
 	elseif status == "NoEnergy" then
 		showToast("Not enough Energy to start a raid.", 3)
