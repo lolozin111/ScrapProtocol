@@ -797,6 +797,14 @@ end
 -- Damage application (shared by player fire and robot ticks)
 ----------------------------------------------------------------------
 
+-- Damage-number "kind" priority, used only when merging two hits on the same enemy from the same
+-- shot into one floating number (see `feedbackBatch` below). Crit outranks Headshot because a
+-- crit is the rarer, bigger roll and should win the label when both land; everything else ranks
+-- below Headshot because AimBot's bonus hit is itself tagged "Headshot" and is SUPPOSED to promote
+-- a plain hit into a headshot on merge — 31 (body) + 15 (AimBot) IS the 1.5x headshot the Ultimate
+-- is named for, so the merged number should read that way rather than staying "Normal".
+local KIND_PRIORITY = { Crit = 5, Headshot = 4, Explosion = 3, Ultimate = 2, Normal = 1 }
+
 -- One place that actually runs DamagePipeline and applies the result to an enemy's Humanoid —
 -- used both by RequestFireWeapon (player-sourced) and RobotBehaviors' context.DamageEnemy
 -- (robot-sourced), so the two never resolve damage two different ways.
@@ -804,7 +812,12 @@ end
 -- Optional and appended rather than woven in, so a caller that does not care is unchanged — but
 -- every caller in this file passes them, because a damage source the player cannot see is a
 -- damage source they cannot tell is broken.
-local function resolveAndApplyDamage(enemyRecord, baseDamage: number, origin: Vector3, hitPosition: Vector3, rangeProfile, penetration: number?, feedbackPlayer: Player?, feedbackKind: string?)
+-- `feedbackBatch` is a THIRD optional, appended last for the same reason: one shot (AimBot's bonus
+-- hit chief among them) can call this function twice against the SAME enemy, and without batching
+-- that reads as two separate, smaller numbers instead of one hit. Callers that pass nothing behave
+-- exactly as before — see the batch's own comment below for what it does and why it is keyed per
+-- enemy record rather than per shot.
+local function resolveAndApplyDamage(enemyRecord, baseDamage: number, origin: Vector3, hitPosition: Vector3, rangeProfile, penetration: number?, feedbackPlayer: Player?, feedbackKind: string?, feedbackBatch)
 	-- Captured before TakeDamage — see the kill-credit block below, which needs to know whether
 	-- THIS hit is what took the enemy from alive to dead, not just that it's dead now.
 	local wasAlive = enemyRecord.Humanoid.Health > 0
@@ -841,11 +854,39 @@ local function resolveAndApplyDamage(enemyRecord, baseDamage: number, origin: Ve
 	if feedbackPlayer and enemyRecord.Model and enemyRecord.Model.PrimaryPart then
 		-- Fired at the responsible player only. Everyone's numbers on everyone's screen would be
 		-- noise, and this is a personal readout rather than a shared one.
-		DamageNumber:FireClient(
-			feedbackPlayer,
-			enemyRecord.Model.PrimaryPart.Position + Vector3.new(0, 3, 0),
-			finalDamage,
-			feedbackKind or "Normal")
+		local position = enemyRecord.Model.PrimaryPart.Position + Vector3.new(0, 3, 0)
+		local kind = feedbackKind or "Normal"
+
+		-- Batched path: accumulate onto this enemy's running total instead of firing right away.
+		-- Keyed by the enemy RECORD (not the shot) so that Ricochet/Detonator/ExplosiveBow, which
+		-- deal damage to OTHER enemies from the same shot, still get their own separate numbers —
+		-- per-record keying gives that for free without the caller having to think about it.
+		-- `not feedbackBatch.Closed` is the reopen guard: see flushFeedbackBatch for why a batch can
+		-- still be written to after ResolvePlayerHit has already returned (a delayed effect landing
+		-- late), and why that case must NOT accumulate here.
+		if feedbackBatch and not feedbackBatch.Closed then
+			local entry = feedbackBatch.ByRecord[enemyRecord]
+			if entry then
+				entry.Total += finalDamage
+				-- Last write wins, captured NOW rather than re-read at flush time — the enemy may be
+				-- dead and its Model cleaned up by the time the batch flushes, which would lose the
+				-- number entirely instead of just using a slightly stale position.
+				entry.Position = position
+				-- Absent kinds keep whatever the batch already has (usually the main hit's kind);
+				-- only a HIGHER-priority incoming kind promotes the label. See KIND_PRIORITY above.
+				if KIND_PRIORITY[kind] and (not KIND_PRIORITY[entry.Kind] or KIND_PRIORITY[kind] > KIND_PRIORITY[entry.Kind]) then
+					entry.Kind = kind
+				end
+			else
+				entry = { Total = finalDamage, Position = position, Kind = kind }
+				feedbackBatch.ByRecord[enemyRecord] = entry
+				-- Insertion-ordered so flush fires the main hit's number first, then whatever merged
+				-- into it — deterministic regardless of table iteration order.
+				table.insert(feedbackBatch.Order, entry)
+			end
+		else
+			DamageNumber:FireClient(feedbackPlayer, position, finalDamage, kind)
+		end
 	end
 
 	-- Kill credit for the Salvage Run shop rework's on-kill hooks (Nano Repair's kill-heal, Rapid
@@ -871,6 +912,27 @@ local function resolveAndApplyDamage(enemyRecord, baseDamage: number, origin: Ve
 	end
 
 	return finalDamage
+end
+
+-- Fires the merged damage numbers a batch accumulated, one FireClient per distinct enemy, in the
+-- order each was first hit (so the main target's number lands before anything a behaviour/Ultimate
+-- bounced onto afterward).
+--
+-- `batch.Closed = true` is set FIRST, before any FireClient call — not after. A behaviour or
+-- Ultimate can defer its own DealDamage with task.delay/task.spawn (Hellfire's missiles fired from
+-- an OnExpire callback, for instance), and that closure can still be holding a reference to this
+-- batch after ResolvePlayerHit has already returned and flushed it. Closing the batch up front
+-- means that late DealDamage call sees Closed == true in resolveAndApplyDamage's own check and
+-- falls through to firing its own number immediately, instead of silently adding to a batch that
+-- nobody is ever going to flush again — a dropped number, not a merged one.
+local function flushFeedbackBatch(batch, feedbackPlayer: Player?)
+	batch.Closed = true
+	if not feedbackPlayer then
+		return
+	end
+	for _, entry in ipairs(batch.Order) do
+		DamageNumber:FireClient(feedbackPlayer, entry.Position, entry.Total, entry.Kind)
+	end
 end
 
 -- Public wrapper so systems outside this file (TrainingDummyService's status ticks) can deal
@@ -1869,9 +1931,17 @@ function CombatEncounterService.ResolvePlayerHit(player: Player, hitInstance: In
 		feedbackKind = "Crit"
 	end
 
+	-- One shot, one number: a plain hit and any bonus damage the SAME shot lands on this SAME enemy
+	-- (AimBot's bonus hit chief among them) accumulate into this batch instead of each firing its
+	-- own DamageNumber, which used to read as "my crit did less damage" when the bonus number
+	-- landed smaller than the main one. A fresh LOCAL, never module- or player-scoped: a behaviour
+	-- or Ultimate hook below can yield (task.wait, a delayed detonation), and two players' shots
+	-- interleaving into a SHARED batch would merge numbers that were never the same shot.
+	local feedbackBatch = { ByRecord = {}, Order = {} }
+
 	local dealt = resolveAndApplyDamage(
 		enemyRecord, spec.Damage * (isHeadshot and headshotMultiplier or 1), origin, hitPosition,
-		spec.RangeProfile, spec.Penetration, player, feedbackKind)
+		spec.RangeProfile, spec.Penetration, player, feedbackKind, feedbackBatch)
 
 	-- Contact status (burn, frostbite, poison...). Applied AFTER damage so a status that kills has
 	-- already had the bullet's own damage counted against the same target.
@@ -1881,7 +1951,7 @@ function CombatEncounterService.ResolvePlayerHit(player: Player, hitInstance: In
 	-- fired first: an ExplosiveBow carrying Ricochet should do both, and the arrow it just planted
 	-- should exist before the ricochet starts bouncing off the same body.
 	if spec.Behavior then
-		local ctx = behaviorContext(player, spec.WeaponKey, spec, spec.ShotNumber or 0)
+		local ctx = behaviorContext(player, spec.WeaponKey, spec, spec.ShotNumber or 0, feedbackBatch)
 		ctx.Target = enemyRecord
 		ctx.Damage = dealt
 		ctx.Origin = spec.Origin or origin
@@ -1897,6 +1967,11 @@ function CombatEncounterService.ResolvePlayerHit(player: Player, hitInstance: In
 
 	local ultimate = spec.UltimateKey and UltimateConfig.Mods[spec.UltimateKey]
 	if not ultimate then
+		-- No Ultimate on this weapon: this IS the shot's last chance to flush. Every other exit
+		-- from this function passes through the final return below, but this early one does not —
+		-- missing it would silently drop the damage number for every non-Ultimate shot in the game,
+		-- so it gets its own explicit flush rather than relying on a shared tail.
+		flushFeedbackBatch(feedbackBatch, player)
 		return true
 	end
 
@@ -1971,10 +2046,13 @@ function CombatEncounterService.ResolvePlayerHit(player: Player, hitInstance: In
 		end,
 
 		-- Tagged "Ultimate" so its numbers render in the Mythical colour — that is what makes a
-		-- Ricochet bounce visibly distinct from the bullet that caused it.
+		-- Ricochet bounce visibly distinct from the bullet that caused it. Routed through the same
+		-- feedbackBatch as the main hit: if a Ricochet bounces back onto the SAME enemy it started
+		-- on, that merges into one number too; a bounce onto a DIFFERENT enemy still gets its own
+		-- entry, because the batch is keyed by enemy record, not by shot.
 		DealDamage = function(record, amount: number, kind: string?)
 			if record and amount and amount > 0 and isEnemyAlive(record) then
-				resolveAndApplyDamage(record, amount, origin, record.Model.PrimaryPart.Position, nil, 0, player, kind or "Ultimate")
+				resolveAndApplyDamage(record, amount, origin, record.Model.PrimaryPart.Position, nil, 0, player, kind or "Ultimate", feedbackBatch)
 			end
 		end,
 	}
@@ -1984,6 +2062,9 @@ function CombatEncounterService.ResolvePlayerHit(player: Player, hitInstance: In
 		UltimateEffects.Fire("OnKill", ultimate.Effect, ctx)
 	end
 
+	-- Second and last exit path — see the early return above for the first. Both must flush; this
+	-- one covers every shot that DID have an Ultimate equipped.
+	flushFeedbackBatch(feedbackBatch, player)
 	return true
 end
 
@@ -2103,7 +2184,12 @@ end
 -- back through the same pipeline an ordinary bullet uses.
 ----------------------------------------------------------------------
 
-behaviorContext = function(player: Player, weaponKey: string, spec, shotNumber: number)
+-- `feedbackBatch` is optional and only ever passed by ResolvePlayerHit's own call (spec.Behavior,
+-- above) so a weapon's OnHit behaviour merges its damage into the same shot's number. The other
+-- call site (RequestFireWeapon's OnFire hook, below) passes nothing — an OnFire behaviour replaces
+-- the ordinary bullet entirely, so there is no "main hit" for it to merge into, and it must keep
+-- firing its own number immediately exactly as before.
+behaviorContext = function(player: Player, weaponKey: string, spec, shotNumber: number, feedbackBatch)
 	local state = stateFor(player, weaponKey)
 
 	return {
@@ -2126,7 +2212,7 @@ behaviorContext = function(player: Player, weaponKey: string, spec, shotNumber: 
 		DealDamage = function(record, amount: number, kind: string?)
 			if record and amount and amount > 0 and isEnemyAlive(record) then
 				local at = record.Model.PrimaryPart.Position
-				resolveAndApplyDamage(record, amount, at, at, nil, 0, player, kind or "Explosion")
+				resolveAndApplyDamage(record, amount, at, at, nil, 0, player, kind or "Explosion", feedbackBatch)
 			end
 		end,
 
