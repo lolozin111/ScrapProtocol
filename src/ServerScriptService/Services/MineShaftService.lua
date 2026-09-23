@@ -680,7 +680,7 @@ Remotes.MineShaftHit.OnServerEvent:Connect(function(player: Player, block: Insta
 	-- longer ladder, a bad value) would otherwise error inside the remote handler.
 	local swingToolData = OreConfig.ToolTiers[swingTier] or OreConfig.ToolTiers[1]
 	if not RateLimiter.Check(player, "MineShaftHit", ToolModConfig.SwingTime(swingProfile, swingToolData.SwingTime)) then
-		Remotes.MineFailed:FireClient(player, "Swinging too fast — wait for your tool to reset")
+		Remotes.MineFailed:FireClient(player, "Swinging too fast — wait for your tool to reset", "Cooldown")
 		return
 	end
 

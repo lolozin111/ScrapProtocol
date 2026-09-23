@@ -31,6 +31,8 @@ MineFailed.OnClientEvent:Connect(function(reason: string)
 	warn("[Mining]", reason)
 end)
 
+local MiningCooldownBar = require(script.Parent.MiningCooldownBar)
+
 local function applyDepletedState(node: Instance, prompt: ProximityPrompt)
 	prompt.Enabled = not node:GetAttribute("Depleted")
 end
@@ -63,6 +65,7 @@ local function setupNode(node: Instance)
 			return
 		end
 		MineNode:FireServer(node)
+		MiningCooldownBar.Start() -- client-predicted; the server still enforces the real swing limit
 	end)
 end
 

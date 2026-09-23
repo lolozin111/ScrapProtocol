@@ -216,7 +216,7 @@ MineNode.OnServerEvent:Connect(function(player: Player, node: Instance)
 	-- inline so this and MineShaftService cannot drift apart — the same drift the two ore gates
 	-- suffered before OreGate existed.
 	if not RateLimiter.Check(player, "MineNode", ToolModConfig.SwingTime(profile, toolData.SwingTime)) then
-		Remotes.MineFailed:FireClient(player, "Swinging too fast — wait for your tool to reset")
+		Remotes.MineFailed:FireClient(player, "Swinging too fast — wait for your tool to reset", "Cooldown")
 		return
 	end
 

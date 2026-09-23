@@ -37,6 +37,7 @@ local MineShaftHit = ReplicatedStorage.Remotes.MineShaftHit
 local MineFailed = ReplicatedStorage.Remotes.MineFailed -- shared with MiningService's failures, same UX
 local OreConfig = require(ReplicatedStorage.Shared.OreConfig)
 local Hud = require(script.Parent.HudKit)
+local MiningCooldownBar = require(script.Parent.MiningCooldownBar)
 -- MineResetBar.lua (a top-centre HUD progress bar for the mine's block-count reset) used to be
 -- required here for its self-boot side effect. Deleted: it crowded the player's HUD, and was
 -- replaced with a world-space BillboardGui sign floating above the mine, built and updated entirely
@@ -159,6 +160,7 @@ local function setupBlock(block: Instance)
 		end
 		if player == LocalPlayer then
 			MineShaftHit:FireServer(block)
+			MiningCooldownBar.Start() -- client-predicted; the server still enforces the real swing limit
 		end
 	end)
 end

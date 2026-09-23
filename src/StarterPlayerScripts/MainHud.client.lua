@@ -3089,7 +3089,15 @@ end)
 -- This matters most for the mine shaft: blocks are click-based with no client-side pacing, so
 -- server-side swing pacing rejecting a too-fast click would otherwise look like the block simply
 -- ignoring you.
-Remotes.MineFailed.OnClientEvent:Connect(function(reason: string)
+Remotes.MineFailed.OnClientEvent:Connect(function(reason: string, kind: string?)
+	-- A swing rejected for the tool's own cooldown is not a mistake to explain, it's the tool doing
+	-- what it always does — MiningCooldownBar already draws that wait at the top of the screen, so
+	-- toasting it too was just an ugly second copy of the same fact (the user's call, 2026-09-22).
+	-- Every other reason (wrong tier, too far, bedrock, lava) still toasts: those ARE mistakes, and
+	-- silent rejection is this codebase's defining hazard.
+	if kind == "Cooldown" then
+		return
+	end
 	Hud.showToast(reason, 2.5) -- short: these fire often and shouldn't linger over the next swing
 end)
 
