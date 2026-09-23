@@ -213,7 +213,6 @@ end
 -- (itself task.defer'd) has necessarily run.
 local signReadout: TextLabel? = nil
 local signFill: Frame? = nil
-local signTitle: TextLabel? = nil
 
 -- Builds the reset-progress sign once: an invisible, non-collidable/queryable/touchable anchor Part
 -- centred over the Depth-0 footprint (local X = 0, same left-right centring cellCFrame uses; local
@@ -264,7 +263,7 @@ local function buildResetSign(footprintLength: number)
 	local readout = Instance.new("TextLabel")
 	readout.Name = "Readout"
 	readout.BackgroundTransparency = 1
-	readout.Size = UDim2.new(1, 0, 0.46, 0)
+	readout.Size = UDim2.new(1, 0, 0.52, 0)
 	readout.Font = Enum.Font.GothamBlack
 	readout.Text = ""
 	readout.TextColor3 = SIGN_TEXT_COLOR
@@ -278,8 +277,8 @@ local function buildResetSign(footprintLength: number)
 	track.Name = "Track"
 	track.BackgroundColor3 = SIGN_TRACK_COLOR
 	track.BorderSizePixel = 0
-	track.Position = UDim2.new(0, 0, 0.5, 0)
-	track.Size = UDim2.new(1, 0, 0.34, 0)
+	track.Position = UDim2.new(0, 0, 0.58, 0)
+	track.Size = UDim2.new(1, 0, 0.4, 0)
 	track.Parent = plate
 	Instance.new("UICorner", track).CornerRadius = UDim.new(1, 0) -- fully round ends: the sketch's pill
 	local trackStroke = Instance.new("UIStroke")
@@ -301,20 +300,10 @@ local function buildResetSign(footprintLength: number)
 	fillGradient.Color = ColorSequence.new(SIGN_FILL_COLOR, SIGN_FILL_HOT_COLOR)
 	fillGradient.Parent = fill
 
-	local title = Instance.new("TextLabel")
-	title.Name = "Title"
-	title.BackgroundTransparency = 1
-	title.Position = UDim2.new(0, 0, 0.88, 0)
-	title.Size = UDim2.new(1, 0, 0.12, 0)
-	title.Font = Enum.Font.GothamBold
-	title.Text = "MINE RESET"
-	title.TextColor3 = SIGN_FILL_COLOR
-	title.TextScaled = true
-	title.TextStrokeColor3 = Color3.new(0, 0, 0)
-	title.TextStrokeTransparency = 0.5
-	title.Parent = plate
+	-- No caption: a "MINE RESET" line under the bar was too small to read at the distance this sign
+	-- is actually looked at from, so it was only adding clutter (the user's call, 2026-09-22). The
+	-- count over a filling bar, floating above the pit, says what it is on its own.
 
-	signTitle = title
 	signFill = fill
 	signReadout = readout
 end
@@ -325,13 +314,12 @@ end
 -- (RESETTING… in Bad during the lock, "N / Threshold BLOCKS" otherwise) since the information it's
 -- presenting hasn't changed, only where it's rendered.
 local function updateResetSign()
-	if not signReadout or not signFill or not signTitle then
+	if not signReadout or not signFill then
 		return -- buildResetSign hasn't run yet (still waiting on populateGrid/its anchor tag)
 	end
 
 	if isLocked then
 		signReadout.Text = "RESETTING…"
-		signTitle.TextColor3 = SIGN_BAD_COLOR
 		signFill.BackgroundColor3 = SIGN_BAD_COLOR
 		signFill.Size = UDim2.new(1, 0, 1, 0)
 		return
@@ -340,9 +328,8 @@ local function updateResetSign()
 	local threshold = math.max(1, MineShaftConfig.ResetBlockThreshold)
 	local mined = math.clamp(totalMinedCount, 0, threshold)
 	-- Just the two numbers, per the sketch ("2400 5000" written big above the bar) — the word BLOCKS
-	-- cost a third of the line's width to say what the caption underneath already says.
+	-- cost a third of the line's width to say what the sign's own position over the pit already says.
 	signReadout.Text = ("%s / %s"):format(withCommas(mined), withCommas(threshold))
-	signTitle.TextColor3 = SIGN_FILL_COLOR
 	signFill.BackgroundColor3 = SIGN_FILL_COLOR
 	signFill.Size = UDim2.new(mined / threshold, 0, 1, 0)
 end
