@@ -129,10 +129,6 @@ function PlayerVitals.End(player: Player)
 	tracked[player.UserId] = nil
 end
 
-function PlayerVitals.IsTracking(player: Player): boolean
-	return tracked[player.UserId] ~= nil
-end
-
 ----------------------------------------------------------------------
 -- Reads
 ----------------------------------------------------------------------
