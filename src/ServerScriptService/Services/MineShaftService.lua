@@ -67,7 +67,10 @@ local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 
 local START_TAG = "MineShaftStart"
 local BLOCK_TAG = "ShaftBlock"
-local MAX_MINING_DISTANCE = 12 -- studs; same as MiningService — reject hits from further away than this
+local MAX_MINING_DISTANCE = 24 -- studs; two cells at MineShaftConfig.CellSize (12) — a block this
+                                -- big puts its own centre further from you than the old 6-stud one did,
+                                -- so the old 12 rejected ordinary sideways mining. Keep in lockstep with
+                                -- MineShaftController.client.lua's CLICK_DISTANCE.
 
 local MineShaftService = {}
 
@@ -266,6 +269,10 @@ local function buildBlock(ix: number, iy: number, iz: number): Part
 		local oreData = OreConfig.Ores[oreKey]
 		part.Name = oreKey .. "Block"
 		part.Color = MineShaftConfig.OreColors[oreKey] or Color3.fromRGB(120, 120, 120)
+		-- Metal, where Rock/Bedrock stay Enum.Material.Rock: the saturated ore colours do most of the
+		-- "this one is worth something" work, but a sheen next to matte rock is what makes an ore seam
+		-- readable from across the quarry rather than only once you're standing on it.
+		part.Material = Enum.Material.Metal
 		part:SetAttribute("OreKey", oreKey)
 		part:SetAttribute("HitsRemaining", oreData.MaxHits)
 		part:SetAttribute("MaxHits", oreData.MaxHits)
@@ -622,7 +629,7 @@ getPlayerDepth = function(character: Model): number?
 	raycastParams.FilterType = Enum.RaycastFilterType.Include
 	raycastParams.FilterDescendantsInstances = { shaftFolder }
 
-	local result = Workspace:Raycast(hrp.Position, Vector3.new(0, -20, 0), raycastParams)
+	local result = Workspace:Raycast(hrp.Position, Vector3.new(0, -40, 0), raycastParams) -- ~3.3 cells at CellSize 12, the reach -20 gave at 6
 	if not result or not CollectionService:HasTag(result.Instance, BLOCK_TAG) then
 		return nil -- not above a live block (e.g. mid-fall, or standing on the guard rail)
 	end

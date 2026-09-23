@@ -37,24 +37,42 @@ local MineShaftConfig = {}
 -- Grid shape
 ----------------------------------------------------------------------
 
-MineShaftConfig.GridWidth = 32           -- cells across, X — 32x32 = 1,024 blocks for the first
-                                          -- layer (dropped from an original 128x128/16,384 once
-                                          -- that turned out heavier than needed). Nothing else
-                                          -- about the design depends on this specific number.
-MineShaftConfig.GridLength = 32          -- cells across, Z
-MineShaftConfig.CellSize = 6             -- studs per cell, both horizontal and vertical — a
+MineShaftConfig.GridWidth = 16            -- cells across, X — 16x16 = 256 blocks for the first
+                                          -- layer. Halved from 32 (was 32x32/1,024, itself dropped
+                                          -- from an original 128x128/16,384) alongside doubling
+                                          -- CellSize below, for the "chunky, Minecraft-ish" block
+                                          -- pass — same 192x192-stud footprint (16 * 12 = 192,
+                                          -- same as the old 32 * 6), just built out of fewer,
+                                          -- bigger cells. Nothing else about the design depends on
+                                          -- this specific number.
+MineShaftConfig.GridLength = 16           -- cells across, Z
+MineShaftConfig.CellSize = 12             -- studs per cell, both horizontal and vertical — a
                                           -- block's top face always lines up with the surface or
                                           -- the level above it, so digging never leaves a gap or
-                                          -- an overlap
-MineShaftConfig.MaxDepth = 200           -- a cell hits unmineable Bedrock past this depth (1,200
-                                          -- studs down) — a hard floor so nothing digs forever.
-                                          -- Bumped way up from an original 40 so the KindWeightBands
-                                          -- / OreWeightBands / HazardTypes zones below (each now
-                                          -- spaced 40+ levels apart, on purpose — see their
-                                          -- comments) actually have room to breathe instead of all
-                                          -- being crammed into the first 15-ish levels.
+                                          -- an overlap. Doubled from 6 for the chunky-block pass;
+                                          -- GridWidth/GridLength were halved in the same change so
+                                          -- the total footprint (GridWidth * CellSize) is
+                                          -- unchanged — see their comments.
+MineShaftConfig.MaxDepth = 200           -- a cell hits unmineable Bedrock past this depth. Left
+                                          -- unchanged by the chunky-block pass on purpose: this
+                                          -- number paces "how many blocks you've dug," not studs,
+                                          -- and mining one block still takes the same time it
+                                          -- always did — so the dig-time pacing is identical, the
+                                          -- mine is just now physically 2,400 studs down (200 * 12)
+                                          -- instead of 1,200 (200 * 6). Was bumped way up from an
+                                          -- original 40 so the KindWeightBands / OreWeightBands /
+                                          -- HazardTypes zones below (each now spaced 40+ levels
+                                          -- apart, on purpose — see their comments) actually have
+                                          -- room to breathe instead of all being crammed into the
+                                          -- first 15-ish levels.
 MineShaftConfig.ForwardOffset = 6        -- studs in front of the MineShaftStart anchor before the
-                                          -- grid's near edge starts, so it doesn't clip the anchor
+                                          -- grid's near edge starts, so it doesn't clip the anchor.
+                                          -- Deliberately left unscaled by the chunky-block pass:
+                                          -- this clears the anchor Part's own physical size, not
+                                          -- the grid's cell size, and it also fixes the footprint's
+                                          -- POSITION relative to the anchor — changing it would
+                                          -- shift where the 192x192 hole needs to be cut for no
+                                          -- reason anyone asked for.
 
 -- The 6 face-adjacent neighbors checked every time a block gets destroyed — down, up, and the 4
 -- sideways directions, in the block's own local space (X = anchor's right, Z = anchor's forward).
@@ -72,11 +90,24 @@ MineShaftConfig.RevealNeighborOffsets = {
 	{ 0, 0, -1 }, -- -Z
 }
 
-MineShaftConfig.WallThickness = 2        -- thickness of the low guard rail around the depth-0
+MineShaftConfig.WallThickness = 4        -- thickness of the low guard rail around the depth-0
                                           -- footprint's edge (see below) — not a full wall, just
-                                          -- enough to stop casually walking off the quarry's edge
-MineShaftConfig.SurfaceGuardHeight = 4   -- studs the guard rail rises above the surface
-MineShaftConfig.WallColor = Color3.fromRGB(58, 50, 44)
+                                          -- enough to stop casually walking off the quarry's edge.
+                                          -- Doubled from 2 alongside CellSize so the rail keeps the
+                                          -- same proportion to a block (was 1/3 of a 6-stud cell,
+                                          -- now 1/3 of a 12-stud one) — it sits outside the
+                                          -- 192x192 footprint either way, so this doesn't touch the
+                                          -- footprint's size or position, just how far the rail
+                                          -- pokes onto the surrounding ground.
+MineShaftConfig.SurfaceGuardHeight = 8   -- studs the guard rail rises above the surface. Doubled
+                                          -- from 4 for the same reason as WallThickness above — kept
+                                          -- at roughly 2/3 of one CellSize so a chunkier block gets
+                                          -- a rail that still reads as ankle/shin height next to it,
+                                          -- instead of looking suddenly flimsy against bigger blocks.
+MineShaftConfig.WallColor = Color3.fromRGB(66, 52, 38) -- was (58, 50, 44); pushed from ~24% to ~42%
+                                          -- saturation — a bit more gunmetal-brown so it doesn't
+                                          -- read as flat grey, but still darker and less saturated
+                                          -- than every ore color below so it stays background
 
 ----------------------------------------------------------------------
 -- Block kind by depth — Rock (filler) / Ore (resource) / Hazard (Lava)
@@ -119,10 +150,20 @@ MineShaftConfig.OreWeightBands = {
 }
 
 MineShaftConfig.RockMaxHits = 3          -- filler is quick to clear — it's an obstacle, not a resource
-MineShaftConfig.RockColor = Color3.fromRGB(90, 84, 78)
+MineShaftConfig.RockColor = Color3.fromRGB(100, 86, 66) -- was (90, 84, 78); pushed from ~13% to
+                                          -- ~34% saturation — enough to look like actual rust-brown
+                                          -- rock instead of flat grey, but still the least
+                                          -- saturated block in the mine on purpose, so every ore
+                                          -- color below reads as clearly more valuable next to it
 
 MineShaftConfig.LavaMaxHits = 2          -- fast AND risky — you find out what it is right before it hurts
-MineShaftConfig.LavaColor = Color3.fromRGB(196, 76, 34)
+MineShaftConfig.LavaColor = Color3.fromRGB(224, 54, 20) -- was (196, 76, 34); pushed from ~83% to
+                                          -- ~91% saturation and shifted redder or it started
+                                          -- reading too close to CopperOre's orange below — Lava
+                                          -- also renders Neon (see MineShaftService's buildBlock),
+                                          -- so the glow does most of the "this is dangerous, not
+                                          -- an ore" work; this just keeps the base color from
+                                          -- fighting that at a glance before it's lit up
 MineShaftConfig.LavaDamage = 18          -- big burst dealt the instant a Lava block breaks through —
                                           -- this is "you dug into an active pocket"
 MineShaftConfig.LavaTouchDamage = 3      -- small damage from just standing in/against a live Lava
@@ -133,16 +174,40 @@ MineShaftConfig.LavaTouchIntervalSeconds = 1 -- minimum gap between touch-damage
                                           -- so standing against a Lava block doesn't deal damage
                                           -- every single physics step
 
-MineShaftConfig.BedrockColor = Color3.fromRGB(20, 18, 16)
+MineShaftConfig.BedrockColor = Color3.fromRGB(26, 20, 14) -- was (20, 18, 16); pushed from ~20% to
+                                          -- ~46% saturation with a slightly warmer, more charcoal
+                                          -- tone — still reads as near-black/unmineable, this only
+                                          -- keeps it in the same warm family as Rock/Wall instead
+                                          -- of a neutral grey-black
 
--- Cosmetic only — same ore keys/colors the old ring zone had, kept here directly rather than
--- reused from ResourceZoneConfig since that file is retired (see DESIGN_NOTES.md).
+-- Cosmetic only — same ore keys the old ring zone had, kept here directly rather than reused from
+-- ResourceZoneConfig since that file is retired (see DESIGN_NOTES.md). Colors below were
+-- redesigned together (not just individually saturated) so all five stay distinguishable from
+-- each other even when several can spawn in the same depth band (see OreWeightBands — Iron,
+-- Copper, Gold, Platinum, and Voidium Shard all overlap in the 80-120 band): Iron went cool
+-- (steel blue) specifically so the two shallow-band ores (Iron/Copper) split on hue, not just
+-- shade, and Platinum went bright cyan rather than another warm tone so it doesn't collide with
+-- Gold. GoldOre in particular was flat wrong before — (140, 148, 155) is a grey, almost certainly
+-- a leftover from before the ore was renamed to Gold, and it read exactly like rock at a glance.
 MineShaftConfig.OreColors = {
-	IronOre = Color3.fromRGB(150, 138, 120),
-	CopperOre = Color3.fromRGB(184, 115, 51),
-	GoldOre = Color3.fromRGB(140, 148, 155),
-	PlatinumOre = Color3.fromRGB(212, 175, 55),
-	VoidiumShard = Color3.fromRGB(120, 70, 190),
+	IronOre = Color3.fromRGB(90, 128, 162),      -- was (150, 138, 120), a beige barely distinct
+	                                              -- from Rock/CopperOre. Now a saturated steel
+	                                              -- blue (~44% sat) — cool where every other block
+	                                              -- in the mine is warm, so it pops even though
+	                                              -- Iron is the most common, least-special ore
+	CopperOre = Color3.fromRGB(214, 110, 36),    -- was (184, 115, 51); pushed from ~72% to ~83%
+	                                              -- saturation, a more vivid copper-penny orange
+	GoldOre = Color3.fromRGB(255, 196, 40),      -- was (140, 148, 155) — a grey that read as rock,
+	                                              -- not gold; replaced outright with an actual
+	                                              -- saturated gold-yellow (~84% sat) rather than
+	                                              -- just re-saturating a broken starting color
+	PlatinumOre = Color3.fromRGB(150, 225, 235), -- was (212, 175, 55), a warm gold-tan that
+	                                              -- collided with GoldOre's fixed color above. Now
+	                                              -- a bright cool cyan (~36% sat) so the two read
+	                                              -- as different metals, not two shades of gold
+	VoidiumShard = Color3.fromRGB(150, 45, 230), -- was (120, 70, 190); pushed from ~63% to ~80%
+	                                              -- saturation, a more vivid violet — this is the
+	                                              -- rarest ore, it should look it
 }
 
 ----------------------------------------------------------------------
@@ -235,9 +300,19 @@ MineShaftConfig.SuitTierCosts = {
 
 MineShaftConfig.ResetIntervalSeconds = 30 * 60 -- full reset every 30 minutes, regardless of how
                                           -- much has been dug
-MineShaftConfig.ResetBlockThreshold = 20000 -- ALSO reset immediately, whenever the timer hasn't
+MineShaftConfig.ResetBlockThreshold = 5000 -- ALSO reset immediately, whenever the timer hasn't
                                           -- already fired, once this many blocks have been mined
-                                          -- out since the last reset
+                                          -- out since the last reset. Was 20,000; scaled down 4x
+                                          -- (matching the 4x drop in blocks-per-layer from the
+                                          -- chunky-block pass: 16x16=256 vs the old 32x32=1,024) so
+                                          -- a reset still lands after roughly the same amount of
+                                          -- actual digging — this counts blocks, not studs, and a
+                                          -- block still takes the same time to mine either way, so
+                                          -- leaving it at 20,000 would have meant grinding through
+                                          -- 4x as much of the (now physically bigger) mine before
+                                          -- the early-reset path ever triggered. ResetIntervalSeconds
+                                          -- below is unaffected — it is a wall-clock cap, not a
+                                          -- block count, so nothing about it depended on grid scale.
 MineShaftConfig.ResetLockSeconds = 5     -- how long the mine stays locked (no mining) while
                                           -- everyone's being cleared out and it rebuilds — "a few
                                           -- seconds," not instant, so a reset actually reads as an
