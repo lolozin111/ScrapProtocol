@@ -113,10 +113,12 @@ no manual copy-pasting scripts into Studio.
   256 initial blocks turns out to be too much (or too small) for a given map.
 
   **Mine reset.** The whole grid tears down and rebuilds every 30 minutes
-  (`MineShaftConfig.ResetIntervalSeconds`), or immediately once 5,000 blocks have been mined out
-  since the last reset (`ResetBlockThreshold`), whichever comes first; the mine locks (no mining)
+  (`MineShaftConfig.ResetIntervalSeconds`), or immediately once 15,000 blocks have been mined out
+  since the last reset (`ResetBlockThreshold`, raised from 5,000 in the 2026-09-23 exploit-fix pass
+  — the counter is global and a reset ejects everyone in the shaft, so the threshold is also the
+  price of forcing that on the server), whichever comes first; the mine locks (no mining)
   for 5 seconds while it rebuilds. Progress toward that reset is shown on a **world-space sign**
-  floating 40 studs above the pit — a hot-orange pill bar and a big "N / 5,000" count, no caption —
+  floating 40 studs above the pit — a hot-orange pill bar and a big "N / 15,000" count, no caption —
   built and updated entirely server-side (`MineShaftService.lua`'s `buildResetSign`/
   `updateResetSign`) so every player looks at the same sign instead of each client keeping a
   synced copy. There used to be a top-centre HUD progress bar for this (`MineResetBar.lua`) and a
@@ -588,6 +590,17 @@ no manual copy-pasting scripts into Studio.
   afford anything at) via the `SkipNode` remote; the Shop panel exposes a "Skip" button for it.
   Skipping a fork option destroys it and its sibling and advances the queue exactly like using
   it would, just with no reward. Blocked during an active raid for the same reason as above.
+- **Player HP is server-tracked during any activity** — `PlayerVitals.lua`, a server-only utility
+  in the same no-remotes-required-directly category as `RateLimiter.lua`/`CombatMath.lua`, keeps its
+  own copy of your HP for as long as you hold a Wave, Raid, or Outpost-raid activity
+  (`PlayerActivityService.TryAcquire`/`Release` bracket the tracking, so the two questions "am I in
+  an activity" and "is my HP authoritative" are always the same answer). The Humanoid becomes a
+  display of that number rather than the record of it, and a client that writes its own Health gets
+  corrected on the next tick that touches it — added 2026-09-23 after the exploit review found no
+  fight in the game actually died server-side (F3). Outside an activity it's a deliberate
+  pass-through straight to the Humanoid, so mine lava, base security lasers, and idle regen are
+  unaffected. Nothing to set up and nothing to see as an honest player; this only matters against a
+  client editing its own Health.
 - **18 weapons in 6 families** — Salvage (the four starters), Flamethrowers, Bows, Snipers,
   Grenade Launchers, Miniguns. A **blueprint unlocks a whole family**, not one gun, and they drop
   from Legendary rolls in Black Market cases; the Forge's Weapons tab is a family picker, and locked
@@ -1017,8 +1030,13 @@ to end:
    disappear again — pull the lever a few times in a row and confirm the node count stays
    consistent instead of growing each time. Then start a Combat raid (`/admin off` first if
    you're testing as owner, so it actually takes time) and click **Return to Base** WHILE it's
-   running: the raid panel should close immediately with no failure message, instead of
-   continuing to tick/damage you in the background. The same `ExpeditionStart` Part also anchors
+   running: you should get a "You're in a fight — finish it before returning to base." toast and
+   the raid should keep ticking in the background exactly as if you hadn't clicked it — as of the
+   2026-09-23 exploit-fix pass, Return to Base refuses outright while you hold any activity (F2),
+   instead of the old behavior of closing the raid panel immediately with no failure message
+   (which also meant it doubled as a free full heal, on only a 3-second cooldown, callable mid-fight
+   against the raid's own damage tick). Let the raid resolve normally, then confirm **Return to
+   Base** works again once you're clear. The same `ExpeditionStart` Part also anchors
    the resource zone (next step).
 11. Place one more Part **up on a platform with genuinely open air underneath it** (not resting on
    your map's real ground — the whole grid gets built as real solid Parts directly below this, so
@@ -1030,7 +1048,7 @@ to end:
    blocks scattered across it (mostly grey Rock, some ore-colored blocks with a metallic sheen,
    and the occasional glowing orange "??? "block — that one's a Lava pocket, no warning which one
    until you break it). Floating **40 studs above the pit** you should also see a big world-space
-   sign — a hot-orange pill bar and a large count reading "0 / 5,000" — that's the mine's reset
+   sign — a hot-orange pill bar and a large count reading "0 / 15,000" — that's the mine's reset
    progress (see the bullet above); it should be visible from well outside the pit. **Hover** over
    the block you're standing on — a thin outline highlights it and a floating label shows its
    kind/depth/hit counter (this is ONE reusable label that follows your cursor, not a permanent tag
@@ -1223,7 +1241,9 @@ to end:
     step 27). **Contraband and Cores come only from clearing a map and from beating a Boss node**,
     and they are HELD, not banked: the top-left panel shows them as **AT RISK** in orange. Confirm the
     "Map cleared!" toast names what you earned, that the at-risk rows go up, and that each later clear
-    pays more than the one before (`RaidConfig.ExtractionRewards.MapGrowthPerClear`, +35% per clear).
+    pays more than the one before (`RaidConfig.ExtractionRewards.MapGrowthPerClear`, +35% per clear,
+    capped at `MapGrowthCap` — 4.0x, reached at the 10th clear; added 2026-09-23 after the exploit
+    review found this growth uncapped).
     Beat a Boss node and confirm an **EXTRACT BONUS** row appears at `x1.25`, rising 0.25 per boss to a
     cap of `x2`. Then Extract and confirm the toast names the multiplied total, and that your real
     Contraband and Cores go up by exactly that. Finally, do a run the other way: mine some raid ore,

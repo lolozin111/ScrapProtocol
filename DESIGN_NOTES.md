@@ -39,6 +39,7 @@ already made (numbers, mechanics, sequencing), not just vague direction.
 | Aim camera (over-the-shoulder while a gun is equipped) | **Built 2026-09-22, untested in Studio** — `AimCamera.client.lua`/`Shared/AimCameraConfig.lua` — see "Resuming after a context reset" |
 | Dash i-frames | **Built 2026-09-22** — `DashConfig.IFrameSeconds`, honoured in the raid damage path only (not mine lava, not outpost chip damage yet) — see "Stamina & dash" and "Resuming after a context reset" |
 | Mining cooldown bar (replaces the "Swinging too fast" toast) | **Built 2026-09-22** — `MiningCooldownBar.lua`, a frame-driven state machine — see "Resuming after a context reset" |
+| Adversarial exploit review (F1-F8) | **Done 2026-09-23** — 8 findings, all fixed same day, none Studio-verified yet — report: "Breaking Salvage Protocol", https://claude.ai/code/artifact/UkMW3M9KMJ8H7m8G1pYt7A — see "Resuming after a context reset" |
 | PvP base invasion | **Recommended cut from v1** — see "Road to release" below |
 
 Agreed build order (most recent discussion): Raid Energy → Mining zone rework → weapon mod
@@ -326,9 +327,27 @@ record of the round so it survives a context reset. **Do not build any of it wit
 3-4, 4-5 enemies at 1.0x/1.4x/1.9x strength — and it keys off a node's WITHIN-MAP Tier, not
 `TotalNodesVisited`. So count tops out at 5 forever. A room with authored `SpawnPoint` parts
 bypasses the roll entirely, making count literally constant. Meanwhile
-`GetRunProgressionMultiplier` (RaidConfig.lua:360) is `1 + step * 0.12` — LINEAR AND UNBOUNDED, no
-clamp. Net effect: deep raids are five enemies with ever-larger health bars, and the authored-room
-path the build sheet recommends makes it worse, not better. The user's diagnosis was correct.
+`GetRunProgressionMultiplier` (RaidConfig.lua:360) is `1 + step * 0.12`, and at the time of this
+round the step itself was unbounded. Net effect: deep raids are five enemies with ever-larger health
+bars, and the authored-room path the build sheet recommends makes it worse, not better. The user's
+diagnosis was correct.
+
+**CORRECTION 2026-09-23 — the multiplier is no longer unbounded, and the count half is partially
+addressed.** The adversarial exploit review (see "Resuming after a context reset") found this same
+uncapped ladder was itself exploitable — a raid that never ends paying without limit (F4) — and
+capped the STEP, not the intent: `RaidConfig.RunProgressionMaxStep = 10` bounds
+`GetRunProgressionStep`, so `GetRunProgressionMultiplier` now tops out at `1 + 10 * 0.12` = 2.2x
+instead of climbing forever. Separately, and using the same `TotalNodesVisited` step, the
+enemy-COUNT half of this diagnosis — "count tops out at 5 forever" — now has a small answer short of
+the zone redesign below: `RaidConfig.GetRunProgressionCountBonus` adds up to
+`RunProgressionMaxExtraEnemies` (3) extra bodies to a Combat room's existing count roll, at
+`RunProgressionCountPerStep` (0.5) per progression step, and Combat rooms now also apply the run
+multiplier to enemy STRENGTH the way Ambush/Boss always did. This is deliberately the MODEST version
+of the proposal immediately below, not the proposal itself: it reuses the existing count roll rather
+than replacing fixed spawn points with volumes, so a room authored with `SpawnZone`s picks the extra
+bodies up automatically and a room with only fixed `SpawnPoint`s still can't grow — which is exactly
+the limitation the spawn-zone redesign below still exists to remove. That redesign remains unbuilt
+and un-greenlit; nothing below this correction has changed.
 
 **The proposal.** Replace fixed spawn points with spawn ZONES (volumes) for Combat/Ambush. On room
 build, roll a composition from a table keyed by raid mode (the project's standard
@@ -3395,50 +3414,62 @@ and frames.
 
 ### Resuming after a context reset
 
-**STEP 0, BEFORE ANY OF THE POLISH WORK: BREAK THE GAME ON PURPOSE.** The user's instruction,
-2026-09-23, verbatim: "i want u to approach the game as an exploiter/hacker, i want u to have
-malice, your goal will be to break the game, make smth happen that shouldnt, see what you can do,
-and then u report back to me and tell me what u find so we can add it to the plan". This is the
-game's owner asking for an adversarial review of their own game before it goes to testers — do it
-properly, report, and WAIT for them to fold the findings into the plan before fixing anything.
+**STEP 0 — ADVERSARIAL EXPLOIT REVIEW: DONE, 2026-09-23.** The user's instruction, verbatim: "i want
+u to approach the game as an exploiter/hacker, i want u to have malice, your goal will be to break
+the game, make smth happen that shouldnt, see what you can do, and then u report back to me and tell
+me what u find so we can add it to the plan" — an adversarial review of the game's own owner asking
+for a pass before it goes to testers, distinct from the security checklist that had already passed:
+that checklist asked "does each handler validate, gate, rate-limit and re-derive?" and every handler
+said yes; an attacker instead asks what the rules ALLOW that the designer never pictured, and those
+are different questions that find different bugs. Full findings report, with the attack steps and the
+negative results (what does NOT work and why) that the checklist alone couldn't surface: "Breaking
+Salvage Protocol", https://claude.ai/code/artifact/UkMW3M9KMJ8H7m8G1pYt7A.
 
-Why this comes first even though a security audit already passed: that audit asked "does each
-handler validate, gate, rate-limit and re-derive?" and every handler said yes. An attacker doesn't
-ask that. They ask what the rules ALLOW that the designer never pictured. Those are different
-questions and they find different bugs, so do NOT re-run the checklist — assume it passed and hunt
-for what it cannot see:
+Eight findings (F1-F8), all fixed the same day:
 
-- **Assume a fully modified client.** Every remote can be fired by hand, in any order, at any time,
-  with any argument of any type (nil, NaN, -1, 1e308, a table, a destroyed Instance, another
-  player's Instance, a very long string), from any position, as fast as the rate limiter allows —
-  and rate limits are per-key, so look for two keys that reach the same reward.
-- **Hunt ECONOMY DUPES above all else.** Anything that grants currency, ore, items, XP, Energy or
-  levels: can it run twice for one payment? Can a yield inside it (`task.wait`, a DataStore call,
-  `WaitForChild`) let a second call interleave and both pass the same check? Does a check read state
-  that a later line then mutates? Is there a path where the reward lands but the cost doesn't?
-- **State machines, out of order.** Start a raid and a wave and an expedition and an outpost raid at
-  once; abandon while extracting; die during a settle; buy during a reset; disconnect mid-transaction
-  (`PlayerSaving` runs real logic — what happens if it throws?); rejoin instantly on another server
-  while the first still holds the profile lock.
-- **Cross-player reach.** Can anything one player fires touch another player's plot, base, turret,
-  drone, raid, loot, or profile? Can a client name another player's Instance and have the server act
-  on it? (`BaseLaserService` kills non-owners on touch — can it be turned on to grief, or its parts
-  moved?)
-- **Client-trusted state.** Attributes the client can write that the server later reads;
-  `RunFireRateMult` and `DashInvulnerableUntil` are set server-side today — verify nothing reads a
-  CLIENT-writable attribute or a value the client can desync. The aim camera writes the character's
-  CFrame every frame: what does that let a client do to server-side distance checks?
-- **Denial of service, not just theft.** A remote that spawns instances, starts a `task.spawn` loop,
-  or grows a table per call — can one player degrade the server for everyone? Can a raid be left
-  running forever? Can the mine be locked in its reset state?
-- **Numbers.** Negative, fractional, NaN, and huge values through anything that multiplies or indexes:
-  quantities, levels, tiers, rarities, indexes into config ladders, and the new run-buff stacking
-  (levels, rarity-ups, boss cards stack with NO cap by design — how far can that actually go?).
+- **F1** — `InteractHeal` took an optional `node` argument and every gate sat behind
+  `if typeof(node) == "Instance"`, so `InteractHeal:InvokeServer(nil)` skipped them all and handed
+  back a full heal, from anywhere, every 20s. Fixed with `PlayerActivityService.Get` (refuses in ANY
+  activity) plus a real `NodeType = "Heal"` node within the new `NodeConfig.InteractDistance` (60
+  studs). See `NodeService.lua`'s `InteractHeal`.
+- **F2** — `EndExpedition` was the same free full heal, on only a 3s cooldown, callable mid-raid.
+  Now refuses while the caller holds any activity, and while anyone is mid-`OutpostRaid`.
+- **F3** — player HP lived only on the client-owned Humanoid, so a modified client could never die
+  and a Raid Room's `PendingRewards` (only lost on `Health <= 0`) could never actually be lost. New
+  module `PlayerVitals.lua` (server-only utility, same category as `RateLimiter`/`CombatMath`) keeps
+  the server's own HP copy, bracketed by `PlayerActivityService.TryAcquire`/`Release` so tracking
+  exists exactly while an activity does; outside an activity it's a deliberate pass-through to the
+  Humanoid (mine lava, base lasers, idle healing unaffected). Every player-damage/heal/death/
+  MaxHealth site in the codebase now goes through it.
+- **F4** — raid rewards scaled with run length uncapped, and Combat rooms never applied the run
+  multiplier to enemy strength the way Ambush/Boss did. Fixed with `RaidConfig.RunProgressionMaxStep`
+  (10, caps the multiplier at 2.2x), `ExtractionRewards.MapGrowthCap` (4.0, reached at the 10th
+  clear), Combat rooms now passing `composition.Multiplier * runMultiplier`, and a modest new
+  enemy-COUNT ladder (`GetRunProgressionCountBonus`) — see the correction on "Spawn zones +
+  difficulty curves" above for exactly what this does and doesn't replace.
+- **F5** — `EquipMod` bounded its slot index but never required a whole number, and a fractional
+  slot created an extra one. Fixed to match the integer check `TurretService.PlaceTurretInSlot`
+  always had.
+- **F6** — the Expedition queue is one shared lane for the whole server; `SkipNode` and
+  `RegenerateExpedition` could destroy the node another player was mid-fight in, which `runRaid`
+  reads as a penalty-free cancel. `PlayerActivityService.TryAcquire` gained an optional `subject`
+  plus `IsSubjectBusy`/`AnyActive`; both destroy paths now refuse.
+- **F7** — `MineNode` and `MineShaftHit` paced off the same tool-swing time under two different
+  `RateLimiter` keys, so alternating them mined at double rate. Both now share one key, `"MineSwing"`.
+- **F8** — `MineShaftConfig.ResetBlockThreshold` raised 5,000 -> 15,000; the counter is global and a
+  reset ejects everyone in the shaft, so the threshold is also the price of forcing that.
 
-Deliverable: a ranked list of what ACTUALLY works, each with the exact remote/file:line, the steps an
-attacker would take, and what they gain. Say plainly when an attack does NOT work and why — a
-negative result verified is worth as much here as a finding, and stops the next session re-checking
-it. Then stop and report; the user decides what gets fixed.
+Also verified clean, recorded so nobody re-checks it: attributes are never client-writable
+(`DashInvulnerableUntil`/`RunBaseMaxHealth` were never exposed, since Attributes replicate
+server->client only); no grant site yields between its check and its payout; raid teardown can't
+double-pay; combat rooms can't be re-entered for loot; `SellOre`/`StartSmelt` argument validation is
+complete; every activity acquires and releases on every exit path; `RequestFireWeapon` is sound;
+admin is UserId-based.
+
+**Nothing in this pass is Studio-verified yet.** There is no test suite; it needs a walkthrough of
+`README.md` section 4 before it's more than committed. It was also inserted AHEAD of the three-task
+polish pass below, not in place of it — that pass was agreed and scoped first, on the same day, and
+is still exactly where it was left.
 
 **THEN THE POLISH PASS, AGREED 2026-09-23, NOT STARTED.** The user
 approved this scope and then cleared the session so it could be executed from this file. Three
