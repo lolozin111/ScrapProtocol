@@ -1,7 +1,8 @@
 --[[
 	MineShaftService.lua
-	The dig-down mine — a real 3D voxel grid (MineShaftConfig.GridWidth x GridLength cells, 32
-	square by default) starting from a Part tagged "MineShaftStart". This REPLACES two earlier
+	The dig-down mine — a real 3D voxel grid (MineShaftConfig.GridWidth x GridLength cells, 16
+	square by default, at 12 studs a cell: a 192 x 192 stud footprint) starting from a Part tagged
+	"MineShaftStart". This REPLACES two earlier
 	versions of this file — see DESIGN_NOTES.md for the full history — but the short version:
 
 	This is built in genuinely real, ordinary world space, directly below wherever you place the
