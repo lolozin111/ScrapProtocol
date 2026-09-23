@@ -15,9 +15,11 @@
 	The server still enforces the real limit (RateLimiter in MiningService/MineShaftService); this is
 	display only, and nothing here can grant a swing.
 
-	Restarting mid-run is normal: every accepted swing calls Start() again, which resets the bar from
-	full rather than queueing. The server's clock is what actually gates, so the most recent swing is
-	always the one worth showing.
+	ONE BAR AT A TIME, AND CLICKING DOES NOT RESTART IT. Start() is called on every click and is a
+	no-op while a drain is already running: the bar exists to answer "how much longer until I can hit
+	again", and a player mashing the button is asking that question constantly. Restarting on each
+	click answered it with a lie — a full bar for a cooldown about to end. Only a click after the bar
+	has emptied begins a new one.
 ]]
 
 local Players = game:GetService("Players")
@@ -84,6 +86,11 @@ local fadeTween: Tween? = nil
 -- swing landing mid-drain can't be hidden by the previous swing's completion.
 local runToken = 0
 
+-- The clock this cooldown ends at. The gate that makes "one bar at a time" true: Start() is a no-op
+-- until it passes, so a burst of clicks draws one honest countdown instead of a bar that snaps back
+-- to full on every click.
+local activeUntil = 0
+
 -- The swing time the server will actually charge, derived the same way both mining services derive
 -- it: the tool tier's base time through ToolModConfig, which applies the equipped tool mod. Falls
 -- back to tier 1 exactly as the services do, rather than indexing blind into ToolTiers.
@@ -105,12 +112,21 @@ local function cancelTweens()
 	end
 end
 
--- Starts (or restarts) the drain. Safe to call on every swing attempt.
+-- Starts the drain, and IGNORES the call if one is already running. Called on every click, accepted
+-- or not: a click during the cooldown is exactly when the player wants to see how much longer they
+-- have to wait, and restarting the bar there would show them a fresh full bar for a cooldown that is
+-- nearly over — which is what "the visual is broken" was. Only a click AFTER the bar has run out
+-- starts a new one.
 function MiningCooldownBar.Start()
+	if os.clock() < activeUntil then
+		return
+	end
+
 	local duration = swingSeconds()
 	if duration <= 0 then
 		return
 	end
+	activeUntil = os.clock() + duration
 
 	runToken += 1
 	local token = runToken
@@ -157,6 +173,7 @@ end
 -- draining over a respawn screen is the kind of stuck-UI artifact that reads as a bug.
 function MiningCooldownBar.Hide()
 	runToken += 1
+	activeUntil = 0 -- the next click starts a fresh bar rather than being swallowed by a dead one
 	cancelTweens()
 	track.Visible = false
 end
