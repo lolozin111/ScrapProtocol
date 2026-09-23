@@ -165,7 +165,8 @@ local travelWipe = new("Frame", {
 		Position = UDim2.new(0.5, 0, 0.5, -6),
 		Size = UDim2.new(1, -40, 0, 18),
 		BackgroundTransparency = 1,
-		Font = Enum.Font.GothamMedium,
+		Font = Hud.FONT.DisplayMedium, -- GothamMedium was this token's own fallback; routing through
+			-- it means the wipe picks up Montserrat like the rest of the reskinned raid UI for free
 		Text = "MOVING OUT",
 		TextColor3 = COLOR.Accent,
 		TextSize = 12,
@@ -178,7 +179,7 @@ local travelWipe = new("Frame", {
 		Position = UDim2.new(0.5, 0, 0.5, 6),
 		Size = UDim2.new(1, -40, 0, 34),
 		BackgroundTransparency = 1,
-		Font = Enum.Font.GothamBold,
+		Font = Hud.FONT.Display, -- GothamBold was this token's own fallback, same reasoning as Eyebrow
 		Text = "",
 		TextColor3 = COLOR.Text,
 		TextSize = 26,
@@ -571,6 +572,40 @@ local function clearRoomBody()
 	new("UIPadding", { PaddingBottom = UDim.new(0, Hud.SPACE.M) }).Parent = roomBody
 end
 
+-- One shared line for the four near-identical hand-rolled notices that used to live at the old
+-- "Entered"/"AwaitingInteraction"/"HealApplied"/"BossCleared" call sites — a description, a hint, a
+-- heal confirmation, a boss-clear summary — differing only in text/colour/italic and a stray
+-- 13-vs-14 size. All now go through Hud.FONT.Body/TEXTSIZE.Label (13), so the two that used to be
+-- 14 shrink by a pixel on purpose: the point of the pass is that all four finally match.
+local NOTICE_FADE_INFO = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+
+local function noticeLine(order: number, text: string, color: Color3, opts: { Italic: boolean?, Name: string? }?)
+	opts = opts or {}
+	local label = new("TextLabel", {
+		Name = opts.Name,
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 18),
+		LayoutOrder = order,
+		-- SourceSansItalic has no HudKit FONT token (the token table only covers the upright
+		-- weights), so the one italic notice (the AwaitingInteraction hint) keeps the raw enum here,
+		-- behind this flag, rather than inventing a token for a single call site.
+		Font = opts.Italic and Enum.Font.SourceSansItalic or Hud.FONT.Body,
+		Text = text,
+		TextColor3 = color,
+		TextSize = Hud.TEXTSIZE.Label,
+		TextWrapped = true,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextTransparency = 1,
+		Parent = roomBody,
+	})
+	-- No cancel-then-play scaffolding needed here the way travelWipe's tweenWipe has one: this is a
+	-- brand-new instance every call (clearRoomBody() destroys the old label outright rather than
+	-- this helper ever re-running against a still-live one), so there is never a previous tween on
+	-- THIS instance to fight — it just starts transparent and fades in once.
+	TweenService:Create(label, NOTICE_FADE_INFO, { TextTransparency = 0 }):Play()
+	return label
+end
+
 local function progressBar(order: number, label: string)
 	local caption = new("TextLabel", {
 		BackgroundTransparency = 1,
@@ -583,9 +618,11 @@ local function progressBar(order: number, label: string)
 		TextXAlignment = Enum.TextXAlignment.Left,
 		Parent = roomBody,
 	})
+	local TRACK_HEIGHT = 10 -- not on HudKit's RADIUS/SPACE scale — this bar's own track thickness,
+		-- named rather than tokenised since nothing else in the HUD shares it
 	local track = new("Frame", {
 		BackgroundColor3 = COLOR.PanelLight,
-		Size = UDim2.new(1, 0, 0, 10),
+		Size = UDim2.new(1, 0, 0, TRACK_HEIGHT),
 		LayoutOrder = order + 1,
 		Parent = roomBody,
 	}, { corner(Hud.RADIUS.Button) })
@@ -602,7 +639,8 @@ local function actionButton(order: number, text: string, color: Color3, onClick:
 		BackgroundColor3 = color,
 		Size = UDim2.new(1, 0, 0, 32),
 		LayoutOrder = order,
-		Font = Enum.Font.SourceSansBold,
+		Font = Hud.FONT.BodyBold, -- trivially the same font (BodyBold IS SourceSansBold) at the same
+			-- size (16 == Hud.TEXTSIZE.Body) — the one non-notice raw enum in this file worth routing
 		Text = text,
 		TextColor3 = COLOR.Text,
 		TextSize = 16,
@@ -1529,18 +1567,7 @@ RaidRoomUpdate.OnClientEvent:Connect(function(payload)
 			roomTitle.Text ..= (" · Tier %d"):format(payload.Tier)
 		end
 		if typeConfig then
-			new("TextLabel", {
-				BackgroundTransparency = 1,
-				Size = UDim2.new(1, 0, 0, 18),
-				LayoutOrder = 0,
-				Font = Enum.Font.SourceSans,
-				Text = typeConfig.Description,
-				TextColor3 = COLOR.Muted,
-				TextSize = 13,
-				TextWrapped = true,
-				TextXAlignment = Enum.TextXAlignment.Left,
-				Parent = roomBody,
-			})
+			noticeLine(0, typeConfig.Description, COLOR.Muted)
 		end
 		roomFrame.Visible = true
 		updateRaidButtons()
@@ -1559,32 +1586,14 @@ RaidRoomUpdate.OnClientEvent:Connect(function(payload)
 		-- RaidRoomService.beginInteractGated. Appends a hint to the room panel's existing
 		-- title/description (does NOT clearRoomBody — that would wipe them) rather than a whole
 		-- new screen, since this is just "not yet" not a different kind of room.
-		new("TextLabel", {
+		noticeLine(1, ("Find the %s point to continue."):format(payload.ActionText or "interact"), COLOR.Accent, {
+			Italic = true,
 			Name = "InteractHint",
-			BackgroundTransparency = 1,
-			Size = UDim2.new(1, 0, 0, 18),
-			LayoutOrder = 1,
-			Font = Enum.Font.SourceSansItalic,
-			Text = ("Find the %s point to continue."):format(payload.ActionText or "interact"),
-			TextColor3 = COLOR.Accent,
-			TextSize = 13,
-			TextWrapped = true,
-			TextXAlignment = Enum.TextXAlignment.Left,
-			Parent = roomBody,
 		})
 
 	elseif status == "HealApplied" then
 		clearRoomBody()
-		new("TextLabel", {
-			BackgroundTransparency = 1,
-			Size = UDim2.new(1, 0, 0, 18),
-			LayoutOrder = 1,
-			Font = Enum.Font.SourceSans,
-			Text = "Fully healed.",
-			TextColor3 = COLOR.Good,
-			TextSize = 14,
-			Parent = roomBody,
-		})
+		noticeLine(1, "Fully healed.", COLOR.Good)
 		actionButton(2, "Continue", COLOR.AccentDark, function()
 			RaidRoomAction:FireServer("Continue")
 		end)
@@ -1706,17 +1715,11 @@ RaidRoomUpdate.OnClientEvent:Connect(function(payload)
 		for _, entry in ipairs(payload.Loot or {}) do
 			table.insert(lootParts, ("%d %s"):format(entry.Amount, entry.Key))
 		end
-		new("TextLabel", {
-			BackgroundTransparency = 1,
-			Size = UDim2.new(1, 0, 0, 18),
-			LayoutOrder = 1,
-			Font = Enum.Font.SourceSans,
-			Text = "Boss defeated! Healed to full." .. (#lootParts > 0 and (" Found: " .. table.concat(lootParts, ", ")) or ""),
-			TextColor3 = COLOR.Good,
-			TextSize = 14,
-			TextWrapped = true,
-			Parent = roomBody,
-		})
+		noticeLine(
+			1,
+			"Boss defeated! Healed to full." .. (#lootParts > 0 and (" Found: " .. table.concat(lootParts, ", ")) or ""),
+			COLOR.Good
+		)
 		-- The actual pick is the modal boss-pick screen now (RunCard-based, see its own comment
 		-- above), not buttons stacked into roomBody — roomBody keeps only the loot summary above.
 		openBossPick(payload.CardChoices)
