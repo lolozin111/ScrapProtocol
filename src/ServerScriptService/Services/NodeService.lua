@@ -67,8 +67,18 @@ end
 local function isPlayerAtNode(player: Player, node: Instance): boolean
 	local character = player.Character
 	local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+	if not rootPart then
+		return false
+	end
 	local position = nodePosition(node)
-	if not rootPart or not position then
+	if not position then
+		-- A Model tagged as a Node with no PrimaryPart set. There is nothing to measure against, so
+		-- this has to reject — but it must SAY so, because the symptom is a station that refuses
+		-- every interaction for no visible reason, which is precisely the "I click and nothing
+		-- happens" class this codebase keeps getting bitten by. Set the Model's PrimaryPart in
+		-- Studio, or author the node as a bare Part.
+		warn(("[NodeService] %s is tagged '%s' but is a Model with no PrimaryPart — there's no position to range-check against, so interacting with it will always be refused. Set its PrimaryPart in Studio."):format(
+			node:GetFullName(), NODE_TAG))
 		return false
 	end
 	return (rootPart.Position - position).Magnitude <= NodeConfig.InteractDistance
