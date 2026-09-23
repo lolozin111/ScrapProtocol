@@ -227,7 +227,16 @@ local function updateAuraVisual(visual: Model, radius: number, root: BasePart)
 		ring.Size = Vector3.new(0.3, radius * 2, radius * 2)
 		-- A flat approximation is fine here — this is a placeholder, replaced wholesale by a real
 		-- model the moment ServerStorage.RunGearModels.ScorchAura exists.
-		ring.CFrame = CFrame.new(root.Position - Vector3.new(0, 3, 0)) * CFrame.Angles(math.rad(90), 0, 0)
+		--
+		-- Rotated about Z, NOT X. A Part with Shape = Cylinder has its axis along LOCAL X — Size.X is
+		-- the cylinder's thickness and Size.Y/Z are its diameter — so this disc's flat faces point
+		-- along X and it stands upright by default, like a coin on its edge. Rotating about X spins
+		-- it around its own axis and changes nothing you can see; it takes a rotation about Z to
+		-- swing local X up to world Y and lay the disc flat on the ground. The old
+		-- `CFrame.Angles(math.rad(90), 0, 0)` was therefore a no-op, and with the 3-stud drop below
+		-- it rendered as an upright disc half-buried in the floor — a dome standing beside the
+		-- player rather than a ring around them.
+		ring.CFrame = CFrame.new(root.Position - Vector3.new(0, 3, 0)) * CFrame.Angles(0, 0, math.rad(90))
 	end
 end
 

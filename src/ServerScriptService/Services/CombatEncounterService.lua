@@ -412,6 +412,52 @@ local CollectionService = game:GetService("CollectionService")
 --   its own. (A rig with no separate Head part — one skinned mesh — never had headshots to lose.)
 --   Accessories. Hair and hats sit around the head; including them would rebuild the box over it.
 -- Returns nil when there's nothing to measure, and the caller simply skips the box.
+-- One answer to "is this part the head", shared by the hitbox measurement below and
+-- ResolvePlayerHit's headshot test. The two MUST agree: the box deliberately leaves the head out so
+-- the head stays hittable on its own, and the headshot scores by recognising the part that was hit.
+-- If one of them recognises a part the other doesn't, the box swallows the head AND the shot that
+-- reaches it doesn't count — headshots on that model silently stop existing.
+--
+-- They disagreed. Both hard-coded `Name == "Head"`, case-sensitively, so a variant model whose head
+-- part was authored as "head" failed both tests at once. Scavenger supports variant folders
+-- (ServerStorage.EnemyModels.Scavenger may be a Folder of several Models), which is why this
+-- presented as "SOME of the Scavenger hitboxes don't work on the head" rather than as a clean
+-- always-broken — the variants with a conventionally-named head were fine.
+--
+-- Case-insensitive rather than a longer list of accepted names: "head" vs "Head" is the mistake a
+-- hand-built rig actually makes, while accepting "Skull" or "Cranium" would start quietly including
+-- parts an author never meant as a headshot target. A rig whose head is named something else
+-- entirely gets the warning in buildEnemyHitbox instead.
+local function isHeadPart(part: BasePart): boolean
+	return part.Name:lower() == "head"
+end
+
+-- A rig with no head part at all can never be headshot, and the auto-measured box will have
+-- swallowed whatever it uses as a head instead. That is legitimate for some designs (a drone, a
+-- single skinned mesh) and a content mistake for others, and only the person who built the model
+-- can tell which — so this says so once and leaves the judgement to them. Keyed by MODEL name, not
+-- per spawn: an enemy type spawns hundreds of times a session and this is a setup note, not an
+-- event. Silent is the one thing it must not be — an author who renamed a part has no other way to
+-- find out that the Bows' 2.2-2.5x headshot multipliers stopped applying to this enemy.
+local warnedHeadlessModels: { [string]: boolean } = {}
+
+local function warnMissingHeadOnce(model: Model, typeData)
+	if typeData.NoHeadshots then
+		return -- the author has already said this rig has no head to shoot; nothing to report
+	end
+	local key = model.Name
+	if warnedHeadlessModels[key] then
+		return
+	end
+	for _, part in ipairs(model:GetDescendants()) do
+		if part:IsA("BasePart") and isHeadPart(part) then
+			return
+		end
+	end
+	warnedHeadlessModels[key] = true
+	warn(("[CombatEncounterService] Enemy model %q has no part named \"Head\" (case-insensitive), so headshots on it can never register and its whole body is inside one hitbox. Rename its head part to \"Head\" in Studio, or set NoHeadshots = true on its EnemyConfig entry if it is meant to have no head."):format(key))
+end
+
 local function measureRestPoseHitbox(model: Model): (Vector3?, Vector3?)
 	local rootPart = model.PrimaryPart
 	if not rootPart then
@@ -420,7 +466,7 @@ local function measureRestPoseHitbox(model: Model): (Vector3?, Vector3?)
 	local rootCFrame = rootPart.CFrame
 	local minP, maxP
 	for _, part in ipairs(model:GetDescendants()) do
-		if part:IsA("BasePart") and part.Name ~= "Head" and part.Name ~= "Hitbox"
+		if part:IsA("BasePart") and not isHeadPart(part) and part.Name ~= "Hitbox"
 			and not part:FindFirstAncestorOfClass("Accessory") then
 			local half = part.Size * 0.5
 			for _, sx in ipairs({ -1, 1 }) do
@@ -496,6 +542,7 @@ local function spawnEnemy(typeKey: string, typeData, spawnPosition: Vector3, mul
 	else
 		hitboxSize, hitboxOffset = measureRestPoseHitbox(model)
 		hitboxIsAuto = true
+		warnMissingHeadOnce(model, typeData)
 	end
 	if hitboxSize then
 		local rootPart = model.PrimaryPart
@@ -1796,7 +1843,12 @@ function CombatEncounterService.ResolvePlayerHit(player: Player, hitInstance: In
 	-- Until now the gold "Headshot" damage colour was only ever produced by the AimBot Ultimate,
 	-- which made it a mod-specific flourish rather than a mechanic. Bows are built around it.
 	local headshotMultiplier = spec.HeadshotMultiplier or 1
-	local isHeadshot = headshotMultiplier > 1 and hitInstance ~= nil and hitInstance.Name == "Head"
+	-- isHeadPart, not a second inline `Name == "Head"` — see its own comment for what these two
+	-- drifting apart cost.
+	local isHeadshot = headshotMultiplier > 1
+		and hitInstance ~= nil
+		and hitInstance:IsA("BasePart")
+		and isHeadPart(hitInstance)
 
 	-- Damage-number feedback tag: Headshot wins if both happen on the same shot (it already had its
 	-- own gold styling before crits existed — see the comment above). spec.IsCrit is stamped once
