@@ -3395,7 +3395,52 @@ and frames.
 
 ### Resuming after a context reset
 
-**THE JOB TO DO NEXT — THE POLISH PASS, AGREED 2026-09-23, NOT STARTED. START HERE.** The user
+**STEP 0, BEFORE ANY OF THE POLISH WORK: BREAK THE GAME ON PURPOSE.** The user's instruction,
+2026-09-23, verbatim: "i want u to approach the game as an exploiter/hacker, i want u to have
+malice, your goal will be to break the game, make smth happen that shouldnt, see what you can do,
+and then u report back to me and tell me what u find so we can add it to the plan". This is the
+game's owner asking for an adversarial review of their own game before it goes to testers — do it
+properly, report, and WAIT for them to fold the findings into the plan before fixing anything.
+
+Why this comes first even though a security audit already passed: that audit asked "does each
+handler validate, gate, rate-limit and re-derive?" and every handler said yes. An attacker doesn't
+ask that. They ask what the rules ALLOW that the designer never pictured. Those are different
+questions and they find different bugs, so do NOT re-run the checklist — assume it passed and hunt
+for what it cannot see:
+
+- **Assume a fully modified client.** Every remote can be fired by hand, in any order, at any time,
+  with any argument of any type (nil, NaN, -1, 1e308, a table, a destroyed Instance, another
+  player's Instance, a very long string), from any position, as fast as the rate limiter allows —
+  and rate limits are per-key, so look for two keys that reach the same reward.
+- **Hunt ECONOMY DUPES above all else.** Anything that grants currency, ore, items, XP, Energy or
+  levels: can it run twice for one payment? Can a yield inside it (`task.wait`, a DataStore call,
+  `WaitForChild`) let a second call interleave and both pass the same check? Does a check read state
+  that a later line then mutates? Is there a path where the reward lands but the cost doesn't?
+- **State machines, out of order.** Start a raid and a wave and an expedition and an outpost raid at
+  once; abandon while extracting; die during a settle; buy during a reset; disconnect mid-transaction
+  (`PlayerSaving` runs real logic — what happens if it throws?); rejoin instantly on another server
+  while the first still holds the profile lock.
+- **Cross-player reach.** Can anything one player fires touch another player's plot, base, turret,
+  drone, raid, loot, or profile? Can a client name another player's Instance and have the server act
+  on it? (`BaseLaserService` kills non-owners on touch — can it be turned on to grief, or its parts
+  moved?)
+- **Client-trusted state.** Attributes the client can write that the server later reads;
+  `RunFireRateMult` and `DashInvulnerableUntil` are set server-side today — verify nothing reads a
+  CLIENT-writable attribute or a value the client can desync. The aim camera writes the character's
+  CFrame every frame: what does that let a client do to server-side distance checks?
+- **Denial of service, not just theft.** A remote that spawns instances, starts a `task.spawn` loop,
+  or grows a table per call — can one player degrade the server for everyone? Can a raid be left
+  running forever? Can the mine be locked in its reset state?
+- **Numbers.** Negative, fractional, NaN, and huge values through anything that multiplies or indexes:
+  quantities, levels, tiers, rarities, indexes into config ladders, and the new run-buff stacking
+  (levels, rarity-ups, boss cards stack with NO cap by design — how far can that actually go?).
+
+Deliverable: a ranked list of what ACTUALLY works, each with the exact remote/file:line, the steps an
+attacker would take, and what they gain. Say plainly when an attack does NOT work and why — a
+negative result verified is worth as much here as a finding, and stops the next session re-checking
+it. Then stop and report; the user decides what gets fixed.
+
+**THEN THE POLISH PASS, AGREED 2026-09-23, NOT STARTED.** The user
 approved this scope and then cleared the session so it could be executed from this file. Three
 read-only audits (security, efficiency, memory) ran first; their verdicts are recorded below the
 task list. Do the tasks, commit each, and DON'T widen the scope — the user explicitly chose
