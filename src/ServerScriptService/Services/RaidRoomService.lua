@@ -2216,6 +2216,49 @@ end)
 -- loot collected during the raid was silently dropped, which is the exact opposite of what the
 -- comment below describes. PlayerSaving fires before the save and before the cache clear, so the
 -- write actually lands and gets persisted in the same pass. See DataService's own comment there.
+----------------------------------------------------------------------
+-- Dev tool — see AdminService's /giverunscrap
+----------------------------------------------------------------------
+
+-- Tops up the RUN's own Scrap pile (state.RunCurrencyCollected), which is the only thing the raid
+-- Shop can be paid with — profile Scrap is deliberately unspendable in there ("you are only able to
+-- purchase stuff with the scraps collected through the entire run"). So /give Scrap, which writes
+-- the profile, buys you exactly nothing at a Shop node, and testing the shop otherwise meant
+-- actually grinding rooms for it.
+--
+-- Lives here rather than in AdminService because activeRaids is this file's private state, and
+-- exposing the whole state table to reach in and edit would be a far larger door than this one
+-- number. Returns false when the player isn't in a raid, so the caller can say why rather than
+-- silently doing nothing.
+--
+-- Deliberately gated on AdminConfig.IsAdmin at the CALL site, not DevShortcuts.Active: this changes
+-- what you HAVE rather than how the game plays, which is the same line /give and friends sit on
+-- (see CLAUDE.md) — a Player Test Session should still be able to use it.
+function RaidRoomService.DevAddRunScrap(player: Player, amount: number): boolean
+	local state = activeRaids[player.UserId]
+	if not state then
+		return false
+	end
+	state.RunCurrencyCollected.Scrap = math.max(0, (state.RunCurrencyCollected.Scrap or 0) + amount)
+	pushRunCurrencyUpdate(state)
+
+	-- ...and re-send the shop screen if one is open, because the currency broadcast above only
+	-- refreshes the run-currency LABEL on the client (RaidClient's "RunCurrencyUpdate" branch) — the
+	-- offer cards re-evaluate what you can afford from a "ShopResult" payload, which normally only
+	-- arrives on a Buy or a Sell. Without this the number would tick up while every card stayed
+	-- greyed out, which reads as the command not working. Same payload shape the Buy handler sends.
+	local node = state.Map.Nodes[state.CurrentNodeId]
+	if node and node.Type == "Shop" then
+		RaidRoomUpdate:FireClient(player, {
+			Status = "ShopResult",
+			Success = true,
+			Offers = state.ShopOffers[state.CurrentNodeId] or {},
+			Run = runSnapshot(state),
+		})
+	end
+	return true
+end
+
 DataService.PlayerSaving:Connect(function(player)
 	local state = activeRaids[player.UserId]
 	if state then

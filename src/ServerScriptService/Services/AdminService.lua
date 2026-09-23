@@ -456,8 +456,38 @@ local function commandSetWave(player: Player, profile, args: { string })
 	tell(player, ("HighestWave = %d"):format(profile.HighestWave))
 end
 
+-- /giverunscrap [amount] — tops up the RUN's Scrap, the only currency a raid Shop accepts.
+--
+-- `/give Scrap` writes the PROFILE, and a raid Shop deliberately cannot spend that ("you are only
+-- able to purchase stuff with the scraps collected through the entire run"), so it buys nothing in
+-- there. Without this, testing the shop meant grinding rooms for it.
+--
+-- Takes no `profile` argument, unlike every other command here, because it doesn't touch the
+-- profile at all — the pile lives on the raid's in-memory run state and vanishes with the run.
+local function commandGiveRunScrap(player: Player, args: { string })
+	local amount = args[2] and tonumber(args[2]) or 1000
+	if not amount or amount ~= amount or amount == math.huge or amount == -math.huge then
+		tell(player, "usage: /giverunscrap [amount]  (default 1000)")
+		return
+	end
+	amount = math.floor(amount)
+
+	-- Required lazily, on purpose. A top-level require would pull RaidRoomService — and with it
+	-- CombatEncounterService, RunBuffService, BlackMarketService and the rest of its tree — forward
+	-- from position 39 in Main.server.lua's ordered require list to position 25, where AdminService
+	-- sits. Reordering the whole combat half of the boot for a dev command is not a trade worth
+	-- making; by the time anyone can type this, everything is long since loaded.
+	local RaidRoomService = require(script.Parent.RaidRoomService)
+	if not RaidRoomService.DevAddRunScrap(player, amount) then
+		tell(player, "not in a raid — this tops up the run's own Scrap, so start a raid first")
+		return
+	end
+	tell(player, ("run Scrap %+d — spendable at a raid Shop node"):format(amount))
+end
+
 local function commandHelp(player: Player)
-	tell(player, "commands: /admin [on|off] · /give <what> [amount] · /givemats [n] · /giveturret [TypeKey] · /giveultimate [Key] · /dummy · /givecase [Key] [n] · /givefamily [Key] · /givetool [Key] · /givedrone [Key] · /setwave <n>")
+	tell(player, "commands: /admin [on|off] · /give <what> [amount] · /givemats [n] · /giveturret [TypeKey] · /giveultimate [Key] · /dummy · /givecase [Key] [n] · /givefamily [Key] · /givetool [Key] · /givedrone [Key] · /giverunscrap [amount] · /setwave <n>")
+	tell(player, "/giverunscrap tops up the RUN's Scrap (what a raid Shop spends) — /give Scrap writes the profile, which a raid Shop can't touch. Must be in a raid.")
 	tell(player, ("givable: Scrap, Cores, CoreT1.., %s, %s"):format(table.concat(oreKeys(), ", "), table.concat(refinedKeys(), ", ")))
 	tell(player, ("turrets: %s"):format(table.concat(turretKeys(), ", ")))
 	tell(player, ("ultimates: %s"):format(table.concat(ultimateKeys(), ", ")))
@@ -548,6 +578,7 @@ local function handleChatted(player: Player, message: string)
 
 	if command ~= "/give" and command ~= "/giveturret" and command ~= "/giveultimate"
 		and command ~= "/dummy" and command ~= "/givecase" and command ~= "/givefamily" and command ~= "/givetool" and command ~= "/givedrone" and command ~= "/givemats"
+		and command ~= "/giverunscrap"
 		and command ~= "/setwave" and command ~= "/help" then
 		return
 	end
@@ -582,6 +613,8 @@ local function handleChatted(player: Player, message: string)
 		commandGiveTool(player, profile, args)
 	elseif command == "/givedrone" then
 		commandGiveDrone(player, profile, args)
+	elseif command == "/giverunscrap" then
+		commandGiveRunScrap(player, args)
 	elseif command == "/setwave" then
 		commandSetWave(player, profile, args)
 	elseif command == "/help" then
