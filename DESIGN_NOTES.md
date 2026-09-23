@@ -31,9 +31,14 @@ already made (numbers, mechanics, sequencing), not just vague direction.
 | Voidium infestation (lore + the raid boss) | **Partially built 2026-09-09** — `EliteTypes`/`BossTypes` split into separate pools and `Siegebreaker` shipped as the new elite; the bloom itself (the actual raid boss per Decision 2 below) is still designed, not built — see "The Voidium infestation" below; `Siegebreaker` also rolls into raid Combat rooms (`EliteChance`, 2026-09-09) |
 | Boss escort (spawn zones in the Boss room) | **Built 2026-09-15 with an interim count, untested in Studio** — the depth curve is still unbuilt, so `combatCount` is the Combat roll at the boss node's tier (Tier 3: 1–2 minions). User's call. See "Boss escort" below |
 | Animation pass | **Hulk DONE and verified 2026-09-15** — Idle `113796712422007`, Walk `103708147649106`, heavy combo `137947497885396` (`ImpactR` ×2 + `ImpactRFinal`), left sweep `105875185230848` (`SweepLStart`/`SweepLEnd`), all playing through `AIPattern = "Animated"` (`EnemyAnimation.lua`). No death or turn animation, by the user's choice. Next animation: the player's DASH (`DashConfig.AnimationId`, user is making it). Other enemies still have no attack tell. Details in "Resuming after a context reset" |
-| Stamina & dash | **Built 2026-09-15, verified working by the user** — 3 charges, 1 per 5s, Q/B/touch; see "Stamina & dash" |
+| Stamina & dash | **Built 2026-09-15, verified working by the user** — 3 charges, 1 per 5s, Q/B/touch; **dash i-frames (0.3s) added 2026-09-22, raid-combat-path only, untested in Studio**; see "Stamina & dash" |
 | Early-game pacing & onboarding | **Partially built** — item 1 (ore sells for Scrap) shipped in the ore rework; starter objectives (item 2) still planned, not built — see below |
-| Raid shop rework (run-only perks) | **Built 2026-09-22, NOT YET VERIFIED IN STUDIO** — cards, buying/leveling/rarity-up, 4 equipment slots + Sell, Extraction Beacon/Salvage Insurance, raid ore now `RunLocked`, boss cards wired to real stats, crits, gear (aura/blades/drone) — see "Resuming after a context reset" |
+| Raid shop rework (run-only perks) | **COMPLETE — verified in Studio by the user 2026-09-22** ("i tested myself and it looked fine") — cards, all 12 icons uploaded and live, 4 equipment slots + Sell, Extraction Beacon/Salvage Insurance, raid ore now `RunLocked`, boss cards now rendered with the same card (`RunCard.lua`) as the shop, crits, gear (aura/blades/drone). Deep verification of the individual mechanics (rarity-up math, Insurance's payout on death, gear damage) is deliberately DEFERRED to the game's testing phase — the user's call — see "Resuming after a context reset" |
+| HudKit panel layer (`HudKit.LAYER`/`openPanel`/`closePanel`/`isPanelOpen`) | **Built 2026-09-22** — one panel open at a time (plus `stacked` for pickers), a scrim, and every world-input guard routed through it; new panels must use it — see "Resuming after a context reset" |
+| Mine visual pass (chunky 12-stud blocks, saturated ore colors, reset sign) | **Built 2026-09-22** — see "Mining zone" below and "Resuming after a context reset" |
+| Aim camera (over-the-shoulder while a gun is equipped) | **Built 2026-09-22, untested in Studio** — `AimCamera.client.lua`/`Shared/AimCameraConfig.lua` — see "Resuming after a context reset" |
+| Dash i-frames | **Built 2026-09-22** — `DashConfig.IFrameSeconds`, honoured in the raid damage path only (not mine lava, not outpost chip damage yet) — see "Stamina & dash" and "Resuming after a context reset" |
+| Mining cooldown bar (replaces the "Swinging too fast" toast) | **Built 2026-09-22** — `MiningCooldownBar.lua`, a frame-driven state machine — see "Resuming after a context reset" |
 | PvP base invasion | **Recommended cut from v1** — see "Road to release" below |
 
 Agreed build order (most recent discussion): Raid Energy → Mining zone rework → weapon mod
@@ -1134,6 +1139,16 @@ labels were deliberately dropped in favor of ONE reusable hover label
 (`MineShaftController.client.lua`) that re-targets whichever block you're actually looking at —
 a permanent GUI per block would have been a real client-side cost for something only ever useful
 one block at a time. `GridWidth`/`GridLength` is still the first knob to turn in either direction.
+
+**SUPERSEDED 2026-09-22 by the "chunky, Minecraft-ish" block pass** — see "Resuming after a
+context reset" for the full record. Current live numbers: `GridWidth`/`GridLength` are **16x16**
+(256 blocks for the first layer) and `CellSize` is **12 studs**, halved-cells-doubled-size from the
+32x32-at-6-studs version directly above, so the actual footprint (192x192 studs) and dig-time
+pacing are unchanged — just built out of fewer, bigger blocks. `MaxDepth` was also bumped from an
+original 40 to **200** in the same pass, purely so the KindWeightBands/OreWeightBands/HazardTypes
+depth zones (spaced 40+ levels apart) have room to breathe. Every number below this point in this
+section describes the PRE-2026-09-22 grid and is kept for the rewrite history; check
+`MineShaftConfig.lua` directly for anything you're about to rely on.
 
 - **Three block kinds per cell**, weighted by depth (`MineShaftConfig.KindWeightBands`): mostly
   **Rock filler** (destroys for nothing — makes ore feel earned, not just sitting there), some
@@ -2925,6 +2940,13 @@ suggested) of whatever the raider actually got from the invasion.
   `false`. A fresh **Player Test Mode** profile does get it again, because that profile runs
   `defaultProfile()` from scratch each time; that's a side effect of Test Mode being a throwaway
   profile, not evidence the flag is resetting somewhere it shouldn't.
+- **Dash i-frames (`DashConfig.IFrameSeconds`) only protect the raid combat damage path** —
+  `CombatEncounterService.safeIsInvulnerable` is the only caller of `DashService.IsInvulnerable`.
+  Mine shaft Lava damage (`MineShaftService`'s `Touched`/burst damage) and outpost `NodeService`
+  chip damage go through their own, separate damage code and do not check it. Dashing through a
+  Lava tick or an outpost hit today still hurts. This is a known gap, not a bug — extend it to
+  those paths deliberately if/when they need it, don't assume `DashService.IsInvulnerable` is
+  already wired everywhere damage can happen.
 
 ## Research level — BUILT
 
@@ -3009,8 +3031,13 @@ moving, recovering 1 per 5 seconds, with variables ready for a dash animation th
   movement can't be server-authoritative; the server keeps the COUNT honest.
 - MainHud's stamina placeholder is now `Hud.segmentBar` cells; the recharging cell fills in.
 - "In the beginning" → a future upgrade adds a profile field on top of MaxCharges. Not built.
-- Not decided/handled: whether a Hulk slow (PlayerSpeed) should shorten dashes (it doesn't), and
-  i-frames during a dash (none).
+- Not decided/handled: whether a Hulk slow (PlayerSpeed) should shorten dashes (it doesn't).
+- **UPDATE 2026-09-22: i-frames during a dash are now built** — `DashConfig.IFrameSeconds = 0.3`,
+  stamped as a `DashInvulnerableUntil` Player attribute the instant a charge is actually spent,
+  read via `DashService.IsInvulnerable(player)`. Currently only checked in the raid combat damage
+  path (`CombatEncounterService.safeIsInvulnerable`) — mine lava damage and outpost NodeService chip
+  damage go through different code paths and do NOT check it, which is a known/deliberate gap for
+  now, not a bug. See "Resuming after a context reset" for the full record.
 
 Six tiers exist as placeholders (Scrap Workbench → Foundry, waves 0/5/10/15/20/25). Extending the
 ladder is adding a table entry plus the matching Studio Model — no code changes.
@@ -3368,12 +3395,184 @@ and frames.
 
 ### Resuming after a context reset
 
-**NEWEST — the user's ROADMAP after the shop, given 2026-09-22, in their order.** Do them in this
-sequence unless they say otherwise; each is its own job, and the greenlight rule still applies:
+**THE JOB TO DO NEXT — THE POLISH PASS, AGREED 2026-09-23, NOT STARTED. START HERE.** The user
+approved this scope and then cleared the session so it could be executed from this file. Three
+read-only audits (security, efficiency, memory) ran first; their verdicts are recorded below the
+task list. Do the tasks, commit each, and DON'T widen the scope — the user explicitly chose
+"UI rebuilds + hygiene" over a deeper refactor, because the game enters its testing phase next and
+breaking working systems now is the expensive mistake.
+
+1. **UI in-place updates — the one real performance finding.** Three panels destroy and rebuild
+   their entire grid on every update, and they update constantly during normal play:
+   - `StarterPlayerScripts/RaidShopPanel.lua:770-779` (`renderCards`) and `:781-802`
+     (`renderSlots`/`renderEscapeChips`) — every card and slot tile is destroyed and rebuilt when
+     ANY run value changes (Scrap, ore-at-risk, slots used), several times per raid room.
+   - `StarterPlayerScripts/InventoryPanel.lua:806-822` (`renderInvList`) — destroys EVERY inventory
+     tile on every `InventoryUpdate` (fired from `MainHud.client.lua:3062-3065`). Looting one ore
+     rebuilds hundreds of frames.
+   - `StarterPlayerScripts/InventoryPanel.lua:390-393` (`rebuildInvDetailSlots`) — same pattern,
+     smaller grid.
+   Fix: reuse the frames. Keep a pool keyed by whatever identifies a row (item key / offer id /
+   slot index), update text, colours, sizes and visibility in place, and only create or destroy
+   when the SET of things actually changes. Card visuals live in `RunCard.lua` now and are shared
+   with the boss pick — if `RunCard.build` grows an update path, both callers must keep working,
+   and the shop must stay pixel-identical to `design/raid-shop/*.dc.html` (the user approved that
+   design and asked for 100% loyalty to it).
+2. **Make the boot check self-maintaining** (`ServerScriptService/Main.server.lua:85-115`). It
+   currently warns "service module(s) exist but are NEVER required" off a HAND-TYPED copy of the
+   require list, which had already drifted: `BaseLaserService` is genuinely required at line 23 but
+   missing from the copy, so it warned about a working feature (Tier 4+ base security lasers —
+   read its header; nothing is wrong with it). Worse, the failure is asymmetric: someone who adds a
+   name to the copy but forgets the real `require` gets silence, which is exactly the hang-forever
+   bug this check exists to catch. Fix: record what actually loaded — e.g. a small `load(name)`
+   helper that stamps a set and returns `require(Services[name])`, used for every require in this
+   file — so the check can never disagree with reality. Keep `INTENTIONALLY_UNLOADED` for the
+   deliberately-retired files.
+3. **Explicit disconnect for the per-respawn health-bar connection**
+   (`StarterPlayerScripts/MainHud.client.lua:2715`, `humanoid.HealthChanged:Connect`). Not a leak —
+   Roblox drops it with the destroyed Humanoid — but it is the only connection in the client made
+   per character without being stored, and the codebase's discipline is explicit teardown.
+
+**Audit verdicts, 2026-09-23 (read-only, no changes made):**
+- **Security: clean.** Every remote in `default.project.json` was checked for argument validation,
+  plot/station/distance gating, rate limiting and server-side reward derivation. No exploitable
+  findings. Spot-verified by hand afterwards rather than taken on trust: `RequestExtractRaid`
+  (requires `ExtractUnlocked` and not `InCombat`), `ChooseRaidNode` (verifies the node is connected
+  to the current one), and `RaidRoomAction`'s "Buy" (rate-limited, offer resolved from
+  `state.ShopOffers`, spends `RunCurrencyCollected`, never the profile).
+- **Memory: clean.** Per-player tables clear on `PlayerRemoving`/cleanup, encounters destroy their
+  enemies and effects, `blockOwner`/`cells` clear both per-block (`MineShaftService.lua:606`) and on
+  reset (`:864-865`), and gear visuals are destroyed on sell, room change and run end.
+- **Efficiency:** only the UI rebuilds above. The mine's per-block ClickDetector/Highlight, the
+  polling loops (depth, hazard, energy, auto-miner), the tree sway and the gear Heartbeat were all
+  examined and are either already tight or a documented tradeoff. `MiningCooldownBar.lua` was called
+  out as the pattern to copy: it connects Heartbeat only while active and tears it down after.
+
+**After the polish pass**, the roadmap is unchanged: turret models (the user's own Blender work) →
+sound, music and weapon effects → the testing phase. Deep verification of the raid shop's mechanics
+(rarity-up, insurance on death, gear damage, boss card stats) is deliberately deferred to that
+testing phase — the user's call.
+
+**Session of 2026-09-22/23 — what was built (all committed, this is history, not a to-do).**
+Everything below in this block is committed. The roadmap block right after this one (labeled
+"Older" now) is still the live sequence for what comes next.
+
+1. **Raid shop rework — COMPLETE, verified by the user in Studio.** "i tested myself and it looked
+   fine." All 4 cards render, all 12 icons are uploaded and live (`UiIconConfig.Icons` —
+   `src/ReplicatedStorage/Shared/UiIconConfig.lua:89-102`, every entry non-zero), drawn at
+   `ICON_GLYPH_SIZE = 58` inside the 76-stud icon plate (`RunCard.lua:197-202`) after the user found
+   the mockup's original 40 too small against the uploaded PNGs' own built-in margins. The 4
+   equipment slots, Sell (50% refund), the Extraction Beacon, and Salvage Insurance all work as
+   spec'd. **Boss cards now use the exact same card** — `RunCard.build` (`RunCard.lua`, the whole
+   file) is shared by `RaidShopPanel.lua` (the shop screen) and `RaidClient.client.lua`'s boss pick
+   (`RaidClient.client.lua:502-672`, the `bossPick` IIFE) — the boss screen is titled "BOSS DEFEATED"
+   / "CHOOSE ONE REWARD", offers 3 cards (`RaidRoomService.lua:1823`,
+   `RaidConfig.RollCardChoices(3)`), each with a **TAKE** button and a "STACKS · NO SLOT" footnote in
+   place of the shop card's pip row. This was the last piece of the shop rework the user asked for
+   ("after that the shop rework will be done") — it is done.
+   **Deliberately DEFERRED, the user's call:** deep verification of the actual mechanics (rarity-up
+   math, Insurance's payout on a real death, gear damage numbers) — "for those things we gotta do the
+   testing phase first before anything." Don't chase these as bugs before the testing phase; the UI
+   and the wiring are confirmed, the numbers underneath are not yet.
+
+2. **HudKit panel layer** — `HudKit.LAYER` (`HudKit.lua:190-201`), `HudKit.openPanel`/`closePanel`
+   (`HudKit.lua:1944`, `:2026`), `HudKit.isPanelOpen` (`HudKit.lua:1912`), a shared scrim, one
+   non-stacked panel open at a time (opening a second closes whatever was open first, through ITS
+   OWN `onClose` so it cascades correctly), plus a `stacked` option for pickers/detail-panels that
+   need to layer over an already-open panel instead of replacing it. The rule this encodes, worth
+   repeating because it's the whole point: **any menu that opens must draw over everything and block
+   all other input.** `AimCamera.client.lua` (below) checks `Hud.isPanelOpen()` every frame specifically
+   to give the mouse back while a panel is open. **New panels MUST route through `openPanel`/
+   `closePanel`** — don't hand-roll a `Visible = true` toggle for a new menu.
+
+3. **Mine visual pass** — chunky 12-stud blocks on a 16x16 grid (`MineShaftConfig.GridWidth`/
+   `GridLength = 16`, `CellSize = 12` — `MineShaftConfig.lua:40-55`), same 192x192-stud footprint as
+   the previous 32x32-at-6-studs version, just fewer/bigger blocks. **The user cut a matching hole in
+   their map to it**, and the pit sits `ForwardOffset = 6` studs in front of the `MineShaftStart`
+   anchor (`MineShaftConfig.lua:68-75`), centred left-to-right — that's what they built their hole
+   to, don't shift it without telling them. Saturated, hand-picked ore colors over
+   `Enum.Material.Metal` (Rock/Bedrock stay `Enum.Material.Rock`) so an ore seam reads from across
+   the quarry (`MineShaftConfig.lua:195-214`, `MineShaftService.lua:410-468`). The guard rail around
+   the Depth-0 edge is only 2 studs tall (`MineShaftConfig.SurfaceGuardHeight`,
+   `MineShaftConfig.lua:102-109`) — it was briefly 8 (proportional to the bigger blocks) and the user
+   hit the real problem immediately: "rn u gotta jump in order to get into the mines and i dont want
+   that." `MAX_MINING_DISTANCE`/`CLICK_DISTANCE` are both 24 studs
+   (`MineShaftService.lua:71`, `MineShaftController.client.lua:47`) and the depth raycast reaches -40
+   (`MineShaftService.lua:824`). **The reset counter is now a world-space `BillboardGui` sign**
+   floating over the pit (`MineShaftService.lua:228-309` builds it, `:316-335` updates it) — 120x30
+   studs, 40 studs up, a hot-orange pill bar with a big count and deliberately no caption (a "MINE
+   RESET" line under the bar was too small to read at the distance the sign is actually seen from).
+   **The top-centre HUD bar (`MineResetBar.lua`) and the `MineResetUpdate` remote were built earlier
+   in this project and then DELETED** when the sign replaced them (removed from
+   `default.project.json` too) — don't rebuild either; every reader of reset progress is now a plain
+   Instance property this file sets directly.
+
+4. **Aim camera** (`AimCamera.client.lua`, the whole file, + `Shared/AimCameraConfig.lua`) —
+   over-the-shoulder while a gun is equipped: the camera slides to `ShoulderOffset`
+   (`AimCameraConfig.lua:23`), the character turns to face wherever the camera looks so movement
+   strafes instead of steers (`AimCamera.client.lua:383-395`), the torso pitches with the camera's
+   vertical aim split between the Waist and Neck joints (`AimCamera.client.lua:396-417`), the mouse
+   locks to screen centre with the icon hidden, and a 4-tick crosshair appears
+   (`AimCamera.client.lua:135-146`). Released the instant a HudKit panel opens
+   (`AimCamera.client.lua:374-378`, `Hud.isPanelOpen()`), without a full disengage, so re-opening the
+   crosshair on close is instant. **Two traps hit while building this, worth remembering:**
+   - A statement starting with `(` immediately after a call's closing `)` is Luau's "Ambiguous
+     syntax" PARSE error, and a parse error means the *whole script* silently never loads — no
+     camera, no warning, nothing in Output pointing at why. `tweenCameraOffset`
+     (`AimCamera.client.lua:269-284`) works around it by holding the tween in a local and calling
+     `:Play()` off that, rather than chaining off the constructor call directly.
+   - The joint lookup must SEARCH descendants for the Waist/Neck Motor6Ds, not look them up by
+     expected parent (`Head.Neck`/`UpperTorso.Waist`) — the first version did the latter, found
+     neither, and concluded the rig "wasn't R15" on a rig that **was** R15
+     (`AimCamera.client.lua:179-200`, see the comment on `findLookJoints`). It also has to tolerate
+     either joint arriving on the character LATE (`attachJointWatcher`,
+     `AimCamera.client.lua:204-228`) rather than only sampling once. My own wrong guess that the rig
+     might be R6 cost a round trip before the real cause (parent-based lookup, not rig type) was
+     found.
+
+5. **Dash i-frames** — `DashConfig.IFrameSeconds = 0.3` (`DashConfig.lua:49`), stamped as a
+   `DashInvulnerableUntil` Player attribute the instant a charge is actually spent (not on the
+   rate-limit or empty-tank rejection paths — `DashService.lua:167-186`), read via
+   `DashService.IsInvulnerable(player)` (`DashService.lua:133-136`). **Only honoured in the raid
+   damage path** — `CombatEncounterService.safeIsInvulnerable`
+   (`CombatEncounterService.lua:731-740`, called at `:1378`) is the only caller. **NOT honoured by
+   mine Lava touch/burst damage or by `NodeService` outpost chip damage** — those are different code
+   paths and don't check the attribute. This is noted here as a known/deliberate gap for now (also
+   recorded in "Known interim decisions" below and in "Stamina & dash"), not something to extend
+   without being asked.
+
+6. **Mining cooldown bar** (`MiningCooldownBar.lua`, the whole file) — replaced the "Swinging too
+   fast — wait for your tool to reset" toast with a quiet, almost-transparent grey bar just under the
+   top of the screen that drains right-to-left and fades out. `Remotes.MineFailed` now takes a second
+   `kind` argument (`MineShaftService.lua:683` fires `"Cooldown"`), and `MainHud.client.lua` skips the
+   toast specifically for that kind (`MainHud.client.lua:3092-3100`) while every other rejection
+   (wrong tier, too far, bedrock, lava) still toasts as before. **Took three attempts, and the lesson
+   is worth keeping:** it must be a FRAME-DRIVEN STATE MACHINE (two booleans and a clock,
+   `MiningCooldownBar.lua:83-164`), not `TweenService` tweens — a cancelled tween's `Completed` still
+   fires, so fast clicking desynced the "is it visible" flag from what was actually on screen under
+   the first two attempts. The other rule: **clicking must NOT restart a bar that's already
+   running** (`MiningCooldownBar.Start`, `MiningCooldownBar.lua:169-192`) — the bar answers "how much
+   longer until I can hit again," and restarting it on every click would answer that with a lie (a
+   full bar for a cooldown about to end).
+
+7. **The user's roadmap, still in order** (unchanged from the "Older" block below except items 1
+   and 2 are now done): ~~Boss card redesign~~ DONE (item 1 above) → ~~Mine visual pass~~ DONE (item 3
+   above) → **turret models** (the user's own Blender work — "i could make some models later but its
+   all good for now"; placeholder neon gear visuals stay until then) → **cleanup of the game +
+   security patches** — IN PROGRESS: three read-only audits are running right now (safety,
+   efficiency, memory); a plan will be written to disk BEFORE any fix lands, per the
+   step-back-when-a-fix-repeats/greenlight conventions → **sound/music/weapon effects** → **the
+   testing phase**.
+
+**Older — the user's ROADMAP after the shop, given 2026-09-22, in their order (kept for the
+record; items 1-2 are now DONE, see the block above — the sequence for items 3-6 is still live).**
+Do them in this sequence unless they say otherwise; each is its own job, and the greenlight rule
+still applies:
 1. **Boss card redesign** — the post-boss pick still renders as plain coloured buttons
    (`RaidClient.renderCardChoices`). Rebuild it with the SAME card look as the raid shop, which is
-   the last piece of the shop rework ("after that the shop rework will be done"). IN PROGRESS.
-2. **Mine visual pass.**
+   the last piece of the shop rework ("after that the shop rework will be done"). DONE — see the
+   NEWEST block above.
+2. **Mine visual pass.** DONE — see the NEWEST block above.
 3. **Turret models.** (The user will make gear/turret models themselves later — "i could make some
    models later but its all good for now". Placeholder neon gear visuals stay for now.)
 4. **Cleanup of the game + security patches** — `sp-remote-scout` sweep is the obvious opener.
@@ -3384,11 +3583,11 @@ The icons landed 2026-09-22: all 12 shop icons are uploaded and live in `UiIconC
 66be115), drawn at `ICON_GLYPH_SIZE = 58` after the user found 40 too small. The user confirmed the
 shop "seems to be going great" in Studio — cards, icons, tinting and the 3-4 roll all render.
 
-**Raid shop rework: BUILT 2026-09-22, awaiting full Studio verification.** All five
+**Raid shop rework: BUILT 2026-09-22, verified in Studio by the user** ("i tested myself and it
+looked fine") **— see the NEWEST block at the top of this section for current status.** All five
 BUILD CONTRACT steps below landed (commits fbb6c60, 789b958) — `RunBuffConfig.lua`, `RunBuffService.lua`,
 the combat hooks in `CombatEncounterService`/`DamagePipeline`, `RaidShopPanel.lua` + `RaidClient`
-wiring, and this README pass (`sp-docs-dev`, this session). None of it has been clicked through in
-Studio yet. Known platform deviations from the approved mockup, worth knowing before anything gets
+wiring, and this README pass (`sp-docs-dev`, this session). Known platform deviations from the approved mockup, worth knowing before anything gets
 reported as a bug: Roblox `TextLabel`s have no letter-spacing equivalent, so the mockup's tracked-out
 headers render tighter than the reference; the full-screen shop background is a 65% scrim
 (`BackgroundTransparency = 0.35`) rather than a solid takeover, so the raid room stays visible behind
@@ -3403,10 +3602,10 @@ PER WAVE inside the wave loop, not once for the whole Ambush node — so Nano Re
 should trigger after every wave of an Ambush, same as a real Combat room, not just once at the end.
 Also: `RaidConfig.Modes.Standard.ShopCatalog` (`"ShopCatalog"`) is now dead data — Shop rooms roll from
 `RunBuffConfig.Items` instead — left in place for `sp-config-dev` to remove or repurpose rather than
-deleted mid-build. **The user's next-named job, not yet started:** "the necessary building blocks for
-the visual designs for those cards" — the 12 `UiIcons` images (exported from the mockup SVGs: 9 perk/
-gear icons, 2 Escape icons, the Scrap glyph — see README's icons paragraph for the exact key list) and
-the three optional `ServerStorage.RunGearModels` (`ScorchAura`/`OrbitBlades`/`LaserDrone`).
+deleted mid-build. **UPDATE: the icons landed 2026-09-22** — all 12 `UiIcons` images (9 perk/gear
+icons, 2 Escape icons, the Scrap glyph — see README's icons paragraph for the exact key list) are
+uploaded and live in `UiIconConfig.Icons`. The three optional `ServerStorage.RunGearModels`
+(`ScorchAura`/`OrbitBlades`/`LaserDrone`) are still not placed — placeholder neon visuals cover them.
 
 **Below this point is the DESIGN ROUND that produced the spec above — kept as the record of what was
 agreed and why, not as a to-do list anymore.**

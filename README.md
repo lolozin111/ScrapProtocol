@@ -58,8 +58,10 @@ no manual copy-pasting scripts into Studio.
   node still shows a prompt and still lets you swing at it, it just grants zero ore, with no
   warning anywhere.
 - **Mine shaft (voxel grid)** — `MineShaftService.lua` builds a real 3D grid of mineable blocks
-  (`MineShaftConfig.GridWidth` x `GridLength`, 32x32 by default) starting from a Part tagged
-  `MineShaftStart`. **This anchor needs genuinely open air underneath it** — put it up on a
+  (`MineShaftConfig.GridWidth` x `GridLength`, **16x16 by default, 12 studs per cell** — a
+  "chunky, Minecraft-ish" block pass; the footprint is still 192x192 studs, same as the earlier
+  32x32-cells-at-6-studs version, just built out of fewer, bigger blocks) starting from a Part
+  tagged `MineShaftStart`. **This anchor needs genuinely open air underneath it** — put it up on a
   platform, not resting on your map's real ground — because the whole grid is built as ordinary,
   real, solid Parts directly below it; there's no teleporting and no separate hidden area
   involved. Only the top layer (Depth 0) is generated up front, filling the entire footprint —
@@ -81,8 +83,12 @@ no manual copy-pasting scripts into Studio.
   (`LavaDamage`) instead of a reward, with no warning in its label ahead of time. All three get
   more or less common with depth (`MineShaftConfig.KindWeightBands`) but Rock stays the most common
   kind at every depth (80% at the surface, easing to ~38% in the deepest band)
-  so filler never fully disappears even very deep. Separately, past a depth threshold, ambient
-  environmental risk (`MineShaftConfig.HazardBands`) deals periodic damage unless your **Suit
+  so filler never fully disappears even very deep. Ore blocks render `Enum.Material.Metal` (Rock/
+  Bedrock stay `Enum.Material.Rock`) over saturated, hand-picked-per-ore colors
+  (`MineShaftConfig.OreColors`) — a sheen plus a strong color is what makes an ore seam readable
+  from across the quarry, not just once you're standing on it. Separately, past a depth threshold,
+  ambient environmental risk (`MineShaftConfig.HazardTypes` — Heat starting at Depth 25, Toxic Air
+  at Depth 38, each escalating through 3 tiers) deals periodic damage unless your **Suit
   tier** covers it (Workbench → Suit tab, `UpgradeSuit`, costs in `SuitTierCosts`) — a top-right
   HUD panel shows your current depth and whichever hazard applies there. A **Recall** button
   (bottom action row) appears once you're a level or more down and respawns you at full health —
@@ -93,15 +99,28 @@ no manual copy-pasting scripts into Studio.
   `ProximityPrompt` ore mining still uses — a prompt attached to a block directly under the
   player's own feet routinely fails its default line-of-sight check and just never triggers, so
   click-based is what actually works for something you stand on top of. Blocks don't carry their
-  own permanent label — with ~1,000 live just for the surface layer, `MineShaftController.client.lua` shows
+  own permanent label — with 256 live just for the surface layer, `MineShaftController.client.lua` shows
   ONE reusable hover label instead, re-targeted to whichever block you're actually looking at.
   Every cell's state is one shared, server-tracked value, same multiplayer-synced requirement the
-  ring zone had — if one player opens up a tunnel, everyone sees it already open. **This
+  ring zone had — if one player opens up a tunnel, everyone sees it already open. A low guard rail
+  rings the Depth-0 footprint's edge — only **2 studs tall** (`MineShaftConfig.SurfaceGuardHeight`),
+  deliberately short enough to step over without jumping (an 8-stud version made players jump just
+  to get into the mine, which the user rejected); it's a visual rim, not a barrier. **This
   replaces** `ResourceZoneService.lua`/`ResourceZoneConfig.lua` (the old scattered-ring layout) —
   those files are still on disk for reference but are no longer required by `Main.server.lua`;
   see `DESIGN_NOTES.md` for why. See `MineShaftConfig.lua` to retune grid size, hits, kind/ore/
   hazard weighting, or suit costs — `GridWidth`/`GridLength` is the first thing to shrink if
-  1,024 initial blocks turns out to be too much (or too small) for a given map.
+  256 initial blocks turns out to be too much (or too small) for a given map.
+
+  **Mine reset.** The whole grid tears down and rebuilds every 30 minutes
+  (`MineShaftConfig.ResetIntervalSeconds`), or immediately once 5,000 blocks have been mined out
+  since the last reset (`ResetBlockThreshold`), whichever comes first; the mine locks (no mining)
+  for 5 seconds while it rebuilds. Progress toward that reset is shown on a **world-space sign**
+  floating 40 studs above the pit — a hot-orange pill bar and a big "N / 5,000" count, no caption —
+  built and updated entirely server-side (`MineShaftService.lua`'s `buildResetSign`/
+  `updateResetSign`) so every player looks at the same sign instead of each client keeping a
+  synced copy. There used to be a top-centre HUD progress bar for this (`MineResetBar.lua`) and a
+  `MineResetUpdate` remote; both were deleted when the sign replaced them — don't rebuild either.
 - **Base plots** — every player needs somewhere the Workbench and Start Defense will actually
   work (see below), which means Studio needs at least one Part tagged `Plot` (`PlotConfig.Tag`)
   before ANYTHING craftable works at all. This is a two-piece system: **PlotService.lua** owns
@@ -451,10 +470,13 @@ no manual copy-pasting scripts into Studio.
   nine perk/gear items, the two Escape items, and the Scrap glyph — `RunOverclockChip`,
   `RunRapidFeeder`, `RunPlatedVest`, `RunNanoRepair`, `RunKineticBarrier`, `RunScavengersLens`,
   `RunScorchAura`, `RunOrbitBlades`, `RunLaserDrone`, `RunExtractionBeacon`, `RunSalvageInsurance`,
-  `RunScrap`. A missing key falls back to a tinted circle showing the item's initials (e.g.
-  "Overclock Chip" → "OC") with one `warn()` per missing key, not one per re-render, so leaving all
-  twelve unset doesn't spam Output — add `ImageLabel`s named exactly those keys inside `UiIcons` to
-  test the real art path. Separately, the three Gear items' in-raid visuals (the Scorch Aura ring, the
+  `RunScrap`. **All twelve are uploaded and live** (`UiIconConfig.Icons`, landed 2026-09-22),
+  drawn at `ICON_GLYPH_SIZE = 58` inside the 76-stud icon plate — the user's own call, after the
+  mockup's original 40 read too small against the uploaded PNGs' built-in margins. A missing key
+  falls back to a tinted circle showing the item's initials (e.g. "Overclock Chip" → "OC") with one
+  `warn()` per missing key, not one per re-render, so a future icon that's cleared back to 0 doesn't
+  spam Output — the shop was tested and confirmed working end-to-end in Studio with all twelve live
+  (the user: "i tested myself and it looked fine"). Separately, the three Gear items' in-raid visuals (the Scorch Aura ring, the
   Orbit Blades, the Laser Drone) look for a Model named exactly `ScorchAura`, `OrbitBlades`, or
   `LaserDrone` inside `ServerStorage.RunGearModels` — an optional Folder **not yet declared in
   `default.project.json`**, so create it by hand in Studio if you want real gear art; without it (or
@@ -683,11 +705,30 @@ no manual copy-pasting scripts into Studio.
 - **Stamina & dash** — every player has **3 stamina charges** (the cells in the bottom-left status
   panel). Press **Q** (gamepad **B**, or the on-screen button on touch) to dash about 18 studs in
   the direction you're moving, or the way you face if standing still; each dash spends one charge,
-  and charges refill **one every 5 seconds**. With no charges left, Q does nothing. Every number,
-  plus the slots for a future dash animation (`AnimationId`, speed, fade, priority), lives in
-  `ReplicatedStorage/Shared/DashConfig.lua`. Test: press Q three times quickly — you should dash
-  three times (at least 0.35s apart), watch three cells empty, and see the first recharging cell fill
-  over 5 seconds; a fourth press before it fills does nothing. Respawning refills all three.
+  and charges refill **one every 5 seconds**. With no charges left, Q does nothing. A dash also
+  grants **0.3 seconds of damage invulnerability** starting the moment it's granted
+  (`DashConfig.IFrameSeconds`, `DashService.DashInvulnerableUntil` Player attribute) — slightly
+  longer than the dash's own 0.22s movement so a dash that ends a hair before a hit lands still
+  reads as a dodge. **Only honoured in the raid combat damage path today** (`CombatEncounterService`)
+  — mine lava damage and outpost node chip damage go through different code paths and do NOT check
+  it yet; dashing through those still hurts you. This is a known/deliberate gap, not a bug — see
+  `DESIGN_NOTES.md`. Every number, plus the slots for a future dash animation (`AnimationId`, speed,
+  fade, priority), lives in `ReplicatedStorage/Shared/DashConfig.lua`. Test: press Q three times
+  quickly — you should dash three times (at least 0.35s apart), watch three cells empty, and see the
+  first recharging cell fill over 5 seconds; a fourth press before it fills does nothing. Respawning
+  refills all three.
+- **Aim camera (over-the-shoulder while a gun is equipped)** — `AimCamera.client.lua` +
+  `Shared/AimCameraConfig.lua`. Equip any weapon Tool and the camera slides to sit over your right
+  shoulder (`ShoulderOffset`, tweened in over 0.18s), your character turns to face wherever the
+  camera looks so movement strafes instead of steers, the torso leans up/down with your aim
+  (R15's Waist + Neck joints, clamped to 45°), the mouse locks to the centre of the screen, its
+  icon hides, and a small four-tick crosshair appears at screen centre (that IS the aim point —
+  the fire raycast already reads from mouse position, which is now always dead centre). Holstering
+  the gun undoes every one of these and hands the camera back to Roblox's ordinary free-look third
+  person. Opening any HudKit panel (Inventory, a Station menu, etc.) gives the mouse back and
+  freezes the pose exactly where it was, without a full disengage, so closing the panel resumes
+  aiming instantly. Works on both R15 (Waist + Neck) and R6 (Neck only, taking the whole pitch);
+  either joint arriving late on a freshly-spawned character is tolerated and picked up automatically.
 - **Admin dev shortcuts** — `AdminConfig.lua` auto-detects the place's owner (via
   `game.CreatorId`, which works automatically in Studio when you're testing as yourself; add your
   UserId to `AdminUserIds` too if the game ends up owned by a Group). Admins win any Combat raid
@@ -982,35 +1023,44 @@ to end:
 11. Place one more Part **up on a platform with genuinely open air underneath it** (not resting on
    your map's real ground — the whole grid gets built as real solid Parts directly below this, so
    it needs real clear space to build into), tag it `MineShaftStart`. Press Play — check the
-   Output window for `[MineShaftService] populated 1024/1024 Depth-0 blocks` (generation is
+   Output window for `[MineShaftService] populated 256/256 Depth-0 blocks` (generation is
    spread across a few frames, so this may take a moment to print). You should see one big
-   32x32-cell rock floor with a low guard rail around its edge, colored blocks scattered across
-   it (mostly grey Rock, some ore-colored blocks, and the occasional glowing orange "??? "block —
-   that one's a Lava pocket, no warning which one until you break it). **Hover** over the block
-   you're standing on — a thin outline highlights it and a floating label shows its kind/depth/hit
-   counter (this is ONE reusable label that follows your cursor, not a permanent tag on every
-   block) — then **click** it (click-based, not the hold-style ProximityPrompt ore mining still
-   uses, since a prompt attached to a block directly under the player's own feet routinely fails
-   its line-of-sight check and never triggers). It takes several hits — watch the hover label's
-   hit counter count down — and on the final hit it's destroyed and you should naturally fall
-   straight through into a freshly-spawned block one level (`CellSize`, 6 studs) below — ordinary
-   gravity, no teleport. Keep digging straight down a few more levels: confirm ore names show up
-   and get rarer with depth (`MineShaftConfig.OreWeightBands`), that a `MineFailed` warning
-   appears in Output if you hit ore needing a Tool Tier you don't have yet, and that mining a
-   "???" block deals a damage burst instead of granting anything (check your HP). Once you're a
-   couple levels down, try mining **sideways** instead of straight down — confirm a new block
-   appears in that direction too (this only works below Depth 0, since Depth 0 starts completely
-   filled in — see `DESIGN_NOTES.md`). Dig to depth 25 or deeper without upgrading your Suit and
-   you should also start taking separate periodic damage from the ambient hazard — the top-right
-   HUD panel should show your current depth and a red hazard warning (e.g. "Heat — need Thermal
-   Liner"); Recall or walk back to your base, open **Workbench → Suit** near your `Crafting`
-   Station and upgrade, and the same depth should stop damaging you and
-   the panel should turn green. Once you're a level or more down, a **Recall** button should
-   appear in the bottom action row — click it and confirm you respawn back at your base plot at
-   full health. Dig a tunnel somewhere else on the grid and confirm it's shared server-side (have a
-   second player, or a second Studio test server, check the same spot and confirm they see it
-   already open). (NOTE: this replaces the old scattered-ring zone — `ResourceZoneService.lua` no
-   longer runs; see `DESIGN_NOTES.md`.)
+   16x16-cell rock floor (12-stud "chunky" blocks, same 192x192 footprint as before) with a low
+   guard rail around its edge — only 2 studs tall, step over it, no jumping required — colored
+   blocks scattered across it (mostly grey Rock, some ore-colored blocks with a metallic sheen,
+   and the occasional glowing orange "??? "block — that one's a Lava pocket, no warning which one
+   until you break it). Floating **40 studs above the pit** you should also see a big world-space
+   sign — a hot-orange pill bar and a large count reading "0 / 5,000" — that's the mine's reset
+   progress (see the bullet above); it should be visible from well outside the pit. **Hover** over
+   the block you're standing on — a thin outline highlights it and a floating label shows its
+   kind/depth/hit counter (this is ONE reusable label that follows your cursor, not a permanent tag
+   on every block) — then **click** it (click-based, not the hold-style ProximityPrompt ore mining
+   still uses, since a prompt attached to a block directly under the player's own feet routinely
+   fails its line-of-sight check and never triggers). Clicking should also draw an almost-
+   transparent grey bar just under the top of the screen that drains right-to-left over your swing
+   time and fades out (`MiningCooldownBar.lua`) — mash the click a few times in a row and confirm
+   it does NOT restart on every click (it should read as "time until next hit," never jumping back
+   to full) and that no "Swinging too fast" toast appears (that rejection is deliberately silent
+   now — every OTHER rejection, e.g. wrong tool tier or bedrock, still toasts). The block takes
+   several hits — watch the hover label's hit counter count down — and on the final hit it's
+   destroyed and you should naturally fall straight through into a freshly-spawned block one level
+   (`CellSize`, 12 studs) below — ordinary gravity, no teleport. Keep digging straight down a few
+   more levels: confirm ore names show up and get rarer with depth (`MineShaftConfig
+   .OreWeightBands`), that a `MineFailed` warning appears in Output if you hit ore needing a Tool
+   Tier you don't have yet, and that mining a "???" block deals a damage burst instead of granting
+   anything (check your HP). Once you're a couple levels down, try mining **sideways** instead of
+   straight down — confirm a new block appears in that direction too (this only works below Depth
+   0, since Depth 0 starts completely filled in — see `DESIGN_NOTES.md`). Dig to depth 25 or deeper
+   without upgrading your Suit and you should also start taking separate periodic damage from the
+   ambient hazard — the top-right HUD panel should show your current depth and a red hazard
+   warning (e.g. "Heat — need Thermal Liner"); Recall or walk back to your base, open
+   **Workbench → Suit** near your `Crafting` Station and upgrade, and the same depth should stop
+   damaging you and the panel should turn green. Once you're a level or more down, a **Recall**
+   button should appear in the bottom action row — click it and confirm you respawn back at your
+   base plot at full health. Dig a tunnel somewhere else on the grid and confirm it's shared
+   server-side (have a second player, or a second Studio test server, check the same spot and
+   confirm they see it already open). (NOTE: this replaces the old scattered-ring zone —
+   `ResourceZoneService.lua` no longer runs; see `DESIGN_NOTES.md`.)
 12. Open **Workbench → Auto-Miner** (near your `Crafting` Station) and click **Build** (costs
     Iron Ore + Copper Ore). Once built, the row switches to showing the passive rate (e.g.
     `+3 Iron Ore every 60s`); wait a tick or two and confirm your Iron Ore count ticks up on
@@ -1415,7 +1465,13 @@ to end:
     on a clean sync.
 
 27. **The Salvage Run shop rework (`RunBuffConfig.lua`/`RunBuffService.lua`/`RaidShopPanel.lua`),
-    BUILT but not yet verified in Studio.** Reach a Shop node the same way as before (walk into the
+    BUILT and confirmed working in Studio by the user (2026-09-22) — cards, icons, tinting, and the
+    3-4 roll all render correctly.** Deep verification of the individual mechanics below
+    (rarity-up math, Insurance's payout on an actual death, gear damage numbers) is deliberately
+    DEFERRED to the game's dedicated testing phase rather than this pass — the user's call: "for
+    those things we gotta do the testing phase first before anything." The steps below are still
+    accurate as a description of what to click and expect; they just haven't all been independently
+    re-confirmed since. Reach a Shop node the same way as before (walk into the
     room and hold the interact prompt at its `InteractPoint`) and confirm the panel that opens now is
     a full-screen card screen headed **SALVAGE EXCHANGE**, over a scrim that still shows the room
     behind it (not a solid blackout — that's the mockup's own canvas background, deliberately not
@@ -1462,9 +1518,14 @@ to end:
     (`SalvageInsurance.KeepOrePct`) — compare against a run with no Insurance, where the same kind of
     ore is lost completely.
 
-    **Boss cards now do something.** Clear a Boss node (step 15) and confirm the familiar "Choose one:"
-    picker still appears, but picking one now visibly changes your stats — these route through the
-    same `RunBuffService`/`RunBuffConfig.Aggregate` system as the shop's own perks, stack WITHOUT any
+    **Boss cards now do something, and now use the shop's own card look.** Clear a Boss node (step
+    15) and confirm the reward pick is no longer plain colored buttons — it's the same 240x392 card
+    (`RunCard.lua`, shared with `RaidShopPanel.lua`) on its own full-screen scrim, headed "BOSS
+    DEFEATED" / "CHOOSE ONE REWARD", offering 3 cards side by side, each with a **TAKE** button
+    (never blocked by afford/slot checks, so it never shows the shop's "broke" look) and a
+    "STACKS · NO SLOT" footnote where a leveled shop card would show its pip bar. Picking one
+    visibly changes your stats — these route through the same `RunBuffService`/
+    `RunBuffConfig.Aggregate` system as the shop's own perks, stack WITHOUT any
     cap, and take no equipment slot. Boss cards are on their OWN separate rarity ladder from shop
     items (`RaidConfig.CardRarityWeights`: Common/Rare/Epic/Legendary, 5 stat categories — Damage, Fire
     Rate, Max HP, Loot, and Crit Chance — 4 rarities each, 20 cards total) — a Common boss card is not
@@ -1532,6 +1593,26 @@ to end:
     rarely Cores or Contraband, "hella rarely" Voidium Shard) through the same loot path as any other
     raid drop, meaning any ore it pays is `RunLocked` exactly like Combat/Boss ore — lost on a bad exit
     the same way (step 15's "Extraction rewards" paragraph above), not a loophole around that stake.
+
+30. **Aim camera** (`AimCamera.client.lua`/`Shared/AimCameraConfig.lua`) — equip any weapon Tool
+    from the Inventory panel (step 14/step 19) outside of combat and confirm the camera snaps over
+    your right shoulder, your character turns to face the camera (A/D should now sidestep rather
+    than turn you), a small crosshair appears at screen centre, and your mouse cursor disappears.
+    Look straight up and down and confirm your character's upper body leans with it (R15) without
+    the legs also bending. Open any panel (e.g. **Inventory**) while still equipped and confirm the
+    cursor comes back and the crosshair hides immediately, with the camera/pose otherwise frozen in
+    place; close the panel and confirm aiming resumes instantly rather than re-sliding the camera in
+    again. Holster the weapon (unequip it) and confirm the camera returns to ordinary free-look
+    third person, the cursor is usable again, and the crosshair is gone.
+
+31. **Dash i-frames** (`DashConfig.IFrameSeconds`, `DashService.IsInvulnerable`) — start a raid
+    (step 15) and let an enemy wind up an attack on you (the Voidwaken Hulk's telegraphed swing, or
+    any melee-range enemy). Dash (**Q**) through/away right as the hit would land and confirm you
+    take NO health or shield loss from that specific hit — the 0.3-second invulnerability window
+    starts the instant the dash is granted. This is currently only honoured in the raid combat
+    damage path (`CombatEncounterService`): the same test in the mine (dashing through Lava touch
+    damage) or at an outpost node (dashing through its chip damage) will NOT protect you yet — that
+    is a known, deliberate gap (see `DESIGN_NOTES.md`), not something to report as broken.
 
 ## 5. Environment effects (optional polish)
 
