@@ -40,7 +40,7 @@ already made (numbers, mechanics, sequencing), not just vague direction.
 | Dash i-frames | **Built 2026-09-22** — `DashConfig.IFrameSeconds`, honoured in the raid damage path only (not mine lava, not outpost chip damage yet) — see "Stamina & dash" and "Resuming after a context reset" |
 | Mining cooldown bar (replaces the "Swinging too fast" toast) | **Built 2026-09-22** — `MiningCooldownBar.lua`, a frame-driven state machine — see "Resuming after a context reset" |
 | Adversarial exploit review (F1-F8) | **Done 2026-09-23** — 8 findings, all fixed same day, none Studio-verified yet — report: "Breaking Salvage Protocol", https://claude.ai/code/artifact/UkMW3M9KMJ8H7m8G1pYt7A — see "Resuming after a context reset" |
-| Raid flow & end-of-run screen | **2 of 3 built 2026-09-23, none Studio-verified** — single-exit auto-advance with a travel wipe, and `RunSummaryPanel.lua`'s staggered stats screen. Step 3 (retrofitting the old raid toasts/popups, plus the damage-number colour collision) NOT started — see "Resuming after a context reset" |
+| Raid flow & end-of-run screen | **ALL 3 built 2026-09-23, none Studio-verified** — single-exit auto-advance with a travel wipe, `RunSummaryPanel.lua`'s staggered stats screen, and the notice/damage-number retrofit: four hand-rolled `roomBody` labels collapsed into one fading `noticeLine`, and bonus damage now MERGED into the hit that caused it (`feedbackBatch` in `CombatEncounterService`) so AimBot's top-up stops reading as a weak crit — see "Resuming after a context reset" |
 | PvP base invasion | **Recommended cut from v1** — see "Road to release" below |
 
 Agreed build order (most recent discussion): Raid Energy → Mining zone rework → weapon mod
@@ -3454,7 +3454,10 @@ pointless. Base waves have no cap at all. It scales +25% per Research Tier above
 it reach the same cap faster. **Raising `HealFraction` therefore does almost nothing** — the cap
 binds long before the rate does, and that is the knob anyone would instinctively reach for first.
 
-**OPEN — FULLY DIAGNOSED, DELIBERATELY NOT FIXED YET: the damage-number colour collision.**
+**FIXED 2026-09-23 (committed, NOT Studio-verified): the damage-number colour collision.**
+The diagnosis below is kept in full because it is the useful part — the fix is three paragraphs and
+the reasoning is twenty. **What shipped: option 1, the fold.** The user chose it over the cheaper
+`+N` grammar knowing it touches the combat path.
 
 Reported twice as "crits are doing less damage than normal hits — the yellow numbers are lower than
 the white ones". They are not crits, and nothing is miscalculating. Three separate mechanics are
@@ -3480,20 +3483,52 @@ unconditionally. There is no other crit source in the game. Confirmed by reading
 `spec.Damage = stats.Damage * damageMultiplier * critMultiplier`, applied once, never re-applied,
 never inverted; a crit cannot come out lower than a normal hit.
 
-**The actual defect is legibility, not arithmetic**, and it belongs with the raid HUD retrofit
-below rather than as a one-line colour swap. Options, in the order they were judged:
+**The actual defect is legibility, not arithmetic.** Four options were judged; the user picked the
+first, the only one that changes the combat path:
 
-1. **Fold the bonus into the main number.** Best feel — one big number instead of two competing
-   ones — but the Ultimate hook fires AFTER `resolveAndApplyDamage` has already sent the main
-   number, so it needs a real ordering change in `ResolvePlayerHit`, not a retag.
-2. **Give bonus damage its own visual grammar** — a `+15` prefix, so a top-up reads as a top-up
-   whatever colour it is. Cheap, and fixes the "why is my crit weaker" reading directly.
-3. **Retag AimBot's bonus from `"Headshot"` to `"Ultimate"`** (pink, which it genuinely is). One
-   line, but it loses the "this was a headshot" read the effect is named for.
-4. **Nothing at all for AimBot; make crits legible instead** — they are currently a gold that is one
-   size step from the headshot yellow, for a mechanic most players will never see.
+1. **Fold the bonus into the main number** — **THIS IS WHAT SHIPPED.** One big number instead of two
+   competing ones. The obstacle was real: the Ultimate hook fires AFTER `resolveAndApplyDamage` has
+   already sent the main number, so it needed an ordering change in `ResolvePlayerHit`, not a retag.
+2. Give bonus damage its own visual grammar — a `+15` prefix. Cheap, client-only, fixes the "why is
+   my crit weaker" reading without touching combat. **Still available** if the fold misbehaves in
+   Studio and has to be reverted.
+3. Retag AimBot's bonus from `"Headshot"` to `"Ultimate"` (pink, which it genuinely is). One line,
+   but it loses the "this was a headshot" read the effect is named for.
+4. Nothing for AimBot; make crits legible instead.
 
-There are 12 damage-number kinds and no legend anywhere in the game. That is the root of it.
+There are 12 damage-number kinds and no legend anywhere in the game. **That root is still
+untouched** — the fold fixes the one collision that was actually confusing a player, not the
+absence of a legend. Worth revisiting if testers trip on the other eleven.
+
+**How the fold works** (`CombatEncounterService.lua`, all of it commented in place).
+`resolveAndApplyDamage` gained an optional trailing `feedbackBatch`; when one is present the
+`DamageNumber:FireClient` is deferred into an accumulator instead. `ResolvePlayerHit` makes one per
+hit, threads it through the weapon-behaviour context and the Ultimate ctx's `DealDamage`, and
+flushes one merged number per enemy. The ~15 other call sites pass nothing and are byte-identical.
+No damage math moved — only when the number reaches the screen.
+
+Three things hold it up, and anyone touching this must not break them:
+
+- **Keyed per ENEMY RECORD, not per shot.** Ricochet, Detonator and ExplosiveBow damage *other*
+  enemies from the same shot and must keep their own numbers. Per-record keying gives that for free.
+- **The batch is a fresh local**, never module- or player-scoped. A behaviour or Ultimate hook can
+  yield; two players' shots sharing a batch would merge numbers that were never the same shot.
+- **`flushFeedbackBatch` sets `Closed` before firing anything**, so a `DealDamage` deferred past the
+  flush falls through to firing its own number rather than adding to a batch nobody will flush
+  again — a dropped number, not a merged one.
+
+**`ResolvePlayerHit` has TWO exits reachable after the batch exists** and both flush: the early
+`return true` for a weapon with no Ultimate, and the final one. Missing the early one would silently
+drop the damage number for *every non-Ultimate shot in the game* — if numbers ever vanish after a
+future edit here, check that first.
+
+Merged kind is the higher-priority of the two: `Crit > Headshot > Explosion > Ultimate > Normal`. A
+crit is the rarer, bigger roll and wins the label; AimBot's bonus correctly promotes a plain hit to
+Headshot, because 31 + 15 *is* the 1.5x headshot.
+
+**What to watch for in Studio:** a merged number where two used to stack (AimBot equipped); a single
+number per hit on a weapon with no Ultimate; and Ricochet/Detonator/ExplosiveBow still showing
+separate numbers on each distinct enemy.
 
 **AGREED NEXT WORK, in this order (the user chose it, 2026-09-23):**
 
@@ -3505,8 +3540,22 @@ There are 12 damage-number kinds and no legend anywhere in the game. That is the
    tracked. A clean Extract HOLDS the player in the room until Continue (timeout
    `RaidConfig.SummaryTimeoutSeconds`); Defeat and Abandon tear down first and show the numbers over
    the base. That hold opened a loot dupe, now closed by making `settleRunLoot` idempotent.
-3. **Retrofit the rest of the raid HUD's toasts and popups to the new style — NOT STARTED.** This is
-   the next thing to do. The damage-number legibility problem above folds into it.
+3. ~~Retrofit the rest of the raid HUD's toasts and popups to the new style~~ — **BUILT.** Smaller
+   than it sounded: `RaidClient`'s own `showToast`, the room panel title, the boss pick and the
+   summary screen were already on tokens. What was left was four near-identical hand-rolled
+   `TextLabel`s in `roomBody` (room description, interaction hint, "Fully healed.", boss-clear loot
+   summary) differing only in text/colour/italic and a stray 13-vs-14 size — now one `noticeLine`
+   helper beside `progressBar`, on `FONT.Body`/`TEXTSIZE.Label`, fading in 0.18s Quad Out like the
+   summary rows. Plus the travel wipe's `GothamMedium`/`GothamBold` routed through
+   `FONT.DisplayMedium`/`FONT.Display` (they were literally those tokens' own fallbacks, so it picks
+   up Montserrat for free), `actionButton` onto `FONT.BodyBold`, and `progressBar`'s bare `10`
+   named `TRACK_HEIGHT`. The damage-number half of this task is recorded above.
+
+**With step 3 done, the three-task raid flow list is COMPLETE — and none of it is Studio-verified.**
+That is now the largest outstanding risk in the repo: the F1-F8 exploit fixes, the four fixes from
+the first test round, and all three raid flow features are committed and untested. The polish pass
+below (UI in-place updates, self-maintaining boot check, the one explicit disconnect) is still
+unstarted and was agreed before any of this.
 
 **Also worth knowing for whoever picks this up:** the F4 caps (`RunProgressionMaxStep = 10`,
 `MapGrowthCap = 4.0`, `RunProgressionMaxExtraEnemies = 3`) are balance numbers chosen during the
