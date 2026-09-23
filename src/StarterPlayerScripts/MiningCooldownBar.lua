@@ -24,7 +24,7 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
 
 local OreConfig = require(ReplicatedStorage.Shared.OreConfig)
 local ToolModConfig = require(ReplicatedStorage.Shared.ToolModConfig)
@@ -80,16 +80,26 @@ local fill = Hud.new("Frame", {
 	Parent = track,
 }, { Hud.new("UICorner", { CornerRadius = UDim.new(1, 0) }) })
 
-local activeTween: Tween? = nil
-local fadeTween: Tween? = nil
--- Bumped on every Start(); a finishing drain only hides the bar if it is still the newest one, so a
--- swing landing mid-drain can't be hidden by the previous swing's completion.
-local runToken = 0
+----------------------------------------------------------------------
+-- State machine, not tweens. The first version drove the drain with a TweenService tween and did its
+-- bookkeeping in the tween's Completed callback, and clicking fast enough broke it: cancelled tweens
+-- still fire Completed, a new tween can start before the old one's callback has run, and the
+-- "visible" flag ended up disagreeing with what was on screen. The user asked for plain conditions
+-- instead, and they're right — two booleans and a clock cannot race with each other.
+--
+--   barActive  — a cooldown is being shown right now. A click while true changes nothing.
+--   endsAt     — the clock the cooldown finishes at; remaining = endsAt - now.
+--   duration   — what the bar is a fraction OF, so the fill is remaining/duration.
+--
+-- One Heartbeat connection owns the visuals for as long as barActive holds, and nothing outside it
+-- ever writes the fill's size.
+----------------------------------------------------------------------
 
--- The clock this cooldown ends at. The gate that makes "one bar at a time" true: Start() is a no-op
--- until it passes, so a burst of clicks draws one honest countdown instead of a bar that snaps back
--- to full on every click.
-local activeUntil = 0
+local barActive = false
+local endsAt = 0
+local duration = 0
+local fadeUntil = 0 -- after the drain empties: the short fade-out window, then everything resets
+local stepConnection: RBXScriptConnection? = nil
 
 -- The swing time the server will actually charge, derived the same way both mining services derive
 -- it: the tool tier's base time through ToolModConfig, which applies the equipped tool mod. Falls
@@ -101,81 +111,90 @@ local function swingSeconds(): number
 	return ToolModConfig.SwingTime(profile, toolData.SwingTime)
 end
 
-local function cancelTweens()
-	if activeTween then
-		activeTween:Cancel()
-		activeTween = nil
-	end
-	if fadeTween then
-		fadeTween:Cancel()
-		fadeTween = nil
+local function resetBar()
+	barActive = false
+	endsAt = 0
+	duration = 0
+	fadeUntil = 0
+	track.Visible = false
+	track.BackgroundTransparency = TRACK_TRANSPARENCY
+	fill.BackgroundTransparency = FILL_TRANSPARENCY
+	fill.Size = UDim2.fromScale(1, 1)
+	if stepConnection then
+		stepConnection:Disconnect()
+		stepConnection = nil
 	end
 end
 
--- Starts the drain, and IGNORES the call if one is already running. Called on every click, accepted
--- or not: a click during the cooldown is exactly when the player wants to see how much longer they
--- have to wait, and restarting the bar there would show them a fresh full bar for a cooldown that is
--- nearly over — which is what "the visual is broken" was. Only a click AFTER the bar has run out
--- starts a new one.
+local function onStep()
+	local now = os.clock()
+
+	if barActive then
+		local remaining = endsAt - now
+		if remaining > 0 then
+			-- Straight fraction of the cooldown left. Recomputed from the clock every frame rather
+			-- than animated, so a dropped frame or a mid-cooldown click can't leave it showing the
+			-- wrong width.
+			fill.Size = UDim2.fromScale(math.clamp(remaining / math.max(duration, 0.001), 0, 1), 1)
+			return
+		end
+
+		-- Emptied. barActive drops HERE, not after the fade: the cooldown is genuinely over, and a
+		-- click during the fade-out must be able to start the next bar rather than be swallowed by a
+		-- countdown that has already finished.
+		barActive = false
+		fadeUntil = now + FADE_SECONDS
+		fill.Size = UDim2.fromScale(0, 1)
+	end
+
+	if fadeUntil == 0 then
+		resetBar() -- nothing running and nothing fading: tear the frame loop down
+		return
+	end
+
+	local fadeLeft = fadeUntil - now
+	if fadeLeft <= 0 then
+		resetBar()
+		return
+	end
+
+	local progress = 1 - (fadeLeft / FADE_SECONDS)
+	track.BackgroundTransparency = TRACK_TRANSPARENCY + (1 - TRACK_TRANSPARENCY) * progress
+	fill.BackgroundTransparency = FILL_TRANSPARENCY + (1 - FILL_TRANSPARENCY) * progress
+end
+
+-- Called on EVERY click, accepted or not. Does nothing while a bar is already running: the bar
+-- answers "how much longer until I can hit again", and a player mashing the button is asking that
+-- constantly — restarting it there would answer with a full bar for a cooldown about to end.
 function MiningCooldownBar.Start()
-	if os.clock() < activeUntil then
+	if barActive then
 		return
 	end
 
-	local duration = swingSeconds()
-	if duration <= 0 then
+	local seconds = swingSeconds()
+	if seconds <= 0 then
 		return
 	end
-	activeUntil = os.clock() + duration
 
-	runToken += 1
-	local token = runToken
+	barActive = true
+	duration = seconds
+	endsAt = os.clock() + seconds
+	fadeUntil = 0
 
-	cancelTweens()
 	track.Visible = true
 	track.BackgroundTransparency = TRACK_TRANSPARENCY
 	fill.BackgroundTransparency = FILL_TRANSPARENCY
 	fill.Size = UDim2.fromScale(1, 1)
 
-	local drain = TweenService:Create(
-		fill,
-		TweenInfo.new(duration, Enum.EasingStyle.Linear),
-		{ Size = UDim2.fromScale(0, 1) }
-	)
-	activeTween = drain
-	drain.Completed:Connect(function(state: Enum.PlaybackState)
-		if state ~= Enum.PlaybackState.Completed or token ~= runToken then
-			return -- cancelled, or a newer swing already owns the bar
-		end
-		local fade = TweenService:Create(
-			track,
-			TweenInfo.new(FADE_SECONDS),
-			{ BackgroundTransparency = 1 }
-		)
-		local fillFade = TweenService:Create(
-			fill,
-			TweenInfo.new(FADE_SECONDS),
-			{ BackgroundTransparency = 1 }
-		)
-		fadeTween = fade
-		fade.Completed:Connect(function()
-			if token == runToken then
-				track.Visible = false
-			end
-		end)
-		fade:Play()
-		fillFade:Play()
-	end)
-	drain:Play()
+	if not stepConnection then
+		stepConnection = RunService.Heartbeat:Connect(onStep)
+	end
 end
 
--- Hidden outright when the character dies or the player leaves the mine mid-cooldown: a bar left
--- draining over a respawn screen is the kind of stuck-UI artifact that reads as a bug.
+-- Cleared outright when the character dies or is removed mid-cooldown: a bar left draining over a
+-- respawn screen is the kind of stuck-UI artifact that reads as a bug.
 function MiningCooldownBar.Hide()
-	runToken += 1
-	activeUntil = 0 -- the next click starts a fresh bar rather than being swallowed by a dead one
-	cancelTweens()
-	track.Visible = false
+	resetBar()
 end
 
 LocalPlayer.CharacterRemoving:Connect(function()
