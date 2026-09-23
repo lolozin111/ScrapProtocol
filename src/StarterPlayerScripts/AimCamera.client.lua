@@ -141,16 +141,15 @@ end
 -- multiplies onto these originals, never onto the live C0 — see onRenderStep below for why.
 ----------------------------------------------------------------------
 
--- `waist` is OPTIONAL because R6 has no waist joint to bend: its legs hang off the Torso, so the
--- only joint above the hips is the Neck, and pitching anything lower swings the legs with it. On R6
--- the head does all the looking and the body stays upright — the camera and the facing lock work
--- exactly the same either way. (Switching the place to R15 in Game Settings > Avatar is what buys
--- the full torso lean.)
+-- Both joints are OPTIONAL and both can arrive LATE. R15 has Waist and Neck; R6 has only a Neck (its
+-- legs hang off the Torso, so bending below the neck would swing them). Either can also simply not
+-- be there the moment the character first appears, which is what actually bit here — so the camera
+-- and the facing lock never depend on them, and the pitch fills itself in once they show up.
 type Rig = {
 	humanoid: Humanoid,
 	rootPart: BasePart,
 	waist: Motor6D?,
-	neck: Motor6D,
+	neck: Motor6D?,
 	originalWaistC0: CFrame?,
 	originalNeckC0: CFrame,
 }
@@ -165,27 +164,58 @@ local offsetTween: Tween? = nil
 -- warnedAnimationFailure: a rig that isn't R15 fails this the same way on every single respawn, and
 -- spamming Output on each one teaches nobody anything a single line didn't already say.
 local warnedBadRig = false
--- Separate flag: an R6 rig is a SUPPORTED case (head-only pitch), not a failure, so it says its one
--- line without burning the "this rig is broken" warning that would then never fire for a real one.
-local warnedR6Once = false
+-- Watches for look joints that appear after the character does (see attachJointWatcher).
+local jointWatchConnection: RBXScriptConnection? = nil
 
 -- Finds the look joints on EITHER rig. R15 keeps Neck in the Head and Waist in the UpperTorso; R6
 -- keeps its one Neck joint in the Torso and has no waist at all. Looked up by walking the character
 -- rather than by name-guessing a part, so a rig with unusual part names still resolves as long as
 -- the joints are where Roblox puts them.
-local function findLookJoints(character: Model, humanoid: Humanoid): (Motor6D?, Motor6D?)
-	local head = character:FindFirstChild("Head")
-	local upperTorso = character:FindFirstChild("UpperTorso")
-	local torso = character:FindFirstChild("Torso")
-
-	local neck = (head and head:FindFirstChild("Neck")) or (torso and torso:FindFirstChild("Neck"))
-	local waist = upperTorso and upperTorso:FindFirstChild("Waist")
-
-	if humanoid.RigType == Enum.HumanoidRigType.R6 then
-		waist = nil -- see the Rig type's comment: R6 has no joint between hips and shoulders
+-- Searched by DESCENDANT, not by "the part I expect it to live in": the first version looked up
+-- Head.Neck and UpperTorso.Waist by name, found neither, and concluded the rig wasn't R15 — on a rig
+-- that IS R15. Whatever the cause (a joint parented elsewhere, or simply not replicated yet at the
+-- moment we looked), asking "is there a Motor6D called Waist anywhere in this character" cannot be
+-- wrong in the same way, and attachJointWatcher below covers the not-yet-there case.
+local function findLookJoints(character: Model): (Motor6D?, Motor6D?)
+	local waist, neck = nil, nil
+	for _, descendant in ipairs(character:GetDescendants()) do
+		if descendant:IsA("Motor6D") then
+			if descendant.Name == "Waist" then
+				waist = descendant
+			elseif descendant.Name == "Neck" then
+				neck = descendant
+			end
+		end
 	end
+	return waist, neck
+end
 
-	return (waist and waist:IsA("Motor6D")) and waist or nil, (neck and neck:IsA("Motor6D")) and neck or nil
+-- Joints can appear after the character does. Rather than sampling once and giving up for the life
+-- of that character, watch until both are in hand.
+local function attachJointWatcher(character: Model, rig: Rig)
+	if jointWatchConnection then
+		jointWatchConnection:Disconnect()
+		jointWatchConnection = nil
+	end
+	if rig.waist and rig.neck then
+		return
+	end
+	jointWatchConnection = character.DescendantAdded:Connect(function(descendant: Instance)
+		if not descendant:IsA("Motor6D") or currentRig ~= rig then
+			return
+		end
+		if descendant.Name == "Waist" and not rig.waist then
+			rig.waist = descendant
+			rig.originalWaistC0 = descendant.C0
+		elseif descendant.Name == "Neck" and not rig.neck then
+			rig.neck = descendant
+			rig.originalNeckC0 = descendant.C0
+		end
+		if rig.waist and rig.neck and jointWatchConnection then
+			jointWatchConnection:Disconnect()
+			jointWatchConnection = nil
+		end
+	end)
 end
 
 local function buildRig(character: Model, humanoid: Humanoid?, rootPart: Instance?): Rig?
@@ -197,16 +227,18 @@ local function buildRig(character: Model, humanoid: Humanoid?, rootPart: Instanc
 		return nil
 	end
 
-	local waist, neck = findLookJoints(character, humanoid :: Humanoid)
-	if not neck then
-		if not warnedBadRig then
-			warnedBadRig = true
-			warn("[AimCamera] Character has no Neck Motor6D (Head.Neck on R15, Torso.Neck on R6) — the shoulder camera and facing lock still run, but nothing can pitch with your aim.")
-		end
-	end
-	if not waist and (humanoid :: Humanoid).RigType == Enum.HumanoidRigType.R6 and not warnedR6Once then
-		warnedR6Once = true
-		warn("[AimCamera] R6 rig: the head pitches with your aim but the torso stays upright — R6 has no waist joint, and bending anything lower would swing the legs too. Set the place's avatar type to R15 for the full torso lean.")
+	local waist, neck = findLookJoints(character)
+	-- Says WHICH joint is missing and what the rig claims to be, rather than the old catch-all "not
+	-- an R15 rig?" that sent this chase down the wrong path once already. The camera and facing lock
+	-- run regardless — only the pitch needs these.
+	if (not waist or not neck) and not warnedBadRig then
+		warnedBadRig = true
+		warn(("[AimCamera] %s rig: Waist %s, Neck %s. The shoulder camera and facing lock still run; the pitch waits for whichever joint is missing to appear.")
+			:format(
+				tostring((humanoid :: Humanoid).RigType.Name),
+				waist and "found" or "MISSING",
+				neck and "found" or "MISSING"
+			))
 	end
 
 	return {
@@ -393,16 +425,14 @@ local function onCharacterAdded(character: Model)
 
 	local humanoid = character:WaitForChild("Humanoid", 10) :: Humanoid?
 	local rootPart = character:WaitForChild("HumanoidRootPart", 10)
-	-- Head on both rigs, then whichever torso this rig has — waiting on "UpperTorso" alone stalled
-	-- five seconds and then failed outright on an R6 character, which is what "not an R15 rig?" in
-	-- Output actually was.
+	-- Head only, and not the torso: which torso part exists differs per rig, and waiting on the wrong
+	-- name burns five seconds and then reports a rig problem that isn't one. buildRig searches every
+	-- descendant for the joints instead, and attachJointWatcher picks up whatever is late.
 	character:WaitForChild("Head", 5)
-	if humanoid and humanoid.RigType == Enum.HumanoidRigType.R6 then
-		character:WaitForChild("Torso", 5)
-	else
-		character:WaitForChild("UpperTorso", 5)
-	end
 	currentRig = buildRig(character, humanoid, rootPart)
+	if currentRig then
+		attachJointWatcher(character, currentRig :: Rig)
+	end
 
 	if humanoid then
 		humanoid.Died:Connect(disengage)
