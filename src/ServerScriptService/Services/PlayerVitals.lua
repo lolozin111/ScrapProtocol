@@ -45,6 +45,30 @@ local PlayerVitals = {}
 -- needing a CharacterAdded connection per tracked player that some exit path could leak.
 local tracked: { [number]: { Current: number, Max: number, Character: Instance? } } = {}
 
+-- Roblox inserts a Script named "Health" into every character, which regenerates 1% of MaxHealth
+-- per second forever. That is invisible until something else owns the player's HP, at which point
+-- the two fight: the regen adds a point, mirror() below puts it straight back, and a player at
+-- 100 max watches their bar tick 56 -> 57 -> 56 once a second. Reported from testing as "the
+-- Support Core isn't healing me", because a flicker is what a heal that gets reverted looks like.
+--
+-- DISABLED rather than destroyed, and only for as long as an activity holds the player, so this
+-- changes nothing outside a fight: passive regen at base works exactly as it always has. Inside a
+-- fight it was already being cancelled by the mirror, so switching it off is not a balance change
+-- either — it only removes a phantom point that never actually landed. Roblox's own script is the
+-- one thing that can re-enable itself cleanly, which is why this toggles `Disabled` instead of
+-- deleting the instance and having nothing to put back.
+local DEFAULT_REGEN_SCRIPT_NAME = "Health"
+
+local function setDefaultRegenEnabled(character: Instance?, enabled: boolean)
+	if not character then
+		return
+	end
+	local regen = character:FindFirstChild(DEFAULT_REGEN_SCRIPT_NAME)
+	if regen and regen:IsA("BaseScript") then
+		regen.Disabled = not enabled
+	end
+end
+
 local function humanoidOf(player: Player): (Humanoid?, Instance?)
 	local character = player.Character
 	if not character then
@@ -81,6 +105,9 @@ local function recordFor(player: Player): (any?, Humanoid?)
 		record.Character = character
 		record.Max = humanoid.MaxHealth
 		record.Current = humanoid.Health
+		-- The fresh body arrives with its own enabled regen script, so it has to be muted too or
+		-- the flicker comes back the moment a player respawns mid-activity.
+		setDefaultRegenEnabled(character, false)
 	end
 
 	return record, humanoid
@@ -121,12 +148,23 @@ function PlayerVitals.Begin(player: Player)
 		Current = math.clamp(humanoid.Health, 0, humanoid.MaxHealth),
 		Character = character,
 	}
+	setDefaultRegenEnabled(character, false)
 end
 
 -- Stops owning it. The Humanoid keeps whatever the last mirrored value was, so a player walks out
 -- of a raid with the HP the raid left them on rather than being snapped anywhere.
 function PlayerVitals.End(player: Player)
+	local record = tracked[player.UserId]
 	tracked[player.UserId] = nil
+	-- Hand passive regen back. Both the character the activity STARTED on and the one the player is
+	-- wearing now, because a death mid-raid replaces the body and only the live one would otherwise
+	-- get its script re-enabled — leaving a player who died in a raid with no passive regen for the
+	-- rest of the session, which is the kind of quiet, permanent-feeling bug this file exists to
+	-- stop shipping.
+	if record and record.Character then
+		setDefaultRegenEnabled(record.Character, true)
+	end
+	setDefaultRegenEnabled(player.Character, true)
 end
 
 ----------------------------------------------------------------------
