@@ -182,11 +182,15 @@ local SIGN_MAX_VIEW_DISTANCE = 1200 -- studs; the sign is big enough now to be w
 -- (and shouldn't) require across — so this mirrors the handful of palette values it needs, exactly
 -- like ReplicatedFirst/LoadingScreen.client.lua keeps its own copy of a few HudKit colors for the
 -- same reason (it can't require HudKit either, since it runs before replication).
-local SIGN_PANEL_COLOR = Color3.fromRGB(22, 18, 15)    -- HudKit.COLOR.Panel
-local SIGN_LINE_COLOR = Color3.fromRGB(60, 53, 47)     -- HudKit.COLOR.Line
 local SIGN_TEXT_COLOR = Color3.fromRGB(237, 231, 220)  -- HudKit.COLOR.Text
-local SIGN_ACCENT_COLOR = Color3.fromRGB(224, 122, 59) -- HudKit.COLOR.Accent
-local SIGN_BAD_COLOR = Color3.fromRGB(190, 90, 75)     -- HudKit.COLOR.Bad
+local SIGN_BAD_COLOR = Color3.fromRGB(255, 70, 45)     -- HudKit.COLOR.Bad, pushed hot: this sign is
+	-- read from across a desert, where the HUD's muted (190, 90, 75) reads as brown, not alarm.
+-- Deliberately NOT HudKit values: the HUD's palette is muted because it sits over the game, while
+-- this sign competes with open sky and pale sand from 300 studs away and has to win.
+local SIGN_TRACK_COLOR = Color3.fromRGB(28, 22, 18)    -- near-black, so the fill reads as lit
+local SIGN_FILL_COLOR = Color3.fromRGB(255, 125, 30)   -- saturated orange, the family HudKit.Accent
+	-- belongs to but at full chroma
+local SIGN_FILL_HOT_COLOR = Color3.fromRGB(255, 205, 60) -- the gradient's far end
 
 -- "5000" reads as a threshold you have to count digits on; "5,000" reads at a glance. Ported
 -- verbatim from the deleted MineResetBar.lua rather than retyped — see the house style note in
@@ -243,68 +247,72 @@ local function buildResetSign(footprintLength: number)
 	billboard.LightInfluence = 0 -- flat, HUD-like colors regardless of the mine's actual lighting
 	billboard.Parent = anchor
 
+	-- Layout, straight off the user's own sketch (2026-09-22): the COUNT is the loud part, sitting
+	-- big above a fat pill-shaped bar, with "MINE RESET" as a small caption underneath. The first
+	-- version was a dark HUD plate with the label on top and the numbers small at the bottom, and it
+	-- read as "eee idk, its not smth players would catch their attention" against a desert map. So:
+	-- no panel behind it (the sketch has none — the bar just floats), and saturated colors rather
+	-- than the HUD's deliberately-drab browns, which vanish against sand.
 	local plate = Instance.new("Frame")
 	plate.Name = "Plate"
-	plate.BackgroundColor3 = SIGN_PANEL_COLOR
-	plate.BorderSizePixel = 0
+	plate.BackgroundTransparency = 1
 	plate.Size = UDim2.new(1, 0, 1, 0)
 	plate.Parent = billboard
-	Instance.new("UICorner", plate).CornerRadius = UDim.new(0, 8)
-	local plateStroke = Instance.new("UIStroke")
-	plateStroke.Color = SIGN_LINE_COLOR
-	plateStroke.Thickness = 2
-	plateStroke.Parent = plate
-	-- Scale, not offset: a BillboardGui's children measure in the same units as its Size, so a fixed
-	-- padding that looked right on the first 34x13 sign would eat a differently-sized one. As a
-	-- fraction it survives any future change to SIGN_WIDTH_STUDS/SIGN_HEIGHT_STUDS.
-	local platePadding = Instance.new("UIPadding")
-	platePadding.PaddingLeft = UDim.new(0.03, 0)
-	platePadding.PaddingRight = UDim.new(0.03, 0)
-	platePadding.PaddingTop = UDim.new(0.06, 0)
-	platePadding.PaddingBottom = UDim.new(0.06, 0)
-	platePadding.Parent = plate
 
-	-- BillboardGui text has no meaningful pixel/stud relationship, so every label here is
-	-- TextScaled against a fraction of the plate's height instead of given a fixed TextSize.
-	local title = Instance.new("TextLabel")
-	title.Name = "Title"
-	title.BackgroundTransparency = 1
-	title.Size = UDim2.new(1, 0, 0.42, 0)
-	title.Font = Enum.Font.SourceSansBold
-	title.Text = "MINE RESET"
-	title.TextColor3 = SIGN_ACCENT_COLOR
-	title.TextScaled = true
-	title.TextXAlignment = Enum.TextXAlignment.Left
-	title.Parent = plate
-
-	local track = Instance.new("Frame")
-	track.Name = "Track"
-	track.BackgroundColor3 = SIGN_LINE_COLOR
-	track.BorderSizePixel = 0
-	track.Position = UDim2.new(0, 0, 0.5, 0)
-	track.Size = UDim2.new(1, 0, 0.16, 0)
-	track.Parent = plate
-	Instance.new("UICorner", track).CornerRadius = UDim.new(0, 4)
-
-	local fill = Instance.new("Frame")
-	fill.Name = "Fill"
-	fill.BackgroundColor3 = SIGN_ACCENT_COLOR
-	fill.BorderSizePixel = 0
-	fill.Size = UDim2.new(0, 0, 1, 0)
-	fill.Parent = track
-	Instance.new("UICorner", fill).CornerRadius = UDim.new(0, 4)
-
+	-- Every label is TextScaled against a fraction of the plate's height: BillboardGui text has no
+	-- meaningful pixel/stud relationship, so a fixed TextSize would be meaningless here.
 	local readout = Instance.new("TextLabel")
 	readout.Name = "Readout"
 	readout.BackgroundTransparency = 1
-	readout.Position = UDim2.new(0, 0, 0.68, 0)
-	readout.Size = UDim2.new(1, 0, 0.32, 0)
-	readout.Font = Enum.Font.Code
+	readout.Size = UDim2.new(1, 0, 0.46, 0)
+	readout.Font = Enum.Font.GothamBlack
 	readout.Text = ""
 	readout.TextColor3 = SIGN_TEXT_COLOR
 	readout.TextScaled = true
-	readout.TextXAlignment = Enum.TextXAlignment.Left
+	readout.TextStrokeColor3 = Color3.new(0, 0, 0)
+	readout.TextStrokeTransparency = 0.35 -- the sign floats against open sky and pale sand; without
+		-- an outline the white count washes out on the bright half of that background
 	readout.Parent = plate
+
+	local track = Instance.new("Frame")
+	track.Name = "Track"
+	track.BackgroundColor3 = SIGN_TRACK_COLOR
+	track.BorderSizePixel = 0
+	track.Position = UDim2.new(0, 0, 0.5, 0)
+	track.Size = UDim2.new(1, 0, 0.34, 0)
+	track.Parent = plate
+	Instance.new("UICorner", track).CornerRadius = UDim.new(1, 0) -- fully round ends: the sketch's pill
+	local trackStroke = Instance.new("UIStroke")
+	trackStroke.Color = SIGN_FILL_COLOR
+	trackStroke.Thickness = 3
+	trackStroke.Transparency = 0.45
+	trackStroke.Parent = track
+
+	local fill = Instance.new("Frame")
+	fill.Name = "Fill"
+	fill.BackgroundColor3 = SIGN_FILL_COLOR
+	fill.BorderSizePixel = 0
+	fill.Size = UDim2.new(0, 0, 1, 0)
+	fill.Parent = track
+	Instance.new("UICorner", fill).CornerRadius = UDim.new(1, 0)
+	-- Hot orange into yellow across the fill — one flat color still read as a stripe; the gradient is
+	-- what makes it look lit from inside at a distance.
+	local fillGradient = Instance.new("UIGradient")
+	fillGradient.Color = ColorSequence.new(SIGN_FILL_COLOR, SIGN_FILL_HOT_COLOR)
+	fillGradient.Parent = fill
+
+	local title = Instance.new("TextLabel")
+	title.Name = "Title"
+	title.BackgroundTransparency = 1
+	title.Position = UDim2.new(0, 0, 0.88, 0)
+	title.Size = UDim2.new(1, 0, 0.12, 0)
+	title.Font = Enum.Font.GothamBold
+	title.Text = "MINE RESET"
+	title.TextColor3 = SIGN_FILL_COLOR
+	title.TextScaled = true
+	title.TextStrokeColor3 = Color3.new(0, 0, 0)
+	title.TextStrokeTransparency = 0.5
+	title.Parent = plate
 
 	signTitle = title
 	signFill = fill
@@ -331,9 +339,11 @@ local function updateResetSign()
 
 	local threshold = math.max(1, MineShaftConfig.ResetBlockThreshold)
 	local mined = math.clamp(totalMinedCount, 0, threshold)
-	signReadout.Text = ("%s / %s BLOCKS"):format(withCommas(mined), withCommas(threshold))
-	signTitle.TextColor3 = SIGN_ACCENT_COLOR
-	signFill.BackgroundColor3 = SIGN_ACCENT_COLOR
+	-- Just the two numbers, per the sketch ("2400 5000" written big above the bar) — the word BLOCKS
+	-- cost a third of the line's width to say what the caption underneath already says.
+	signReadout.Text = ("%s / %s"):format(withCommas(mined), withCommas(threshold))
+	signTitle.TextColor3 = SIGN_FILL_COLOR
+	signFill.BackgroundColor3 = SIGN_FILL_COLOR
 	signFill.Size = UDim2.new(mined / threshold, 0, 1, 0)
 end
 
