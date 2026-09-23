@@ -40,6 +40,7 @@ already made (numbers, mechanics, sequencing), not just vague direction.
 | Dash i-frames | **Built 2026-09-22** — `DashConfig.IFrameSeconds`, honoured in the raid damage path only (not mine lava, not outpost chip damage yet) — see "Stamina & dash" and "Resuming after a context reset" |
 | Mining cooldown bar (replaces the "Swinging too fast" toast) | **Built 2026-09-22** — `MiningCooldownBar.lua`, a frame-driven state machine — see "Resuming after a context reset" |
 | Adversarial exploit review (F1-F8) | **Done 2026-09-23** — 8 findings, all fixed same day, none Studio-verified yet — report: "Breaking Salvage Protocol", https://claude.ai/code/artifact/UkMW3M9KMJ8H7m8G1pYt7A — see "Resuming after a context reset" |
+| Raid flow & end-of-run screen | **2 of 3 built 2026-09-23, none Studio-verified** — single-exit auto-advance with a travel wipe, and `RunSummaryPanel.lua`'s staggered stats screen. Step 3 (retrofitting the old raid toasts/popups, plus the damage-number colour collision) NOT started — see "Resuming after a context reset" |
 | PvP base invasion | **Recommended cut from v1** — see "Road to release" below |
 
 Agreed build order (most recent discussion): Raid Energy → Mining zone rework → weapon mod
@@ -3413,6 +3414,106 @@ generic chassis outline rather than an empty frame. Forge A's chamber needs no a
 and frames.
 
 ### Resuming after a context reset
+
+**START HERE — LIVE STATE AS OF 2026-09-23 (late session).** Everything below this block is history
+or backlog; this is what is actually in flight.
+
+**Committed and unverified.** Eight exploit fixes (F1-F8, see the STEP 0 record further down), then
+a testing round that produced four more fixes and two of the three agreed raid features. NOTHING in
+any of it has been through Studio. There is no test suite; it needs a real pass, and the checklist
+for the exploit half is at https://claude.ai/artifact/5yNSs3qagi91T4TWP67fg7.
+
+**Fixed after the first Studio test round (2026-09-23):**
+
+- **Scorch Aura rendered as an upright dome beside the player, not a ring around them.** A Part with
+  `Shape = Cylinder` has its axis along LOCAL X, so the disc's flat faces point along X and it
+  stands on edge by default; the code rotated it 90 degrees about X, which spins a cylinder around
+  its own axis and changes nothing visible. Rotating about Z lays it flat. With the 3-stud drop
+  underneath, the old version read as a dome half-buried in the floor.
+- **Scavenger headshots worked on some variants and not others.** `measureRestPoseHitbox` (which
+  leaves the head OUT of the auto box so it stays hittable) and `ResolvePlayerHit`'s headshot test
+  both hard-coded `Name == "Head"` case-sensitively, in two separate places. A variant whose head
+  part was authored as `"head"` failed BOTH at once — the box swallowed the head and the shot that
+  reached it did not count. One shared `isHeadPart` now, case-insensitive; a rig with no
+  recognisable head warns once per model name, with a `NoHeadshots` opt-out on the EnemyConfig entry.
+- **The health bar ticked +1 then -1 once a second, reported as "the Support Core isn't healing".**
+  Roblox inserts a Script named `Health` into every character that restores 1% of MaxHealth per
+  second — exactly +1/s at a 100 max. Invisible until `PlayerVitals` started owning the number, at
+  which point the regen added a point and the mirror put it straight back, forever. Now disabled
+  (not destroyed — `Disabled` is reversible, deleting leaves nothing to put back) for exactly as
+  long as an activity holds the player, and re-enabled against both the character the activity
+  started on and the one the player is wearing when it ends, since dying mid-raid replaces the body.
+  Passive regen outside a fight is untouched. **This was masking the drone question entirely; the
+  Support Core was subsequently confirmed working by the user.**
+
+**Support Core heal rates, since this came up and will again.** It is **4% of max HP per 2-second
+tick**, not per node — `DroneConfig.Support.Params.HealFraction` with `TickInterval = 2`. What
+actually bounds it is the budget: `RaidRoomHealCap = 0.15` per room and `RaidMapHealCap = 0.75` per
+map, both fractions of max health, both the user's call on 2026-09-22 so Heal rooms are not made
+pointless. Base waves have no cap at all. It scales +25% per Research Tier above 3, which only makes
+it reach the same cap faster. **Raising `HealFraction` therefore does almost nothing** — the cap
+binds long before the rate does, and that is the knob anyone would instinctively reach for first.
+
+**OPEN — FULLY DIAGNOSED, DELIBERATELY NOT FIXED YET: the damage-number colour collision.**
+
+Reported twice as "crits are doing less damage than normal hits — the yellow numbers are lower than
+the white ones". They are not crits, and nothing is miscalculating. Three separate mechanics are
+wearing two nearly identical golds:
+
+| what | colour | size | produced by |
+|---|---|---|---|
+| Headshot | `(255,220,90)` yellow | 26 | a hit on a part named Head, weapon with `HeadshotMultiplier > 1` |
+| Crit | `(230,175,60)` gold | 28 | `RunBuffService.RollCrit` — Overclock Chip **Lv4+ only** |
+| ScorchAura | `(255,110,40)` orange | 15 | the aura gear ticking |
+
+The yellow numbers in the report are **AimBot's bonus hit**
+(`UltimateEffects.lua`'s `OnHit.AimBot`). Every 3rd landed shot it deals
+`ctx.Damage * (HeadshotMultiplier - 1)` — with the shipped `HeadshotMultiplier = 1.5` that is
+**exactly half the main hit** — as a SEPARATE damage event tagged `"Headshot"`. So a 31 white and a
+15 yellow are one shot: 31 + 15 = the 1.5x headshot. The yellow is lower than the white *by design*,
+because it is a top-up rather than a replacement, and nothing on screen says so.
+
+**And crits have almost certainly never fired for this player.** A crit requires an Overclock Chip
+at Epic or Legendary bought from a RAID shop (`RunBuffConfig.CritMultiplier = 1.5`, Lv4 gives 5%
+chance, Lv5 a guaranteed crit every 10th shot). Outside a raid `RollCrit` returns `false, 1`
+unconditionally. There is no other crit source in the game. Confirmed by reading the whole path:
+`spec.Damage = stats.Damage * damageMultiplier * critMultiplier`, applied once, never re-applied,
+never inverted; a crit cannot come out lower than a normal hit.
+
+**The actual defect is legibility, not arithmetic**, and it belongs with the raid HUD retrofit
+below rather than as a one-line colour swap. Options, in the order they were judged:
+
+1. **Fold the bonus into the main number.** Best feel — one big number instead of two competing
+   ones — but the Ultimate hook fires AFTER `resolveAndApplyDamage` has already sent the main
+   number, so it needs a real ordering change in `ResolvePlayerHit`, not a retag.
+2. **Give bonus damage its own visual grammar** — a `+15` prefix, so a top-up reads as a top-up
+   whatever colour it is. Cheap, and fixes the "why is my crit weaker" reading directly.
+3. **Retag AimBot's bonus from `"Headshot"` to `"Ultimate"`** (pink, which it genuinely is). One
+   line, but it loses the "this was a headshot" read the effect is named for.
+4. **Nothing at all for AimBot; make crits legible instead** — they are currently a gold that is one
+   size step from the headshot yellow, for a mechanic most players will never see.
+
+There are 12 damage-number kinds and no legend anywhere in the game. That is the root of it.
+
+**AGREED NEXT WORK, in this order (the user chose it, 2026-09-23):**
+
+1. ~~Auto-advance a single-exit node with a travel transition~~ — **BUILT.** `RaidConfig
+   .AutoAdvanceSeconds`/`AutoAdvanceBlockedTypes`, `autoAdvanceTo` in RaidRoomService, travel wipe
+   in RaidClient. Shop and Heal excluded; Start routes through the same rule.
+2. ~~End-of-run stats screen, Sonic-style staggered reveal, multiplier last, Continue to extract~~ —
+   **BUILT.** `RunSummaryPanel.lua`. Run duration, kills, damage dealt and best room are all newly
+   tracked. A clean Extract HOLDS the player in the room until Continue (timeout
+   `RaidConfig.SummaryTimeoutSeconds`); Defeat and Abandon tear down first and show the numbers over
+   the base. That hold opened a loot dupe, now closed by making `settleRunLoot` idempotent.
+3. **Retrofit the rest of the raid HUD's toasts and popups to the new style — NOT STARTED.** This is
+   the next thing to do. The damage-number legibility problem above folds into it.
+
+**Also worth knowing for whoever picks this up:** the F4 caps (`RunProgressionMaxStep = 10`,
+`MapGrowthCap = 4.0`, `RunProgressionMaxExtraEnemies = 3`) are balance numbers chosen during the
+exploit fix, not numbers the exploit dictated. They bound the curves; where they bound them is still
+open to retuning.
+
+---
 
 **STEP 0 — ADVERSARIAL EXPLOIT REVIEW: DONE, 2026-09-23.** The user's instruction, verbatim: "i want
 u to approach the game as an exploiter/hacker, i want u to have malice, your goal will be to break
