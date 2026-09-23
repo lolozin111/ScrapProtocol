@@ -193,12 +193,17 @@ local function tweenCameraOffset(humanoid: Humanoid, target: Vector3)
 	if offsetTween then
 		offsetTween:Cancel()
 	end
-	offsetTween = TweenService:Create(
+	-- Held in a local and played off that, rather than `(offsetTween :: Tween):Play()` on the next
+	-- line: a statement starting with "(" right after a closing ")" is the Luau "Ambiguous syntax"
+	-- parse error, and a parse error here means the whole script never loads — no camera at all, no
+	-- runtime warning saying why.
+	local tween = TweenService:Create(
 		humanoid,
 		TweenInfo.new(AimCameraConfig.OffsetTweenSeconds, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
 		{ CameraOffset = target }
 	)
-	(offsetTween :: Tween):Play()
+	offsetTween = tween
+	tween:Play()
 end
 
 local function disengage()
