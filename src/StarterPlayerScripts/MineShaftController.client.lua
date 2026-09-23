@@ -37,9 +37,10 @@ local MineShaftHit = ReplicatedStorage.Remotes.MineShaftHit
 local MineFailed = ReplicatedStorage.Remotes.MineFailed -- shared with MiningService's failures, same UX
 local OreConfig = require(ReplicatedStorage.Shared.OreConfig)
 local Hud = require(script.Parent.HudKit)
-local MineResetBar = require(script.Parent.MineResetBar) -- self-boots the top-centre reset progress
-	-- bar; required here (not MainHud) purely for the require side effect, same as this file already
-	-- does for HudKit — see MineResetBar.lua's own header for why it doesn't live in MainHud.
+-- MineResetBar.lua (a top-centre HUD progress bar for the mine's block-count reset) used to be
+-- required here for its self-boot side effect. Deleted: it crowded the player's HUD, and was
+-- replaced with a world-space BillboardGui sign floating above the mine, built and updated entirely
+-- server-side in MineShaftService.lua — nothing for the client to require anymore.
 
 local BLOCK_TAG = "ShaftBlock"
 local CLICK_DISTANCE = 24 -- studs; matches MineShaftService's MAX_MINING_DISTANCE server-side check

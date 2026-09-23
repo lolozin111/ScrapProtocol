@@ -99,11 +99,14 @@ MineShaftConfig.WallThickness = 4        -- thickness of the low guard rail arou
                                           -- 192x192 footprint either way, so this doesn't touch the
                                           -- footprint's size or position, just how far the rail
                                           -- pokes onto the surrounding ground.
-MineShaftConfig.SurfaceGuardHeight = 8   -- studs the guard rail rises above the surface. Doubled
-                                          -- from 4 for the same reason as WallThickness above — kept
-                                          -- at roughly 2/3 of one CellSize so a chunkier block gets
-                                          -- a rail that still reads as ankle/shin height next to it,
-                                          -- instead of looking suddenly flimsy against bigger blocks.
+MineShaftConfig.SurfaceGuardHeight = 2   -- studs the guard rail rises above the surface. NOT scaled
+                                          -- with CellSize, and deliberately so: this was briefly 8
+                                          -- (2/3 of a 12-stud cell, for proportion) and the user hit
+                                          -- the real problem immediately — "rn u gotta jump in order
+                                          -- to get into the mines and i dont want that". A Roblox
+                                          -- character steps over about 2 studs without jumping, so
+                                          -- that is the ceiling here whatever the blocks measure. The
+                                          -- rail's job is to read as a rim, not to be a barrier.
 MineShaftConfig.WallColor = Color3.fromRGB(66, 52, 38) -- was (58, 50, 44); pushed from ~24% to ~42%
                                           -- saturation — a bit more gunmetal-brown so it doesn't
                                           -- read as flat grey, but still darker and less saturated

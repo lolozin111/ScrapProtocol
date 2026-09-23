@@ -147,23 +147,189 @@ local performReset
 local getPlayerDepth
 
 ----------------------------------------------------------------------
--- Reset-progress broadcast — MineResetBar.lua's top-centre "N / Threshold BLOCKS" bar. Fires on a
--- cheap periodic loop (below) rather than once per mined block: a block hit already fires
--- InventoryUpdate for the miner alone, but this goes to every client (the bar is visible to anyone
--- currently in the mine, not just whoever swung last), so doing it per-hit would be one
--- FireAllClients per swing across every player in the shaft. RESET_PROGRESS_INTERVAL is a
--- broadcast-rate constant, not a gameplay tunable — same reasoning MAX_MINING_DISTANCE above gets
--- for staying a local instead of a MineShaftConfig entry.
-local RESET_PROGRESS_INTERVAL = 1 -- seconds between periodic snapshots; state-change call sites
-                                    -- below (lock starting, reset finishing) broadcast immediately
-                                    -- on top of this so those two transitions never wait out the tick
+-- Reset-progress sign — a world-space BillboardGui floating above the mine, showing the same
+-- "N / Threshold BLOCKS" progress the HUD used to carry in a top-centre bar (MineResetBar.lua,
+-- deleted — it crowded the player's screen; see DESIGN_NOTES.md/commit history for the request that
+-- replaced it). A BillboardGui already faces each client's own camera on its own — no hand-rolled
+-- facing math needed — so building and updating ONE instance here, server-side, means every player
+-- looks at the exact same sign instead of each client keeping a synced copy over a remote. That's
+-- also why MineResetUpdate was removed from default.project.json: nothing needs it anymore, every
+-- reader of this state is now a plain Instance property this file sets directly.
+----------------------------------------------------------------------
 
-local function broadcastResetProgress()
-	Remotes.MineResetUpdate:FireAllClients({
-		MinedCount = totalMinedCount,
-		Threshold = MineShaftConfig.ResetBlockThreshold,
-		Locked = isLocked,
-	})
+local SIGN_UPDATE_INTERVAL = 1 -- seconds between periodic refreshes; state-change call sites below
+                                -- (lock starting, reset finishing) update immediately on top of this
+                                -- so those two transitions never wait out the tick. Same reasoning
+                                -- MAX_MINING_DISTANCE above gets for staying a local instead of a
+                                -- MineShaftConfig entry — this is a refresh-rate knob, not gameplay.
+
+local SIGN_HEIGHT_ABOVE_SURFACE = 40 -- studs above the Depth-0 floor's top surface (local Y = 0 in
+	-- cellCFrame's coordinate space — see its comment) the sign floats at. Picked by eye, not
+	-- derived from MineShaftConfig.SurfaceGuardHeight: that value only sizes the low guard rail
+	-- around the floor's edge and has nothing to do with how high a sign needs to float to be seen
+	-- across a 192x192 footprint, so this stays its own constant rather than reusing that one.
+local SIGN_WIDTH_STUDS = 34  -- BillboardGui.Size, unlike every other GuiObject's, is denominated in
+local SIGN_HEIGHT_STUDS = 13 -- STUDS even for its Offset component — this IS "sized in studs,
+	-- readable from 100+ studs away": a fixed world-space size that shrinks with distance like any
+	-- other object, not a fixed on-screen pixel size the way a ScreenGui's would be.
+local SIGN_MAX_VIEW_DISTANCE = 650 -- studs; generous enough to spot the sign from most of the
+	-- surface footprint and back up through a dug shaft, without rendering it for a player clear
+	-- across the map who has no reason to care about the mine's reset timer.
+
+-- HudKit lives under StarterPlayerScripts — a client-only container this server-side file can't
+-- (and shouldn't) require across — so this mirrors the handful of palette values it needs, exactly
+-- like ReplicatedFirst/LoadingScreen.client.lua keeps its own copy of a few HudKit colors for the
+-- same reason (it can't require HudKit either, since it runs before replication).
+local SIGN_PANEL_COLOR = Color3.fromRGB(22, 18, 15)    -- HudKit.COLOR.Panel
+local SIGN_LINE_COLOR = Color3.fromRGB(60, 53, 47)     -- HudKit.COLOR.Line
+local SIGN_TEXT_COLOR = Color3.fromRGB(237, 231, 220)  -- HudKit.COLOR.Text
+local SIGN_ACCENT_COLOR = Color3.fromRGB(224, 122, 59) -- HudKit.COLOR.Accent
+local SIGN_BAD_COLOR = Color3.fromRGB(190, 90, 75)     -- HudKit.COLOR.Bad
+
+-- "5000" reads as a threshold you have to count digits on; "5,000" reads at a glance. Ported
+-- verbatim from the deleted MineResetBar.lua rather than retyped — see the house style note in
+-- CLAUDE.md about extracting exact text instead of hand-retyping UI helpers.
+local function withCommas(value: number): string
+	local text = tostring(math.floor(value))
+	while true do
+		local replaced, count = text:gsub("^(-?%d+)(%d%d%d)", "%1,%2")
+		text = replaced
+		if count == 0 then
+			break
+		end
+	end
+	return text
+end
+
+-- Assigned once by buildResetSign (called from populateGrid) and read/written by updateResetSign
+-- after that. nil until then, so every updateResetSign call guards on signReadout being set —
+-- SIGN_UPDATE_INTERVAL's periodic loop starts immediately at file load, well before populateGrid
+-- (itself task.defer'd) has necessarily run.
+local signReadout: TextLabel? = nil
+local signFill: Frame? = nil
+local signTitle: TextLabel? = nil
+
+-- Builds the reset-progress sign once: an invisible, non-collidable/queryable/touchable anchor Part
+-- centred over the Depth-0 footprint (local X = 0, same left-right centring cellCFrame uses; local
+-- Z = -footprintLength / 2, the midpoint between the near edge at Z = 0 and the far edge at
+-- Z = -footprintLength) and floating SIGN_HEIGHT_ABOVE_SURFACE studs above it, carrying a
+-- BillboardGui styled like the deleted HUD bar (dark plate, Line-colored border, Accent fill).
+-- Parented into shaftFolder alongside the guard rail so both get cleaned up/rebuilt with everything
+-- else, but — like the guard rail — NOT tagged BLOCK_TAG, so performReset's "destroy every
+-- BLOCK_TAG part" sweep leaves it standing.
+-- Only needs footprintLength (for the Z centring below) — footprintWidth isn't a parameter because
+-- cellCFrame's own local-X formula already centres ix = 1..GridWidth on local X = 0, same as
+-- originCFrame's, so there's no separate width-centring math to do here.
+local function buildResetSign(footprintLength: number)
+	local anchor = Instance.new("Part")
+	anchor.Name = "MineResetSignAnchor"
+	anchor.Anchored = true
+	anchor.CanCollide = false
+	anchor.CanQuery = false
+	anchor.CanTouch = false
+	anchor.Transparency = 1
+	anchor.Size = Vector3.new(1, 1, 1)
+	anchor.CFrame = (originCFrame :: CFrame) * CFrame.new(0, SIGN_HEIGHT_ABOVE_SURFACE, -footprintLength / 2)
+	anchor.Parent = shaftFolder
+
+	local billboard = Instance.new("BillboardGui")
+	billboard.Name = "MineResetSign"
+	billboard.Adornee = anchor
+	billboard.Size = UDim2.new(0, SIGN_WIDTH_STUDS, 0, SIGN_HEIGHT_STUDS) -- studs, not pixels — see
+		-- SIGN_WIDTH_STUDS/SIGN_HEIGHT_STUDS's comment above
+	billboard.MaxDistance = SIGN_MAX_VIEW_DISTANCE
+	billboard.LightInfluence = 0 -- flat, HUD-like colors regardless of the mine's actual lighting
+	billboard.Parent = anchor
+
+	local plate = Instance.new("Frame")
+	plate.Name = "Plate"
+	plate.BackgroundColor3 = SIGN_PANEL_COLOR
+	plate.BorderSizePixel = 0
+	plate.Size = UDim2.new(1, 0, 1, 0)
+	plate.Parent = billboard
+	Instance.new("UICorner", plate).CornerRadius = UDim.new(0, 8)
+	local plateStroke = Instance.new("UIStroke")
+	plateStroke.Color = SIGN_LINE_COLOR
+	plateStroke.Thickness = 2
+	plateStroke.Parent = plate
+	local platePadding = Instance.new("UIPadding")
+	platePadding.PaddingLeft = UDim.new(0, 10)
+	platePadding.PaddingRight = UDim.new(0, 10)
+	platePadding.PaddingTop = UDim.new(0, 8)
+	platePadding.PaddingBottom = UDim.new(0, 8)
+	platePadding.Parent = plate
+
+	-- BillboardGui text has no meaningful pixel/stud relationship, so every label here is
+	-- TextScaled against a fraction of the plate's height instead of given a fixed TextSize.
+	local title = Instance.new("TextLabel")
+	title.Name = "Title"
+	title.BackgroundTransparency = 1
+	title.Size = UDim2.new(1, 0, 0.42, 0)
+	title.Font = Enum.Font.SourceSansBold
+	title.Text = "MINE RESET"
+	title.TextColor3 = SIGN_ACCENT_COLOR
+	title.TextScaled = true
+	title.TextXAlignment = Enum.TextXAlignment.Left
+	title.Parent = plate
+
+	local track = Instance.new("Frame")
+	track.Name = "Track"
+	track.BackgroundColor3 = SIGN_LINE_COLOR
+	track.BorderSizePixel = 0
+	track.Position = UDim2.new(0, 0, 0.5, 0)
+	track.Size = UDim2.new(1, 0, 0.16, 0)
+	track.Parent = plate
+	Instance.new("UICorner", track).CornerRadius = UDim.new(0, 4)
+
+	local fill = Instance.new("Frame")
+	fill.Name = "Fill"
+	fill.BackgroundColor3 = SIGN_ACCENT_COLOR
+	fill.BorderSizePixel = 0
+	fill.Size = UDim2.new(0, 0, 1, 0)
+	fill.Parent = track
+	Instance.new("UICorner", fill).CornerRadius = UDim.new(0, 4)
+
+	local readout = Instance.new("TextLabel")
+	readout.Name = "Readout"
+	readout.BackgroundTransparency = 1
+	readout.Position = UDim2.new(0, 0, 0.68, 0)
+	readout.Size = UDim2.new(1, 0, 0.32, 0)
+	readout.Font = Enum.Font.Code
+	readout.Text = ""
+	readout.TextColor3 = SIGN_TEXT_COLOR
+	readout.TextScaled = true
+	readout.TextXAlignment = Enum.TextXAlignment.Left
+	readout.Parent = plate
+
+	signTitle = title
+	signFill = fill
+	signReadout = readout
+end
+
+-- Updates the sign in place — called immediately on the two state transitions that actually matter
+-- (the reset lock starting, the rebuilt mine coming back online) plus a periodic tick besides, same
+-- cadence the old HUD bar's broadcast used. Mirrors MineResetBar.lua's now-deleted refresh() exactly
+-- (RESETTING… in Bad during the lock, "N / Threshold BLOCKS" otherwise) since the information it's
+-- presenting hasn't changed, only where it's rendered.
+local function updateResetSign()
+	if not signReadout or not signFill or not signTitle then
+		return -- buildResetSign hasn't run yet (still waiting on populateGrid/its anchor tag)
+	end
+
+	if isLocked then
+		signReadout.Text = "RESETTING…"
+		signTitle.TextColor3 = SIGN_BAD_COLOR
+		signFill.BackgroundColor3 = SIGN_BAD_COLOR
+		signFill.Size = UDim2.new(1, 0, 1, 0)
+		return
+	end
+
+	local threshold = math.max(1, MineShaftConfig.ResetBlockThreshold)
+	local mined = math.clamp(totalMinedCount, 0, threshold)
+	signReadout.Text = ("%s / %s BLOCKS"):format(withCommas(mined), withCommas(threshold))
+	signTitle.TextColor3 = SIGN_ACCENT_COLOR
+	signFill.BackgroundColor3 = SIGN_ACCENT_COLOR
+	signFill.Size = UDim2.new(mined / threshold, 0, 1, 0)
 end
 
 ----------------------------------------------------------------------
@@ -378,9 +544,9 @@ local function regenerateDepthZero()
 	print(("[MineShaftService] populated %d/%d Depth-0 blocks"):format(placedCount, total))
 end
 
--- One-time setup: finds the anchor, derives originCFrame, builds the (also one-time) guard rail,
--- then builds the Depth-0 floor. Every reset after this reuses the same cached originCFrame and
--- guard rail via regenerateDepthZero instead of calling this again.
+-- One-time setup: finds the anchor, derives originCFrame, builds the (also one-time) guard rail and
+-- reset-progress sign, then builds the Depth-0 floor. Every reset after this reuses the same cached
+-- originCFrame/guard rail/sign via regenerateDepthZero instead of calling this again.
 local function populateGrid()
 	local anchor = CollectionService:GetTagged(START_TAG)[1]
 	if not anchor then
@@ -393,6 +559,9 @@ local function populateGrid()
 	local footprintWidth = MineShaftConfig.GridWidth * MineShaftConfig.CellSize
 	local footprintLength = MineShaftConfig.GridLength * MineShaftConfig.CellSize
 	buildSurfaceGuardRail(footprintWidth, footprintLength)
+	buildResetSign(footprintLength)
+	updateResetSign() -- give it real numbers immediately instead of leaving "0 / 0 BLOCKS" showing
+		-- until the first periodic tick (SIGN_UPDATE_INTERVAL seconds later)
 
 	regenerateDepthZero()
 end
@@ -673,8 +842,8 @@ performReset = function()
 		return -- a reset is already underway (e.g. the timer and the block threshold landed at once)
 	end
 	isLocked = true
-	broadcastResetProgress() -- immediate, not the next periodic tick — "RESETTING…" should appear
-		-- the instant the lock starts, not up to RESET_PROGRESS_INTERVAL seconds late
+	updateResetSign() -- immediate, not the next periodic tick — "RESETTING…" should appear the
+		-- instant the lock starts, not up to SIGN_UPDATE_INTERVAL seconds late
 	print("[MineShaftService] Resetting the mine...")
 
 	for _, player in ipairs(Players:GetPlayers()) do
@@ -696,8 +865,8 @@ performReset = function()
 
 	regenerateDepthZero()
 	isLocked = false
-	broadcastResetProgress() -- immediate, same reasoning as the lock-start call above: a fresh
-		-- 0 / Threshold bar the instant mining is legal again, not up to a second late
+	updateResetSign() -- immediate, same reasoning as the lock-start call above: a fresh
+		-- 0 / Threshold sign the instant mining is legal again, not up to a second late
 	print("[MineShaftService] Mine reset complete")
 end
 
@@ -712,14 +881,13 @@ task.spawn(function()
 	end
 end)
 
--- Periodic reset-progress snapshot for MineResetBar.lua — see RESET_PROGRESS_INTERVAL's comment
--- above for why this is a broadcast to everyone rather than tied to whoever's actually mining.
--- Also the mechanism that gives a player who joins (or was AFK at the surface) a correct bar
--- within one tick, instead of a stale zero until the next block happens to get mined.
+-- Periodic reset-progress refresh — see SIGN_UPDATE_INTERVAL's comment above for why this stays a
+-- cheap tick instead of firing once per mined block. Also the mechanism that gives a player who
+-- joins mid-run a correct sign within one tick instead of whatever it happened to show at boot.
 task.spawn(function()
 	while true do
-		broadcastResetProgress()
-		task.wait(RESET_PROGRESS_INTERVAL)
+		updateResetSign()
+		task.wait(SIGN_UPDATE_INTERVAL)
 	end
 end)
 
