@@ -30,6 +30,13 @@
 
 local Players = game:GetService("Players")
 
+-- Tracking a player's HP server-side is bracketed by the acquire/release below rather than by each
+-- combat system, because these two calls are ALREADY the single funnel every activity goes through
+-- on every exit path — including the error and disconnect ones. That makes "you are in an activity"
+-- and "your HP is authoritative" the same statement, with no third bracket for a future system to
+-- forget. See PlayerVitals.lua's header for what that buys and why it was needed.
+local PlayerVitals = require(script.Parent.PlayerVitals)
+
 local PlayerActivityService = {}
 
 -- The set of things a player can be doing. Only one at a time. Anything not listed here isn't an
@@ -86,6 +93,7 @@ function PlayerActivityService.TryAcquire(player: Player, activity: string, subj
 	end
 	current[player.UserId] = activity
 	subjects[player.UserId] = subject
+	PlayerVitals.Begin(player)
 	return true
 end
 
@@ -100,6 +108,7 @@ function PlayerActivityService.Release(player: Player, activity: string)
 	if current[player.UserId] == activity then
 		current[player.UserId] = nil
 		subjects[player.UserId] = nil
+		PlayerVitals.End(player)
 	end
 end
 

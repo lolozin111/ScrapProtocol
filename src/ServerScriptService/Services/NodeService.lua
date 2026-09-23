@@ -21,6 +21,9 @@ local DataService = require(script.Parent.DataService)
 local CombatMath = require(script.Parent.CombatMath)
 local ExpeditionService = require(script.Parent.ExpeditionService)
 local PlayerActivityService = require(script.Parent.PlayerActivityService)
+-- The server's own copy of the player's HP; a pass-through to the Humanoid outside an activity.
+-- See PlayerVitals.lua's header (2026-09-23 exploit review, F3).
+local PlayerVitals = require(script.Parent.PlayerVitals)
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 local InteractHeal = Remotes.InteractHeal
@@ -190,7 +193,11 @@ InteractHeal.OnServerInvoke = function(player: Player, node: any)
 		healCooldowns[player.UserId] = now + NodeConfig.HealCooldownSeconds
 	end
 
-	humanoid.Health = humanoid.MaxHealth
+	-- Pass-through in practice: this handler now refuses to run while the player holds an activity
+	-- at all, so PlayerVitals has no record and writes the Humanoid directly, exactly as before.
+	-- Routed through it anyway so there is no health write left in this codebase that would quietly
+	-- miss the server's copy if that gate is ever relaxed.
+	PlayerVitals.SetToMax(player)
 
 	if isExpeditionHeal then
 		commitFork(node)
@@ -324,22 +331,26 @@ local function runRaid(player: Player, node: Instance, tier: number)
 
 		local character = player.Character
 		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-		if not player.Parent or not humanoid or humanoid.Health <= 0 then
+		-- Health through PlayerVitals, not the Humanoid, for the same reason the Raid Room loop
+		-- does: this loop's only losing condition is the player's health reaching zero, and the
+		-- Humanoid belongs to the player's client. Tracking is live here because StartOutpostRaid
+		-- acquired the OutpostRaid activity before spawning this. See PlayerVitals.lua (F3).
+		if not player.Parent or not humanoid or not PlayerVitals.IsAlive(player) then
 			OutpostUpdate:FireClient(player, { Status = "RaidFailed" })
 			activeRaids[userId] = nil
 			return
 		end
 
 		remainingEnemyHP -= totalDPS
-		humanoid:TakeDamage(tierData.DamagePerSecond)
+		local playerHealth = PlayerVitals.Damage(player, tierData.DamagePerSecond)
 
 		OutpostUpdate:FireClient(player, {
 			Status = "Tick",
 			RemainingEnemyHP = math.max(0, remainingEnemyHP),
-			PlayerHealth = humanoid.Health,
+			PlayerHealth = playerHealth,
 		})
 
-		if humanoid.Health <= 0 then
+		if playerHealth <= 0 then
 			OutpostUpdate:FireClient(player, { Status = "RaidFailed" })
 			activeRaids[userId] = nil
 			return

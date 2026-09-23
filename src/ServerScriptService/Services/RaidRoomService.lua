@@ -78,6 +78,9 @@ local CombatEncounterService = require(script.Parent.CombatEncounterService)
 local BlackMarketService = require(script.Parent.BlackMarketService)
 local PlayerActivityService = require(script.Parent.PlayerActivityService)
 local RaidHealBudget = require(script.Parent.RaidHealBudget)
+-- The server's own copy of the player's HP; every heal this file grants goes through it so the
+-- raid's authoritative health actually moves. See PlayerVitals.lua's header (F3).
+local PlayerVitals = require(script.Parent.PlayerVitals)
 local RaidChest = require(script.Parent.RaidChest)
 local RaidChestConfig = require(ReplicatedStorage.Shared.RaidChestConfig)
 local RunBuffService = require(script.Parent.RunBuffService)
@@ -1419,7 +1422,12 @@ local function beginCombat(state, node)
 	-- Count is rolled FIRST now, unconditionally — resolveEnemyPlacements needs it up front to know
 	-- how many zone-filled positions (if any) to top authored SpawnPoints up to, not just to size the
 	-- procedural fallback roll the way this used to work.
-	local count = math.random(composition.EnemyCountMin, composition.EnemyCountMax)
+	--
+	-- The run adds BODIES on top of the Tier's own band, not just bigger health bars — see
+	-- RaidConfig.GetRunProgressionCountBonus for why a strength multiplier alone was the wrong half
+	-- of the answer. Applied to both ends so the whole band shifts up rather than just the ceiling.
+	local countBonus = RaidConfig.GetRunProgressionCountBonus(state.TotalNodesVisited)
+	local count = math.random(composition.EnemyCountMin + countBonus, composition.EnemyCountMax + countBonus)
 
 	-- A room built with RaidConfig.SpawnPointName/SpawnZoneName Parts decides some or all of its own
 	-- composition (see resolveEnemyPlacements); one with neither falls back to the original
@@ -1657,11 +1665,9 @@ end
 -- The actual Heal/Shop payoff, run once the player's interacted (or immediately, if the room has
 -- no interact Part — see beginInteractGated below).
 local function doHeal(state)
-	local character = state.Player.Character
-	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-	if humanoid then
-		humanoid.Health = humanoid.MaxHealth
-	end
+	-- Through PlayerVitals, so the raid's authoritative HP actually moves — writing the Humanoid
+	-- alone would leave the server still counting the player as hurt. See PlayerVitals.lua (F3).
+	PlayerVitals.SetToMax(state.Player)
 	RaidRoomUpdate:FireClient(state.Player, { Status = "HealApplied" })
 	-- Waits for a "Continue" RaidRoomAction before advancing — see RaidRoomAction handler below.
 end
@@ -1792,11 +1798,8 @@ local function beginBoss(state, node)
 		state.InCombat = false
 
 		if status == "Cleared" then
-			local character = state.Player.Character
-			local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-			if humanoid then
-				humanoid.Health = humanoid.MaxHealth
-			end
+			-- Same as doHeal: the full heal a Boss clear grants has to land on the server's copy.
+			PlayerVitals.SetToMax(state.Player)
 
 			local lootMultiplier = RaidConfig.GetLootMultiplier(node.Tier, state.TotalNodesVisited)
 			local granted = grantRunLoot(state, NodeConfig.BossLoot, lootMultiplier)

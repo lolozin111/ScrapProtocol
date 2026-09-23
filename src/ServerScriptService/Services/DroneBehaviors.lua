@@ -34,6 +34,9 @@
 -- The only require here: a pure bookkeeping module with no requires of its own, so it can't form a
 -- cycle with DroneService (which requires this file).
 local RaidHealBudget = require(script.Parent.RaidHealBudget)
+-- The server's own copy of the player's HP; a pass-through to the Humanoid outside a raid. See
+-- PlayerVitals.lua's header (2026-09-23 exploit review, F3).
+local PlayerVitals = require(script.Parent.PlayerVitals)
 
 local DroneBehaviors = {}
 
@@ -84,10 +87,25 @@ end
 
 DroneBehaviors.Tick.Support = function(ctx)
 	local humanoid = ctx.Humanoid
-	if not humanoid or humanoid.Health <= 0 then
+	if not humanoid then
 		return
 	end
-	if humanoid.Health >= humanoid.MaxHealth then
+	-- Health numbers come from PlayerVitals, not the Humanoid: this heal is budgeted per room and
+	-- per map inside a raid, and "how far below full am I" is what decides how much budget gets
+	-- spent — so a client-written Health would buy real healing out of a fake deficit. Outside a
+	-- raid PlayerVitals passes straight through to the Humanoid, so the drone's between-fights
+	-- behaviour in the world is unchanged. ctx.Player can be nil on a stray tick, which is why the
+	-- old Humanoid reads stay as the fallback rather than assuming a player is always there.
+	local currentHealth, maxHealth
+	if ctx.Player then
+		currentHealth, maxHealth = PlayerVitals.Get(ctx.Player)
+	else
+		currentHealth, maxHealth = humanoid.Health, humanoid.MaxHealth
+	end
+	if currentHealth <= 0 then
+		return
+	end
+	if currentHealth >= maxHealth then
 		return -- nothing to do; skip the heal number so it isn't spamming "0" at full health
 	end
 
@@ -95,14 +113,13 @@ DroneBehaviors.Tick.Support = function(ctx)
 		return
 	end
 
-	local amount = humanoid.MaxHealth * (ctx.Params.HealFraction or 0.04)
-	local healed = math.min(amount, humanoid.MaxHealth - humanoid.Health)
+	local amount = maxHealth * (ctx.Params.HealFraction or 0.04)
+	local healed = math.min(amount, maxHealth - currentHealth)
 
 	-- In a raid, a hard budget on top (DroneConfig's RaidRoomHealCap / RaidMapHealCap, counted by
 	-- RaidHealBudget) so the drone can't make Heal rooms pointless. nil outside a raid = no cap.
 	local budget = ctx.Player and RaidHealBudget.Get(ctx.Player)
 	if budget then
-		local maxHealth = humanoid.MaxHealth
 		local roomLeft = maxHealth * (ctx.Params.RaidRoomHealCap or 1) - budget.NodeHealed
 		local mapLeft = maxHealth * (ctx.Params.RaidMapHealCap or 1) - budget.MapHealed
 		local left = math.min(roomLeft, mapLeft)
@@ -124,7 +141,11 @@ DroneBehaviors.Tick.Support = function(ctx)
 		budget.MapHealed += healed
 	end
 
-	humanoid.Health += healed
+	if ctx.Player then
+		PlayerVitals.Heal(ctx.Player, healed)
+	else
+		humanoid.Health += healed
+	end
 	ctx.ShowHeal(healed)
 end
 

@@ -63,6 +63,11 @@ local PlotService = require(script.Parent.PlotService)
 local StationService = require(script.Parent.StationService)
 local RateLimiter = require(script.Parent.RateLimiter)
 local OreGate = require(script.Parent.OreGate)
+-- The server's own copy of the player's HP. The mine's hazards are NOT an activity, so this passes
+-- straight through to the Humanoid here and lava/heat/toxic air behave exactly as before — it is
+-- routed through anyway so a player who is somehow tracked (a base-defense wave running while they
+-- dig) takes mine damage off the same number the wave is deciding by. See PlayerVitals.lua (F3).
+local PlayerVitals = require(script.Parent.PlayerVitals)
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 
@@ -450,8 +455,8 @@ local function buildBlock(ix: number, iy: number, iz: number): Part
 			end
 			lavaTouchDebounce[player] = now
 			local humanoid = hitCharacter:FindFirstChildOfClass("Humanoid")
-			if humanoid and humanoid.Health > 0 then
-				humanoid:TakeDamage(MineShaftConfig.LavaTouchDamage)
+			if humanoid and PlayerVitals.IsAlive(player) then
+				PlayerVitals.Damage(player, MineShaftConfig.LavaTouchDamage)
 			end
 		end)
 	else -- Ore
@@ -596,7 +601,7 @@ local function clearBlock(player: Player, character: Model, block: Instance, coo
 	elseif kind == "Hazard" then
 		local humanoid = character:FindFirstChildOfClass("Humanoid")
 		if humanoid then
-			humanoid:TakeDamage(MineShaftConfig.LavaDamage)
+			PlayerVitals.Damage(player, MineShaftConfig.LavaDamage)
 		end
 		Remotes.MineFailed:FireClient(player, "That was a Lava Pocket!")
 	end
@@ -958,7 +963,7 @@ task.spawn(function()
 		for _, player in ipairs(Players:GetPlayers()) do
 			local character = player.Character
 			local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-			if character and humanoid and humanoid.Health > 0 then
+			if character and humanoid and PlayerVitals.IsAlive(player) then
 				local depth = getPlayerDepth(character)
 				if depth then
 					local profile = DataService.Get(player)
@@ -966,7 +971,7 @@ task.spawn(function()
 					for _, hazardType in ipairs(MineShaftConfig.HazardTypes) do
 						local damage = resolveHazardDamage(hazardType, depth, suitTier)
 						if damage then
-							humanoid:TakeDamage(damage)
+							PlayerVitals.Damage(player, damage)
 						end
 					end
 				end

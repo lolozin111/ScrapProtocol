@@ -24,6 +24,9 @@ local BaseConfig = require(ReplicatedStorage.Shared.BaseConfig)
 local BaseService = require(script.Parent.BaseService)
 local DataService = require(script.Parent.DataService)
 local RateLimiter = require(script.Parent.RateLimiter)
+-- The server's own copy of a player's HP, so a laser kill lands on the number the server decides
+-- fights by. See PlayerVitals.lua's header (2026-09-23 exploit review, F3).
+local PlayerVitals = require(script.Parent.PlayerVitals)
 
 local CONFIG = BaseConfig.Lasers
 local PROMPT_TAG = "BaseLaserPrompt" -- read by BaseLaserClient to hide the prompt from non-owners
@@ -144,14 +147,22 @@ local function onLaserTouched(ownerUserId: number, hit: BasePart)
 		enemy = enemy:FindFirstAncestorOfClass("Model")
 	end
 	local character = enemy or hit:FindFirstAncestorOfClass("Model")
+	local victimPlayer = nil
 	if not enemy then
-		local victim = character and Players:GetPlayerFromCharacter(character)
-		if not victim or victim.UserId == ownerUserId then
+		victimPlayer = character and Players:GetPlayerFromCharacter(character)
+		if not victimPlayer or victimPlayer.UserId == ownerUserId then
 			return
 		end
 	end
-	-- Health = 0 rather than anything bespoke: the encounter loop polls Health, so a laser kill counts
-	-- exactly like a gun kill.
+	-- Killed outright rather than damaged: the encounter loop polls health, so a laser kill counts
+	-- exactly like a gun kill. A PLAYER victim goes through PlayerVitals so the kill lands on the
+	-- server's own copy of their HP — a laser that only zeroed the Humanoid would be survivable by
+	-- a client that writes its own Health, and would leave the server still calling them alive.
+	-- An ENEMY has no PlayerVitals record and never should, so that path stays on the Humanoid.
+	if victimPlayer then
+		PlayerVitals.Kill(victimPlayer)
+		return
+	end
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
 	if humanoid and humanoid.Health > 0 then
 		humanoid.Health = 0

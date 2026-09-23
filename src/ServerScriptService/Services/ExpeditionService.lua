@@ -53,6 +53,7 @@ local RateLimiter = require(script.Parent.RateLimiter)
 -- Safe to require from here: PlayerActivityService pulls in nothing but Players, so this does not
 -- close a cycle with NodeService (which requires THIS file). See that module's `subjects` comment.
 local PlayerActivityService = require(script.Parent.PlayerActivityService)
+local PlayerVitals = require(script.Parent.PlayerVitals)
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 
@@ -517,10 +518,10 @@ Remotes.EndExpedition.OnServerEvent:Connect(function(player: Player)
 		return
 	end
 
-	local humanoid = character:FindFirstChildOfClass("Humanoid")
-	if humanoid then
-		humanoid.Health = humanoid.MaxHealth
-	end
+	-- Pass-through in practice: the gate above refuses this call while the player holds any
+	-- activity, so PlayerVitals has no record and this writes the Humanoid directly. Routed through
+	-- it anyway so no health write in this codebase can quietly miss the server's copy.
+	PlayerVitals.SetToMax(player)
 
 	clearExpedition()
 	activeRows = {}

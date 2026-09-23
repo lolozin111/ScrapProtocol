@@ -67,6 +67,9 @@ local TurretService = require(script.Parent.TurretService)
 local UltimateConfig = require(ReplicatedStorage.Shared.UltimateConfig)
 local UltimateEffects = require(script.Parent.UltimateEffects)
 local PlayerSpeed = require(script.Parent.PlayerSpeed)
+-- The server's own copy of the player's HP. Every player-damage and player-death line in this file
+-- goes through it rather than the Humanoid — see its header (2026-09-23 exploit review, F3).
+local PlayerVitals = require(script.Parent.PlayerVitals)
 local StatusEffects = require(script.Parent.StatusEffects)
 local ProjectileService = require(script.Parent.ProjectileService)
 local GroundEffectService = require(script.Parent.GroundEffectService)
@@ -897,7 +900,7 @@ function CombatEncounterService.RunWave(player: Player, waveNumber: number, opts
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 	local rootPart = character and character:FindFirstChild("HumanoidRootPart")
 	local plot = PlotService.GetPlayerPlot(player)
-	if not profile or not humanoid or not rootPart or humanoid.Health <= 0 or not plot then
+	if not profile or not humanoid or not rootPart or not PlayerVitals.IsAlive(player) or not plot then
 		return "Interrupted"
 	end
 
@@ -1225,7 +1228,7 @@ function CombatEncounterService.RunRaidCombat(player: Player, arenaCenter: Vecto
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 	local rootPart = character and character:FindFirstChild("HumanoidRootPart")
 	local profile = DataService.Get(player)
-	if not profile or not humanoid or not rootPart or humanoid.Health <= 0 then
+	if not profile or not humanoid or not rootPart or not PlayerVitals.IsAlive(player) then
 		return "Interrupted"
 	end
 
@@ -1388,7 +1391,10 @@ function CombatEncounterService.RunRaidCombat(player: Player, arenaCenter: Vecto
 			amount -= absorbed
 		end
 		if amount > 0 then
-			humanoid:TakeDamage(amount)
+			-- PlayerVitals.Damage, not humanoid:TakeDamage — TakeDamage subtracts from whatever the
+			-- HUMANOID currently says, and the Humanoid belongs to the player's client. This is the
+			-- line the whole raid's stakes hang off (see PlayerVitals.lua's header, F3).
+			PlayerVitals.Damage(player, amount)
 		end
 
 		-- Kinetic Barrier Lv5: fires only on the hit that actually BREAKS the shield (was up, now
@@ -1491,7 +1497,10 @@ function CombatEncounterService.RunRaidCombat(player: Player, arenaCenter: Vecto
 			status = "Interrupted"
 			break
 		end
-		if humanoid.Health <= 0 then
+		-- The server's number, never the Humanoid's. A client that writes its own Health can no
+		-- longer decide whether it lost this fight — which, since PendingRewards is only forfeited
+		-- on a Defeat, is what made a raid worth exploiting at all.
+		if not PlayerVitals.IsAlive(player) then
 			status = "Defeated"
 			break
 		end
@@ -1524,9 +1533,13 @@ function CombatEncounterService.RunRaidCombat(player: Player, arenaCenter: Vecto
 		if now - lastBroadcast >= BROADCAST_INTERVAL then
 			lastBroadcast = now
 			if onEvent then
+				-- Read from PlayerVitals too, not just the death check above: a HUD fed from the
+				-- Humanoid would otherwise show a number the server has already stopped agreeing
+				-- with, which is the confusing half of a desync rather than the dangerous half.
+				local playerHealth, playerMaxHealth = PlayerVitals.Get(player)
 				onEvent("Tick", {
-					PlayerHealth = math.ceil(math.max(humanoid.Health, 0)),
-					PlayerMaxHealth = humanoid.MaxHealth,
+					PlayerHealth = math.ceil(math.max(playerHealth, 0)),
+					PlayerMaxHealth = playerMaxHealth,
 					Shield = math.ceil(playerState.Shield),
 					EnemiesRemaining = #aliveEnemies,
 					EnemiesTotal = totalSpawned,

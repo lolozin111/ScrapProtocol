@@ -500,6 +500,29 @@ function RaidConfig.GetRunProgressionMultiplier(totalNodesVisited: number): numb
 	return 1 + RaidConfig.GetRunProgressionStep(totalNodesVisited) * RaidConfig.RunProgressionMultiplierPerStep
 end
 
+-- Extra ENEMIES a Combat room adds on top of its Tier's own count, as the run goes deeper.
+--
+-- The complaint this answers is on record in DESIGN_NOTES ("deep raids are five enemies with
+-- ever-larger health bars"): CombatTierComposition tops count out at 5 forever, keyed off a node's
+-- within-map Tier, which resets every map chapter — so the only thing that ever grew was how much
+-- health each of those five had. A strength multiplier alone makes that worse, not better.
+--
+-- Deliberately smaller and flatter than the strength ladder: +1 enemy every two progression steps
+-- (50 nodes), capped at +3, so a very deep Tier 3 room is 7-8 enemies rather than 4-5. This is the
+-- modest version of the spawn-ZONE proposal in DESIGN_NOTES, not that proposal — it reuses the
+-- existing count roll instead of replacing fixed spawn points with volumes. A room authored with
+-- SpawnZones picks the extra bodies up automatically (resolveEnemyPlacements tops authored
+-- SpawnPoints up to `count` from its zones); a room built with ONLY fixed SpawnPoints and no zone
+-- still can't grow, which is exactly the limitation that redesign exists to remove.
+RaidConfig.RunProgressionCountPerStep = 0.5
+RaidConfig.RunProgressionMaxExtraEnemies = 3
+
+function RaidConfig.GetRunProgressionCountBonus(totalNodesVisited: number): number
+	return math.min(
+		RaidConfig.RunProgressionMaxExtraEnemies,
+		math.floor(RaidConfig.GetRunProgressionStep(totalNodesVisited) * RaidConfig.RunProgressionCountPerStep))
+end
+
 -- How many waves one Ambush node throws at you. Starts small (right around AmbushWaveMin) early in
 -- a raid and climbs toward AmbushWaveMax the further the RUN has progressed (see run-progression
 -- comment above, NOT a node's own Tier anymore) — "as you begin it goes from like 2-3 waves, where

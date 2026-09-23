@@ -42,6 +42,9 @@ local Debris = game:GetService("Debris")
 local RunBuffConfig = require(ReplicatedStorage.Shared.RunBuffConfig)
 local EnemyConfig = require(ReplicatedStorage.Shared.EnemyConfig)
 local StatusEffects = require(script.Parent.StatusEffects)
+-- The server's own copy of the player's HP — every health read and write in this file goes through
+-- it rather than the Humanoid. See PlayerVitals.lua's header (2026-09-23 exploit review, F3).
+local PlayerVitals = require(script.Parent.PlayerVitals)
 
 local RunBuffService = {}
 
@@ -84,13 +87,19 @@ local function applyMaxHealth(player: Player, record)
 	end
 
 	local newMax = base * (1 + (record.Stats.MaxHpPct or 0))
-	if math.abs(newMax - humanoid.MaxHealth) < 0.01 then
+	-- Compared against the SERVER's current Max, not the Humanoid's. They track each other (every
+	-- PlayerVitals write mirrors both numbers onto the Humanoid), but this is a guard that decides
+	-- whether to write at all — reading the client-writable copy here would let a client hold its
+	-- MaxHealth at the target value to make this return early and leave the server's Max stale.
+	local _, currentMax = PlayerVitals.Get(player)
+	if math.abs(newMax - currentMax) < 0.01 then
 		return
 	end
 
-	local ratio = humanoid.MaxHealth > 0 and (humanoid.Health / humanoid.MaxHealth) or 1
-	humanoid.MaxHealth = newMax
-	humanoid.Health = math.clamp(newMax * ratio, 0, newMax)
+	-- PlayerVitals owns both numbers inside a raid and carries the health across at the same
+	-- fraction, which is exactly what the two lines this replaced did — the difference is that the
+	-- ratio is now computed from the server's copy instead of from a Humanoid the client can write.
+	PlayerVitals.SetMax(player, newMax)
 end
 
 local function computeFireRateMultiplier(record): number
@@ -449,9 +458,11 @@ function RunBuffService.End(player: Player)
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 	local base = player:GetAttribute(BASE_MAX_HEALTH_ATTRIBUTE)
 	if humanoid and base then
-		local ratio = humanoid.MaxHealth > 0 and (humanoid.Health / humanoid.MaxHealth) or 1
-		humanoid.MaxHealth = base
-		humanoid.Health = math.clamp(base * ratio, 0, base)
+		-- Same ratio-preserving restore as applyMaxHealth, same reason for going through
+		-- PlayerVitals. Note this runs BEFORE PlayerActivityService.Release (cleanupRaid calls
+		-- RunBuffService.End first), so the raid's tracking is still live here and the write lands
+		-- on the server's copy rather than only on the Humanoid.
+		PlayerVitals.SetMax(player, base)
 	end
 	player:SetAttribute(BASE_MAX_HEALTH_ATTRIBUTE, nil)
 	player:SetAttribute(FIRE_RATE_ATTRIBUTE, nil)
@@ -710,12 +721,16 @@ function RunBuffService.OnPlayerDamaged(player: Player, playerState, humanoid: H
 	record.BarrierLastDamageClock = os.clock()
 
 	local stats = record.Stats
+	-- Server's numbers, not the Humanoid's: this is a buff that fires when you drop BELOW a
+	-- threshold, so reading a client-written Health would let a client decide when to hand itself a
+	-- free shield.
+	local currentHealth, currentMax = PlayerVitals.Get(player)
 	if stats.LowHpShieldThreshold and stats.LowHpShieldPct and not record.VestShieldUsedThisRoom
-		and humanoid and humanoid.MaxHealth > 0 then
-		if (humanoid.Health / humanoid.MaxHealth) < stats.LowHpShieldThreshold then
+		and humanoid and currentMax > 0 then
+		if (currentHealth / currentMax) < stats.LowHpShieldThreshold then
 			record.VestShieldUsedThisRoom = true
 			if playerState then
-				playerState.Shield = (playerState.Shield or 0) + stats.LowHpShieldPct * humanoid.MaxHealth
+				playerState.Shield = (playerState.Shield or 0) + stats.LowHpShieldPct * currentMax
 			end
 		end
 	end
@@ -820,7 +835,11 @@ function RunBuffService.Heal(player: Player, fraction: number): (number, number)
 	end
 	local character = player.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-	if not humanoid or humanoid.Health <= 0 or humanoid.MaxHealth <= 0 then
+	-- All four health numbers below come from PlayerVitals rather than the Humanoid. They have to:
+	-- this function both charges a per-room/per-map budget by how much actually landed AND decides
+	-- whether you were hurt enough to heal at all, so a client-written Health would buy free budget.
+	local currentHealth, maxHealth = PlayerVitals.Get(player)
+	if not humanoid or currentHealth <= 0 or maxHealth <= 0 then
 		return 0, 0
 	end
 
@@ -831,15 +850,13 @@ function RunBuffService.Heal(player: Player, fraction: number): (number, number)
 		return 0, 0
 	end
 
-	local allowedAmount = allowedFraction * humanoid.MaxHealth
-	local newHealth = math.min(humanoid.MaxHealth, humanoid.Health + allowedAmount)
-	local actualAmount = newHealth - humanoid.Health
-	humanoid.Health = newHealth
+	local allowedAmount = allowedFraction * maxHealth
+	local actualAmount = PlayerVitals.Heal(player, allowedAmount)
 
 	-- Only Nano Repair Lv5 turns the overflow into shield, and only then is it spent from the budget;
 	-- everyone else is charged for what actually landed.
 	local overflow = 0
-	local chargedFraction = actualAmount / humanoid.MaxHealth
+	local chargedFraction = actualAmount / maxHealth
 	if record.Stats.OverhealToShield then
 		overflow = allowedAmount - actualAmount
 		chargedFraction = allowedFraction
