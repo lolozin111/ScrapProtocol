@@ -215,7 +215,12 @@ MineNode.OnServerEvent:Connect(function(player: Player, node: Instance)
 	-- An equipped tool mod scales the tier's pacing. Routed through ToolModConfig rather than read
 	-- inline so this and MineShaftService cannot drift apart — the same drift the two ore gates
 	-- suffered before OreGate existed.
-	if not RateLimiter.Check(player, "MineNode", ToolModConfig.SwingTime(profile, toolData.SwingTime)) then
+	-- Key is "MineSwing", NOT "MineNode": MineShaftService's own hit handler paces itself off the
+	-- SAME tool swing time under the same key, deliberately. The cooldown belongs to the TOOL, not
+	-- to the remote, so two keys meant a player could alternate a surface node and a shaft block and
+	-- mine at twice the intended rate (both handlers' distance checks read a client-owned character
+	-- position, so being "near both" is free). Any future remote that costs a swing joins this key.
+	if not RateLimiter.Check(player, "MineSwing", ToolModConfig.SwingTime(profile, toolData.SwingTime)) then
 		Remotes.MineFailed:FireClient(player, "Swinging too fast — wait for your tool to reset", "Cooldown")
 		return
 	end

@@ -239,7 +239,20 @@ Remotes.EquipMod.OnServerInvoke = function(player: Player, tree: string, itemKey
 	if tree ~= "Weapons" and tree ~= "Robots" then
 		return { Success = false, Reason = "Unknown tree" }
 	end
-	if type(slotIndex) ~= "number" or slotIndex < 1 or slotIndex > ModConfig.SlotsPerItem then
+	-- The `math.floor` half is not decoration: ModConfig.ApplyMods walks `pairs(equipped)`, so a slot
+	-- index is a TABLE KEY, not an array position, and a fractional one (1.0001) creates an EXTRA
+	-- slot rather than overwriting an existing one. Without it the real slot limit was "however many
+	-- distinct mods you own" — the duplicate guard further down only stops the same mod twice. NaN
+	-- passes both bound comparisons too (every ordering test against NaN is false) and then throws
+	-- on the table write, which is why this rejects outright rather than coercing, same rule as
+	-- SellService's amounts. Matches the identical check TurretService.PlaceTurretInSlot has always
+	-- had on its own slot argument.
+	if type(slotIndex) ~= "number"
+		or slotIndex ~= slotIndex -- NaN
+		or slotIndex < 1
+		or slotIndex > ModConfig.SlotsPerItem
+		or slotIndex ~= math.floor(slotIndex)
+	then
 		return { Success = false, Reason = "Invalid slot" }
 	end
 

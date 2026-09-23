@@ -303,19 +303,28 @@ MineShaftConfig.SuitTierCosts = {
 
 MineShaftConfig.ResetIntervalSeconds = 30 * 60 -- full reset every 30 minutes, regardless of how
                                           -- much has been dug
-MineShaftConfig.ResetBlockThreshold = 5000 -- ALSO reset immediately, whenever the timer hasn't
+MineShaftConfig.ResetBlockThreshold = 15000 -- ALSO reset immediately, whenever the timer hasn't
                                           -- already fired, once this many blocks have been mined
-                                          -- out since the last reset. Was 20,000; scaled down 4x
-                                          -- (matching the 4x drop in blocks-per-layer from the
-                                          -- chunky-block pass: 16x16=256 vs the old 32x32=1,024) so
-                                          -- a reset still lands after roughly the same amount of
-                                          -- actual digging — this counts blocks, not studs, and a
-                                          -- block still takes the same time to mine either way, so
-                                          -- leaving it at 20,000 would have meant grinding through
-                                          -- 4x as much of the (now physically bigger) mine before
-                                          -- the early-reset path ever triggered. ResetIntervalSeconds
-                                          -- below is unaffected — it is a wall-clock cap, not a
-                                          -- block count, so nothing about it depended on grid scale.
+                                          -- out since the last reset.
+                                          --
+                                          -- History: 20,000 originally, then 5,000 — scaled down 4x
+                                          -- to match the 4x drop in blocks-per-layer from the
+                                          -- chunky-block pass (16x16=256 vs the old 32x32=1,024), so
+                                          -- a reset landed after roughly the same amount of actual
+                                          -- digging (this counts blocks, not studs, and a block takes
+                                          -- the same time to mine either way).
+                                          --
+                                          -- Raised to 15,000 after the 2026-09-23 exploit review.
+                                          -- This counter is GLOBAL and a reset ejects everyone in the
+                                          -- shaft (performReset's LoadCharacter loop), so the threshold
+                                          -- doubles as the price of forcing that on the whole server:
+                                          -- the Split-Head Pick clears up to 7 cells a swing, which put
+                                          -- a solo digger ~3-4 minutes from a forced reset at 5,000.
+                                          -- 15,000 makes that roughly 10-12 minutes of nonstop digging
+                                          -- — still reachable by ordinary play across a busy server,
+                                          -- which is the point, just not a cheap griefing lever.
+                                          -- ResetIntervalSeconds below is unaffected — it is a
+                                          -- wall-clock cap, not a block count.
 MineShaftConfig.ResetLockSeconds = 5     -- how long the mine stays locked (no mining) while
                                           -- everyone's being cleared out and it rebuilds — "a few
                                           -- seconds," not instant, so a reset actually reads as an

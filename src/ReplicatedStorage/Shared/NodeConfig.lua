@@ -80,7 +80,17 @@ NodeConfig.BossLoot = {
 -- Heal Station
 ----------------------------------------------------------------------
 
-NodeConfig.HealCooldownSeconds = 20 -- free, but not spammable mid-raid
+NodeConfig.HealCooldownSeconds = 20 -- free, and no longer reachable at all mid-anything: the
+	-- handler gates on PlayerActivityService now, not just NodeService's own outpost-raid flag.
+	-- This comment used to read "not spammable mid-raid," which was only true of an OUTPOST raid —
+	-- see InteractHeal's own comment for what that cost.
+
+NodeConfig.InteractDistance = 60 -- studs; how close the server requires you to be to a Node to act
+	-- on it. Deliberately MORE generous than the client's own ClickDetector MaxActivationDistance
+	-- (NODE_CLICK_DISTANCE = 50 in MainHud.client.lua), so ordinary lag or a click taken a step
+	-- into a run never gets rejected server-side — this is a sanity bound on "somewhere near the
+	-- node," not a second copy of the click range. Character position is client-owned, so this
+	-- stops a stray call, not a determined one; it is never the only gate on anything.
 
 ----------------------------------------------------------------------
 -- Shop — the actual sink for the run's collected Scrap. Deliberately Scrap-only: Cores are no

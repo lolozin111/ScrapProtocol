@@ -679,7 +679,10 @@ Remotes.MineShaftHit.OnServerEvent:Connect(function(player: Player, block: Insta
 	-- exist on every path, and a ToolTier past the end of the table (a save written against a
 	-- longer ladder, a bad value) would otherwise error inside the remote handler.
 	local swingToolData = OreConfig.ToolTiers[swingTier] or OreConfig.ToolTiers[1]
-	if not RateLimiter.Check(player, "MineShaftHit", ToolModConfig.SwingTime(swingProfile, swingToolData.SwingTime)) then
+	-- Shared key with MiningService's MineNode handler ("MineSwing", not "MineShaftHit") — see that
+	-- file's comment. One tool, one swing timer; two keys let a player alternate the two remotes for
+	-- double the ore rate.
+	if not RateLimiter.Check(player, "MineSwing", ToolModConfig.SwingTime(swingProfile, swingToolData.SwingTime)) then
 		Remotes.MineFailed:FireClient(player, "Swinging too fast — wait for your tool to reset", "Cooldown")
 		return
 	end

@@ -483,8 +483,17 @@ RaidConfig.RunProgressionMultiplierPerStep = 0.12 -- extra multiplier per step, 
 	-- node's own within-map Tier — "with stronger enemies as well" / "make that the rewards scale
 	-- with difficulty."
 
+-- Ceiling on the ladder above: 250 nodes visited, a 2.2x run multiplier. Added 2026-09-23 after the
+-- exploit review found this ladder uncapped, which let a raid that never ends pay without limit.
+-- The cap belongs on the MULTIPLIER rather than on the run's length because the run is meant to be
+-- open-ended — "pushing deeper stays survivable" — it just must not keep paying more forever.
+-- Step 10 is already far past any honest run.
+RaidConfig.RunProgressionMaxStep = 10
+
 function RaidConfig.GetRunProgressionStep(totalNodesVisited: number): number
-	return math.floor(totalNodesVisited / RaidConfig.RunProgressionNodesPerStep)
+	return math.min(
+		RaidConfig.RunProgressionMaxStep,
+		math.floor(totalNodesVisited / RaidConfig.RunProgressionNodesPerStep))
 end
 
 function RaidConfig.GetRunProgressionMultiplier(totalNodesVisited: number): number
@@ -539,9 +548,14 @@ RaidConfig.ExtractionRewards = {
 	Boss = { ContrabandMin = 3, ContrabandMax = 6, CoresMin = 5, CoresMax = 10 },
 
 	-- Each map already cleared adds this fraction of the base payout to the next one: the first
-	-- clear pays 1x, the second 1.35x, the third 1.7x, and so on, uncapped — a run that deep has
-	-- already survived everything the multiplier is asking it to risk.
+	-- clear pays 1x, the second 1.35x, the third 1.7x, and so on — up to MapGrowthCap.
 	MapGrowthPerClear = 0.35,
+	-- The ceiling on that growth, reached at the 10th clear. Uncapped until 2026-09-23, on the
+	-- reasoning that "a run that deep has already survived everything the multiplier is asking it
+	-- to risk" — which is true of the DIFFICULTY, except the difficulty curve now stops climbing
+	-- (RunProgressionMaxStep) and a regenerated map's enemies reset to their tier baseline anyway.
+	-- So the risk being priced flattened out while this kept rising. Both curves end now.
+	MapGrowthCap = 4.0,
 
 	-- Extract multiplier: 1 + this per boss beaten, capped. 0 bosses x1, 1 boss x1.25, 4+ x2.
 	MultiplierPerBoss = 0.25,
@@ -552,7 +566,9 @@ RaidConfig.ExtractionRewards = {
 -- count INCLUDING the one just cleared (1 on the first), so the first clear gets the flat base.
 function RaidConfig.RollMapClearReward(mapsCleared: number): (number, number)
 	local rules = RaidConfig.ExtractionRewards
-	local growth = 1 + rules.MapGrowthPerClear * math.max(0, mapsCleared - 1)
+	local growth = math.min(
+		rules.MapGrowthCap,
+		1 + rules.MapGrowthPerClear * math.max(0, mapsCleared - 1))
 	local contraband = math.floor(math.random(rules.MapClear.ContrabandMin, rules.MapClear.ContrabandMax) * growth + 0.5)
 	local cores = math.floor(math.random(rules.MapClear.CoresMin, rules.MapClear.CoresMax) * growth + 0.5)
 	return contraband, cores

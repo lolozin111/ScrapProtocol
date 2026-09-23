@@ -50,6 +50,9 @@ local Workspace = game:GetService("Workspace")
 local ExpeditionConfig = require(ReplicatedStorage.Shared.ExpeditionConfig)
 local RaidEnergyService = require(script.Parent.RaidEnergyService)
 local RateLimiter = require(script.Parent.RateLimiter)
+-- Safe to require from here: PlayerActivityService pulls in nothing but Players, so this does not
+-- close a cycle with NodeService (which requires THIS file). See that module's `subjects` comment.
+local PlayerActivityService = require(script.Parent.PlayerActivityService)
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 
@@ -421,6 +424,20 @@ Remotes.RegenerateExpedition.OnServerEvent:Connect(function(player: Player, leve
 		return
 	end
 
+	-- Nobody may be mid-fight anywhere on the queue. resetConveyor destroys every row, including the
+	-- Combat node another player's NodeService.runRaid loop is standing in — which that loop reads
+	-- as a penalty-free "RaidCancelled". For one Energy that was a grief against everyone on the
+	-- expedition AND a free walk-out of your own losing fight, since nothing here checked the
+	-- caller's activity either (2026-09-23 exploit review, F2/F6). Checked BEFORE the Energy spend,
+	-- so a refused pull costs nothing — same ordering the rest of this codebase uses.
+	if PlayerActivityService.AnyActive(PlayerActivityService.Activities.OutpostRaid) then
+		Remotes.OutpostUpdate:FireClient(player, {
+			Status = "Busy",
+			Message = "Someone's mid-fight on the expedition — wait for them to finish.",
+		})
+		return
+	end
+
 	if not RaidEnergyService.TrySpendEnergy(player) then
 		Remotes.OutpostUpdate:FireClient(player, { Status = "NoEnergy" })
 		return
@@ -467,6 +484,31 @@ Remotes.EndExpedition.OnServerEvent:Connect(function(player: Player)
 		Remotes.OutpostUpdate:FireClient(player, {
 			Status = "Busy",
 			Message = "You're not on the expedition — walk back to it to return to base.",
+		})
+		return
+	end
+
+	-- The gate the earlier pass missed. This handler's own comment above describes the exploit it
+	-- was closing — "bind it to a key and you're unkillable, including mid-raid while
+	-- NodeService.runRaid ticks damage at you" — and the three gates it added (a run must be
+	-- active, you must be at the expedition, and it's paced) do not actually close it: none of them
+	-- asks whether you are IN A FIGHT, and a 3-second pace on a free full heal is not a pace. That
+	-- left a full heal every 3 seconds during a Raid Room boss fight, which is the raid's whole
+	-- stakes layer, since PendingRewards is only lost when Health hits 0 (2026-09-23 review, F2).
+	--
+	-- Second reason, same check: clearExpedition below wipes the ONE queue every player shares, so
+	-- leaving also destroys the node someone else is fighting — see RegenerateExpedition above.
+	if PlayerActivityService.Get(player) then
+		Remotes.OutpostUpdate:FireClient(player, {
+			Status = "Busy",
+			Message = "You're in a fight — finish it before returning to base.",
+		})
+		return
+	end
+	if PlayerActivityService.AnyActive(PlayerActivityService.Activities.OutpostRaid) then
+		Remotes.OutpostUpdate:FireClient(player, {
+			Status = "Busy",
+			Message = "Someone's mid-fight on the expedition — wait for them to finish.",
 		})
 		return
 	end

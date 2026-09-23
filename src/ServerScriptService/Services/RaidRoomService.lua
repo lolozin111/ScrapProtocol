@@ -1405,6 +1405,15 @@ end
 local function beginCombat(state, node)
 	state.InCombat = true
 	local composition = RaidConfig.CombatTierComposition[node.Tier] or RaidConfig.CombatTierComposition[1]
+	-- Combat was the ONE room type that scaled its loot by the run's progress
+	-- (GetLootMultiplier, below) without scaling its enemies to match — Ambush and Boss have always
+	-- applied runMultiplier to both. Node Tiers reset with every regenerated map chapter but
+	-- TotalNodesVisited never does, so the longer a raid went the further those two curves came
+	-- apart, in the room type the generator deliberately makes the common case. Found by the
+	-- 2026-09-23 exploit review; it reads as an omission rather than a decision, since the design
+	-- ask for this system was explicitly "with stronger enemies as well" / "make that the rewards
+	-- scale with difficulty."
+	local runMultiplier = RaidConfig.GetRunProgressionMultiplier(state.TotalNodesVisited)
 	local roomCenter = roomEncounterCenter(state)
 
 	-- Count is rolled FIRST now, unconditionally — resolveEnemyPlacements needs it up front to know
@@ -1488,7 +1497,7 @@ local function beginCombat(state, node)
 			end
 		end
 
-		local status = CombatEncounterService.RunRaidCombat(state.Player, roomCenter, spawnKeys, composition.Multiplier, function(eventStatus, payload)
+		local status = CombatEncounterService.RunRaidCombat(state.Player, roomCenter, spawnKeys, composition.Multiplier * runMultiplier, function(eventStatus, payload)
 			payload = payload or {}
 			-- Stamps this file's own Status vocabulary ("CombatStart"/"CombatTick"/"CombatEnd") onto
 			-- whatever CombatEncounterService handed back — safe to write directly onto payload

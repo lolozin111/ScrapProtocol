@@ -45,6 +45,32 @@ local function getNodeType(node: Instance): string?
 	return marker and marker:IsA("StringValue") and marker.Value or nil
 end
 
+-- Where a node actually IS. Nodes are authored as either a bare Part or a Model, so this mirrors
+-- MiningService's matching helper rather than assuming one shape; a Model without a PrimaryPart has
+-- no position to check against and returns nil, which every caller treats as "reject."
+local function nodePosition(node: Instance): Vector3?
+	if node:IsA("BasePart") then
+		return node.Position
+	end
+	if node:IsA("Model") then
+		local primary = node.PrimaryPart
+		return primary and primary.Position or nil
+	end
+	return nil
+end
+
+-- "Is this player standing at this node?" See NodeConfig.InteractDistance for why the bound is
+-- looser than the client's own click range, and for what this check is and isn't worth.
+local function isPlayerAtNode(player: Player, node: Instance): boolean
+	local character = player.Character
+	local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+	local position = nodePosition(node)
+	if not rootPart or not position then
+		return false
+	end
+	return (rootPart.Position - position).Magnitude <= NodeConfig.InteractDistance
+end
+
 local function grantLoot(player: Player, lootTable)
 	local granted = {}
 	for _, entry in ipairs(lootTable) do
@@ -109,18 +135,41 @@ local healCooldowns: { [number]: number } = {} -- userId -> os.time() they can n
 -- instantly, so there's no equivalent window to exploit for them.
 local activeRaids: { [number]: boolean } = {} -- userId -> true while raiding
 
-InteractHeal.OnServerInvoke = function(player: Player, node: Instance?)
+-- `node` is REQUIRED, and must be a real Heal node you are standing at.
+--
+-- It used to be optional (`node: Instance?`), and every gate on this handler sat behind
+-- `if typeof(node) == "Instance"` — so `InteractHeal:InvokeServer(nil)` skipped all of them and
+-- handed back a full heal, from anywhere on the map, to anyone, every 20 seconds. That is the
+-- entire stakes layer of a Raid Room run: PendingRewards is only lost when Health hits 0. The old
+-- `activeRaids` check did not catch it either, because that flag is NodeService's own OUTPOST raid
+-- and nothing else (2026-09-23 exploit review, F1).
+--
+-- Both halves of the fix matter and neither is sufficient alone. PlayerActivityService is the real
+-- gate — it is server-owned state and covers Wave, Raid and OutpostRaid at once. The node/distance
+-- requirement covers what an activity ISN'T: mine lava and base lasers tick damage at you without
+-- claiming an activity, and a heal reachable from inside the lava would have made those free too.
+-- Typed `any`, not `Instance?`, for the same reason SellService types its arguments that way: this
+-- is a wire value a modified client picks, so the annotation should say "untrusted" rather than
+-- promise a shape the checks below are the only thing actually establishing.
+InteractHeal.OnServerInvoke = function(player: Player, node: any)
 	local character = player.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 	if not humanoid then
 		return { Success = false, Reason = "No character" }
 	end
 
-	if activeRaids[player.UserId] then
-		return { Success = false, Reason = "Busy — you're mid-raid" }
+	local busy = PlayerActivityService.Get(player)
+	if busy then
+		return { Success = false, Reason = "Busy — finish what you're doing first" }
 	end
 
-	if typeof(node) == "Instance" and not checkSlotAccess(node) then
+	if typeof(node) ~= "Instance" or getNodeType(node) ~= "Heal" then
+		return { Success = false, Reason = "That isn't a Heal Station" }
+	end
+	if not isPlayerAtNode(player, node) then
+		return { Success = false, Reason = "Walk up to the Heal Station to use it" }
+	end
+	if not checkSlotAccess(node) then
 		return { Success = false, Reason = "Locked — clear the node in front of you first" }
 	end
 
@@ -128,9 +177,9 @@ InteractHeal.OnServerInvoke = function(player: Player, node: Instance?)
 	-- just be a redundant second gate — and worse, it used to silently block the destroy below,
 	-- leaving a "used" node stuck in place until the shared cooldown happened to expire. Only
 	-- the permanent hand-placed Heal Station (reusable forever) needs the cooldown.
-	local isExpeditionHeal = typeof(node) == "Instance"
-		and node:GetAttribute("IsExpeditionNode")
-		and getNodeType(node) == "Heal"
+	-- No `typeof(node) == "Instance"` / NodeType re-check here anymore: the guards above already
+	-- proved both, and leaving a second copy would imply `node` might still be nil at this point.
+	local isExpeditionHeal = node:GetAttribute("IsExpeditionNode") and true or false
 
 	if not isExpeditionHeal then
 		local now = os.time()
@@ -349,7 +398,10 @@ StartOutpostRaid.OnServerEvent:Connect(function(player: Player, node: Instance)
 	-- damage loop against the player's Humanoid, so it can't overlap a base-defense wave or an
 	-- instanced Raid Room. activeRaids below stays as-is: it's the finer-grained mid-raid lockout
 	-- that Heal/Shop/Skip check, a different question from "what is this player doing at all."
-	local acquired, busyReason = PlayerActivityService.TryAcquire(player, PlayerActivityService.Activities.OutpostRaid)
+	-- `node` is passed as the activity's SUBJECT so SkipNode and ExpeditionService's lever can see
+	-- that this specific node is being fought and refuse to destroy it — see PlayerActivityService
+	-- .IsSubjectBusy and SkipNode below (2026-09-23 exploit review, F6).
+	local acquired, busyReason = PlayerActivityService.TryAcquire(player, PlayerActivityService.Activities.OutpostRaid, node)
 	if not acquired then
 		OutpostUpdate:FireClient(player, { Status = "Busy", Message = busyReason })
 		return
@@ -391,6 +443,22 @@ SkipNode.OnServerEvent:Connect(function(player: Player, node: Instance)
 	end
 	if not checkSlotAccess(node) then
 		return -- not the frontmost node anyway — nothing to skip
+	end
+
+	-- ...and the same check for EVERYONE ELSE'S fight, which the `activeRaids` line above does not
+	-- cover. The expedition is ONE queue shared by the whole server, so the node another player is
+	-- currently fighting — or its fork sibling, since commitFork destroys that too — is reachable
+	-- from this remote. runRaid treats a vanished node as a penalty-free "RaidCancelled", so
+	-- without this a player could end someone else's fight for them, and a pair of players could
+	-- walk each other out of every losing fight indefinitely (2026-09-23 exploit review, F6).
+	local siblingRef = node:FindFirstChild("SiblingNode")
+	local sibling = siblingRef and siblingRef:IsA("ObjectValue") and siblingRef.Value or nil
+	if PlayerActivityService.IsSubjectBusy(node) or PlayerActivityService.IsSubjectBusy(sibling) then
+		OutpostUpdate:FireClient(player, {
+			Status = "Busy",
+			Message = "Someone's fighting that node — wait for them to finish.",
+		})
+		return
 	end
 
 	commitFork(node)
