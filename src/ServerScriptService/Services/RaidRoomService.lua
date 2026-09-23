@@ -1224,13 +1224,61 @@ end
 -- place that decides "show the next fork" vs. "this was a leaf, clear the map" purely by whether
 -- the CURRENT node has any Connections left, never by its Type (there's no dedicated Extraction
 -- type to check for anymore — see this file's header).
+-- Walks the run to `nodeId` by itself, after a travel beat the client fills with a wipe. Used only
+-- where there was no choice to make — see RaidConfig.AutoAdvanceSeconds.
+--
+-- task.delay rather than a task.wait inside advanceFromNode: that function is called from inside
+-- beginCombat/beginAmbush/beginBoss's spawned loops AND straight from the RaidRoomAction remote
+-- handler, and making it yield would stall whichever of those is on the stack for over a second.
+-- This way every caller returns immediately and the move happens on its own thread.
+--
+-- Three guards on the far side of the wait, because a second is a long time in a raid: the run can
+-- be abandoned, extracted out of, or torn down by a disconnect while the wipe is playing. The
+-- CurrentNodeId check is the one that isn't obvious — without it, a player who reached the next
+-- room by some other route during the beat (an exit door resolving, a queued ChooseRaidNode) would
+-- be dragged a second time by this timer, from a room they had already left.
+local function autoAdvanceTo(state, nodeId: number)
+	local player = state.Player
+	local fromNodeId = state.CurrentNodeId
+	local destination = state.Map.Nodes[nodeId]
+	local typeConfig = destination and RaidConfig.NodeTypes[destination.Type]
+
+	RaidRoomUpdate:FireClient(player, {
+		Status = "AutoAdvancing",
+		Seconds = RaidConfig.AutoAdvanceSeconds,
+		Type = destination and destination.Type,
+		DisplayName = (typeConfig and typeConfig.DisplayName) or (destination and destination.Type),
+		Tier = destination and destination.Tier,
+	})
+
+	task.delay(RaidConfig.AutoAdvanceSeconds, function()
+		if activeRaids[player.UserId] ~= state then
+			return -- abandoned, extracted, died or disconnected while the wipe was playing
+		end
+		if state.InCombat or state.CurrentNodeId ~= fromNodeId then
+			return -- already moved on, or a fight started, by some other route
+		end
+		enterNode(state, nodeId)
+	end)
+end
+
 local function advanceFromNode(state)
 	local node = state.Map.Nodes[state.CurrentNodeId]
 	if node and #node.Connections == 0 then
 		onMapCleared(state)
-	else
-		showMapChoice(state)
+		return
 	end
+
+	-- One exit is not a fork. Opening the Sector Map to ask which of a single option the player
+	-- wants is a click with no decision in it, so the run travels there on its own instead — except
+	-- out of the rooms you're meant to leave deliberately (see RaidConfig.AutoAdvanceBlockedTypes).
+	-- Two or more branches still raise the map exactly as before.
+	if node and #node.Connections == 1 and not RaidConfig.AutoAdvanceBlockedTypes[node.Type] then
+		autoAdvanceTo(state, node.Connections[1])
+		return
+	end
+
+	showMapChoice(state)
 end
 
 -- The single teardown funnel for a raid, however it ended — Extract, Defeat, Abandon, a mid-fight
@@ -1893,7 +1941,10 @@ enterNode = function(state, nodeId: number)
 	RaidMapUpdate:FireClient(state.Player, mapUpdatePayload(state, {}, false, false))
 
 	if node.Type == "Start" then
-		showMapChoice(state)
+		-- advanceFromNode, not showMapChoice directly: a Start that leads to exactly one room should
+		-- travel there like any other single-exit node rather than opening a map with one option on
+		-- it. Start is not in AutoAdvanceBlockedTypes, so this is the same rule everywhere.
+		advanceFromNode(state)
 	elseif node.Type == "Combat" then
 		beginCombat(state, node)
 	elseif node.Type == "Ambush" then

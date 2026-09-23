@@ -517,6 +517,26 @@ end
 RaidConfig.RunProgressionCountPerStep = 0.5
 RaidConfig.RunProgressionMaxExtraEnemies = 3
 
+----------------------------------------------------------------------
+-- AUTO-ADVANCE — a fork with only one branch isn't a choice
+--
+-- When the current node leads to exactly one next node, opening the Sector Map to ask "which of
+-- these one things do you want" is a click that carries no decision. The run moves on by itself
+-- instead, after a beat long enough to read as travelling rather than teleporting.
+--
+-- BlockedTypes are the rooms you must be allowed to LEAVE on your own terms. A Shop is somewhere
+-- you stand and think, and being yanked out of it the moment you press Continue is the opposite of
+-- what that room is for; a Heal has the same shape. Both already wait on an explicit Continue, so
+-- honouring that and then still showing the map keeps leaving a deliberate act. Every other room
+-- type resolves on its own and has nothing left to hold you there.
+----------------------------------------------------------------------
+
+RaidConfig.AutoAdvanceSeconds = 1.2 -- how long the travel transition holds before the next room
+	-- builds. Long enough to register as a move; short enough that a corridor of single-exit rooms
+	-- doesn't turn into a slideshow. The client plays its wipe over exactly this window, so the two
+	-- read this same number rather than each keeping their own copy.
+RaidConfig.AutoAdvanceBlockedTypes = { Shop = true, Heal = true }
+
 function RaidConfig.GetRunProgressionCountBonus(totalNodesVisited: number): number
 	return math.min(
 		RaidConfig.RunProgressionMaxExtraEnemies,

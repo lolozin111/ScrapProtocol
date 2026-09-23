@@ -134,6 +134,116 @@ local screenGui = new("ScreenGui", {
 })
 
 ----------------------------------------------------------------------
+-- Travel wipe — the beat between rooms when the run advances on its own
+--
+-- A fork with only one branch no longer opens the Sector Map (see RaidConfig.AutoAdvanceSeconds),
+-- and with nothing in its place the room would simply swap underneath you, which reads as a glitch
+-- rather than as travelling. This is that something: a full-bleed fade naming where you're headed.
+--
+-- Deliberately plain. The raid HUD's restyle is its own pass and this will be redone in whatever
+-- language that pass settles on; it exists now because auto-advance is unusable without it.
+----------------------------------------------------------------------
+
+local WIPE_Z = 500 -- above everything else this ScreenGui draws
+
+local travelWipe = new("Frame", {
+	Name = "TravelWipe",
+	Size = UDim2.fromScale(1, 1),
+	BackgroundColor3 = COLOR.Panel,
+	BackgroundTransparency = 1,
+	BorderSizePixel = 0,
+	Visible = false,
+	ZIndex = WIPE_Z,
+	Parent = screenGui,
+}, {
+	new("TextLabel", {
+		Name = "Eyebrow",
+		AnchorPoint = Vector2.new(0.5, 1),
+		Position = UDim2.new(0.5, 0, 0.5, -6),
+		Size = UDim2.new(1, -40, 0, 18),
+		BackgroundTransparency = 1,
+		Font = Enum.Font.GothamMedium,
+		Text = "MOVING OUT",
+		TextColor3 = COLOR.Accent,
+		TextSize = 12,
+		TextTransparency = 1,
+		ZIndex = WIPE_Z + 1,
+	}),
+	new("TextLabel", {
+		Name = "Destination",
+		AnchorPoint = Vector2.new(0.5, 0),
+		Position = UDim2.new(0.5, 0, 0.5, 6),
+		Size = UDim2.new(1, -40, 0, 34),
+		BackgroundTransparency = 1,
+		Font = Enum.Font.GothamBold,
+		Text = "",
+		TextColor3 = COLOR.Text,
+		TextSize = 26,
+		TextTransparency = 1,
+		ZIndex = WIPE_Z + 1,
+	}),
+})
+
+-- Cancel-then-play, the same discipline HudKit.button uses: a run of single-exit rooms fires these
+-- back to back, and without cancelling, a fade-out still in flight fights the next fade-in and the
+-- screen ends up stuck at some half-transparency nobody asked for.
+local wipeTweens = {}
+
+local function tweenWipe(backgroundTransparency: number, textTransparency: number, seconds: number)
+	for _, tween in ipairs(wipeTweens) do
+		tween:Cancel()
+	end
+	table.clear(wipeTweens)
+
+	local info = TweenInfo.new(seconds, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+	local background = TweenService:Create(travelWipe, info, { BackgroundTransparency = backgroundTransparency })
+	table.insert(wipeTweens, background)
+	background:Play()
+	for _, label in ipairs({ travelWipe.Eyebrow, travelWipe.Destination }) do
+		local tween = TweenService:Create(label, info, { TextTransparency = textTransparency })
+		table.insert(wipeTweens, tween)
+		tween:Play()
+	end
+end
+
+-- Bumped by every start and every end, so a delayed callback can tell whether the wipe it was
+-- scheduled for is still the one on screen.
+local wipeToken = 0
+
+local function endTravelWipe()
+	if not travelWipe.Visible then
+		return
+	end
+	wipeToken += 1
+	local token = wipeToken
+	tweenWipe(1, 1, 0.3)
+	task.delay(0.32, function()
+		if wipeToken == token then
+			travelWipe.Visible = false
+		end
+	end)
+end
+
+local function playTravelWipe(seconds: number, destinationName: string?)
+	wipeToken += 1
+	local token = wipeToken
+	travelWipe.Destination.Text = string.upper(destinationName or "")
+	travelWipe.Visible = true
+	-- Not fully opaque: a sliver of the room staying visible keeps it feeling like a transition
+	-- rather than a loading screen.
+	tweenWipe(0.08, 0, math.max(0.15, seconds * 0.45))
+
+	-- The "Entered" branch normally lifts this. The timeout is for the cases where that never
+	-- arrives — a raid torn down mid-wipe, a room that failed to build — because the one outcome
+	-- this must never have is leaving the player's screen covered with no way to clear it.
+	task.delay(seconds + 3, function()
+		if wipeToken == token and travelWipe.Visible then
+			endTravelWipe()
+		end
+	end)
+end
+
+----------------------------------------------------------------------
 -- Start Raid button (top-right) — the only physical/UI entry point for now, no world portal built
 -- yet (per the design ask, "for now just make it that the player teleports somewhere"). Hidden
 -- once a raid is active; reappears the moment the raid ends, one way or another.
@@ -1398,6 +1508,9 @@ RaidRoomUpdate.OnClientEvent:Connect(function(payload)
 	if status == "Entered" then
 		inRaid = true
 		inCombat = false
+		-- The new room is built and the player is standing in it, so lift the travel wipe if one is
+		-- up. Unconditional: a room reached by choosing on the map has no wipe, and this no-ops.
+		endTravelWipe()
 		-- Leaving a Shop node (however that happened — LEAVE SHOP, or the map moving on some other
 		-- way) must not leave the shop screen stuck on top of whatever room comes next. Same
 		-- defensive reasoning for the boss-pick modal, even though choosing a card is the only way
@@ -1428,6 +1541,12 @@ RaidRoomUpdate.OnClientEvent:Connect(function(payload)
 		end
 		roomFrame.Visible = true
 		updateRaidButtons()
+
+	elseif status == "AutoAdvancing" then
+		-- Only one way out of this room, so the server is walking the run there rather than asking.
+		-- The map stays down; this wipe is the whole of the player-facing event, and the matching
+		-- "Entered" lifts it.
+		playTravelWipe(payload.Seconds or 1.2, payload.DisplayName or payload.Type)
 
 	elseif status == "RunCurrencyUpdate" then
 		updateRunCurrencyLabel(payload.RunCurrencyCollected, payload.PendingRewards, payload.ExtractMultiplier)
@@ -1636,6 +1755,7 @@ RaidRoomUpdate.OnClientEvent:Connect(function(payload)
 	elseif status == "Defeated" then
 		inRaid = false
 		inCombat = false
+		endTravelWipe() -- a run can end mid-wipe (abandon, extract, or death during the travel beat)
 		extractUnlocked = false
 		roomFrame.Visible = false
 		hideSectorMap()
@@ -1651,6 +1771,7 @@ RaidRoomUpdate.OnClientEvent:Connect(function(payload)
 	elseif status == "Extracted" then
 		inRaid = false
 		inCombat = false
+		endTravelWipe() -- a run can end mid-wipe (abandon, extract, or death during the travel beat)
 		extractUnlocked = false
 		roomFrame.Visible = false
 		hideSectorMap()
@@ -1675,6 +1796,7 @@ RaidRoomUpdate.OnClientEvent:Connect(function(payload)
 	elseif status == "Abandoned" then
 		inRaid = false
 		inCombat = false
+		endTravelWipe() -- a run can end mid-wipe (abandon, extract, or death during the travel beat)
 		extractUnlocked = false
 		roomFrame.Visible = false
 		hideSectorMap()
