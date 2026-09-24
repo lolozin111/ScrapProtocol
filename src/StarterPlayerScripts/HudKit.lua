@@ -56,6 +56,12 @@ HudKit.COLOR = {
 	AccentDark = Color3.fromRGB(178, 76, 24),
 	Good = Color3.fromRGB(95, 160, 130),
 	Bad = Color3.fromRGB(190, 90, 75),
+	-- A raid shield (Plated Vest and friends) sits ALONGSIDE health on the same bar, so it needs a
+	-- hue neither Good nor Bad already own rather than a shade of either — a desaturated steel blue,
+	-- same muted-not-pure treatment as Good's teal-green, chosen specifically because blue-vs-green
+	-- is a distinction red-green colourblindness doesn't collapse the way another green or another
+	-- red would.
+	Shield = Color3.fromRGB(90, 145, 200),
 }
 
 local COLOR = HudKit.COLOR

@@ -2419,6 +2419,15 @@ end
 
 local raidEnemyCaption, raidEnemyFill = makeRaidBar(30, Hud.COLOR.Bad, "Enemies: —")
 local raidHealthCaption, raidHealthFill = makeRaidBar(72, Hud.COLOR.Good, "Your HP: —")
+-- Shield's companion fill on the SAME track as raidHealthFill, reached via .Parent since
+-- makeRaidBar only hands back the fill it built, not the track underneath it. Built the same way
+-- makeRaidBar builds its own fill (BackgroundColor3 + Hud.corner(4)) rather than a one-off shape;
+-- refreshHealthBar below positions/sizes it to start where the green fill ends.
+local raidShieldFill = Hud.new("Frame", {
+	BackgroundColor3 = Hud.COLOR.Shield,
+	Size = UDim2.new(0, 0, 1, 0),
+	Parent = raidHealthFill.Parent,
+}, { Hud.corner(4) })
 
 ----------------------------------------------------------------------
 -- Mine shaft depth panel (top-right) — only visible while MineShaftService's hazard loop reports
@@ -2686,6 +2695,12 @@ local refreshResearchButton = researchPanel.refreshResearchButton
 
 local playerMaxHealth = 100
 
+-- Raid-only shield (Plated Vest Lv5 and anything else that lands on Shield in a CombatTick/
+-- AmbushTick/BossTick payload — see the RaidRoomUpdate listener below). Unlike Health this has no
+-- local replicated source (no Humanoid property for it), so it's mirrored here off the wire and
+-- stays 0 outside a raid, which is also its reset value the run ends on.
+local playerShield = 0
+
 local function refreshHealthBar()
 	local character = LocalPlayer.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
@@ -2694,20 +2709,49 @@ local function refreshHealthBar()
 	end
 	playerMaxHealth = humanoid.MaxHealth
 	local pct = math.clamp(humanoid.Health / playerMaxHealth, 0, 1)
+	-- Shield sits ON TOP of health, not blended into it -- it's absorbed before Health drops at all,
+	-- so its share of the bar is independent of pct and only clamped against the leftover space so
+	-- the pair can never overflow past the end of the track.
+	local shieldPct = 0
+	if playerShield > 0 and playerMaxHealth > 0 then
+		shieldPct = math.min(math.clamp(playerShield / playerMaxHealth, 0, 1), 1 - pct)
+	end
 	-- Two readouts, one source: the raid panel's bar (visible only mid-raid) and the always-on
 	-- status panel's. Health replicates on its own, so both are driven straight off the Humanoid
-	-- rather than from any remote payload.
+	-- rather than from any remote payload -- Shield is the one field that DOES come off the wire,
+	-- since it has no Humanoid property to mirror.
 	raidHealthFill.Size = UDim2.new(pct, 0, 1, 0)
+	raidShieldFill.Position = UDim2.new(pct, 0, 0, 0)
+	raidShieldFill.Size = UDim2.new(shieldPct, 0, 1, 0)
 	raidHealthCaption.Text = ("Your HP: %d / %d"):format(math.ceil(humanoid.Health), math.ceil(playerMaxHealth))
+	if playerShield > 0 then
+		raidHealthCaption.Text ..= ("  (+%d Shield)"):format(math.ceil(playerShield))
+	end
 	-- Segmented instead of a plain fill: colour the first N of 10 cells solid, leave the rest at
 	-- segmentBar's default COLOR.Line (empty). Same <=30% low-health color swap as before, just
 	-- applied per-cell instead of to one fill Frame.
 	local filledColor = (pct <= 0.3) and Hud.COLOR.Bad or Hud.COLOR.Good
-	local filledCount = math.ceil(pct * #statusHealthCells)
+	local healthCells = math.ceil(pct * #statusHealthCells)
+	-- Shield cells continue from wherever health leaves off (not blended into it -- same "on top"
+	-- rule as the raid bar above), clamped to however many of the 10 cells health didn't already
+	-- claim.
+	local shieldCells = 0
+	if shieldPct > 0 then
+		shieldCells = math.min(math.ceil(shieldPct * #statusHealthCells), #statusHealthCells - healthCells)
+	end
 	for i, cell in ipairs(statusHealthCells) do
-		cell.BackgroundColor3 = (i <= filledCount) and filledColor or Hud.COLOR.Line
+		if i <= healthCells then
+			cell.BackgroundColor3 = filledColor
+		elseif i <= healthCells + shieldCells then
+			cell.BackgroundColor3 = Hud.COLOR.Shield
+		else
+			cell.BackgroundColor3 = Hud.COLOR.Line
+		end
 	end
 	statusHealthCaption.Text = ("INTEGRITY  %d / %d"):format(math.ceil(humanoid.Health), math.ceil(playerMaxHealth))
+	if playerShield > 0 then
+		statusHealthCaption.Text ..= ("  (+%d Shield)"):format(math.ceil(playerShield))
+	end
 end
 
 local function bindHealth(character: Model)
@@ -3115,6 +3159,24 @@ end)
 
 Remotes.EnergyDrinkFound.OnClientEvent:Connect(function()
 	print(("[HUD] Found an Energy Drink! +%d Energy"):format(RaidEnergyConfig.EnergyDrinkBonus))
+end)
+
+-- Plated Vest's raid shield (and anything else that lands on Shield in a combat tick) has no
+-- Humanoid property to replicate through, unlike Health -- this is the one place that value comes
+-- off the wire. The explicit refreshHealthBar() call is required, not optional: a tick that only
+-- moves the shield (no damage taken this tick) never fires HealthChanged, so nothing else would
+-- ever repaint it.
+Remotes.RaidRoomUpdate.OnClientEvent:Connect(function(payload)
+	local status = payload.Status
+	if status == "CombatTick" or status == "AmbushTick" or status == "BossTick" then
+		playerShield = payload.Shield or 0
+		refreshHealthBar()
+	elseif status == "RunSummary" then
+		-- Mirrors RaidClient's own teardown on this exact status: the run is over the instant this
+		-- fires, so a dead run's shield shouldn't linger on the bar back at base.
+		playerShield = 0
+		refreshHealthBar()
+	end
 end)
 
 -- Fires every MineShaftConfig.DepthReportIntervalSeconds from MineShaftService's fast depth-report
