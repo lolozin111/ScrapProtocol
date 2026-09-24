@@ -3416,8 +3416,9 @@ and frames.
 ### Resuming after a context reset
 
 **START HERE — LIVE STATE AS OF 2026-09-24.** Everything below this block is history or backlog;
-this is what is actually in flight. All SEVEN checks of the fourth round PASSED in Studio and
-nothing in this section is unverified. The next piece of work is item 1 of "WHAT TO DO NEXT".
+this is what is actually in flight. All seven checks of the fourth round PASSED in Studio. Since
+then the `OrbitBlades` client visual was built and is the ONE unverified thing — T6 on the
+checklist, and item 1 of "WHAT TO DO NEXT" says exactly what to watch for.
 
 ### FOURTH SESSION, 2026-09-24 — ALL FOUR AGREED TASKS BUILT AND STUDIO-VERIFIED
 
@@ -3547,24 +3548,37 @@ Note `LevelStats` overlays `Lv5` onto `Lv4` key by key, so restating a key in `L
 
 ### WHAT TO DO NEXT
 
-1. **`OrbitBlades` replication lag — the next piece of work, and it is no longer blocked.** It is the
-   same bug the aura had, and it was deliberately left alone with a specific reason: the blades
-   ORBIT, so there is no static offset to weld the way the ring had one. That reason is now void.
-   The aura fix does not weld anything — the part stays Anchored and the CLIENT sets its CFrame every
-   RenderStepped (`StarterPlayerScripts/ScorchAuraVisual.client.lua`) — and a moving orbit is no
-   harder to compute client-side than a fixed offset. Copy the shape: find the visual by its
-   `RunGearItem` attribute, drive it from `RenderStepped`, leave the damage server-authoritative.
+1. **Studio-verify the `OrbitBlades` client visual — BUILT 2026-09-24, the only unverified thing
+   here.** T6 on the checklist. This was the last of the three replication-lag visuals and it is
+   now done the same way as the aura: `StarterPlayerScripts/OrbitBladesVisual.client.lua` sets each
+   blade's CFrame every `RenderStepped`, and the server no longer moves them at all.
 
-   **Two things T5 established that this can now rely on, rather than re-deriving.** A server-created
-   Anchored part accepts per-frame CLIENT CFrame writes without the server fighting them, as long as
-   the server writes its position exactly once at creation — that was the one failure mode nobody
-   could prove from outside Studio, and it did not happen. And the `RunGearItem` attribute lookup
-   works for finding a gear visual from the client, which is what makes this reusable at all instead
-   of a one-off.
+   **The one thing that is genuinely new here, and the thing to actually watch:** the aura's ring is
+   rotationally symmetric, so the client only had to agree with the server about X/Z. Blades have a
+   PHASE, so the two sides have to agree about an angle as well — if they disagree, the blade you
+   see is not the blade that cuts, and the failure is a subtle one (enemies taking damage slightly
+   off from where a blade visibly passes) rather than an obvious one.
 
-   The blades' damage test already reads the same radius that positions them
-   (`RunBuffService`'s `GearBehaviors.OrbitBlades`), so unlike the aura there is no visual-vs-damage
-   half to fix alongside it — this one is purely the visual.
+   That agreement is structural, not messaged: both sides compute
+   `Workspace:GetServerTimeNow() * RunBuffConfig.Items.OrbitBlades.Base.OrbitSpeed`, a clock
+   synchronized between server and clients times a SHARED speed. Nothing replicates and nothing
+   accumulates, so there is nothing to drift. `OrbitSpeed` is in `Shared/` specifically so it cannot
+   become two copies — the general rule from CLAUDE.md, and this is the case it protects hardest,
+   because two slightly different speeds would diverge slowly and invisibly rather than break.
+
+   Two consequences worth knowing before reading the code:
+   - The server's `state.Angle += dt * 2` is GONE. An accumulated angle is unreproducible by
+     definition; the client could never land on the same value. `HitClocks` stays, because
+     per-blade-per-target cooldown really is server state.
+   - The hit test COMPUTES each blade's position from the shared helper instead of reading
+     `blade.Position`. It has to — the server only writes those parts once, at spawn, so reading
+     them would test against frozen positions. It also makes the damage independent of the visual
+     existing at all, which is the right dependency direction.
+
+   **Not changed, and available as polish if you want it:** the blades still don't rotate to face
+   their travel direction — they orbit at a fixed orientation, exactly as the server drew them.
+   That was the existing look and this change deliberately preserved it rather than quietly
+   redesigning the thing while fixing the lag.
 2. **The polish pass** (UI in-place updates, self-maintaining boot check, the one explicit
    disconnect) — agreed long ago, still not started.
 3. **The three other single-hop model lookups** named under the Scavenger head fix above
@@ -3578,7 +3592,7 @@ Note `LevelStats` overlays `Lv5` onto `Lv4` key by key, so restating a key in `L
 ### REPO STATE (2026-09-24, after the fourth session and its Studio pass)
 
 - Branch `fix/audit-p0-p3`, tracking `origin/fix/audit-p0-p3`. Working tree CLEAN.
-- **60 commits unpushed.** The user has standing authorization to have work committed, but pushing
+- **62 commits unpushed.** The user has standing authorization to have work committed, but pushing
   is theirs to approve — ask before pushing, and don't open a PR unprompted.
 - **`RaidConfig.DevFirstNodeType = "Shop"` is a TESTING setting that is currently live.** It only
   applies to a player holding the dev shortcuts, so it cannot affect a real player, but it should
