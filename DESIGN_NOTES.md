@@ -3416,126 +3416,115 @@ and frames.
 ### Resuming after a context reset
 
 **START HERE — LIVE STATE AS OF 2026-09-24.** Everything below this block is history or backlog;
-this is what is actually in flight. NOTHING in the list below has been started — it is a plan
-written down before a context reset, not work in progress.
+this is what is actually in flight. Everything in the section below is BUILT AND COMMITTED but has
+never run in Studio — the state to be careful about, since it looks finished and is unverified.
 
-### THIRD TEST ROUND, 2026-09-24 — R2/R3/R4 PASSED, R1 did not
+### FOURTH SESSION, 2026-09-24 — ALL FOUR AGREED TASKS BUILT, NONE STUDIO-VERIFIED
 
-Checklist with the user's own notes: https://claude.ai/artifact/JG4cBncHEgQY1QQGdZiUe3
+The four tasks the third test round produced are all implemented and committed. Nothing below has
+been through Studio. The five open questions that gated them were put to the user and answered; the
+answers are recorded inline with each task rather than kept as a separate list, because a decision
+with its consequence next to it is the only form that survives a reset intact.
 
-**Confirmed working and DONE** — the Scorch Aura weld (R2), the raid entry raising the Sector Map
-(R3), and the blue shield on both HP bars (R4). Those three are closed; don't re-open them.
+**R2/R3/R4 remain closed** (Scorch Aura weld, raid entry raising the Sector Map, the blue shield on
+both HP bars). **B2 is now closed too** — the user confirmed the four lines in scope (room
+description, interaction hint, "Fully healed.", boss-clear loot line) do fade. The room title, enemy
+counter and buttons still pop, which is expected and was always what confused the original answer.
 
-**R1 — headshots now work on every enemy EXCEPT the Scavenger, and the symptom CHANGED.** This is
-the single most important fact in this section. The user's words: *"you see the gun particle
-disappearing when it hits on the head, but no damage."*
+**1. R1, the Scavenger head — FIXED, and the nested-Model hypothesis was right.** The user confirmed
+a Scavenger headshot has never dealt damage, which is what the hypothesis predicted.
+`ResolvePlayerHit` took the FIRST Model ancestor of whatever the ray stopped on and gave up when
+that model was not a key in `EnemyByModel`. The Scavenger's head sits inside a nested Model, so the
+first ancestor was that inner sub-assembly and the shot resolved to no enemy at all. It now walks
+the whole ancestor chain up to the workspace root.
 
-Before the zone fix the symptom was a WHITE number — damage dealt, headshot not credited. Now it is
-**no damage at all** on a head hit, while the projectile visibly stops. Those are different
-failures, and the new one is not in the headshot code at all.
+**The general lesson, worth more than the fix.** This was never a headshot bug. The previous round's
+change (score a headshot by WHERE the ray landed, not which part stopped it) was correct and is
+still in; all it did was change the symptom from a white number to no number, because the shot never
+reached the damage code in either version. A fix that changes a symptom without removing it is
+evidence the diagnosis is in the wrong layer — that is what the second symptom was telling us, and
+it took a round to hear it.
 
-**Hypothesis, NOT yet verified — check this first and do not write any fix before it is confirmed.**
-`ResolvePlayerHit` (`CombatEncounterService.lua:1934-1941`) resolves the hit instance to an enemy
-like this:
+**Still worth a look, not done:** three other places take the same single hop —
+`BaseLaserService.lua:145`, `DroneService.lua:119`, and `ProjectileService.lua:237` (the piercing
+exclusion list, where a nested model means a pierced enemy can be re-hit). None are reported broken;
+they are listed so the next person finds them without re-deriving the pattern.
 
-```lua
-local model = hitInstance
-if model and not encounter.EnemyByModel[model] then
-    model = model:FindFirstAncestorOfClass("Model")
-end
-local enemyRecord = model and encounter.EnemyByModel[model]
-if not enemyRecord or not isEnemyAlive(enemyRecord) then return false end
-```
+**2. Resetting mid-raid — FIXED. A reset is a DEFEAT.** The user's call, and the only one of the
+three options that stops reset being a free escape from a run about to go badly. Held loot is
+forfeited and reported like any other death.
 
-`FindFirstAncestorOfClass` returns the FIRST Model ancestor. If the Scavenger rig's head sits inside
-a NESTED Model (a sub-assembly, a Model-wrapped accessory), that first ancestor is the inner model,
-which is not a key in `EnemyByModel` — so the function returns false and the shot deals nothing,
-exactly matching "particle stops, no damage". Every other rig presumably has its head as a direct
-child of the enemy model, which is why only the Scavenger fails.
+There were two holes, because raids have two kinds of room, and only fixing one would have left the
+bug alive in the other half of the game:
 
-**How to confirm before touching code:** in Studio, look at `ServerStorage.EnemyModels`' Scavenger
-and check whether the head part's parent chain reaches the top-level model without passing through
-another Model. A temporary `print` of `hitInstance:GetFullName()` in `ResolvePlayerHit` would settle
-it in one shot.
+- `RunRaidCombat` re-read `player.Character` every tick but never compared it to the body the fight
+  started on, so a reset swapped in the fresh full-health character and the loop carried happily on
+  against it. It captures `startCharacter` now and ends the fight when the body changes.
+- Shop, Heal and Map rooms have nothing ticking at all and could not notice anything.
+  `RaidRoomService` connects `CharacterRemoving` for the life of the raid, deferred (so `failRaid`'s
+  own `LoadCharacter` does not run inside the handler that triggered it) and guarded on the raid
+  still being that state (so every normal exit's respawn can never read as a reset).
+  `cleanupRaid` drops the connection first thing, before anything there can respawn anybody.
 
-**If confirmed, the fix is to WALK UP the ancestor chain** until a Model that IS a key in
-`EnemyByModel` is found, rather than taking the first Model and giving up. That is strictly more
-robust than the current single hop and fixes any future rig with nested structure, not just this
-one. Note this bug is almost certainly OLDER than the zone change — a direct head hit would never
-have dealt damage — and the zone fix only made it visible by finally letting head hits matter.
+The invisible half of this bug mattered more than the visible one: `PlayerActivityService` kept
+holding the `Raid` activity, which soft-locked every LATER raid. The room geometry was the symptom
+people could see.
 
-### AGREED NEXT WORK, from the same R1 note (the user listed these; none are started)
+**3. Enemy attack ranges — FIXED, but it was NOT the config-only change the notes predicted.**
+`EnemyAI`'s `ATTACK_RANGE_SLACK` added a flat **12 studs** to every enemy's `ContactRange` in the
+attack test, so a Scavenger configured to hit from 5 actually hit from 17 — and the planned retune
+from 5 to 4 would have moved that to 16. Imperceptible. Retuning the config alone would have looked
+like the fix did nothing.
 
-1. **The Scavenger head bug above.** Highest priority: it is the last thing blocking the headshot
-   mechanic that bows are built around.
-2. **Resetting during a raid leaves you in a broken state.** User: *"when you reset during a raid,
-   you respawn in your base but with the raid layout and all that."* A real bug, not cosmetic. The
-   raid teardown funnel is `cleanupRaid` in `RaidRoomService.lua` — every exit path is supposed to
-   route through it, and a character reset evidently does not. Check what a `Humanoid` death from
-   a self-reset does versus a death in combat, and whether `PlayerActivityService` is left holding
-   the activity (which would also soft-lock further raids).
-3. **Enemy attack ranges are too long — a balance retune, CONFIG ONLY.** User's spec verbatim:
-   Scavengers and Brutes *"should be really up close"*, Raiders *"a medium range because of the
-   spear"*. The field is `ContactRange` in `EnemyConfig.lua` ("studs; how close it needs to be to
-   land a hit"). Current values found: the Construct default is `6` (`:44`), another type sits at
-   `5` (`:59`), the Brute at `8` (`:168`), the Hulk at `40` (`:219`). The Hulk is deliberately huge
-   and is NOT part of this request — leave it alone. `sp-config-dev` job; it must not turn into a
-   service refactor. **Note the Hulk's own comment at `:214-216`: `ContactRange` must stay below
-   `AttackRadius`, and `AttackRadius` within every attack's `TriggerRange`, or he flickers between
-   walk and stop at the edge.** Any type with those fields needs the same ordering preserved.
-4. **Aura radius per level — MOSTLY ALREADY WORKS; this is narrower than it sounds.** Checked:
-   `RunBuffService.lua:320` computes `radius = item.Base.Radius * (1 + (levelStats.RadiusPct or 0))`
-   and the SAME value drives both the visual (`:333`) and the damage test (`:347`), so the two
-   cannot disagree — the "ring lying about its reach" risk does not exist here. So if the aura is
-   not growing, the cause is almost certainly that `RadiusPct` is absent or zero on the ScorchAura
-   level entries in `RunBuffConfig`, which makes this a **config-only** change.
-   **But `OrbitBlades` genuinely does NOT scale**: `:361` reads `item.Base.OrbitRadius` flat, with
-   no level term at all. If "the aura things" meant both (the user wrote it plural), Orbit Blades
-   needs a real code change to take a level multiplier, not just a config value. ASK WHICH.
+Every word justifying that 12 is about walking to a BASE's wall, where an enemy stopping slightly
+short of the ring used to freeze and never attack — nothing to do with chasing a player, where
+there is no wall short of the target and the stand point is re-issued every think. Split in two:
+`ATTACK_RANGE_SLACK` 12 for the wall, `PLAYER_ATTACK_RANGE_SLACK` 2 for a player. `context.TargetPlayer`
+already marked the difference (raid contexts set it, `RunWave`'s base-defense context never has),
+so the split needed no new field anywhere.
 
-### ALSO STILL OPEN
+Per-type values, now that they mean something: **Scavenger 4, Brute 5, Raider 9** — real hitting
+distances of 6, 7 and 11 studs. All three had been inheriting `RebelBase`'s 5. **The notes were
+wrong that the Brute sat at 8**; that value at `EnemyConfig.lua:168` is the **Siegebreaker's**.
 
-- **B2 from the previous round was never resolved.** The user couldn't tell which text was in scope.
-  The four lines that should fade are the room description, the interaction hint, "Fully healed."
-  and the boss-clear loot line; the room title, enemy counter and buttons were never touched and
-  still pop. Ask them to confirm against that list rather than re-testing blind.
-- **`OrbitBlades` replication lag** — same bug the aura had, deliberately unfixed because blades
-  orbit and there is no static offset to weld. Needs a client-side visual.
-- **The polish pass** (UI in-place updates, self-maintaining boot check, the one explicit
-  disconnect) — agreed long ago, still not started.
+**The Hulk is untouched and could not have been touched by this.** His attacks are not gated by
+`ContactRange` at all — the `Animated` pattern in `EnemyAnimation.lua:775` has its own
+`AttackRadius` logic — so the `ContactRange < AttackRadius < TriggerRange` ordering his config
+comment warns about is unaffected. Worth knowing before anyone else worries about it.
 
-### OPEN QUESTIONS — ASK THE USER BEFORE BUILDING THE THING EACH ONE GATES
+**4. Aura and blade reach — FIXED, both of them, config AND code.** The user confirmed "the aura
+things" meant both items, and chose **bigger jumps at the rarity caps** over smooth per-level
+growth, so both keep a milestone feel instead of creeping: **+30% at Lv4, +70% at Lv5**. Scorch Aura
+goes 10 → 13 → 17 studs; Orbit Blades 6 → 7.8 → 10.2.
 
-Written down rather than guessed at. Each names the task it blocks; none of them should be answered
-by assumption, because each has at least two defensible answers that produce different games.
+The aura was config-only as predicted — its visual and its damage test already read the same value,
+so the ring could never lie about its reach. The blades needed real code: `RunBuffService` read
+`item.Base.OrbitRadius` flat with no level term at all. It scales off the same value that positions
+each blade, so they cannot be drawn wider than they cut. The key is **`OrbitRadiusPct`, not a second
+use of `RadiusPct`** — `RunBuffConfig.Aggregate` sums every numeric level stat into one flat table,
+so two items writing the same key there is a collision waiting for its first reader.
 
-1. **What should resetting mid-raid actually DO?** (Blocks task 2, and it is a design call, not a
-   bug detail.) Three defensible answers: treat it as a **Defeat** (forfeits the run's pending
-   rewards — consistent, and stops reset being a free escape from a run about to go badly); treat
-   it as an **Abandon** (same forfeit rules as the existing abandon path); or treat it as a
-   **clean teleport home** with the run ended and nothing lost. The second and third are kinder;
-   the first is the only one that closes reset-as-an-exploit. **Whatever the answer, the layout bug
-   is a bug and gets fixed regardless** — the question is only what the run's outcome should be.
-2. **Did the Scavenger's head EVER deal damage?** (Sharpens task 1.) If the user can recall a head
-   shot on a Scavenger that dealt damage before any of this session's changes, the nested-Model
-   hypothesis is wrong and the trace has to start over. If it never has, the hypothesis is very
-   likely right.
-3. **"The aura things" — ScorchAura only, or Orbit Blades too?** (Blocks task 4, and decides
-   whether it is a config edit or a code change — see task 4 for why they differ.)
-4. **How much should the aura grow per level?** (Also task 4.) Needs a number or a feel: same
-   proportion per level, or a bigger jump at the rarity caps? Its current base radius and the
-   existing `RadiusPct` entries should be read out to the user before picking, so the choice is
-   made against real numbers rather than in the abstract.
-5. **B2: do the four lines fade?** (Closes the last check from round 2.) The four in scope are the
-   room description, the interaction hint, "Fully healed." and the boss-clear loot line. The room
-   title, enemy counter and buttons were never touched and still pop — that mix is expected, and is
-   what confused the original answer. Ask them to confirm against that list; do not ask for a blind
-   retest.
+Note `LevelStats` overlays `Lv5` onto `Lv4` key by key, so restating a key in `Lv5` REPLACES the
+`Lv4` value rather than stacking with it. That is why the aura's Lv5 entry says 0.70 and not 0.40.
 
-### REPO STATE AT THE RESET (2026-09-24)
+### WHAT TO DO NEXT
+
+1. **Studio-verify all four.** There is no test suite; none of this has run. The Scavenger headshot
+   and the mid-raid reset are the two that either obviously work or obviously do not. The enemy
+   reach change is the one most likely to need a second pass on feel — 2 studs of player slack is
+   deliberately tight, and if raid enemies are ever seen standing just short of you doing nothing,
+   that number is the first suspect.
+2. **`OrbitBlades` replication lag** — same bug the Scorch Aura had, deliberately unfixed because
+   blades orbit and there is no static offset to weld. Needs a client-side visual.
+3. **The polish pass** (UI in-place updates, self-maintaining boot check, the one explicit
+   disconnect) — agreed long ago, still not started.
+4. **The three other single-hop model lookups** listed under task 1, if they turn out to matter.
+
+
+### REPO STATE (2026-09-24, after the fourth session)
 
 - Branch `fix/audit-p0-p3`, tracking `origin/fix/audit-p0-p3`. Working tree CLEAN.
-- **49 commits unpushed.** The user has standing authorization to have work committed, but pushing
+- **55 commits unpushed.** The user has standing authorization to have work committed, but pushing
   is theirs to approve — ask before pushing, and don't open a PR unprompted.
 - **`RaidConfig.DevFirstNodeType = "Shop"` is a TESTING setting that is currently live.** It only
   applies to a player holding the dev shortcuts, so it cannot affect a real player, but it should
