@@ -83,6 +83,8 @@ EnemyConfig.Types = {
 		DisplayName = "Scavenger",
 		Description = "Underequipped and outnumbered on their own — the danger is never one Scavenger.",
 		HP = 18,
+		-- Really up close -- no weapon worth the name, so it has to reach you to do anything.
+		ContactRange = 4,
 		ModelName = "Scavenger",
 		-- Idle/Move/Death animation ids, played by EnemyAnimation.Locomotion for a Chaser. Leave a slot
 		-- out to skip it. The model's Humanoid needs an Animator child, or nothing plays (one warn).
@@ -97,6 +99,10 @@ EnemyConfig.Types = {
 		Description = "Better-armed than a Scavenger and knows it.",
 		HP = 30,
 		ContactDamage = 9,
+		-- Medium reach, because of the spear -- roughly double a Scavenger's and the only rebel meant
+		-- to threaten you from outside arm's length. Read together with EnemyAI's
+		-- PLAYER_ATTACK_RANGE_SLACK: his real hitting distance is 11 studs, against a Scavenger's 6.
+		ContactRange = 9,
 		ModelName = "Raider",
 		-- His body was built facing off from his HumanoidRootPart, so he walks sideways without this —
 		-- EnemyAI turns the whole model by this many degrees on top of the direction he is chasing.
@@ -112,6 +118,11 @@ EnemyConfig.Types = {
 		Description = "Wades in slow and takes a beating before it goes down.",
 		HP = 70,
 		ContactDamage = 12,
+		-- Bulk, not reach: he wades all the way in. Unchanged in number from the RebelBase 5, but
+		-- stated here because it is now a deliberate choice rather than an inherited default -- and
+		-- because what actually shortened his reach was EnemyAI's PLAYER_ATTACK_RANGE_SLACK (12 -> 2),
+		-- which took his real hitting distance from 17 studs to 7.
+		ContactRange = 5,
 		MoveSpeed = 11, -- slower than the RebelBase default — bulk over speed
 		AttackCooldown = 1.2,
 		Defense = 10,

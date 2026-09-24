@@ -59,6 +59,25 @@ local EnemyAI = {}
 -- that real-world imprecision instead of demanding a pixel-perfect arrival.
 local ATTACK_RANGE_SLACK = 12
 
+-- ...but every word of the reasoning above is about walking to a BASE's WALL. Applied to an enemy
+-- chasing a PLAYER it did something nobody asked for: it made every type's real reach its
+-- ContactRange PLUS 12, so a Scavenger configured to hit from 5 studs actually landed hits from 17
+-- and backing away from one did nothing. That is the "enemy attack ranges are too long" complaint,
+-- and it is why retuning ContactRange alone would have been almost imperceptible -- 5 to 4 moves 17
+-- to 16.
+--
+-- Chasing a player needs almost no slack: there is no wall to collide with short of the target, the
+-- standPoint is re-issued every think, and the target is moving anyway. The wall case keeps the
+-- full 12.
+local PLAYER_ATTACK_RANGE_SLACK = 2
+
+-- Which of the two applies. context.TargetPlayer is present ONLY on the player-chasing context
+-- (RunRaidCombat sets it; RunWave's base-defense context has neither TargetPart nor TargetPlayer --
+-- see this file's header), so the distinction needs no new field anywhere.
+local function attackSlack(context): number
+	return context.TargetPlayer and PLAYER_ATTACK_RANGE_SLACK or ATTACK_RANGE_SLACK
+end
+
 -- Freshly-spawned enemies can't land a hit for this long after CombatEncounterService.spawnEnemy
 -- stamps their SpawnTime — they still walk in and close the distance normally during this window,
 -- only the actual damage tick is held back. Without this, an enemy that happens to spawn already
@@ -165,7 +184,7 @@ EnemyAI.Patterns.Chaser = function(enemy, context)
 
 	local toEnemy = rootPart.Position - context.TargetPosition
 	local distance = toEnemy.Magnitude
-	local inRange = distance <= enemy.ContactRange + ATTACK_RANGE_SLACK
+	local inRange = distance <= enemy.ContactRange + attackSlack(context)
 
 	-- Whole-model facing correction, for a type whose EnemyConfig entry sets WalkFacingOffset (nothing
 	-- happens for any other type). Set up once per enemy, aimed every tick.
@@ -430,7 +449,7 @@ EnemyAI.Patterns.Slam = function(enemy, context)
 	local toEnemy = rootPart.Position - context.TargetPosition
 	local distance = toEnemy.Magnitude
 
-	local inRange = distance <= enemy.ContactRange + ATTACK_RANGE_SLACK
+	local inRange = distance <= enemy.ContactRange + attackSlack(context)
 
 	-- Same two opt-in extras Chaser gets: whole-model facing (WalkFacingOffset) and Idle/Move
 	-- animations (Animations). Both no-ops for a type whose config sets neither.
