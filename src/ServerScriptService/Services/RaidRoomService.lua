@@ -2041,9 +2041,12 @@ enterNode = function(state, nodeId: number)
 	RaidMapUpdate:FireClient(state.Player, mapUpdatePayload(state, {}, false, false))
 
 	if node.Type == "Start" then
-		-- advanceFromNode, not showMapChoice directly: a Start that leads to exactly one room should
-		-- travel there like any other single-exit node rather than opening a map with one option on
-		-- it. Start is not in AutoAdvanceBlockedTypes, so this is the same rule everywhere.
+		-- advanceFromNode, not showMapChoice directly, so Start goes through the SAME gate as every
+		-- other room rather than keeping a second copy of the rule here. What that gate decides for
+		-- it has changed: Start is now in RaidConfig.AutoAdvanceBlockedTypes (see its comment), so a
+		-- single-exit entry raises the map instead of travelling on its own. Routing through
+		-- advanceFromNode is still the right call — it means flipping that config entry back is all
+		-- it would take to restore the old behaviour, with nothing to change here.
 		advanceFromNode(state)
 	elseif node.Type == "Combat" then
 		beginCombat(state, node)

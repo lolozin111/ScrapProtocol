@@ -535,7 +535,11 @@ RaidConfig.AutoAdvanceSeconds = 1.2 -- how long the travel transition holds befo
 	-- builds. Long enough to register as a move; short enough that a corridor of single-exit rooms
 	-- doesn't turn into a slideshow. The client plays its wipe over exactly this window, so the two
 	-- read this same number rather than each keeping their own copy.
-RaidConfig.AutoAdvanceBlockedTypes = { Shop = true, Heal = true }
+-- Start is here for a different reason than Shop and Heal. Those two hold you because you have
+-- business in them. Start holds you because arriving in a raid and being immediately swept
+-- somewhere else gives you no moment to see where you are — the Sector Map opening is the run
+-- announcing itself, and that is worth a click even when there is only one way out of the entry.
+RaidConfig.AutoAdvanceBlockedTypes = { Shop = true, Heal = true, Start = true }
 
 -- Which room type every first-pickable node becomes for a player holding the dev shortcuts, so a
 -- room you want to test is one raid away instead of however many the map RNG takes to hand you one.
