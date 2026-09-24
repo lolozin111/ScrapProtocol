@@ -1383,6 +1383,9 @@ function CombatEncounterService.RunRaidCombat(player: Player, arenaCenter: Vecto
 		return "Interrupted"
 	end
 
+	-- The body the fight STARTED on — see the character-change check in the tick loop below.
+	local startCharacter = character
+
 	local playerFolder = Instance.new("Folder")
 	playerFolder.Name = tostring(player.UserId) .. "_Raid"
 	playerFolder.Parent = encounterFolder
@@ -1646,6 +1649,22 @@ function CombatEncounterService.RunRaidCombat(player: Player, arenaCenter: Vecto
 		rootPart = character and character:FindFirstChild("HumanoidRootPart")
 		if not character or not humanoid or not rootPart then
 			status = "Interrupted"
+			break
+		end
+		-- A RESET mid-raid swaps the body out from under the fight. Re-reading player.Character
+		-- every tick without comparing it meant the loop carried happily on against the FRESH
+		-- character now standing at the base: the raid never ended, so its room was never
+		-- destroyed and the client was never sent a RunSummary to dismiss the raid HUD. That is
+		-- the "respawn at base but with the raid layout still up" bug, and the reason it also
+		-- soft-locked further raids (cleanupRaid, and with it PlayerActivityService.Release,
+		-- never ran).
+		--
+		-- A reset counts as a DEFEAT, not an Interrupt (the user's call, 2026-09-24): it is the
+		-- only outcome that stops reset being a free escape from a run about to go badly, and it
+		-- routes through failRaid so the run's held loot is forfeited and reported like any other
+		-- death.
+		if character ~= startCharacter then
+			status = "Defeated"
 			break
 		end
 		-- The server's number, never the Humanoid's. A client that writes its own Health can no

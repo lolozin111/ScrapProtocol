@@ -1313,6 +1313,12 @@ end
 -- branch left where the activity could leak and soft-lock the player out of raiding.
 local function cleanupRaid(state, sendReturnHome: boolean?)
 	activeRaids[state.Player.UserId] = nil
+	if state.ResetConnection then
+		-- Dropped before anything else here can respawn the player, so the mid-raid reset guard
+		-- (see where it's connected) never sees this exit's own LoadCharacter as a reset.
+		state.ResetConnection:Disconnect()
+		state.ResetConnection = nil
+	end
 	RaidHealBudget.End(state.Player) -- back home, the Support Core heals uncapped again
 	RunBuffService.End(state.Player) -- restores base MaxHealth, clears gear visuals/attributes
 	PlayerActivityService.Release(state.Player, PlayerActivityService.Activities.Raid)
@@ -2157,6 +2163,28 @@ RequestStartRaid.OnServerEvent:Connect(function(player: Player, requestedMode: a
 			-- node visit (see rollShopOffers) so re-opening the same room shows the same stock
 	}
 	activeRaids[player.UserId] = state
+	-- A character RESET (Esc > Reset Character) outside a combat room has nothing ticking to notice
+	-- it -- Shop, Heal and Map rooms just sit there. Without this the raid stayed registered while
+	-- the player respawned at their base, so the room was never destroyed, the raid HUD was never
+	-- dismissed, and PlayerActivityService kept holding the Raid activity, which soft-locked every
+	-- LATER raid too. Combat rooms catch the same reset themselves, in the tick loop (see
+	-- CombatEncounterService.RunRaidCombat's startCharacter check); whichever notices first wins and
+	-- the other one's guard makes it a no-op.
+	--
+	-- A reset counts as a DEFEAT (the user's call, 2026-09-24) -- the only outcome that stops reset
+	-- being a free escape from a run about to go badly.
+	--
+	-- Deferred because failRaid ends by calling player:LoadCharacter(), which must not run inside
+	-- the CharacterRemoving handler that triggered it. The activeRaids guard is what stops it
+	-- re-entering: cleanupRaid clears activeRaids BEFORE it respawns anyone, so the respawn every
+	-- normal exit already does can never read as a reset.
+	state.ResetConnection = player.CharacterRemoving:Connect(function()
+		task.defer(function()
+			if activeRaids[player.UserId] == state and not state.AwaitingSummary then
+				failRaid(state, "Reset")
+			end
+		end)
+	end)
 	-- The Support Core drone's per-room / per-map heal allowance starts full with the raid.
 	RaidHealBudget.Begin(player)
 	RunBuffService.Begin(player)
