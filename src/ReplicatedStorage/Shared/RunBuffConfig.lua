@@ -176,8 +176,12 @@ RunBuffConfig.Items = {
 		Price = { Rare = 160, Epic = 210, Legendary = 270 },
 		Base = { Radius = 10, TickSeconds = 0.5 }, -- a ring around the player that burns enemies standing in it
 		PerLevel = { DamagePerSecond = 3 }, -- +3 DPS to everything inside the ring per level (Lv5 = 15 DPS, well under a weak gun's own DPS)
-		Lv4 = { RadiusPct = 0.30 }, -- ring radius +30%
-		Lv5 = { Status = "Slow" }, -- enemies inside the ring are Slowed (StatusConfig.Slow)
+		Lv4 = { RadiusPct = 0.30 }, -- ring radius +30% (10 -> 13 studs) — the Epic-cap step
+		-- The Legendary-cap step, and deliberately the bigger of the two: 10 -> 17 studs. Growth is
+		-- banked at the caps rather than spread evenly per level (the user's call, 2026-09-24) so the
+		-- ring keeps its milestone feel instead of creeping. LevelStats overlays Lv5 onto Lv4 key by
+		-- key, so restating RadiusPct here REPLACES the 0.30 above rather than stacking with it.
+		Lv5 = { Status = "Slow", RadiusPct = 0.70 }, -- enemies inside the ring are Slowed (StatusConfig.Slow)
 		Card = { Label = "Burn Damage", StatKey = "DamagePerSecond", Format = "Rate" },
 	},
 
@@ -189,8 +193,11 @@ RunBuffConfig.Items = {
 		Price = { Rare = 180, Epic = 230, Legendary = 280 },
 		Base = { Blades = 2, OrbitRadius = 6, HitCooldown = 0.5 }, -- 2 blades circle the player, each can hit the same target once per cooldown
 		PerLevel = { DamagePerHit = 2 }, -- +2 damage per hit per level
-		Lv4 = { ExtraBlades = 1 }, -- +1 blade
-		Lv5 = { Status = "Staggered" }, -- blade hits apply Staggered (StatusConfig.Staggered)
+		-- Same cap-step shape as ScorchAura above, on a key of its own: RadiusPct is already summed
+		-- into Aggregate's flat totals by the aura, and a second item writing the same key there would
+		-- be a collision waiting for the first reader of it.
+		Lv4 = { ExtraBlades = 1, OrbitRadiusPct = 0.30 }, -- +1 blade; orbit 6 -> 7.8 studs
+		Lv5 = { Status = "Staggered", OrbitRadiusPct = 0.70 }, -- Staggered (StatusConfig.Staggered); orbit 6 -> 10.2 studs
 		Card = { Label = "Blades circling you", Special = "OrbitBladeCount" },
 	},
 

@@ -358,7 +358,10 @@ GearBehaviors.OrbitBlades = function(record, owned, dt: number, ctx)
 	local item = RunBuffConfig.Items.OrbitBlades
 	local levelStats = RunBuffConfig.LevelStats("OrbitBlades", owned.Level)
 	local bladeCount = item.Base.Blades + (levelStats.ExtraBlades or 0)
-	local radius = item.Base.OrbitRadius
+	-- Was item.Base.OrbitRadius flat: the blades were the one piece of gear whose reach never grew,
+	-- at any level or rarity. Scaled the same way ScorchAura's ring already was, and from the same
+	-- value the hit test below uses, so the blades can never be drawn wider than they actually cut.
+	local radius = item.Base.OrbitRadius * (1 + (levelStats.OrbitRadiusPct or 0))
 	local hitCooldown = item.Base.HitCooldown
 	local damagePerHit = levelStats.DamagePerHit or 0
 	local hitRadius = 3 -- studs; a blade "passes within ~3 studs" per the design ask, not worth a config entry
