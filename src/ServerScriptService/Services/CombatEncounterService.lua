@@ -432,6 +432,30 @@ local function isHeadPart(part: BasePart): boolean
 	return part.Name:lower() == "head"
 end
 
+-- Finds the actual head Part to cache on the enemy record (see spawnEnemy's `record.HeadPart`
+-- below), for the live zone test in ResolvePlayerHit. Deliberately a SEPARATE walk from
+-- warnMissingHeadOnce's, not a shared helper: that one's job is "does a head exist at all, for a
+-- one-time authoring warning" and doesn't care about accessories; this one hands back a specific
+-- Part reference that a status/damage system will read `.Position`/`.Size` off every hit, and a
+-- hat mistakenly named "Head" would make every helmet a free headshot exemption. Same Accessory
+-- exclusion measureRestPoseHitbox already uses for the same reason.
+--
+-- NoHeadshots is checked here, not just left to "no part happens to be named Head", so an author
+-- opting a rig out of headshots is honoured even if that rig's model DOES have a part literally
+-- named "Head" for some other reason (a decorative drone dome, say) — the flag wins outright
+-- rather than depending on naming to keep the truth.
+local function findHeadPart(model: Model, typeData): BasePart?
+	if typeData.NoHeadshots then
+		return nil
+	end
+	for _, part in ipairs(model:GetDescendants()) do
+		if part:IsA("BasePart") and isHeadPart(part) and not part:FindFirstAncestorOfClass("Accessory") then
+			return part
+		end
+	end
+	return nil
+end
+
 -- A rig with no head part at all can never be headshot, and the auto-measured box will have
 -- swallowed whatever it uses as a head instead. That is legitimate for some designs (a drone, a
 -- single skinned mesh) and a content mistake for others, and only the person who built the model
@@ -634,6 +658,13 @@ local function spawnEnemy(typeKey: string, typeData, spawnPosition: Vector3, mul
 	humanoid.MaxHealth = typeData.HP * multiplier
 	humanoid.Health = humanoid.MaxHealth
 
+	-- Cached once, here, rather than searched per-shot: GetDescendants over the whole rig on every
+	-- hit would be wasteful when the reference itself never changes. What DOES change every frame is
+	-- the head's Position (the rig is animating), which is exactly why ResolvePlayerHit reads
+	-- `.Position`/`.Size` off this LIVE at hit time instead of caching an offset alongside it — see
+	-- the zone test there for why a cached offset would just be this same bug in a new shape.
+	local headPart = findHeadPart(model, typeData)
+
 	local record = {
 		Model = model,
 		Humanoid = humanoid,
@@ -677,6 +708,9 @@ local function spawnEnemy(typeKey: string, typeData, spawnPosition: Vector3, mul
 		-- does above, without EnemyAnimation.lua needing to know the multiplier was ever computed.
 		TypeData = typeData,
 		DamageMultiplier = multiplier,
+		-- Nil for a headless rig (or one with NoHeadshots set) — ResolvePlayerHit's zone test treats
+		-- that exactly like "no headshot multiplier applies," same as always. See findHeadPart above.
+		HeadPart = headPart,
 	}
 
 	-- Housekeeping only, not gameplay logic — the tick loop still finds out about a death by
@@ -1907,18 +1941,40 @@ function CombatEncounterService.ResolvePlayerHit(player: Player, hitInstance: In
 	end
 
 	-- Headshots. Only weapons that declare a HeadshotMultiplier care where they land — a
-	-- flamethrower hitting a head is just a flamethrower. Roblox rigs name the part "Head", and
-	-- since the projectile raycast returns the exact part it struck, this needs no extra hit test.
+	-- flamethrower hitting a head is just a flamethrower.
+	--
+	-- This USED to just be `isHeadPart(hitInstance)` on the assumption that the raycast returning
+	-- the part it struck was the whole test. It wasn't: every auto-hitbox enemy also carries a
+	-- "Hitbox" Part, CanQuery = true, sized once from the REST pose (see measureRestPoseHitbox) and
+	-- welded to the root. The rig then animates and the head moves; the hitbox does not. On plenty of
+	-- walk-cycle frames the animated head sits INSIDE the box's still volume, so the ray stops on
+	-- "Hitbox" before it ever reaches "Head" — a headshot that should have counted scored as a body
+	-- hit, and which frame you fired on decided the colour. That's why it looked random.
+	--
+	-- The fix asks a different question: not WHICH PART stopped the ray, but WHERE ON THE ENEMY the
+	-- ray landed. record.HeadPart (cached at spawn — see spawnEnemy) is read LIVE here, at hit time,
+	-- so its Position/Size reflect wherever the animation has actually put the head THIS frame. A
+	-- hit at or above the head's current bottom edge counts as a headshot no matter which Part
+	-- physically absorbed the ray: a ray that stops on the head part is above its own bottom edge; a
+	-- ray that stops on the Hitbox at head height is above it too; a ray into the chest is below it.
+	-- A cached REST-POSE offset instead of a live read would just be this same bug wearing a new
+	-- shape — the whole point is that the threshold has to move with the animation.
+	--
+	-- A rig with no HeadPart (headless model, or NoHeadshots — see findHeadPart) simply never
+	-- satisfies this test, same as before: no fallback zone based on a fraction of body height, on
+	-- purpose — that would make every headless rig uniformly more vulnerable to Bows, a balance
+	-- change nobody asked for. If a headless-but-still-shootable zone is ever wanted, it should be an
+	-- explicit per-type EnemyConfig field (e.g. `HeadshotZone = { Height = ... }`), not an inferred
+	-- default.
 	--
 	-- Until now the gold "Headshot" damage colour was only ever produced by the AimBot Ultimate,
 	-- which made it a mod-specific flourish rather than a mechanic. Bows are built around it.
 	local headshotMultiplier = spec.HeadshotMultiplier or 1
-	-- isHeadPart, not a second inline `Name == "Head"` — see its own comment for what these two
-	-- drifting apart cost.
+	local headPart = enemyRecord.HeadPart
 	local isHeadshot = headshotMultiplier > 1
-		and hitInstance ~= nil
-		and hitInstance:IsA("BasePart")
-		and isHeadPart(hitInstance)
+		and headPart ~= nil
+		and headPart.Parent ~= nil -- guards a head blown off / model mid-teardown between cache and hit
+		and hitPosition.Y >= (headPart.Position.Y - headPart.Size.Y * 0.5)
 
 	-- Damage-number feedback tag: Headshot wins if both happen on the same shot (it already had its
 	-- own gold styling before crits existed — see the comment above). spec.IsCrit is stamped once
