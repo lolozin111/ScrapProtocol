@@ -3416,25 +3416,54 @@ and frames.
 ### Resuming after a context reset
 
 **START HERE — LIVE STATE AS OF 2026-09-24.** Everything below this block is history or backlog;
-this is what is actually in flight. Everything in the section below is BUILT AND COMMITTED but has
-never run in Studio — the state to be careful about, since it looks finished and is unverified.
+this is what is actually in flight. All six checks of the fourth round PASSED in Studio. One
+follow-up fix came out of them and is the only thing here that has not run — see "WHAT TO DO NEXT".
 
-### FOURTH SESSION, 2026-09-24 — ALL FOUR AGREED TASKS BUILT, NONE STUDIO-VERIFIED
+### FOURTH SESSION, 2026-09-24 — ALL FOUR AGREED TASKS BUILT AND STUDIO-VERIFIED
 
-The four tasks the third test round produced are all implemented and committed. Nothing below has
-been through Studio. The five open questions that gated them were put to the user and answered; the
-answers are recorded inline with each task rather than kept as a separate list, because a decision
-with its consequence next to it is the only form that survives a reset intact.
+**All six checks passed** (T1, T2a, T2b, T3a, T3b, T4) — checklist and the user's notes at
+https://claude.ai/artifact/PYwNs5vZ37zBZmsXH1psCT. That includes both regression checks, which were
+the real risk: base-wall attacks still work after the attack-slack split (T3b), and a normal
+extraction is not mistaken for a character reset (T2b).
+
+**One follow-up, from the user's note on T4** (*"it works, but make sure that the zone for the aura,
+the circle is always on the floor, even when the player is jumping"*) — **BUILT, NOT YET VERIFIED**.
+It was a real miss and worth recording as a pattern, because this ring has now been positioned three
+ways and the first two each fixed one half and broke the other:
+
+- **Server Heartbeat** — lagged. A server tick runs after the frame the player is looking at and
+  then has to cross the network, so the ring chased where the player *was*.
+- **Welded to the root** — cured the lag by handing position to the client's own physics, but a weld
+  is RIGID, so jumping carried the ring up into the air. The thing drawn as a zone on the floor
+  stopped being on the floor. That is the bug the user caught.
+- **Positioned on the CLIENT** (`StarterPlayerScripts/ScorchAuraVisual.client.lua`, new) — gets both
+  properties at once: the player's own frame with no round trip, and a Y free to be decided
+  independently of the character's. The part stays Anchored and the server writes its CFrame exactly
+  once, at creation, so nothing fights the per-frame local writes or replicates them back. The ring
+  is found via a new `RunGearItem` attribute, **not** by name, because a real model cloned from
+  `ServerStorage.RunGearModels` keeps the TEMPLATE's name — a name lookup would have worked right up
+  until the art landed.
+
+The damage test moved with it, and had to: a ring drawn on the floor that burns in a sphere around
+your chest is a ring that lies, and this gear's whole design point was that its visual and its
+damage read the same value. Reach is now horizontal distance from the root, bounded vertically by a
+new `ScorchAura` `Base.Height` of 14 — a column, not an infinite one, so an enemy on a gantry
+overhead is not standing in your ring. The horizontal term reads the same root X/Z the client draws
+at, so the two cannot drift apart.
+
+**The general lesson, and it is the second time this round it has come up:** when a fix trades one
+property for another rather than adding one, the trade is usually hiding a third option. The weld
+looked like the answer because it beat the Heartbeat on the axis being measured at the time (lag)
+and nobody was measuring the other one (floor-locking) until the user jumped.
+
+The four tasks the third round produced are all implemented, committed and now verified. The five
+open questions that gated them were put to the user and answered; the answers are recorded inline
+with each task below rather than kept as a separate list, because a decision with its consequence
+next to it is the only form that survives a reset intact.
 
 
-**The Studio checklist for all of it: https://claude.ai/artifact/PYwNs5vZ37zBZmsXH1psCT** — six checks
-(T1, T2a/T2b, T3a/T3b, T4), each with what a failure would actually mean, and the verdicts and notes
-stored with the page so they survive a reset and can be read back rather than re-asked. T3b and the
-second half of T2b are REGRESSION checks: they exist because these two fixes could each break the
-half of the game nobody was looking at (base-wall attacks, and a normal extraction being mistaken
-for a reset).
-
-**R2/R3/R4 remain closed** (Scorch Aura weld, raid entry raising the Sector Map, the blue shield on
+**R2/R3/R4 remain closed** (the Scorch Aura ring keeping up with the player — by a weld then, by
+the client now; raid entry raising the Sector Map; the blue shield on
 both HP bars). **B2 is now closed too** — the user confirmed the four lines in scope (room
 description, interaction hint, "Fully healed.", boss-clear loot line) do fade. The room title, enemy
 counter and buttons still pop, which is expected and was always what confused the original answer.
@@ -3517,22 +3546,31 @@ Note `LevelStats` overlays `Lv5` onto `Lv4` key by key, so restating a key in `L
 
 ### WHAT TO DO NEXT
 
-1. **Studio-verify all four.** There is no test suite; none of this has run. The Scavenger headshot
-   and the mid-raid reset are the two that either obviously work or obviously do not. The enemy
-   reach change is the one most likely to need a second pass on feel — 2 studs of player slack is
-   deliberately tight, and if raid enemies are ever seen standing just short of you doing nothing,
-   that number is the first suspect.
-2. **`OrbitBlades` replication lag** — same bug the Scorch Aura had, deliberately unfixed because
-   blades orbit and there is no static offset to weld. Needs a client-side visual.
+1. **Studio-verify the aura ring fix — the ONLY unverified thing left here.** Everything else in
+   this section passed. Grant `ScorchAura` at Lv5, then jump: the ring must stay on the floor
+   instead of rising with you, and must not lag behind when you run. Two failure modes to watch for
+   specifically, because they are what the new approach could get wrong rather than what it fixed:
+   a **flickering or snapping** ring means the server is re-asserting the anchored part's CFrame and
+   fighting the client's per-frame write (the theory says it only writes once, at creation); an enemy
+   standing **visibly inside the ring and not burning** means the floor-plane damage test and the
+   drawn ring have come apart after all. Also check the ring on a **slope or a raised platform**,
+   which the old welded version never had to cope with.
+2. **`OrbitBlades` replication lag** — the same shape as the aura's original bug, and the aura fix
+   above is now the precedent for it: an anchored server part positioned from the client. The blades
+   were left unfixed because they orbit and there was no static offset to weld, which is exactly the
+   constraint that no longer matters once the client owns position. This is the obvious next one.
 3. **The polish pass** (UI in-place updates, self-maintaining boot check, the one explicit
    disconnect) — agreed long ago, still not started.
 4. **The three other single-hop model lookups** listed under task 1, if they turn out to matter.
+5. **Raise `PLAYER_ATTACK_RANGE_SLACK` if enemy reach ever feels wrong again.** It passed at 2, but
+   2 is deliberately tight and it is the first number to reach for, not the per-type `ContactRange`
+   values.
 
 
-### REPO STATE (2026-09-24, after the fourth session)
+### REPO STATE (2026-09-24, after the fourth session and its Studio pass)
 
 - Branch `fix/audit-p0-p3`, tracking `origin/fix/audit-p0-p3`. Working tree CLEAN.
-- **56 commits unpushed.** The user has standing authorization to have work committed, but pushing
+- **58 commits unpushed.** The user has standing authorization to have work committed, but pushing
   is theirs to approve — ask before pushing, and don't open a PR unprompted.
 - **`RaidConfig.DevFirstNodeType = "Shop"` is a TESTING setting that is currently live.** It only
   applies to a player holding the dev shortcuts, so it cannot affect a real player, but it should
