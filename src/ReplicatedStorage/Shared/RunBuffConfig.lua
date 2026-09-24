@@ -174,7 +174,12 @@ RunBuffConfig.Items = {
 		Icon = "RunScorchAura",
 		Rarities = RunBuffConfig.RarityOrder,
 		Price = { Rare = 160, Epic = 210, Legendary = 270 },
-		Base = { Radius = 10, TickSeconds = 0.5 }, -- a ring around the player that burns enemies standing in it
+		-- A ring on the GROUND that burns enemies standing in it, not a sphere around your chest.
+		-- Height is what makes that true in the damage test: reach is measured on the floor plane
+		-- (horizontal distance from you) and then bounded vertically by Height, so jumping does not
+		-- drag the burn up off the floor with you and leave the drawn ring claiming a reach it no
+		-- longer has. Generous on purpose -- a jump should never interrupt your own aura.
+		Base = { Radius = 10, TickSeconds = 0.5, Height = 14 },
 		PerLevel = { DamagePerSecond = 3 }, -- +3 DPS to everything inside the ring per level (Lv5 = 15 DPS, well under a weak gun's own DPS)
 		Lv4 = { RadiusPct = 0.30 }, -- ring radius +30% (10 -> 13 studs) — the Epic-cap step
 		-- The Legendary-cap step, and deliberately the bigger of the two: 10 -> 17 studs. Growth is

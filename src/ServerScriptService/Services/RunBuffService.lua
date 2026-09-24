@@ -186,29 +186,36 @@ local function ensureGearVisual(record, itemKey: string, root: BasePart): Model?
 	model.Parent = root.Parent or Workspace
 	record.GearVisuals[itemKey] = model
 
+	-- How the client finds this visual to drive it (see ScorchAuraVisual.client.lua). An attribute
+	-- rather than the model's name, because a real model cloned from ServerStorage.RunGearModels
+	-- keeps the TEMPLATE's name and only the placeholder builder's models are named "<Key>_Visual" --
+	-- a name-based lookup would work right up until the art landed.
+	model:SetAttribute("RunGearItem", itemKey)
+
 	if itemKey == "ScorchAura" then
-		-- Weld replaces a per-frame CFrame assignment here, and the reason is worth being explicit
-		-- about because the first diagnosis of this bug got it wrong: the lag was never the CFrame
-		-- maths (an absolute CFrame.new and a relative CFrame * CFrame arrive on the same schedule).
-		-- It was replication. The ring used to be Anchored and repositioned from a server Heartbeat,
-		-- which runs after the frame the player is looking at AND has to cross the network before the
-		-- client sees the move — so the ring was always chasing where the player WAS, not where they
-		-- are. Welding hands position to the client's own physics: the weld is solved locally, on the
-		-- player's own frame, with no round trip and no per-frame server code at all.
+		-- The ring stays ANCHORED (sanitizeVisualParts already made it so) and the client positions
+		-- it every RenderStepped. Both halves of that matter, and the history is worth keeping
+		-- because two earlier attempts each fixed one half and broke the other:
 		--
-		-- C0 reproduces exactly what updateAuraVisual used to compute every tick — 3 studs down, and a
-		-- rotation about Z (not X: see updateAuraVisual's old comment, preserved below near the resize
-		-- logic, for why Z is the axis that lays a Cylinder-shaped Part's disc flat) — as a fixed local
-		-- offset from the root instead of a per-frame absolute CFrame built from root.Position.
+		-- It was originally Anchored and repositioned from a server Heartbeat, which runs after the
+		-- frame the player is looking at AND has to cross the network before the client sees the
+		-- move -- so the ring always chased where the player WAS. That was replication lag, not the
+		-- CFrame maths (an absolute CFrame.new and a relative CFrame * CFrame arrive on the same
+		-- schedule), which is what the first diagnosis got wrong.
+		--
+		-- Welding it to the root fixed the lag by handing position to the client's own physics, but
+		-- a weld is RIGID: jumping carried the ring up into the air with you, so the thing drawn as
+		-- a zone on the floor stopped being on the floor. Positioning it on the CLIENT gets both --
+		-- the client's own frame, no round trip, and a Y that can be decoupled from the character's.
+		--
+		-- The server writes its CFrame exactly once, here, so the client's per-frame local writes
+		-- are never fought or overwritten; without this one write it would sit visibly at the world
+		-- origin for the frame before the client's first pass. The Z rotation (not X -- see
+		-- updateAuraVisual for why Z is the axis that lays a Cylinder-shaped Part's disc flat) now
+		-- lives in the client's CFrame instead of a weld's C0.
 		local ring = model.PrimaryPart or model:FindFirstChild("AuraRing")
 		if ring and ring:IsA("BasePart") then
-			ring.Anchored = false -- sanitizeVisualParts above forces every descendant Anchored = true; undo it, this one is welded
-			local weld = Instance.new("Weld")
-			weld.Name = "AuraWeld"
-			weld.Part0 = root
-			weld.Part1 = ring
-			weld.C0 = CFrame.new(0, -3, 0) * CFrame.Angles(0, 0, math.rad(90))
-			weld.Parent = ring
+			ring.CFrame = CFrame.new(root.Position - Vector3.new(0, 3, 0)) * CFrame.Angles(0, 0, math.rad(90))
 		end
 	end
 
@@ -252,10 +259,10 @@ end
 local function updateAuraVisual(visual: Model, radius: number)
 	local ring = visual.PrimaryPart or visual:FindFirstChild("AuraRing")
 	if ring and ring:IsA("BasePart") then
-		-- Position is no longer this function's job — the ring is welded to the root in
-		-- ensureGearVisual and rides along on the client's own physics with no replication delay.
-		-- Only the level-scaled radius still needs a live update, since that changes independently
-		-- of the weld's fixed offset.
+		-- Position is not this function's job -- ScorchAuraVisual.client.lua sets the ring's CFrame on
+		-- the client, every RenderStepped, so it rides the player's own frame with no replication delay
+		-- AND keeps its Y on the floor through a jump. Only the level-scaled radius needs a live
+		-- server-side update, since size is not something the client has any business deciding.
 		--
 		-- A flat approximation is fine here — this is a placeholder, replaced wholesale by a real
 		-- model the moment ServerStorage.RunGearModels.ScorchAura exists.
@@ -319,6 +326,7 @@ GearBehaviors.ScorchAura = function(record, owned, dt: number, ctx)
 	local levelStats = RunBuffConfig.LevelStats("ScorchAura", owned.Level)
 	local radius = item.Base.Radius * (1 + (levelStats.RadiusPct or 0))
 	local tickSeconds = item.Base.TickSeconds
+	local height = item.Base.Height
 	local dps = levelStats.DamagePerSecond or 0
 
 	local state = record.GearState.ScorchAura
@@ -344,7 +352,17 @@ GearBehaviors.ScorchAura = function(record, owned, dt: number, ctx)
 	for _, enemyRecord in ipairs(ctx.Enemies or {}) do
 		local part = enemyRecord.Model and enemyRecord.Model.PrimaryPart
 		if part and enemyRecord.Humanoid and enemyRecord.Humanoid.Health > 0 then
-			if (part.Position - ctx.Root.Position).Magnitude <= radius then
+			-- Measured on the FLOOR PLANE, not as a sphere around the root. The ring is drawn flat on
+			-- the ground under you, so reach has to be the horizontal distance to match it -- a
+			-- straight 3D magnitude from a root ~3 studs up meant that jumping tilted every enemy out
+			-- of range at the rim while the ring on the floor still showed them inside it. Height
+			-- bounds it vertically so this is a column, not an infinite one: an enemy on a gantry
+			-- above you, or on the floor below a ledge you jumped off, is not standing in your ring.
+			-- Both terms come off ctx.Root, whose X/Z is exactly the X/Z the client draws the ring at,
+			-- so the horizontal half cannot drift from the visual at all.
+			local offset = part.Position - ctx.Root.Position
+			local horizontal = Vector2.new(offset.X, offset.Z).Magnitude
+			if horizontal <= radius and math.abs(offset.Y) <= height then
 				ctx.DealDamage(enemyRecord, damage, "ScorchAura")
 				if levelStats.Status then
 					ctx.ApplyStatus(enemyRecord, levelStats.Status)
