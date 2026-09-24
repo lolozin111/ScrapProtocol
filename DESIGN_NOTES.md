@@ -3426,6 +3426,14 @@ been through Studio. The five open questions that gated them were put to the use
 answers are recorded inline with each task rather than kept as a separate list, because a decision
 with its consequence next to it is the only form that survives a reset intact.
 
+
+**The Studio checklist for all of it: https://claude.ai/artifact/PYwNs5vZ37zBZmsXH1psCT** — six checks
+(T1, T2a/T2b, T3a/T3b, T4), each with what a failure would actually mean, and the verdicts and notes
+stored with the page so they survive a reset and can be read back rather than re-asked. T3b and the
+second half of T2b are REGRESSION checks: they exist because these two fixes could each break the
+half of the game nobody was looking at (base-wall attacks, and a normal extraction being mistaken
+for a reset).
+
 **R2/R3/R4 remain closed** (Scorch Aura weld, raid entry raising the Sector Map, the blue shield on
 both HP bars). **B2 is now closed too** — the user confirmed the four lines in scope (room
 description, interaction hint, "Fully healed.", boss-clear loot line) do fade. The room title, enemy
@@ -3524,7 +3532,7 @@ Note `LevelStats` overlays `Lv5` onto `Lv4` key by key, so restating a key in `L
 ### REPO STATE (2026-09-24, after the fourth session)
 
 - Branch `fix/audit-p0-p3`, tracking `origin/fix/audit-p0-p3`. Working tree CLEAN.
-- **55 commits unpushed.** The user has standing authorization to have work committed, but pushing
+- **56 commits unpushed.** The user has standing authorization to have work committed, but pushing
   is theirs to approve — ask before pushing, and don't open a PR unprompted.
 - **`RaidConfig.DevFirstNodeType = "Shop"` is a TESTING setting that is currently live.** It only
   applies to a player holding the dev shortcuts, so it cannot affect a real player, but it should
