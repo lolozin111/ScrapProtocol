@@ -132,6 +132,7 @@ local function buildPlaceholderGearVisual(itemKey: string): Model?
 		ring.Color = Color3.fromRGB(255, 110, 40)
 		ring.Material = Enum.Material.Neon
 		ring.Transparency = 0.55
+		ring.Anchored = false -- welded to the wearer's root in ensureGearVisual; an Anchored part can't be welded
 		ring.Parent = model
 		model.PrimaryPart = ring
 		return model
@@ -184,6 +185,33 @@ local function ensureGearVisual(record, itemKey: string, root: BasePart): Model?
 	sanitizeVisualParts(model)
 	model.Parent = root.Parent or Workspace
 	record.GearVisuals[itemKey] = model
+
+	if itemKey == "ScorchAura" then
+		-- Weld replaces a per-frame CFrame assignment here, and the reason is worth being explicit
+		-- about because the first diagnosis of this bug got it wrong: the lag was never the CFrame
+		-- maths (an absolute CFrame.new and a relative CFrame * CFrame arrive on the same schedule).
+		-- It was replication. The ring used to be Anchored and repositioned from a server Heartbeat,
+		-- which runs after the frame the player is looking at AND has to cross the network before the
+		-- client sees the move — so the ring was always chasing where the player WAS, not where they
+		-- are. Welding hands position to the client's own physics: the weld is solved locally, on the
+		-- player's own frame, with no round trip and no per-frame server code at all.
+		--
+		-- C0 reproduces exactly what updateAuraVisual used to compute every tick — 3 studs down, and a
+		-- rotation about Z (not X: see updateAuraVisual's old comment, preserved below near the resize
+		-- logic, for why Z is the axis that lays a Cylinder-shaped Part's disc flat) — as a fixed local
+		-- offset from the root instead of a per-frame absolute CFrame built from root.Position.
+		local ring = model.PrimaryPart or model:FindFirstChild("AuraRing")
+		if ring and ring:IsA("BasePart") then
+			ring.Anchored = false -- sanitizeVisualParts above forces every descendant Anchored = true; undo it, this one is welded
+			local weld = Instance.new("Weld")
+			weld.Name = "AuraWeld"
+			weld.Part0 = root
+			weld.Part1 = ring
+			weld.C0 = CFrame.new(0, -3, 0) * CFrame.Angles(0, 0, math.rad(90))
+			weld.Parent = ring
+		end
+	end
+
 	return model
 end
 
@@ -221,22 +249,26 @@ local function ensureOrbitBladesVisual(record, root: BasePart, count: number): M
 	return model
 end
 
-local function updateAuraVisual(visual: Model, radius: number, root: BasePart)
+local function updateAuraVisual(visual: Model, radius: number)
 	local ring = visual.PrimaryPart or visual:FindFirstChild("AuraRing")
 	if ring and ring:IsA("BasePart") then
-		ring.Size = Vector3.new(0.3, radius * 2, radius * 2)
+		-- Position is no longer this function's job — the ring is welded to the root in
+		-- ensureGearVisual and rides along on the client's own physics with no replication delay.
+		-- Only the level-scaled radius still needs a live update, since that changes independently
+		-- of the weld's fixed offset.
+		--
 		-- A flat approximation is fine here — this is a placeholder, replaced wholesale by a real
 		-- model the moment ServerStorage.RunGearModels.ScorchAura exists.
 		--
-		-- Rotated about Z, NOT X. A Part with Shape = Cylinder has its axis along LOCAL X — Size.X is
-		-- the cylinder's thickness and Size.Y/Z are its diameter — so this disc's flat faces point
-		-- along X and it stands upright by default, like a coin on its edge. Rotating about X spins
-		-- it around its own axis and changes nothing you can see; it takes a rotation about Z to
-		-- swing local X up to world Y and lay the disc flat on the ground. The old
-		-- `CFrame.Angles(math.rad(90), 0, 0)` was therefore a no-op, and with the 3-stud drop below
-		-- it rendered as an upright disc half-buried in the floor — a dome standing beside the
-		-- player rather than a ring around them.
-		ring.CFrame = CFrame.new(root.Position - Vector3.new(0, 3, 0)) * CFrame.Angles(0, 0, math.rad(90))
+		-- Rotated about Z, NOT X (this shaped the weld's C0 in ensureGearVisual too). A Part with
+		-- Shape = Cylinder has its axis along LOCAL X — Size.X is the cylinder's thickness and
+		-- Size.Y/Z are its diameter — so this disc's flat faces point along X and it stands upright
+		-- by default, like a coin on its edge. Rotating about X spins it around its own axis and
+		-- changes nothing you can see; it takes a rotation about Z to swing local X up to world Y
+		-- and lay the disc flat on the ground. `CFrame.Angles(math.rad(90), 0, 0)` was therefore a
+		-- no-op, and with the 3-stud drop it rendered as an upright disc half-buried in the floor —
+		-- a dome standing beside the player rather than a ring around them.
+		ring.Size = Vector3.new(0.3, radius * 2, radius * 2)
 	end
 end
 
@@ -298,7 +330,7 @@ GearBehaviors.ScorchAura = function(record, owned, dt: number, ctx)
 	if ctx.Root then
 		local visual = ensureGearVisual(record, "ScorchAura", ctx.Root)
 		if visual then
-			updateAuraVisual(visual, radius, ctx.Root)
+			updateAuraVisual(visual, radius)
 		end
 	end
 
@@ -352,6 +384,12 @@ GearBehaviors.OrbitBlades = function(record, owned, dt: number, ctx)
 		if blade:IsA("BasePart") then
 			local angle = state.Angle + (i - 1) * (2 * math.pi / bladeCount)
 			local offset = Vector3.new(math.cos(angle) * radius, 0, math.sin(angle) * radius)
+			-- Same replication lag ScorchAura's ring had (a server Heartbeat's absolute CFrame reaching
+			-- the client a network round trip late), but NOT fixable the same way: a weld is a fixed
+			-- local offset from the root, and these blades genuinely move relative to the root every
+			-- tick as they orbit. There is no static C0 that reproduces an orbit. The real fix is a
+			-- client-side visual (the client itself advances the orbit angle) — a separate, larger
+			-- change, left alone here on purpose.
 			blade.CFrame = CFrame.new(ctx.Root.Position + offset)
 
 			for _, enemyRecord in ipairs(ctx.Enemies or {}) do
