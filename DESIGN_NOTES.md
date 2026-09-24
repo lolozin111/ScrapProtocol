@@ -3551,11 +3551,81 @@ separate numbers on each distinct enemy.
    up Montserrat for free), `actionButton` onto `FONT.BodyBold`, and `progressBar`'s bare `10`
    named `TRACK_HEIGHT`. The damage-number half of this task is recorded above.
 
-**With step 3 done, the three-task raid flow list is COMPLETE — and none of it is Studio-verified.**
-That is now the largest outstanding risk in the repo: the F1-F8 exploit fixes, the four fixes from
-the first test round, and all three raid flow features are committed and untested. The polish pass
-below (UI in-place updates, self-maintaining boot check, the one explicit disconnect) is still
-unstarted and was agreed before any of this.
+**With step 3 done, the three-task raid flow list is COMPLETE.** The polish pass below (UI in-place
+updates, self-maintaining boot check, the one explicit disconnect) is still unstarted and was agreed
+before any of this.
+
+---
+
+### SECOND STUDIO TEST ROUND, 2026-09-23 — 12 of 17 passed, 4 fixes shipped
+
+Checklist, with the user's own notes on each check, at
+https://claude.ai/artifact/JG4cBncHEgQY1QQGdZiUe3 (a retest group R1-R4 was added on top for the
+fixes below; A-E are the original pass and stay as the record).
+
+**The fold is VERIFIED.** A1/A2/A3 passed, including A2 — a weapon with no Ultimate still shows one
+number per hit, which is the early-return flush in `ResolvePlayerHit` doing its job. That was the
+change most likely to break something and it didn't.
+
+Of the five flags, three were passes with a note attached. Two were real bugs. All four resulting
+changes are committed and **not yet re-verified**:
+
+- **Headshots were the only gameplay bug** (reported twice, as A4 and D2 — one defect). See the
+  correction below; this was the second attempt at it.
+- **Scorch Aura lagged the player.** Fixed by welding, NOT by the CFrame change that looked right.
+- **Raid entry now raises the Sector Map** instead of auto-advancing (`Start` added to
+  `AutoAdvanceBlockedTypes`). A design change the user asked for, not a bug.
+- **The Plated Vest shield is drawn in blue on both HP bars.** The mechanic was never broken.
+
+**Two wrong diagnoses worth remembering, because both were plausible and both would have shipped a
+fix that changed nothing:**
+
+1. **The aura's lag was replication, not maths.** The proposed fix was absolute-vs-relative CFrame.
+   But the ring was `Anchored` and repositioned from a SERVER Heartbeat, so its position crossed the
+   network before the client saw it — both CFrame forms arrive on exactly the same schedule. No
+   server-side loop can fix this. Welding hands position to the client's own physics. **`OrbitBlades`
+   has the identical lag and is deliberately unfixed**: a weld is a fixed offset and the blades
+   orbit, so there is no static C0. Its fix is a client-side visual, still to do.
+2. **The Plated Vest shield was never broken.** Because F3 had just moved player HP into
+   `PlayerVitals`, "the new damage path doesn't consult the shield" was the obvious suspect — and
+   wrong. `damageTarget` subtracts the shield at the top, before the `PlayerVitals.Damage` call, and
+   the server already broadcast `Shield` on every combat tick. MainHud simply had no listener on
+   `RaidRoomUpdate` and threw all three fields away. Reading the one function beat reasoning from
+   the change log.
+
+**THE HEADSHOT CORRECTION — the general lesson, not just the fix.** The first attempt made head-part
+name matching case-insensitive. Correct, and not the problem. The real cause: every auto-hitbox
+enemy carries a `Hitbox` Part with `CanQuery = true`, sized ONCE from the rest pose with heads
+excluded, welded to the root. The rig then animates. On many walk-cycle frames the head sits inside
+that still volume, so the ray stops on `Hitbox` and `isHeadPart(hitInstance)` scored a body hit —
+which is why it looked random. It was the walk cycle.
+
+Rather than re-cast past the hitbox (which would have kept the failed assumption alive with a
+workaround bolted on), **the question changed: not WHICH PART stopped the ray, but WHERE ON THE
+ENEMY it landed.** `record.HeadPart` is cached at spawn and read LIVE at hit time, so the threshold
+animates with the head. A cached rest-pose offset would have been the same bug in a new shape.
+
+Deliberately NOT done, so nobody "fixes" these later: `measureRestPoseHitbox` still excludes the
+head (including it would resize every enemy's hit volume), and a rig with no head part still cannot
+be headshot at all — a fallback zone from a fraction of body height would silently make every
+headless enemy far more vulnerable to bows. The comment at the test says what an explicit opt-in
+would look like.
+
+**Two dev shortcuts were added this round, both to make testing possible at all:**
+
+- `RaidConfig.DevFirstNodeType` (now `"Shop"`) — every first-pickable node becomes this type for a
+  player holding the dev shortcuts. Was hard-coded to `"Boss"` inside `applyDevBossFirst`, which is
+  why the first node was always a boss. Set it to `"Boss"` to test the card pick again, or `nil` to
+  switch it off. Raid start only, not on map regeneration.
+- `/giverunbuff [Key|all] [Rarity] [Level]` — grants a run upgrade directly, defaulting to the
+  item's highest rarity and that rarity's level cap. Skips the shop's one-step-per-purchase pacing,
+  which is the point; still honours `RunBuffConfig.Slots`, because the HUD draws a fixed number of
+  slot tiles.
+
+**Still open from this round:** B2 (whether the four retrofitted notice lines fade — the user
+couldn't tell which text was in scope, and the answer is the room description, interaction hint,
+"Fully healed." and the boss-clear line; everything else in that panel was never touched), and
+`OrbitBlades`' replication lag.
 
 **Also worth knowing for whoever picks this up:** the F4 caps (`RunProgressionMaxStep = 10`,
 `MapGrowthCap = 4.0`, `RunProgressionMaxExtraEnemies = 3`) are balance numbers chosen during the
