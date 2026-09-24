@@ -593,6 +593,59 @@ function RunBuffService.Buy(player: Player, offer): (boolean, string?)
 	return true
 end
 
+-- Dev tool — see AdminService's /giverunbuff. The ONE deliberate difference from Buy above: this
+-- skips RunBuffConfig.PreviewOffer entirely, so it can jump straight to Legendary level 5 instead of
+-- climbing one rarity-up or one level per purchase — that IS the point of the command. It still
+-- honours RunBuffConfig.Slots, though: the HUD draws a fixed number of slot tiles, and a 5th owned
+-- item would have nowhere to render.
+function RunBuffService.DevGrant(player: Player, itemKey: string, rarity: string?, level: number?): (boolean, string?)
+	local record = records[player.UserId]
+	if not record then
+		return false, "NotInRaid"
+	end
+	local item = RunBuffConfig.Items[itemKey]
+	if not item then
+		return false, "UnknownItem"
+	end
+
+	if item.Kind == "Escape" then
+		-- No rarity, no level, no slot — same one-line grant Buy gives an Escape item.
+		record.Escape[itemKey] = true
+		return true
+	end
+
+	-- Defaults to the LAST entry of Rarities (the highest the item offers) — a dev asking for "just
+	-- give me this" almost always means the best version.
+	rarity = rarity or item.Rarities[#item.Rarities]
+	local rarityValid = false
+	for _, candidate in ipairs(item.Rarities) do
+		if candidate == rarity then
+			rarityValid = true
+			break
+		end
+	end
+	if not rarityValid then
+		return false, "BadRarity"
+	end
+
+	-- Clamped, not rejected: a dev asking for level 9 obviously wants the maximum, not an error.
+	local cap = RunBuffConfig.RarityCaps[rarity]
+	level = math.clamp(level or cap, 1, cap)
+
+	local owned = record.Owned[itemKey]
+	if not owned and slotsUsedFor(record) >= RunBuffConfig.Slots then
+		return false, "SlotsFull"
+	end
+
+	-- Preserve an existing entry's Paid so a later Sell still refunds what was genuinely paid for
+	-- it — a dev grant itself counts as free.
+	record.Owned[itemKey] = { Rarity = rarity, Level = level, Paid = owned and owned.Paid or 0 }
+
+	recomputeStats(record)
+	applyMaxHealth(player, record)
+	return true
+end
+
 function RunBuffService.Sell(player: Player, itemKey: string): (boolean, number)
 	local record = records[player.UserId]
 	if not record then

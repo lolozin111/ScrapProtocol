@@ -42,6 +42,7 @@ local CaseConfig = require(ReplicatedStorage.Shared.CaseConfig)
 local WeaponFamilyConfig = require(ReplicatedStorage.Shared.WeaponFamilyConfig)
 local ToolModConfig = require(ReplicatedStorage.Shared.ToolModConfig)
 local DroneConfig = require(ReplicatedStorage.Shared.DroneConfig)
+local RunBuffConfig = require(ReplicatedStorage.Shared.RunBuffConfig)
 local DataService = require(script.Parent.DataService)
 local TurretService = require(script.Parent.TurretService)
 local TrainingDummyService = require(script.Parent.TrainingDummyService)
@@ -485,9 +486,130 @@ local function commandGiveRunScrap(player: Player, args: { string })
 	tell(player, ("run Scrap %+d — spendable at a raid Shop node"):format(amount))
 end
 
+-- Groups RunBuffConfig.Items by Kind (Perk/Gear/Escape) for /giverunbuff's usage listing — read
+-- straight off the config rather than hard-coded, so a new item shows up here automatically instead
+-- of silently missing from the help text.
+local function runBuffKeysByKind(kind: string): { string }
+	local keys = {}
+	for key, item in pairs(RunBuffConfig.Items) do
+		if item.Kind == kind then
+			table.insert(keys, key)
+		end
+	end
+	table.sort(keys)
+	return keys
+end
+
+local function allRunBuffKeys(): { string }
+	local keys = {}
+	for key in pairs(RunBuffConfig.Items) do
+		table.insert(keys, key)
+	end
+	table.sort(keys)
+	return keys
+end
+
+local function runBuffUsage(player: Player)
+	tell(player, "usage: /giverunbuff [Key|all] [Rarity] [Level]  — rarity defaults to the item's highest, level to that rarity's cap. Must be in a raid.")
+	tell(player, ("perks: %s"):format(table.concat(runBuffKeysByKind("Perk"), ", ")))
+	tell(player, ("gear: %s"):format(table.concat(runBuffKeysByKind("Gear"), ", ")))
+	tell(player, ("escape: %s"):format(table.concat(runBuffKeysByKind("Escape"), ", ")))
+end
+
+-- /giverunbuff [Key|all] [Rarity] [Level] — grants a raid run upgrade (a RunBuffService Owned/
+-- Escape entry) directly, so testing the SHOP'S EFFECTS doesn't mean walking the shop and grinding
+-- the run's own Scrap for every item. See RunBuffService.DevGrant's own comment for the one
+-- deliberate difference from a real Buy: this skips the rarity-up/level-up pacing entirely and can
+-- jump straight to the top — that's the point of the command.
+--
+-- Takes no `profile` argument, same reason as /giverunscrap: it only touches the raid's in-memory
+-- run state, which vanishes with the run.
+local function commandGiveRunBuff(player: Player, args: { string })
+	local requested = args[2]
+	if not requested then
+		runBuffUsage(player)
+		return
+	end
+
+	-- Required lazily — same reasoning as /giverunscrap just above: a top-level require would pull
+	-- RaidRoomService, and with it the rest of its combat-tree dependency chain, forward to
+	-- AdminService's spot in Main.server.lua's require order for a dev command's sake.
+	local RaidRoomService = require(script.Parent.RaidRoomService)
+
+	local function reportFailure(reason: string?)
+		if reason == "NotInRaid" then
+			tell(player, "not in a raid — start one first")
+		elseif reason == "SlotsFull" then
+			tell(player, ("all %d slots are full — name a key you already own to level it up instead"):format(RunBuffConfig.Slots))
+		else
+			-- UnknownItem / BadRarity
+			runBuffUsage(player)
+		end
+	end
+
+	if requested:lower() == "all" then
+		-- Escape first (no slot cost), then Gear, then Perk, each alphabetical for a stable order.
+		-- Gear leads the slotted groups because it's the visual half of the shop rework — the thing
+		-- you most often actually want to look at while testing.
+		local groups = {
+			runBuffKeysByKind("Escape"),
+			runBuffKeysByKind("Gear"),
+			runBuffKeysByKind("Perk"),
+		}
+		local granted, skipped = {}, {}
+		for _, keys in ipairs(groups) do
+			for _, key in ipairs(keys) do
+				local ok, reason = RaidRoomService.DevGrantRunBuff(player, key)
+				if ok then
+					table.insert(granted, key)
+				elseif reason == "SlotsFull" then
+					table.insert(skipped, key)
+				else
+					-- NotInRaid applies to every remaining key too — say it once and stop instead of
+					-- repeating the same failure down the whole list.
+					reportFailure(reason)
+					return
+				end
+			end
+		end
+		tell(player, ("granted: %s"):format(#granted > 0 and table.concat(granted, ", ") or "none"))
+		if #skipped > 0 then
+			tell(player, ("skipped (slots full): %s"):format(table.concat(skipped, ", ")))
+		end
+		return
+	end
+
+	local key = resolveKey(requested, allRunBuffKeys())
+	if not key then
+		runBuffUsage(player)
+		return
+	end
+
+	local item = RunBuffConfig.Items[key]
+	local ok, reason = RaidRoomService.DevGrantRunBuff(player, key, args[3], tonumber(args[4]))
+	if not ok then
+		reportFailure(reason)
+		return
+	end
+
+	if item.Kind == "Escape" then
+		tell(player, ("granted Escape item %s — one-use, takes no slot"):format(key))
+		return
+	end
+
+	-- Rarity/level are guaranteed valid here since DevGrantRunBuff just succeeded with them —
+	-- recompute the same defaults it applied so the report names what actually landed, not just
+	-- what was typed (args[3]/args[4] are often nil, relying on those defaults).
+	local rarity = args[3] or item.Rarities[#item.Rarities]
+	local cap = RunBuffConfig.RarityCaps[rarity]
+	local level = math.clamp(tonumber(args[4]) or cap, 1, cap)
+	tell(player, ("granted %s — %s Lv%d"):format(key, rarity, level))
+end
+
 local function commandHelp(player: Player)
-	tell(player, "commands: /admin [on|off] · /give <what> [amount] · /givemats [n] · /giveturret [TypeKey] · /giveultimate [Key] · /dummy · /givecase [Key] [n] · /givefamily [Key] · /givetool [Key] · /givedrone [Key] · /giverunscrap [amount] · /setwave <n>")
+	tell(player, "commands: /admin [on|off] · /give <what> [amount] · /givemats [n] · /giveturret [TypeKey] · /giveultimate [Key] · /dummy · /givecase [Key] [n] · /givefamily [Key] · /givetool [Key] · /givedrone [Key] · /giverunscrap [amount] · /giverunbuff [Key|all] [Rarity] [Level] · /setwave <n>")
 	tell(player, "/giverunscrap tops up the RUN's Scrap (what a raid Shop spends) — /give Scrap writes the profile, which a raid Shop can't touch. Must be in a raid.")
+	tell(player, "/giverunbuff grants a raid run upgrade (perk/gear/Escape item) straight onto the run, skipping the Shop's walk-and-grind entirely. Must be in a raid.")
 	tell(player, ("givable: Scrap, Cores, CoreT1.., %s, %s"):format(table.concat(oreKeys(), ", "), table.concat(refinedKeys(), ", ")))
 	tell(player, ("turrets: %s"):format(table.concat(turretKeys(), ", ")))
 	tell(player, ("ultimates: %s"):format(table.concat(ultimateKeys(), ", ")))
@@ -578,7 +700,7 @@ local function handleChatted(player: Player, message: string)
 
 	if command ~= "/give" and command ~= "/giveturret" and command ~= "/giveultimate"
 		and command ~= "/dummy" and command ~= "/givecase" and command ~= "/givefamily" and command ~= "/givetool" and command ~= "/givedrone" and command ~= "/givemats"
-		and command ~= "/giverunscrap"
+		and command ~= "/giverunscrap" and command ~= "/giverunbuff"
 		and command ~= "/setwave" and command ~= "/help" then
 		return
 	end
@@ -615,6 +737,8 @@ local function handleChatted(player: Player, message: string)
 		commandGiveDrone(player, profile, args)
 	elseif command == "/giverunscrap" then
 		commandGiveRunScrap(player, args)
+	elseif command == "/giverunbuff" then
+		commandGiveRunBuff(player, args)
 	elseif command == "/setwave" then
 		commandSetWave(player, profile, args)
 	elseif command == "/help" then

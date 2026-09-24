@@ -2420,6 +2420,42 @@ function RaidRoomService.DevAddRunScrap(player: Player, amount: number): boolean
 	return true
 end
 
+-- Dev tool — see AdminService's /giverunbuff. Same reasoning as DevAddRunScrap just above: testing
+-- what a run upgrade actually DOES (a Legendary Overclock Chip's guaranteed crit, Orbit Blades'
+-- extra blade) otherwise means grinding the run's own Scrap AND climbing the Shop's one-rarity-up-
+-- or-one-level-per-purchase pacing for every single item, one at a time.
+--
+-- Lives here rather than purely in RunBuffService for the same reason DevAddRunScrap does: the
+-- Shop-refresh side effect below needs activeRaids/state, which is this file's private state.
+-- RunBuffService.DevGrant does the actual record mutation; this just wraps it with the "am I in a
+-- raid" check activeRaids can answer and the client push a bare mutation wouldn't produce on its own.
+function RaidRoomService.DevGrantRunBuff(player: Player, itemKey: string, rarity: string?, level: number?): (boolean, string?)
+	local state = activeRaids[player.UserId]
+	if not state then
+		return false, "NotInRaid"
+	end
+
+	local ok, reason = RunBuffService.DevGrant(player, itemKey, rarity, level)
+	if not ok then
+		return false, reason
+	end
+	pushRunBuffs(state)
+
+	-- ...and re-send the shop screen if one is open, exactly like DevAddRunScrap above: the offer
+	-- cards only re-evaluate what you own/can afford from a "ShopResult" payload, so without this a
+	-- granted item would leave every card unchanged on screen and read as the command not working.
+	local node = state.Map.Nodes[state.CurrentNodeId]
+	if node and node.Type == "Shop" then
+		RaidRoomUpdate:FireClient(player, {
+			Status = "ShopResult",
+			Success = true,
+			Offers = state.ShopOffers[state.CurrentNodeId] or {},
+			Run = runSnapshot(state),
+		})
+	end
+	return true
+end
+
 DataService.PlayerSaving:Connect(function(player)
 	local state = activeRaids[player.UserId]
 	if state then
