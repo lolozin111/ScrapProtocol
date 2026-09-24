@@ -3416,18 +3416,19 @@ and frames.
 ### Resuming after a context reset
 
 **START HERE — LIVE STATE AS OF 2026-09-24.** Everything below this block is history or backlog;
-this is what is actually in flight. All six checks of the fourth round PASSED in Studio. One
-follow-up fix came out of them and is the only thing here that has not run — see "WHAT TO DO NEXT".
+this is what is actually in flight. All SEVEN checks of the fourth round PASSED in Studio and
+nothing in this section is unverified. The next piece of work is item 1 of "WHAT TO DO NEXT".
 
 ### FOURTH SESSION, 2026-09-24 — ALL FOUR AGREED TASKS BUILT AND STUDIO-VERIFIED
 
-**All six checks passed** (T1, T2a, T2b, T3a, T3b, T4) — checklist and the user's notes at
+**All seven checks passed** (T1, T2a, T2b, T3a, T3b, T4, and T5 added mid-round) — checklist and
+the user's notes at
 https://claude.ai/artifact/PYwNs5vZ37zBZmsXH1psCT. That includes both regression checks, which were
 the real risk: base-wall attacks still work after the attack-slack split (T3b), and a normal
 extraction is not mistaken for a character reset (T2b).
 
 **One follow-up, from the user's note on T4** (*"it works, but make sure that the zone for the aura,
-the circle is always on the floor, even when the player is jumping"*) — **BUILT, NOT YET VERIFIED**.
+the circle is always on the floor, even when the player is jumping"*) — **BUILT AND VERIFIED (T5)**.
 It was a real miss and worth recording as a pattern, because this ring has now been positioned three
 ways and the first two each fixed one half and broke the other:
 
@@ -3546,23 +3547,30 @@ Note `LevelStats` overlays `Lv5` onto `Lv4` key by key, so restating a key in `L
 
 ### WHAT TO DO NEXT
 
-1. **Studio-verify the aura ring fix — the ONLY unverified thing left here.** Everything else in
-   this section passed. Grant `ScorchAura` at Lv5, then jump: the ring must stay on the floor
-   instead of rising with you, and must not lag behind when you run. Two failure modes to watch for
-   specifically, because they are what the new approach could get wrong rather than what it fixed:
-   a **flickering or snapping** ring means the server is re-asserting the anchored part's CFrame and
-   fighting the client's per-frame write (the theory says it only writes once, at creation); an enemy
-   standing **visibly inside the ring and not burning** means the floor-plane damage test and the
-   drawn ring have come apart after all. Also check the ring on a **slope or a raised platform**,
-   which the old welded version never had to cope with.
-2. **`OrbitBlades` replication lag** — the same shape as the aura's original bug, and the aura fix
-   above is now the precedent for it: an anchored server part positioned from the client. The blades
-   were left unfixed because they orbit and there was no static offset to weld, which is exactly the
-   constraint that no longer matters once the client owns position. This is the obvious next one.
-3. **The polish pass** (UI in-place updates, self-maintaining boot check, the one explicit
+1. **`OrbitBlades` replication lag — the next piece of work, and it is no longer blocked.** It is the
+   same bug the aura had, and it was deliberately left alone with a specific reason: the blades
+   ORBIT, so there is no static offset to weld the way the ring had one. That reason is now void.
+   The aura fix does not weld anything — the part stays Anchored and the CLIENT sets its CFrame every
+   RenderStepped (`StarterPlayerScripts/ScorchAuraVisual.client.lua`) — and a moving orbit is no
+   harder to compute client-side than a fixed offset. Copy the shape: find the visual by its
+   `RunGearItem` attribute, drive it from `RenderStepped`, leave the damage server-authoritative.
+
+   **Two things T5 established that this can now rely on, rather than re-deriving.** A server-created
+   Anchored part accepts per-frame CLIENT CFrame writes without the server fighting them, as long as
+   the server writes its position exactly once at creation — that was the one failure mode nobody
+   could prove from outside Studio, and it did not happen. And the `RunGearItem` attribute lookup
+   works for finding a gear visual from the client, which is what makes this reusable at all instead
+   of a one-off.
+
+   The blades' damage test already reads the same radius that positions them
+   (`RunBuffService`'s `GearBehaviors.OrbitBlades`), so unlike the aura there is no visual-vs-damage
+   half to fix alongside it — this one is purely the visual.
+2. **The polish pass** (UI in-place updates, self-maintaining boot check, the one explicit
    disconnect) — agreed long ago, still not started.
-4. **The three other single-hop model lookups** listed under task 1, if they turn out to matter.
-5. **Raise `PLAYER_ATTACK_RANGE_SLACK` if enemy reach ever feels wrong again.** It passed at 2, but
+3. **The three other single-hop model lookups** named under the Scavenger head fix above
+   (`BaseLaserService.lua:145`, `DroneService.lua:119`, `ProjectileService.lua:237`), if they turn
+   out to matter.
+4. **Raise `PLAYER_ATTACK_RANGE_SLACK` if enemy reach ever feels wrong again.** It passed at 2, but
    2 is deliberately tight and it is the first number to reach for, not the per-type `ContactRange`
    values.
 
@@ -3570,7 +3578,7 @@ Note `LevelStats` overlays `Lv5` onto `Lv4` key by key, so restating a key in `L
 ### REPO STATE (2026-09-24, after the fourth session and its Studio pass)
 
 - Branch `fix/audit-p0-p3`, tracking `origin/fix/audit-p0-p3`. Working tree CLEAN.
-- **58 commits unpushed.** The user has standing authorization to have work committed, but pushing
+- **60 commits unpushed.** The user has standing authorization to have work committed, but pushing
   is theirs to approve — ask before pushing, and don't open a PR unprompted.
 - **`RaidConfig.DevFirstNodeType = "Shop"` is a TESTING setting that is currently live.** It only
   applies to a player holding the dev shortcuts, so it cannot affect a real player, but it should
