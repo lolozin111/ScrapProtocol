@@ -3415,8 +3415,85 @@ and frames.
 
 ### Resuming after a context reset
 
-**START HERE — LIVE STATE AS OF 2026-09-23 (late session).** Everything below this block is history
-or backlog; this is what is actually in flight.
+**START HERE — LIVE STATE AS OF 2026-09-24.** Everything below this block is history or backlog;
+this is what is actually in flight. NOTHING in the list below has been started — it is a plan
+written down before a context reset, not work in progress.
+
+### THIRD TEST ROUND, 2026-09-24 — R2/R3/R4 PASSED, R1 did not
+
+Checklist with the user's own notes: https://claude.ai/artifact/JG4cBncHEgQY1QQGdZiUe3
+
+**Confirmed working and DONE** — the Scorch Aura weld (R2), the raid entry raising the Sector Map
+(R3), and the blue shield on both HP bars (R4). Those three are closed; don't re-open them.
+
+**R1 — headshots now work on every enemy EXCEPT the Scavenger, and the symptom CHANGED.** This is
+the single most important fact in this section. The user's words: *"you see the gun particle
+disappearing when it hits on the head, but no damage."*
+
+Before the zone fix the symptom was a WHITE number — damage dealt, headshot not credited. Now it is
+**no damage at all** on a head hit, while the projectile visibly stops. Those are different
+failures, and the new one is not in the headshot code at all.
+
+**Hypothesis, NOT yet verified — check this first and do not write any fix before it is confirmed.**
+`ResolvePlayerHit` (`CombatEncounterService.lua:1934-1941`) resolves the hit instance to an enemy
+like this:
+
+```lua
+local model = hitInstance
+if model and not encounter.EnemyByModel[model] then
+    model = model:FindFirstAncestorOfClass("Model")
+end
+local enemyRecord = model and encounter.EnemyByModel[model]
+if not enemyRecord or not isEnemyAlive(enemyRecord) then return false end
+```
+
+`FindFirstAncestorOfClass` returns the FIRST Model ancestor. If the Scavenger rig's head sits inside
+a NESTED Model (a sub-assembly, a Model-wrapped accessory), that first ancestor is the inner model,
+which is not a key in `EnemyByModel` — so the function returns false and the shot deals nothing,
+exactly matching "particle stops, no damage". Every other rig presumably has its head as a direct
+child of the enemy model, which is why only the Scavenger fails.
+
+**How to confirm before touching code:** in Studio, look at `ServerStorage.EnemyModels`' Scavenger
+and check whether the head part's parent chain reaches the top-level model without passing through
+another Model. A temporary `print` of `hitInstance:GetFullName()` in `ResolvePlayerHit` would settle
+it in one shot.
+
+**If confirmed, the fix is to WALK UP the ancestor chain** until a Model that IS a key in
+`EnemyByModel` is found, rather than taking the first Model and giving up. That is strictly more
+robust than the current single hop and fixes any future rig with nested structure, not just this
+one. Note this bug is almost certainly OLDER than the zone change — a direct head hit would never
+have dealt damage — and the zone fix only made it visible by finally letting head hits matter.
+
+### AGREED NEXT WORK, from the same R1 note (the user listed these; none are started)
+
+1. **The Scavenger head bug above.** Highest priority: it is the last thing blocking the headshot
+   mechanic that bows are built around.
+2. **Resetting during a raid leaves you in a broken state.** User: *"when you reset during a raid,
+   you respawn in your base but with the raid layout and all that."* A real bug, not cosmetic. The
+   raid teardown funnel is `cleanupRaid` in `RaidRoomService.lua` — every exit path is supposed to
+   route through it, and a character reset evidently does not. Check what a `Humanoid` death from
+   a self-reset does versus a death in combat, and whether `PlayerActivityService` is left holding
+   the activity (which would also soft-lock further raids).
+3. **Enemy attack ranges are too long — a balance retune, config only.** User's spec verbatim:
+   Scavengers and Brutes *"should be really up close"*, Raiders *"a medium range because of the
+   spear"*. This is `EnemyConfig`'s per-type contact/attack range fields — a `sp-config-dev` job
+   that must not become a service refactor.
+4. **The aura's size/range should grow per level.** Check BOTH halves before changing anything: the
+   visual already resizes from a `radius` argument in `updateAuraVisual` (`RunBuffService.lua`), so
+   the question is whether that radius actually scales with level and whether the DAMAGE radius
+   scales with it. If the visual grows and the damage radius doesn't, that is a worse bug than
+   neither growing, because the ring would then lie about its own reach.
+
+### ALSO STILL OPEN
+
+- **B2 from the previous round was never resolved.** The user couldn't tell which text was in scope.
+  The four lines that should fade are the room description, the interaction hint, "Fully healed."
+  and the boss-clear loot line; the room title, enemy counter and buttons were never touched and
+  still pop. Ask them to confirm against that list rather than re-testing blind.
+- **`OrbitBlades` replication lag** — same bug the aura had, deliberately unfixed because blades
+  orbit and there is no static offset to weld. Needs a client-side visual.
+- **The polish pass** (UI in-place updates, self-maintaining boot check, the one explicit
+  disconnect) — agreed long ago, still not started.
 
 **Committed and unverified.** Eight exploit fixes (F1-F8, see the STEP 0 record further down), then
 a testing round that produced four more fixes and two of the three agreed raid features. NOTHING in
