@@ -1930,12 +1930,28 @@ function CombatEncounterService.ResolvePlayerHit(player: Player, hitInstance: In
 	if not encounter then
 		return false -- nothing to hit; the bullet still stops on geometry, it just deals no damage
 	end
-
-	local model = hitInstance
-	if model and not encounter.EnemyByModel[model] then
-		model = model:FindFirstAncestorOfClass("Model")
+	-- Walk UP the whole ancestor chain for a Model that is actually one of THIS encounter's enemies,
+	-- rather than taking the first Model ancestor and giving up when it isn't one.
+	--
+	-- One hop was only ever enough for rigs whose parts are direct children of the enemy model. The
+	-- Scavenger's head sits inside a NESTED Model, so `FindFirstAncestorOfClass("Model")` returned
+	-- that inner sub-assembly, which is not a key in EnemyByModel, and a clean head hit resolved to
+	-- no enemy at all: the projectile visibly stopped and dealt zero. That was never a headshot bug
+	-- at all -- the shot never reached the damage code. Walking the chain fixes any rig with nested
+	-- structure, not just this one.
+	local enemyRecord = nil
+	local node: Instance? = hitInstance
+	while node do
+		local record = encounter.EnemyByModel[node]
+		if record then
+			enemyRecord = record
+			break
+		end
+		if node == workspace then
+			break -- stop at the workspace root; never walk out into the DataModel
+		end
+		node = node.Parent
 	end
-	local enemyRecord = model and encounter.EnemyByModel[model]
 	if not enemyRecord or not isEnemyAlive(enemyRecord) then
 		return false
 	end
