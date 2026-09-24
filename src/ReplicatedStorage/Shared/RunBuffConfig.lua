@@ -196,7 +196,15 @@ RunBuffConfig.Items = {
 		Icon = "RunOrbitBlades",
 		Rarities = RunBuffConfig.RarityOrder,
 		Price = { Rare = 180, Epic = 230, Legendary = 280 },
-		Base = { Blades = 2, OrbitRadius = 6, HitCooldown = 0.5 }, -- 2 blades circle the player, each can hit the same target once per cooldown
+		-- 2 blades circle the player, each can hit the same target once per cooldown.
+		--
+		-- OrbitSpeed (radians/second) is SHARED rather than a private constant in RunBuffService for
+		-- the same reason the rest of this file exists: the client draws the blades and the server
+		-- decides what they cut, and both derive the angle from this number and Workspace:GetServerTimeNow().
+		-- One number, one synchronized clock, no messages -- so the blade you see and the blade that
+		-- hits are the same blade by construction. Two copies of the speed would drift apart slowly and
+		-- invisibly, which is the worst version of this bug.
+		Base = { Blades = 2, OrbitRadius = 6, HitCooldown = 0.5, OrbitSpeed = 2 },
 		PerLevel = { DamagePerHit = 2 }, -- +2 damage per hit per level
 		-- Same cap-step shape as ScorchAura above, on a key of its own: RadiusPct is already summed
 		-- into Aggregate's flat totals by the aura, and a second item writing the same key there would

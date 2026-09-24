@@ -222,7 +222,22 @@ local function ensureGearVisual(record, itemKey: string, root: BasePart): Model?
 	return model
 end
 
-local function ensureOrbitBladesVisual(record, root: BasePart, count: number): Model?
+-- Shared by the server (which decides what the blades cut) and OrbitBladesVisual.client.lua (which
+-- draws them). Deriving the angle from Workspace:GetServerTimeNow() -- a clock synchronized between
+-- server and clients -- rather than accumulating it per tick means both sides arrive at the same
+-- answer from the same inputs, with no message passing and no drift to accumulate. That is what
+-- makes it safe to let the client own position here: the blade you see IS the blade that hits.
+--
+-- It replaced `state.Angle += dt * 2`, which was fine as long as only the server cared, but an
+-- accumulated angle is unreproducible by definition -- nothing the client could do would land on
+-- the same value.
+local function orbitBladeOffset(radius: number, index: number, count: number): Vector3
+	local angle = Workspace:GetServerTimeNow() * RunBuffConfig.Items.OrbitBlades.Base.OrbitSpeed
+		+ (index - 1) * (2 * math.pi / count)
+	return Vector3.new(math.cos(angle) * radius, 0, math.sin(angle) * radius)
+end
+
+local function ensureOrbitBladesVisual(record, root: BasePart, count: number, radius: number): Model?
 	local visual = record.GearVisuals.OrbitBlades
 	if visual and visual.Parent and visual:GetAttribute("BladeCount") == count then
 		return visual
@@ -237,6 +252,13 @@ local function ensureOrbitBladesVisual(record, root: BasePart, count: number): M
 	local model = Instance.new("Model")
 	model.Name = "OrbitBlades_Visual"
 	model:SetAttribute("BladeCount", count)
+	-- How OrbitBladesVisual.client.lua finds this, and how wide it knows to swing. Same attribute
+	-- convention ensureGearVisual uses for the other gear visuals; OrbitBlades needs its own copy
+	-- because this function builds it instead of that one. OrbitRadius is kept current by
+	-- GearBehaviors.OrbitBlades, since a level-up changes the radius without changing the blade
+	-- COUNT and so does not rebuild this model.
+	model:SetAttribute("RunGearItem", "OrbitBlades")
+	model:SetAttribute("OrbitRadius", radius)
 	for i = 1, count do
 		local blade
 		if template and template:IsA("BasePart") then
@@ -251,6 +273,17 @@ local function ensureOrbitBladesVisual(record, root: BasePart, count: number): M
 		blade.Parent = model
 	end
 	sanitizeVisualParts(model)
+
+	-- Positioned once, here, and never again by the server -- the client drives them every
+	-- RenderStepped after this. Without this one write they would sit at the world origin for the
+	-- frame before the client's first pass, which reads as the blades spawning across the map.
+	for i = 1, count do
+		local blade = model:FindFirstChild("Blade" .. tostring(i))
+		if blade and blade:IsA("BasePart") then
+			blade.CFrame = CFrame.new(root.Position + orbitBladeOffset(radius, i, count))
+		end
+	end
+
 	model.Parent = root.Parent or Workspace
 	record.GearVisuals.OrbitBlades = model
 	return model
@@ -390,41 +423,47 @@ GearBehaviors.OrbitBlades = function(record, owned, dt: number, ctx)
 
 	local state = record.GearState.OrbitBlades
 	if not state then
-		state = { Angle = 0, HitClocks = {} }
+		-- No Angle field any more: the orbit is a pure function of the synchronized clock (see
+		-- orbitBladeOffset), not a value this service accumulates and owns. HitClocks stays, because
+		-- per-blade-per-target cooldown genuinely is server state.
+		state = { HitClocks = {} }
 		record.GearState.OrbitBlades = state
 	end
-	state.Angle += dt * 2 -- fixed 2 rad/s orbit speed — cosmetic, not a balance number
 
-	local visual = ensureOrbitBladesVisual(record, ctx.Root, bladeCount)
+	local visual = ensureOrbitBladesVisual(record, ctx.Root, bladeCount, radius)
 	if not visual then
 		return
 	end
+	-- A level-up changes the radius without changing the blade COUNT, so it does not rebuild the
+	-- model above — the attribute has to be refreshed here or the client keeps drawing the old
+	-- orbit while the server cuts at the new one. Written only on a change: an attribute set every
+	-- tick is a replicated property write every tick, which is the cost this whole change exists to
+	-- remove.
+	if visual:GetAttribute("OrbitRadius") ~= radius then
+		visual:SetAttribute("OrbitRadius", radius)
+	end
 
 	local now = os.clock()
-	for i, blade in ipairs(visual:GetChildren()) do
-		if blade:IsA("BasePart") then
-			local angle = state.Angle + (i - 1) * (2 * math.pi / bladeCount)
-			local offset = Vector3.new(math.cos(angle) * radius, 0, math.sin(angle) * radius)
-			-- Same replication lag ScorchAura's ring had (a server Heartbeat's absolute CFrame reaching
-			-- the client a network round trip late), but NOT fixable the same way: a weld is a fixed
-			-- local offset from the root, and these blades genuinely move relative to the root every
-			-- tick as they orbit. There is no static C0 that reproduces an orbit. The real fix is a
-			-- client-side visual (the client itself advances the orbit angle) — a separate, larger
-			-- change, left alone here on purpose.
-			blade.CFrame = CFrame.new(ctx.Root.Position + offset)
+	for i = 1, bladeCount do
+		-- The blade's position is COMPUTED, not read off the part. It has to be: the server no
+		-- longer moves those parts (OrbitBladesVisual.client.lua does, on the client, which is the
+		-- whole point), so `blade.Position` here would be whatever the last server write left behind
+		-- — frozen at spawn. Reading the formula instead also makes the hit test independent of the
+		-- visual existing at all, which is the right dependency direction for something
+		-- server-authoritative.
+		local bladePosition = ctx.Root.Position + orbitBladeOffset(radius, i, bladeCount)
 
-			for _, enemyRecord in ipairs(ctx.Enemies or {}) do
-				local part = enemyRecord.Model and enemyRecord.Model.PrimaryPart
-				if part and enemyRecord.Humanoid and enemyRecord.Humanoid.Health > 0 then
-					if (part.Position - blade.Position).Magnitude <= hitRadius then
-						local key = tostring(enemyRecord.Model) .. "#" .. tostring(i)
-						local last = state.HitClocks[key] or 0
-						if now - last >= hitCooldown then
-							state.HitClocks[key] = now
-							ctx.DealDamage(enemyRecord, damagePerHit, "OrbitBlades")
-							if levelStats.Status then
-								ctx.ApplyStatus(enemyRecord, levelStats.Status)
-							end
+		for _, enemyRecord in ipairs(ctx.Enemies or {}) do
+			local part = enemyRecord.Model and enemyRecord.Model.PrimaryPart
+			if part and enemyRecord.Humanoid and enemyRecord.Humanoid.Health > 0 then
+				if (part.Position - bladePosition).Magnitude <= hitRadius then
+					local key = tostring(enemyRecord.Model) .. "#" .. tostring(i)
+					local last = state.HitClocks[key] or 0
+					if now - last >= hitCooldown then
+						state.HitClocks[key] = now
+						ctx.DealDamage(enemyRecord, damagePerHit, "OrbitBlades")
+						if levelStats.Status then
+							ctx.ApplyStatus(enemyRecord, levelStats.Status)
 						end
 					end
 				end
