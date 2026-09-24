@@ -3474,15 +3474,24 @@ have dealt damage — and the zone fix only made it visible by finally letting h
    route through it, and a character reset evidently does not. Check what a `Humanoid` death from
    a self-reset does versus a death in combat, and whether `PlayerActivityService` is left holding
    the activity (which would also soft-lock further raids).
-3. **Enemy attack ranges are too long — a balance retune, config only.** User's spec verbatim:
+3. **Enemy attack ranges are too long — a balance retune, CONFIG ONLY.** User's spec verbatim:
    Scavengers and Brutes *"should be really up close"*, Raiders *"a medium range because of the
-   spear"*. This is `EnemyConfig`'s per-type contact/attack range fields — a `sp-config-dev` job
-   that must not become a service refactor.
-4. **The aura's size/range should grow per level.** Check BOTH halves before changing anything: the
-   visual already resizes from a `radius` argument in `updateAuraVisual` (`RunBuffService.lua`), so
-   the question is whether that radius actually scales with level and whether the DAMAGE radius
-   scales with it. If the visual grows and the damage radius doesn't, that is a worse bug than
-   neither growing, because the ring would then lie about its own reach.
+   spear"*. The field is `ContactRange` in `EnemyConfig.lua` ("studs; how close it needs to be to
+   land a hit"). Current values found: the Construct default is `6` (`:44`), another type sits at
+   `5` (`:59`), the Brute at `8` (`:168`), the Hulk at `40` (`:219`). The Hulk is deliberately huge
+   and is NOT part of this request — leave it alone. `sp-config-dev` job; it must not turn into a
+   service refactor. **Note the Hulk's own comment at `:214-216`: `ContactRange` must stay below
+   `AttackRadius`, and `AttackRadius` within every attack's `TriggerRange`, or he flickers between
+   walk and stop at the edge.** Any type with those fields needs the same ordering preserved.
+4. **Aura radius per level — MOSTLY ALREADY WORKS; this is narrower than it sounds.** Checked:
+   `RunBuffService.lua:320` computes `radius = item.Base.Radius * (1 + (levelStats.RadiusPct or 0))`
+   and the SAME value drives both the visual (`:333`) and the damage test (`:347`), so the two
+   cannot disagree — the "ring lying about its reach" risk does not exist here. So if the aura is
+   not growing, the cause is almost certainly that `RadiusPct` is absent or zero on the ScorchAura
+   level entries in `RunBuffConfig`, which makes this a **config-only** change.
+   **But `OrbitBlades` genuinely does NOT scale**: `:361` reads `item.Base.OrbitRadius` flat, with
+   no level term at all. If "the aura things" meant both (the user wrote it plural), Orbit Blades
+   needs a real code change to take a level multiplier, not just a config value. ASK WHICH.
 
 ### ALSO STILL OPEN
 
@@ -3494,6 +3503,47 @@ have dealt damage — and the zone fix only made it visible by finally letting h
   orbit and there is no static offset to weld. Needs a client-side visual.
 - **The polish pass** (UI in-place updates, self-maintaining boot check, the one explicit
   disconnect) — agreed long ago, still not started.
+
+### OPEN QUESTIONS — ASK THE USER BEFORE BUILDING THE THING EACH ONE GATES
+
+Written down rather than guessed at. Each names the task it blocks; none of them should be answered
+by assumption, because each has at least two defensible answers that produce different games.
+
+1. **What should resetting mid-raid actually DO?** (Blocks task 2, and it is a design call, not a
+   bug detail.) Three defensible answers: treat it as a **Defeat** (forfeits the run's pending
+   rewards — consistent, and stops reset being a free escape from a run about to go badly); treat
+   it as an **Abandon** (same forfeit rules as the existing abandon path); or treat it as a
+   **clean teleport home** with the run ended and nothing lost. The second and third are kinder;
+   the first is the only one that closes reset-as-an-exploit. **Whatever the answer, the layout bug
+   is a bug and gets fixed regardless** — the question is only what the run's outcome should be.
+2. **Did the Scavenger's head EVER deal damage?** (Sharpens task 1.) If the user can recall a head
+   shot on a Scavenger that dealt damage before any of this session's changes, the nested-Model
+   hypothesis is wrong and the trace has to start over. If it never has, the hypothesis is very
+   likely right.
+3. **"The aura things" — ScorchAura only, or Orbit Blades too?** (Blocks task 4, and decides
+   whether it is a config edit or a code change — see task 4 for why they differ.)
+4. **How much should the aura grow per level?** (Also task 4.) Needs a number or a feel: same
+   proportion per level, or a bigger jump at the rarity caps? Its current base radius and the
+   existing `RadiusPct` entries should be read out to the user before picking, so the choice is
+   made against real numbers rather than in the abstract.
+5. **B2: do the four lines fade?** (Closes the last check from round 2.) The four in scope are the
+   room description, the interaction hint, "Fully healed." and the boss-clear loot line. The room
+   title, enemy counter and buttons were never touched and still pop — that mix is expected, and is
+   what confused the original answer. Ask them to confirm against that list; do not ask for a blind
+   retest.
+
+### REPO STATE AT THE RESET (2026-09-24)
+
+- Branch `fix/audit-p0-p3`, tracking `origin/fix/audit-p0-p3`. Working tree CLEAN.
+- **49 commits unpushed.** The user has standing authorization to have work committed, but pushing
+  is theirs to approve — ask before pushing, and don't open a PR unprompted.
+- **`RaidConfig.DevFirstNodeType = "Shop"` is a TESTING setting that is currently live.** It only
+  applies to a player holding the dev shortcuts, so it cannot affect a real player, but it should
+  be revisited (set to `nil`) before launch rather than discovered later. Same for anything else
+  gated on `DevShortcuts.Active`.
+- The test checklist and every note the user wrote on it live at
+  https://claude.ai/artifact/JG4cBncHEgQY1QQGdZiUe3 — the notes are stored with the page, so they
+  survive this reset and can be re-read rather than re-asked.
 
 **Committed and unverified.** Eight exploit fixes (F1-F8, see the STEP 0 record further down), then
 a testing round that produced four more fixes and two of the three agreed raid features. NOTHING in
