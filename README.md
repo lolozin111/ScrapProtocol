@@ -1550,8 +1550,8 @@ to end:
     items (`RaidConfig.CardRarityWeights`: Common/Rare/Epic/Legendary, 5 stat categories — Damage, Fire
     Rate, Max HP, Loot, and Crit Chance — 4 rarities each, 20 cards total) — a Common boss card is not
     the same thing as a Rare shop card, so don't expect their numbers to line up. Pick a `CritChance`
-    or `DamagePct` card, or buy Overclock Chip to Lv4+ (its own `CritChance` bonus, or a guaranteed
-    crit every 10th shot at Lv5), then shoot a `/dummy`: confirm crit hits show as **gold** numbers
+    or `DamagePct` card, or buy Overclock Chip to Lv3+ (its own `CritChance` bonus, or a guaranteed
+    crit every 5th shot at Lv5), then shoot a `/dummy`: confirm crit hits show as **gold** numbers
     (`DamageNumbers.client.lua`'s `Crit` kind — distinct from the existing gold **Headshot** numbers;
     a shot that's both shows as a headshot, not double-tagged) rather than the usual white.
 

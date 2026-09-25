@@ -3415,18 +3415,38 @@ and frames.
 
 ### Resuming after a context reset
 
-**START HERE — LIVE STATE AS OF 2026-09-24.** Everything below this block is history or backlog;
-this is what is actually in flight. All seven checks of the fourth round PASSED in Studio. Since
-then the `OrbitBlades` client visual was built and is the ONE unverified thing — T6 on the
-checklist, and item 1 of "WHAT TO DO NEXT" says exactly what to watch for.
+**START HERE — LIVE STATE AS OF 2026-09-25.** Everything below this block is history or backlog;
+this is what is actually in flight.
+
+**All EIGHT checks of the fourth round passed in Studio** (T1, T2a, T2b, T3a, T3b, T4, T5, T6 — the
+last two added mid-round as the round itself produced fixes). The checklist and every note the user
+wrote on it: https://claude.ai/artifact/PYwNs5vZ37zBZmsXH1psCT
+
+**The ONE unverified thing is the shop item retune (T7), built 2026-09-25.** See "SHOP ITEM RETUNE"
+below and item 1 of "WHAT TO DO NEXT". Everything else here has run.
+
+The three replication-lag gear visuals are now ALL closed — Scorch Aura's ring, its floor-locking,
+and the Orbit Blades — and the pattern they converged on is written up under the aura's entry. Read
+that before adding a fourth gear visual: the answer is an Anchored server part positioned from the
+client, never a weld and never a server Heartbeat.
 
 ### FOURTH SESSION, 2026-09-24 — ALL FOUR AGREED TASKS BUILT AND STUDIO-VERIFIED
 
-**All seven checks passed** (T1, T2a, T2b, T3a, T3b, T4, and T5 added mid-round) — checklist and
-the user's notes at
+**All eight checks passed** (T1, T2a, T2b, T3a, T3b, T4, plus T5 and T6 added mid-round) — checklist
+and the user's notes at
 https://claude.ai/artifact/PYwNs5vZ37zBZmsXH1psCT. That includes both regression checks, which were
 the real risk: base-wall attacks still work after the attack-slack split (T3b), and a normal
 extraction is not mistaken for a character reset (T2b).
+
+**T6 also confirmed the client-positioning pattern rather than just the blades.** The Orbit Blades
+needed the two sides to agree on an ANGLE, not just a position — the aura's ring is rotationally
+symmetric and needed only X/Z. That agreement is structural: both sides compute
+`Workspace:GetServerTimeNow() * RunBuffConfig.Items.OrbitBlades.Base.OrbitSpeed`, a synchronized
+clock times a SHARED speed, so nothing replicates and nothing drifts. Two consequences worth
+knowing before reading that code: the server's accumulated `state.Angle += dt * 2` is GONE (an
+accumulated angle is unreproducible by definition, so the client could never match it), and the hit
+test COMPUTES blade positions from the shared helper rather than reading `blade.Position`, which
+would otherwise test against parts frozen at spawn.
 
 **One follow-up, from the user's note on T4** (*"it works, but make sure that the zone for the aura,
 the circle is always on the floor, even when the player is jumping"*) — **BUILT AND VERIFIED (T5)**.
@@ -3546,66 +3566,132 @@ so two items writing the same key there is a collision waiting for its first rea
 Note `LevelStats` overlays `Lv5` onto `Lv4` key by key, so restating a key in `Lv5` REPLACES the
 `Lv4` value rather than stacking with it. That is why the aura's Lv5 entry says 0.70 and not 0.40.
 
+### SHOP ITEM RETUNE, 2026-09-25 — BUILT, NOT YET VERIFIED (T7)
+
+From the user's T6 note: *"these perks, these things u buy from the shop, should be like a bigg help
+yk, cuz they can be hard to come by and etc... thats how these gamemodes usually work"* — plus,
+specifically, bigger radius, more blades, more aura damage at max level.
+
+**The framing that makes this coherent:** rarity sets a LEVEL CEILING, not a power number (Rare 3,
+Epic 4, Legendary 5). So "max level" means Lv5, which needs a Legendary copy, which is genuinely
+rare — and the capstone was previously just a status effect. Every rarity cap now gets a step a
+player at that cap actually reaches, and Lv5 is a real jump.
+
+**Config only.** Every capstone key was grepped against the services BEFORE any number moved, and
+all of them are genuinely read — no inert buffs. That check is the reason the three findings below
+exist, and it is worth repeating before any future balance pass on this file.
+
+| | Lv3 (Rare cap) | Lv4 (Epic cap) | Lv5 (Legendary cap) |
+|---|---|---|---|
+| Scorch Aura | 12 DPS, 11.5 studs | 16 DPS, 13 studs | **25 DPS, 20 studs**, Slow |
+| Orbit Blades | 3 blades, 9 dmg (~8.6 DPS) | 4 blades, 12 dmg (~15.3) | **5 blades, 15 dmg (~23.9)**, Staggered |
+| Laser Drone | 6 dmg, 2.3/s | 8 dmg, 2.6/s | **10 dmg, 3/s, 3 beams** (~30 DPS) |
+| Overclock Chip | +30% dmg, +5% crit | +40%, +10% crit | **+50%, +15% crit, crit every 5th shot** |
+| Rapid Feeder | +27% rate, 20% burst | +36%, 30% burst | **+45%, 45% burst 4s, +40% kill frenzy 3s** |
+| Plated Vest | +36% HP, -10% elite dmg | +48%, -15% | **+60%, -25%, 35% shield under 30% HP** |
+| Nano Repair | 18%/room, 1% per kill | 24%/room, 1.5% | **30%/room, 2.5% per kill, overheal→shield** |
+| Kinetic Barrier | 30% shield, 10s refill | 40%, 8s | **50%, 5s refill, 16-stud knockback** |
+| Scavenger's Lens | +36% loot, 2s chests | +48%, 1.5s | **+60%, 1s chests, +2 items per chest** |
+
+Blade DPS is `blades * damage / orbit period` (period = 2π/OrbitSpeed = 3.14s), which is why the
+count matters more than the damage there.
+
+**Three findings that changed what the retune could be. Each one is the same trap — a number
+nothing consumes — and each was caught by checking rather than by assuming.**
+
+1. **Nano Repair's capstone was already clipped.** Its Lv5 heal was 5% × 5 levels = **exactly**
+   `ShopHealCap.PerRoom`'s old 25% ceiling, so lifting the perk alone would have changed literally
+   nothing at max level. The cap had to move with it, to **35%/room and 160%/map**. That trade is
+   real and deliberate, and someone will eventually wonder about it: a more generous shop-heal
+   budget makes a raid **Heal room** slightly less precious, which is exactly what this cap was
+   introduced to protect. Revisit the two together, never one alone.
+
+2. **The Laser Drone was not the weak gear item.** The assumption going in was that leaving it out
+   would make it the obvious dud. Wrong: `ExtraBeams` fires at **different** targets
+   (`GearBehaviors.LaserDrone` sorts candidates by distance and shoots the nearest N), so beams
+   SPREAD damage rather than stacking it on one enemy — and at ~26 DPS single-target it was already
+   the strongest of the three. It got a rate-and-targets capstone instead of a damage one, and its
+   `DamagePerShot` was deliberately left alone.
+
+3. **Orbit Blades' radius growth is GONE, reversing part of 2026-09-24's change and part of the
+   user's own original ask.** The blades damage only what comes within ~3 studs of a BLADE, so they
+   cut a ring **band**, not a filled disc — anything closer to you than the orbit sits in a safe
+   pocket. Widening the orbit widens that pocket, and with a Scavenger now attacking from 6 studs it
+   would have made the blades worse against precisely the enemies they exist for. Presented as a
+   trade-off; the user chose to keep the orbit at 6 and grow the COUNT instead. **The aura still
+   doubles to 20 studs**, because it IS a filled disc (horizontal distance to the player) and has no
+   pocket. The two items differ for a structural reason, not an inconsistent one.
+
+**`LevelStats` stopped hardcoding Lv4 and Lv5** and now walks any `Lv<n>` key in ascending order.
+The old shape quietly meant a **Rare copy could never have a tier step at all**: Rare caps at level
+3, so every milestone in the file sat above its ceiling and a Rare item's only progression was the
+linear `PerLevel` term. Worth knowing as a general lesson about this file — a tier table is only
+reachable if some rarity's cap is at or above its level.
+
+Note the overwrite semantics this relies on: an `Lv5` entry restating a key REPLACES the `Lv4` value,
+and restating a `PerLevel` key replaces the computed `perLevelValue * level` outright. That is how
+ScorchAura's Lv5 sets a flat 25 DPS instead of being stuck with whatever the linear ramp reached.
+
+**Prices deliberately unchanged.** The user's reasoning was that these are hard to come by, so the
+payoff should be big — that argues against charging more for it.
+
+**What to watch in play, and the honest risk:** these stack. Four maxed slots is now a very large
+power swing, and the thing to watch is whether the equipped WEAPON still feels like it matters.
+Individually each maxed piece is comparable to a mid-tier gun (weapons run roughly 4–48 DPS); four
+of them together is not. If guns start feeling irrelevant, the fix is to lower the Lv5 capstones
+rather than the per-level ramps, since the ramps are what carry the early run.
+
 ### WHAT TO DO NEXT
 
-1. **Studio-verify the `OrbitBlades` client visual — BUILT 2026-09-24, the only unverified thing
-   here.** T6 on the checklist. This was the last of the three replication-lag visuals and it is
-   now done the same way as the aura: `StarterPlayerScripts/OrbitBladesVisual.client.lua` sets each
-   blade's CFrame every `RenderStepped`, and the server no longer moves them at all.
-
-   **The one thing that is genuinely new here, and the thing to actually watch:** the aura's ring is
-   rotationally symmetric, so the client only had to agree with the server about X/Z. Blades have a
-   PHASE, so the two sides have to agree about an angle as well — if they disagree, the blade you
-   see is not the blade that cuts, and the failure is a subtle one (enemies taking damage slightly
-   off from where a blade visibly passes) rather than an obvious one.
-
-   That agreement is structural, not messaged: both sides compute
-   `Workspace:GetServerTimeNow() * RunBuffConfig.Items.OrbitBlades.Base.OrbitSpeed`, a clock
-   synchronized between server and clients times a SHARED speed. Nothing replicates and nothing
-   accumulates, so there is nothing to drift. `OrbitSpeed` is in `Shared/` specifically so it cannot
-   become two copies — the general rule from CLAUDE.md, and this is the case it protects hardest,
-   because two slightly different speeds would diverge slowly and invisibly rather than break.
-
-   Two consequences worth knowing before reading the code:
-   - The server's `state.Angle += dt * 2` is GONE. An accumulated angle is unreproducible by
-     definition; the client could never land on the same value. `HitClocks` stays, because
-     per-blade-per-target cooldown really is server state.
-   - The hit test COMPUTES each blade's position from the shared helper instead of reading
-     `blade.Position`. It has to — the server only writes those parts once, at spawn, so reading
-     them would test against frozen positions. It also makes the damage independent of the visual
-     existing at all, which is the right dependency direction.
-
-   **Not changed, and available as polish if you want it:** the blades still don't rotate to face
-   their travel direction — they orbit at a fixed orientation, exactly as the server drew them.
-   That was the existing look and this change deliberately preserved it rather than quietly
-   redesigning the thing while fixing the lag.
-2. **The polish pass** (UI in-place updates, self-maintaining boot check, the one explicit
+1. **Studio-verify the shop item retune — T7 on the checklist.** The only unverified thing from
+   THIS round (item 2 is older and has been outstanding longer).
+   Everything else in this section passed. Details and the full number table are in "SHOP ITEM
+   RETUNE" immediately above; the short version of what to actually check:
+   - A maxed (Lv5) item should feel like a genuine payoff. If it doesn't, the capstone numbers are
+     the thing to move, not the per-level ramps.
+   - **Nano Repair is the one most likely to disappoint**, because it is the one gated by a cap
+     rather than by its own number. If its heal still feels stingy, `ShopHealCap` is the lever, not
+     `RoomClearHealPct`.
+   - **Watch whether the equipped WEAPON still matters** with three or four maxed slots. That is the
+     real risk of this change, and it only shows up in a long run, not in a single room.
+   - Rare copies should now visibly improve at Lv3 (the ring grows, a third blade appears, crit
+     starts) where before they never did. Quick check: grant something at Rare and look.
+2. **Verify the eight exploit fixes (F1-F8) — the largest genuinely outstanding thing in the repo.**
+   Committed 2026-09-23 and never run; they were never folded into round 3 or round 4, so they have
+   quietly stayed unverified while two rounds of other work passed around them. Checklist already
+   exists: https://claude.ai/artifact/5yNSs3qagi91T4TWP67fg7. This is the obvious round 5.
+3. **The polish pass** (UI in-place updates, self-maintaining boot check, the one explicit
    disconnect) — agreed long ago, still not started.
-3. **The three other single-hop model lookups** named under the Scavenger head fix above
+4. **The three other single-hop model lookups** named under the Scavenger head fix above
    (`BaseLaserService.lua:145`, `DroneService.lua:119`, `ProjectileService.lua:237`), if they turn
    out to matter.
-4. **Raise `PLAYER_ATTACK_RANGE_SLACK` if enemy reach ever feels wrong again.** It passed at 2, but
+5. **Raise `PLAYER_ATTACK_RANGE_SLACK` if enemy reach ever feels wrong again.** It passed at 2, but
    2 is deliberately tight and it is the first number to reach for, not the per-type `ContactRange`
    values.
 
 
-### REPO STATE (2026-09-24, after the fourth session and its Studio pass)
+### REPO STATE (2026-09-25, after the shop item retune)
 
 - Branch `fix/audit-p0-p3`, tracking `origin/fix/audit-p0-p3`. Working tree CLEAN.
-- **62 commits unpushed.** The user has standing authorization to have work committed, but pushing
+- **63 commits unpushed.** The user has standing authorization to have work committed, but pushing
   is theirs to approve — ask before pushing, and don't open a PR unprompted.
 - **`RaidConfig.DevFirstNodeType = "Shop"` is a TESTING setting that is currently live.** It only
   applies to a player holding the dev shortcuts, so it cannot affect a real player, but it should
   be revisited (set to `nil`) before launch rather than discovered later. Same for anything else
   gated on `DevShortcuts.Active`.
-- The test checklist and every note the user wrote on it live at
-  https://claude.ai/artifact/JG4cBncHEgQY1QQGdZiUe3 — the notes are stored with the page, so they
-  survive this reset and can be re-read rather than re-asked.
+- **Checklists, newest first.** Round 4 (the live one, all eight passed, T7 pending):
+  https://claude.ai/artifact/PYwNs5vZ37zBZmsXH1psCT — round 3:
+  https://claude.ai/artifact/JG4cBncHEgQY1QQGdZiUe3 — the exploit half (F1-F8):
+  https://claude.ai/artifact/5yNSs3qagi91T4TWP67fg7. Verdicts and notes are stored WITH each page, so
+  they survive a context reset and can be re-read rather than re-asked. That property is the whole
+  reason these exist as pages instead of as conversation.
 
-**Committed and unverified.** Eight exploit fixes (F1-F8, see the STEP 0 record further down), then
-a testing round that produced four more fixes and two of the three agreed raid features. NOTHING in
-any of it has been through Studio. There is no test suite; it needs a real pass, and the checklist
-for the exploit half is at https://claude.ai/artifact/5yNSs3qagi91T4TWP67fg7.
+**Still committed and unverified: the eight exploit fixes (F1-F8), and only those.** See the STEP 0
+record further down, and the checklist at https://claude.ai/artifact/5yNSs3qagi91T4TWP67fg7. The
+paragraph that used to sit here said NOTHING had been through Studio — that was true when it was
+written and is now wrong: rounds 3 and 4 both happened and everything they covered passed. The
+exploit half was never folded into either round, which is why it is still outstanding, and it is the
+obvious candidate for round 5 once T7 is closed.
 
 **Fixed after the first Studio test round (2026-09-23):**
 
@@ -3661,8 +3747,9 @@ The yellow numbers in the report are **AimBot's bonus hit**
 because it is a top-up rather than a replacement, and nothing on screen says so.
 
 **And crits have almost certainly never fired for this player.** A crit requires an Overclock Chip
-at Epic or Legendary bought from a RAID shop (`RunBuffConfig.CritMultiplier = 1.5`, Lv4 gives 5%
-chance, Lv5 a guaranteed crit every 10th shot). Outside a raid `RollCrit` returns `false, 1`
+at Rare or better bought from a RAID shop (`RunBuffConfig.CritMultiplier = 1.5`; Lv3 gives 5%
+chance, Lv4 10%, Lv5 15% plus a guaranteed crit every 5th shot -- retuned 2026-09-25, crit used to
+start at Epic). Outside a raid `RollCrit` returns `false, 1`
 unconditionally. There is no other crit source in the game. Confirmed by reading the whole path:
 `spec.Damage = stats.Damage * damageMultiplier * critMultiplier`, applied once, never re-applied,
 never inverted; a crit cannot come out lower than a normal hit.
