@@ -3873,6 +3873,59 @@ facts behind it, which took a scout pass to establish:
   never touches `CraftedMods`, so the stat maths is untouched.
 - The Welding panel ALREADY badges a mod with how many slots carry it; that becomes `fitted/owned`.
 
+**ALL FOUR QUESTIONS ANSWERED, 2026-09-25 (late session).** Supersedes the "FOUR QUESTIONS
+OUTSTANDING" list below.
+
+**1. Decoder: DECRYPTION, but restructured by the user — and the restructure is the better design.**
+Full spec and both timing diagrams: https://claude.ai/artifact/BtKK6rtg7X5dq4GfxH6oQv
+
+The change: **the decode timer IS the reveal.** My version put all the tension in a 3-second
+animation and left the 2-15 minute decode as dead time. The user's inverts it — the rarity FLOOR
+climbs a rung at a time across the decode, so checking in on a case tells you something and you get
+a real decision at each rung (wait / rush for Cores / discard). The reel survives and finally has a
+job it is good at: rolling through the items INSIDE the rarity already earned, where no card on
+screen can disappoint.
+
+- **Gaps between rungs SHRINK** (4:30, 3:45, 3:00, 2:15 on a 15-minute Blackline). The floor only
+  goes up, so faster news is always better news — the rhythm itself is information.
+- **Chained upgrade rolls:** Rare->Epic 5%, Epic->Legendary 1%, Legendary->Mythical 0.1%, each able
+  to fire after the last. Small enough to stay a thrill: under 2% of Blackline outcomes move.
+- **Three decode BAYS**, each visitable. Explicitly so it is something people run while offline —
+  the user's words: "smth people do it while offline yk?, they seem to like that".
+- **Never draw a rung the case cannot reach.** A Scavenged ladder is three rungs, not five with two
+  greyed out. An unreachable rung is the reveal lying, and one player working that out poisons every
+  climb after it.
+
+**THE ONE THING THAT MUST BE DESIGNED IN, NOT RETROFITTED: the server cannot send the answer early.**
+Knowing a case's rarity before it finishes is worth Cores — it is precisely what the rush button
+sells. If the final rarity ships to the client at job start, a modified client reads it immediately
+and only ever rushes winners. Roll the whole ladder at job start, store it server-side with a
+timestamp per rung, and release each rung only once its time has passed — computed on demand, no
+ticking loop. Cheap now, expensive later.
+
+Consequences, all real: `DecodeJob`/`DecodedCase` are SINGULAR on the profile and both become
+collections (a save-shape change, so a real migration, not a backfill); DISCARD is a new action
+needing a refund rule (proposal: no refund, no cost, you just free the bay); and rush gets strictly
+stronger once nobody rushes a bad case, which is either an accepted reward for engaging or a reason
+to scale rush cost with the revealed floor. User's call, not yet made.
+
+**2. A mod already fitted elsewhere: REFUSE, then OFFER TO MOVE.** The user's answer, and better
+than either option I put up: "refuse it first, make a pop up, and ask the player if they would like
+to remove it from that gun and put on the new one." So the refusal states where the copy is, and the
+confirm moves it — no silent stat loss on a weapon the player is not looking at, and no wasted trip
+to go unfit it manually. Use `HudKit`'s existing modal/stacked-panel layer; do NOT hand-roll a
+dialog.
+
+**3. Duplicate mods STACK in one gun. "double the benefit, double the counter."** Two copies of Heavy
+Rounds in one weapon apply the multiplier twice and consume two of the owned count. This REVERSES
+the existing guard at `CraftingService.lua:296` ("Already equipped in another slot"), which exists
+because stacking used to be free; with counts it stops being free and becomes a real three-slot
+choice. Delete that guard as part of the counter work, and make sure `ModConfig.ApplyMods` genuinely
+multiplies per slot rather than deduplicating — it walks `pairs(equipped)`, so it should already.
+
+**4. Pity counter: YES.** Lives along the bay strip as `CRACKED 7 / 10`, always visible, and when it
+is ready the floor STARTS one rung up instead of at the bottom. Numbers not chosen yet.
+
 **FOUR QUESTIONS OUTSTANDING, all on the plan page.** Do not guess at these:
 
 1. **Which decoder direction** (01 Decryption / 02 Shatter / 03 Salvage Rig). Blocks the rebuild.
@@ -3927,7 +3980,7 @@ generally, in the order it is worth doing.
 ### REPO STATE (2026-09-25, after round 4 closed)
 
 - Branch `fix/audit-p0-p3`, tracking `origin/fix/audit-p0-p3`. Working tree CLEAN.
-- **77 commits unpushed.** The user has standing authorization to have work committed, but pushing
+- **78 commits unpushed.** The user has standing authorization to have work committed, but pushing
   is theirs to approve — ask before pushing, and don't open a PR unprompted.
 - **`RaidConfig.DevFirstNodeType = "Shop"` is a TESTING setting that is currently live.** It only
   applies to a player holding the dev shortcuts, so it cannot affect a real player, but it should
