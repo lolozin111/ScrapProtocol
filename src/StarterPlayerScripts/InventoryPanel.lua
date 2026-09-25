@@ -215,6 +215,10 @@ function InventoryPanel.new(context)
 		-- row (whatever tab has a non-multiple-of-4 item count) sits left-aligned within that row —
 		-- ordinary grid behaviour, not an asymmetry bug to chase.
 		Hud.new("UIGridLayout", {
+			-- Explicit, because tile ordering now DEPENDS on it: a pooled tile keeps its original child
+			-- position, so insertion order stopped matching intended order the moment tiles stopped being
+			-- destroyed and rebuilt every pass. Each renderInv* sets LayoutOrder on every tile, every pass.
+			SortOrder = Enum.SortOrder.LayoutOrder,
 			CellSize = UDim2.new(0, TILE_SIZE, 0, TILE_SIZE),
 			CellPadding = UDim2.new(0, 18, 0, Hud.SPACE.S),
 			FillDirectionMaxCells = 4,
@@ -335,7 +339,7 @@ function InventoryPanel.new(context)
 		Size = UDim2.new(1, -20, 0, 30),
 		Visible = false,
 		Parent = inv.detailSurface,
-	}, { Hud.new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 6) }) })
+	}, { Hud.new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 6) }) })
 
 	-- Weapons/Robots only — Equip, or Deploy/Undeploy. Hidden for Mods/Materials (nothing to toggle).
 	-- Connected further down, once inv.detailState/deployedCountForRobot are in scope.

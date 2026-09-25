@@ -458,7 +458,7 @@ local slotsRow = new("Frame", {
 	BackgroundTransparency = 1,
 	LayoutOrder = 2,
 	Parent = footerInner,
-}, { new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, HorizontalAlignment = Enum.HorizontalAlignment.Center, Padding = UDim.new(0, 24) }) })
+}, { new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, SortOrder = Enum.SortOrder.LayoutOrder, HorizontalAlignment = Enum.HorizontalAlignment.Center, Padding = UDim.new(0, 24) }) })
 
 local noSlotRow = new("Frame", {
 	AnchorPoint = Vector2.new(0.5, 0),
@@ -491,7 +491,7 @@ local escapeChipsRow = new("Frame", {
 	BackgroundTransparency = 1,
 	LayoutOrder = 2,
 	Parent = noSlotLeft,
-}, { new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 8) }) })
+}, { new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 8) }) })
 
 local leaveShopButton = new("TextButton", {
 	AnchorPoint = Vector2.new(1, 0.5),
