@@ -940,7 +940,12 @@ end
 function RaidShopPanel.Open(payload)
 	currentOffers = payload.Offers or {}
 	currentRun = payload.Run or currentRun
-	Hud.openPanel(stage, { onClose = RaidShopPanel.Close })
+	-- dismissOnScrim = false: clicking outside must NOT close this one. The shop opens exactly once,
+	-- when the server sends this node's ShopOffers, and nothing re-sends it — so a scrim click used to
+	-- dismiss the only UI for the node the player is standing on, with no way to get it back. That is a
+	-- stuck run, not a closed panel. LEAVE SHOP is the way out, and it fires "Continue" so leaving also
+	-- advances the node rather than abandoning the player at it.
+	Hud.openPanel(stage, { onClose = RaidShopPanel.Close, dismissOnScrim = false })
 	renderAll()
 end
 
