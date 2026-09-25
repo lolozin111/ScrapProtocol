@@ -565,23 +565,62 @@ local function buildSlotPip(parent: Instance, width: number, layoutOrder: number
 	return pip
 end
 
+-- Pool for both slot shapes (buildEmptySlot/buildFilledSlot below), reused in place instead of
+-- destroyed-and-rebuilt on every render — renderAll() runs on every ShopResult/RunBuffs update,
+-- which fires whenever ANY run value moves (Scrap, ore-at-risk, a mid-detour chest), so most calls
+-- into renderSlots() don't actually change which slots are filled at all. Keyed "Filled:<itemKey>"
+-- (an owned item's own natural identity) or "Empty:<gridPosition>" (empty slots have no identity of
+-- their own, so a position-keyed slot is reused whenever that position is empty again — the common
+-- case, since Buy/Sell only shifts empty-slot positions at the moment the filled count itself
+-- changes, not on every render). A hide-sweep at the top of renderSlots() below hides whichever of
+-- these aren't used this pass instead of destroying them.
+local slotPool = {}
+
+-- Rebuilds this filled slot's 5-pip row only when the owned Level or Rarity actually changed since
+-- last render — buildSlotPip's solid/outlined/dashed ramp depends on nothing else, so every other
+-- pass (LayoutOrder churn, a DIFFERENT item's Buy/Sell) leaves these 5 pip Frames untouched instead
+-- of tearing down Hud.dashedBox's dash children for no reason.
+local function refreshSlotPips(handle, owned, rarityColor: Color3, borderTr: number, cap: number)
+	if handle.pipsLevel == owned.Level and handle.pipsRarity == owned.Rarity then
+		return
+	end
+	for _, child in ipairs(handle.pipsRow:GetChildren()) do
+		child:Destroy()
+	end
+	for i = 1, 5 do
+		buildSlotPip(handle.pipsRow, SLOT_PIP_WIDTH, i, i, owned.Level, cap, rarityColor, borderTr)
+	end
+	handle.pipsLevel = owned.Level
+	handle.pipsRarity = owned.Rarity
+end
+
 local function buildEmptySlot(order: number)
-	local tile = new("Frame", {
-		Size = UDim2.fromOffset(SLOT_TILE_WIDTH, SLOT_TILE_HEIGHT),
-		BackgroundTransparency = 1,
-		LayoutOrder = order,
-		Parent = slotsRow,
-	})
-	Hud.dashedBox(tile, { width = SLOT_TILE_WIDTH, height = SLOT_TILE_HEIGHT, color = COLOR_LINE, thickness = 1, cornerInset = 8 })
-	new("TextLabel", {
-		Size = UDim2.new(1, 0, 1, 0),
-		BackgroundTransparency = 1,
-		FontFace = FONT.InconsolataBold,
-		Text = "EMPTY SLOT",
-		TextColor3 = COLOR_MUTED,
-		TextSize = 12,
-		Parent = tile,
-	})
+	local poolKey = "Empty:" .. order
+	local handle = slotPool[poolKey]
+	if not handle then
+		-- Every property below is fixed content (no run data feeds this shape at all) — nothing here
+		-- ever needs an update pass, only LayoutOrder/Visible on reuse (set unconditionally below).
+		local tile = new("Frame", {
+			Size = UDim2.fromOffset(SLOT_TILE_WIDTH, SLOT_TILE_HEIGHT),
+			BackgroundTransparency = 1,
+			LayoutOrder = order,
+			Parent = slotsRow,
+		})
+		Hud.dashedBox(tile, { width = SLOT_TILE_WIDTH, height = SLOT_TILE_HEIGHT, color = COLOR_LINE, thickness = 1, cornerInset = 8 })
+		new("TextLabel", {
+			Size = UDim2.new(1, 0, 1, 0),
+			BackgroundTransparency = 1,
+			FontFace = FONT.InconsolataBold,
+			Text = "EMPTY SLOT",
+			TextColor3 = COLOR_MUTED,
+			TextSize = 12,
+			Parent = tile,
+		})
+		handle = { tile = tile }
+		slotPool[poolKey] = handle
+	end
+	handle.tile.LayoutOrder = order
+	handle.tile.Visible = true
 end
 
 local function buildFilledSlot(order: number, itemKey: string, owned)
@@ -590,104 +629,139 @@ local function buildFilledSlot(order: number, itemKey: string, owned)
 		return
 	end
 	local rarityColor, _fillTr, borderTr, cap = rarityLook(owned.Rarity)
+	local poolKey = "Filled:" .. itemKey
+	local handle = slotPool[poolKey]
 
-	local tile = new("Frame", {
-		Size = UDim2.fromOffset(SLOT_TILE_WIDTH, SLOT_TILE_HEIGHT),
-		BackgroundColor3 = COLOR_CARD_BG,
-		LayoutOrder = order,
-		Parent = slotsRow,
-	}, {
-		corner(8),
-		new("UIPadding", { PaddingLeft = UDim.new(0, 12), PaddingRight = UDim.new(0, 8) }),
-		new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, VerticalAlignment = Enum.VerticalAlignment.Center, Padding = UDim.new(0, 10) }),
-	})
-	local outline = stroke(rarityColor, 1)
-	outline.Transparency = borderTr
-	outline.Parent = tile
+	if not handle then
+		local tile = new("Frame", {
+			Size = UDim2.fromOffset(SLOT_TILE_WIDTH, SLOT_TILE_HEIGHT),
+			BackgroundColor3 = COLOR_CARD_BG,
+			LayoutOrder = order,
+			Parent = slotsRow,
+		}, {
+			corner(8),
+			new("UIPadding", { PaddingLeft = UDim.new(0, 12), PaddingRight = UDim.new(0, 8) }),
+			new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, VerticalAlignment = Enum.VerticalAlignment.Center, Padding = UDim.new(0, 10) }),
+		})
+		local outline = stroke(rarityColor, 1)
+		outline.Transparency = borderTr
+		outline.Parent = tile
 
-	local left = new("Frame", {
-		Size = UDim2.new(1, -70, 1, 0),
-		BackgroundTransparency = 1,
-		LayoutOrder = 1,
-		Parent = tile,
-	}, { new("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 5) }) })
-	local nameRow = new("Frame", {
-		Size = UDim2.new(1, 0, 0, 16),
-		BackgroundTransparency = 1,
-		LayoutOrder = 1,
-		Parent = left,
-	})
-	new("TextLabel", {
-		Size = UDim2.new(0.6, 0, 1, 0),
-		BackgroundTransparency = 1,
-		FontFace = FONT.MontserratBold,
-		Text = item.DisplayName,
-		TextColor3 = COLOR_TEXT,
-		TextSize = 14,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		TextTruncate = Enum.TextTruncate.AtEnd,
-		Parent = nameRow,
-	})
-	new("TextLabel", {
-		AnchorPoint = Vector2.new(1, 0),
-		Position = UDim2.new(1, 0, 0, 0),
-		Size = UDim2.new(0.4, 0, 1, 0),
-		BackgroundTransparency = 1,
-		FontFace = FONT.InconsolataBold,
-		Text = ("%s \194\183 LV %d"):format(owned.Rarity:upper(), owned.Level), -- "RARITY · LV n"
-		TextColor3 = rarityColor,
-		TextSize = 11,
-		TextXAlignment = Enum.TextXAlignment.Right,
-		Parent = nameRow,
-	})
-	local pipsRow = new("Frame", {
-		Size = UDim2.new(1, 0, 0, SLOT_PIP_HEIGHT),
-		BackgroundTransparency = 1,
-		LayoutOrder = 2,
-		Parent = left,
-	}, { new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, SLOT_PIP_GAP) }) })
-	for i = 1, 5 do
-		buildSlotPip(pipsRow, SLOT_PIP_WIDTH, i, i, owned.Level, cap, rarityColor, borderTr)
+		local left = new("Frame", {
+			Size = UDim2.new(1, -70, 1, 0),
+			BackgroundTransparency = 1,
+			LayoutOrder = 1,
+			Parent = tile,
+		}, { new("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 5) }) })
+		local nameRow = new("Frame", {
+			Size = UDim2.new(1, 0, 0, 16),
+			BackgroundTransparency = 1,
+			LayoutOrder = 1,
+			Parent = left,
+		})
+		new("TextLabel", {
+			Size = UDim2.new(0.6, 0, 1, 0),
+			BackgroundTransparency = 1,
+			FontFace = FONT.MontserratBold,
+			Text = item.DisplayName,
+			TextColor3 = COLOR_TEXT,
+			TextSize = 14,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			TextTruncate = Enum.TextTruncate.AtEnd,
+			Parent = nameRow,
+		})
+		local rarityLevelLabel = new("TextLabel", {
+			AnchorPoint = Vector2.new(1, 0),
+			Position = UDim2.new(1, 0, 0, 0),
+			Size = UDim2.new(0.4, 0, 1, 0),
+			BackgroundTransparency = 1,
+			FontFace = FONT.InconsolataBold,
+			Text = ("%s \194\183 LV %d"):format(owned.Rarity:upper(), owned.Level), -- "RARITY · LV n"
+			TextColor3 = rarityColor,
+			TextSize = 11,
+			TextXAlignment = Enum.TextXAlignment.Right,
+			Parent = nameRow,
+		})
+		local pipsRow = new("Frame", {
+			Size = UDim2.new(1, 0, 0, SLOT_PIP_HEIGHT),
+			BackgroundTransparency = 1,
+			LayoutOrder = 2,
+			Parent = left,
+		}, { new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, SLOT_PIP_GAP) }) })
+		for i = 1, 5 do
+			buildSlotPip(pipsRow, SLOT_PIP_WIDTH, i, i, owned.Level, cap, rarityColor, borderTr)
+		end
+
+		local refund = math.floor((owned.Paid or 0) * RunBuffConfig.SellRefund)
+		local sellButton = new("TextButton", {
+			Size = UDim2.fromOffset(60, 44),
+			AutoButtonColor = false,
+			BackgroundColor3 = COLOR_BUTTON_DARK,
+			Text = "",
+			LayoutOrder = 2,
+			Parent = tile,
+		}, { corner(6), stroke(COLOR_LINE, 1), new("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder, HorizontalAlignment = Enum.HorizontalAlignment.Center, Padding = UDim.new(0, 1) }) })
+		new("TextLabel", {
+			Size = UDim2.new(1, 0, 0, 14),
+			BackgroundTransparency = 1,
+			FontFace = FONT.MontserratBold,
+			Text = "SELL",
+			TextColor3 = COLOR_TEXT,
+			TextSize = 11,
+			LayoutOrder = 1,
+			Parent = sellButton,
+		})
+		local refundLabel = new("TextLabel", {
+			Size = UDim2.new(1, 0, 0, 14),
+			BackgroundTransparency = 1,
+			FontFace = FONT.InconsolataBold,
+			Text = "+" .. tostring(refund),
+			TextColor3 = COLOR_GOOD,
+			TextSize = 12,
+			LayoutOrder = 2,
+			Parent = sellButton,
+		})
+		-- itemKey is fixed for the life of this poolKey (it's baked into the key itself), so this
+		-- closure never needs to be reconnected on reuse — same reasoning as InventoryPanel's
+		-- makeItemTile onSelect note.
+		sellButton.MouseEnter:Connect(function()
+			sellButton.BackgroundColor3 = Hud.lighten(COLOR_BUTTON_DARK, 0.08)
+		end)
+		sellButton.MouseLeave:Connect(function()
+			sellButton.BackgroundColor3 = COLOR_BUTTON_DARK
+		end)
+		sellButton.MouseButton1Click:Connect(function()
+			RaidRoomAction:FireServer("Sell", itemKey)
+		end)
+
+		handle = {
+			tile = tile,
+			outline = outline,
+			rarityLevelLabel = rarityLevelLabel,
+			pipsRow = pipsRow,
+			refundLabel = refundLabel,
+			pipsLevel = owned.Level,
+			pipsRarity = owned.Rarity,
+		}
+		slotPool[poolKey] = handle
+	else
+		-- Reused: rarity/level can move out from under this itemKey on a RarityUp purchase, so every
+		-- PER-RENDER value the creation branch above set gets reasserted here — item.DisplayName is
+		-- the one exception, left untouched, because RunBuffConfig.Items[itemKey] is fixed config and
+		-- itemKey itself is fixed by poolKey, so it can never actually change for this handle.
+		handle.outline.Color = rarityColor
+		handle.outline.Transparency = borderTr
+		handle.rarityLevelLabel.Text = ("%s \194\183 LV %d"):format(owned.Rarity:upper(), owned.Level)
+		handle.rarityLevelLabel.TextColor3 = rarityColor
+		local refund = math.floor((owned.Paid or 0) * RunBuffConfig.SellRefund)
+		handle.refundLabel.Text = "+" .. tostring(refund)
+		refreshSlotPips(handle, owned, rarityColor, borderTr, cap)
 	end
 
-	local refund = math.floor((owned.Paid or 0) * RunBuffConfig.SellRefund)
-	local sellButton = new("TextButton", {
-		Size = UDim2.fromOffset(60, 44),
-		AutoButtonColor = false,
-		BackgroundColor3 = COLOR_BUTTON_DARK,
-		Text = "",
-		LayoutOrder = 2,
-		Parent = tile,
-	}, { corner(6), stroke(COLOR_LINE, 1), new("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder, HorizontalAlignment = Enum.HorizontalAlignment.Center, Padding = UDim.new(0, 1) }) })
-	new("TextLabel", {
-		Size = UDim2.new(1, 0, 0, 14),
-		BackgroundTransparency = 1,
-		FontFace = FONT.MontserratBold,
-		Text = "SELL",
-		TextColor3 = COLOR_TEXT,
-		TextSize = 11,
-		LayoutOrder = 1,
-		Parent = sellButton,
-	})
-	new("TextLabel", {
-		Size = UDim2.new(1, 0, 0, 14),
-		BackgroundTransparency = 1,
-		FontFace = FONT.InconsolataBold,
-		Text = "+" .. tostring(refund),
-		TextColor3 = COLOR_GOOD,
-		TextSize = 12,
-		LayoutOrder = 2,
-		Parent = sellButton,
-	})
-	sellButton.MouseEnter:Connect(function()
-		sellButton.BackgroundColor3 = Hud.lighten(COLOR_BUTTON_DARK, 0.08)
-	end)
-	sellButton.MouseLeave:Connect(function()
-		sellButton.BackgroundColor3 = COLOR_BUTTON_DARK
-	end)
-	sellButton.MouseButton1Click:Connect(function()
-		RaidRoomAction:FireServer("Sell", itemKey)
-	end)
+	-- Set on EVERY pass, create or reuse — see buildEmptySlot's matching comment above and
+	-- InventoryPanel.makeItemTile's LayoutOrder note: a reused tile otherwise keeps stale ordering.
+	handle.tile.LayoutOrder = order
+	handle.tile.Visible = true
 end
 
 ----------------------------------------------------------------------
@@ -696,64 +770,85 @@ end
 -- config rather than hardcoded, so a future non-Epic escape item colors itself correctly for free.
 ----------------------------------------------------------------------
 
-local function buildEscapeChip(itemKey: string)
+-- Pool keyed on itemKey alone (no prefix needed — separate table from slotPool). Every property a
+-- chip shows (rarity dot color, display name, status caption) is derived purely from
+-- RunBuffConfig.Items[itemKey], which never changes at runtime, so a pooled chip needs NOTHING
+-- reasserted on reuse except LayoutOrder/Visible — see the `layoutOrder` param this gained below:
+-- the original destroy-and-rebuild version never set LayoutOrder at all (escapeChipsRow's
+-- UIListLayout ties on LayoutOrder=0 and falls back to insertion order, which happened to already
+-- match sorted order because the whole row was torn down and reparented in that order every render).
+-- Pooling breaks that implicit ordering — a reused chip's insertion position is wherever it was
+-- FIRST built, not necessarily where the sorted list wants it this pass — so this now sets an
+-- explicit LayoutOrder to keep the same left-to-right sorted result.
+local escapeChipPool = {}
+
+local function buildEscapeChip(itemKey: string, layoutOrder: number)
 	local item = RunBuffConfig.Items[itemKey]
 	if not item then
 		return
 	end
-	local rarityColor = rarityLook(item.Rarities[1])
-	local chip = new("Frame", {
-		Size = UDim2.new(0, 0, 0, 32),
-		AutomaticSize = Enum.AutomaticSize.X,
-		BackgroundColor3 = COLOR_CARD_BG,
-		Parent = escapeChipsRow,
-	}, {
-		corner(6),
-		stroke(COLOR_LINE, 1),
-		new("UIPadding", { PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10) }),
-		new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, VerticalAlignment = Enum.VerticalAlignment.Center, Padding = UDim.new(0, 8) }),
-	})
-	new("Frame", {
-		Size = UDim2.fromOffset(8, 8),
-		BackgroundColor3 = rarityColor,
-		LayoutOrder = 1,
-		Parent = chip,
-	}, { new("UICorner", { CornerRadius = UDim.new(0.5, 0) }) })
-	new("TextLabel", {
-		Size = UDim2.new(0, 0, 1, 0),
-		AutomaticSize = Enum.AutomaticSize.X,
-		BackgroundTransparency = 1,
-		FontFace = FONT.SourceSansSemiBold,
-		Text = item.DisplayName,
-		TextColor3 = COLOR_TEXT,
-		TextSize = 14,
-		LayoutOrder = 2,
-		Parent = chip,
-	})
-	local statusText
-	if itemKey == "SalvageInsurance" then
-		statusText = ("KEEP %d%% ORE"):format(math.floor((item.KeepOrePct or 0) * 100 + 0.5))
-	else
-		statusText = "READY"
+	local handle = escapeChipPool[itemKey]
+	if not handle then
+		local rarityColor = rarityLook(item.Rarities[1])
+		local chip = new("Frame", {
+			Size = UDim2.new(0, 0, 0, 32),
+			AutomaticSize = Enum.AutomaticSize.X,
+			BackgroundColor3 = COLOR_CARD_BG,
+			Parent = escapeChipsRow,
+		}, {
+			corner(6),
+			stroke(COLOR_LINE, 1),
+			new("UIPadding", { PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10) }),
+			new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, VerticalAlignment = Enum.VerticalAlignment.Center, Padding = UDim.new(0, 8) }),
+		})
+		new("Frame", {
+			Size = UDim2.fromOffset(8, 8),
+			BackgroundColor3 = rarityColor,
+			LayoutOrder = 1,
+			Parent = chip,
+		}, { new("UICorner", { CornerRadius = UDim.new(0.5, 0) }) })
+		new("TextLabel", {
+			Size = UDim2.new(0, 0, 1, 0),
+			AutomaticSize = Enum.AutomaticSize.X,
+			BackgroundTransparency = 1,
+			FontFace = FONT.SourceSansSemiBold,
+			Text = item.DisplayName,
+			TextColor3 = COLOR_TEXT,
+			TextSize = 14,
+			LayoutOrder = 2,
+			Parent = chip,
+		})
+		local statusText
+		if itemKey == "SalvageInsurance" then
+			statusText = ("KEEP %d%% ORE"):format(math.floor((item.KeepOrePct or 0) * 100 + 0.5))
+		else
+			statusText = "READY"
+		end
+		new("TextLabel", {
+			Size = UDim2.new(0, 0, 1, 0),
+			AutomaticSize = Enum.AutomaticSize.X,
+			BackgroundTransparency = 1,
+			FontFace = FONT.InconsolataBold,
+			Text = statusText,
+			TextColor3 = rarityColor,
+			TextSize = 12,
+			LayoutOrder = 3,
+			Parent = chip,
+		})
+		handle = { chip = chip }
+		escapeChipPool[itemKey] = handle
 	end
-	new("TextLabel", {
-		Size = UDim2.new(0, 0, 1, 0),
-		AutomaticSize = Enum.AutomaticSize.X,
-		BackgroundTransparency = 1,
-		FontFace = FONT.InconsolataBold,
-		Text = statusText,
-		TextColor3 = rarityColor,
-		TextSize = 12,
-		LayoutOrder = 3,
-		Parent = chip,
-	})
+	handle.chip.LayoutOrder = layoutOrder
+	handle.chip.Visible = true
 end
 
 ----------------------------------------------------------------------
--- Render — rebuilds every dynamic piece from the module's current (offers, run) state. Clear +
--- rebuild throughout, same convention as RaidClient.client.lua's clearRoomBody(): the shapes
--- involved (how many cards, which slots are filled, how many escape chips) change too much between
--- renders to make targeted mutation worth the bookkeeping.
+-- Render — refreshes every dynamic piece from the module's current (offers, run) state. Runs on
+-- every ShopResult/RunBuffs update (RaidShopPanel.Update below), which fires whenever ANY run value
+-- moves, not just when THIS piece's data changed — so renderSlots/renderEscapeChips pool and reuse
+-- their rows (see slotPool/escapeChipPool above) rather than tearing the whole grid down every tick.
+-- renderCards still clears + rebuilds, same convention as RaidClient.client.lua's clearRoomBody() —
+-- see its own comment just above for why that one stayed unpooled.
 ----------------------------------------------------------------------
 
 local currentOffers = {}
@@ -767,6 +862,16 @@ local function renderHeader()
 	slotCountLabel.RichText = true
 end
 
+-- NOT pooled, unlike renderSlots/renderEscapeChips below — left destroying-and-rebuilding on
+-- purpose. RunCard.build (RunCard.lua) is a single monolithic constructor with several conditional
+-- STRUCTURAL branches (Badge present or not, Pips vs. FootNote/Description, an icon image vs. the
+-- tinted-initials fallback, an active vs. "broke" footer button) and no handle/update API of its
+-- own — giving it one, safely, without risking the pixel-exact card the user approved, would mean
+-- restructuring the shared builder itself. That builder is also called directly by
+-- RaidClient.client.lua's boss-pick screen, so a mistake here would silently break a second, unrelated
+-- caller. That's a materially bigger and riskier change than this pass's brief, and cards refresh at
+-- most 4-wide per shop visit — the cost renderSlots/renderEscapeChips actually needed to fix (a
+-- whole grid destroyed on every Scrap/ore/slot tick) is far smaller here.
 local function renderCards()
 	for _, child in ipairs(cardsRow:GetChildren()) do
 		if child:IsA("Frame") then
@@ -779,10 +884,8 @@ local function renderCards()
 end
 
 local function renderSlots()
-	for _, child in ipairs(slotsRow:GetChildren()) do
-		if child:IsA("Frame") then
-			child:Destroy()
-		end
+	for _, handle in pairs(slotPool) do
+		handle.tile.Visible = false
 	end
 	local keys = {}
 	for itemKey in pairs(currentRun.Owned or {}) do
@@ -802,10 +905,8 @@ local function renderSlots()
 end
 
 local function renderEscapeChips()
-	for _, child in ipairs(escapeChipsRow:GetChildren()) do
-		if child:IsA("Frame") then
-			child:Destroy()
-		end
+	for _, handle in pairs(escapeChipPool) do
+		handle.chip.Visible = false
 	end
 	local keys = {}
 	for itemKey, held in pairs(currentRun.Escape or {}) do
@@ -814,8 +915,8 @@ local function renderEscapeChips()
 		end
 	end
 	table.sort(keys)
-	for _, itemKey in ipairs(keys) do
-		buildEscapeChip(itemKey)
+	for index, itemKey in ipairs(keys) do
+		buildEscapeChip(itemKey, index)
 	end
 	-- noSlotRow also carries LEAVE SHOP, which must stay up even with nothing held — only the NO
 	-- SLOT label + chips half (noSlotLeft) hides when the player holds no Escape item.
