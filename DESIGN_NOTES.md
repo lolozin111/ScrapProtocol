@@ -3706,20 +3706,94 @@ practical consequence: a reset must ASK the user how a round went, and cannot re
 Build the next checklist on the `db` capability if that matters — the content of these pages is
 fine, it is only the storage that does not do what the notes promised.
 
+### SIXTH SESSION, 2026-09-25 — THE POLISH PASS, AND THE TOAST THAT LOOKED LIKE ANOTHER GAME
+
+Round 5 closed at the top of this session (see "FIFTH SESSION"), so the polish pass inherited the
+top slot. All three of its items are built. **Nothing in this session has been run in Studio.**
+
+**Round 6 checklist — 21 checks: https://claude.ai/artifact/WSxQ7D47XQTFYBVc7k8e8v** — and this one is
+built on the `db` capability, so unlike rounds 3/4/5 its verdicts and notes are readable by a later
+session instead of living in the user's browser. **Read it before asking how the round went.**
+
+**Item 2, the self-maintaining boot check.** Every require in `Main.server.lua` now goes through a
+`load(name)` helper that stamps a `LOADED` set; the check compares that against the `Services`
+folder. Same 29 services, same order — the resulting name set was diffed against the old one.
+Why it mattered enough to do properly: the hand-typed copy had two failure directions and only one
+was visible. Missing a name warns about a service that works (`BaseLaserService` did exactly this,
+and was found during this session's pre-flight *because check 1 of the round-5 list says to STOP on
+a boot warning*). A name PRESENT with no matching require produces silence — which is the
+unregistered-handler bug the check exists to catch, so the check could be made to lie about the one
+thing it is for. **The transitive list stays hand-typed and keeps that asymmetry**, deliberately:
+deriving it means `load()`-ing those modules here, which moves WHEN they load, and order is
+load-bearing in that file because `PlayerRemoving` fires in connection order.
+
+**Item 3, the explicit disconnect.** `MainHud`'s `bindHealth` stores and disconnects its
+`HealthChanged` handle. Not a leak — Roblox drops it with the Humanoid — it was the one
+per-character connection in that file not stored, and respawning is constant now a raid death
+replaces the body.
+
+**Item 1, the UI in-place updates, in two commits.** `InventoryPanel` first (lower risk),
+`RaidShopPanel` second (it must stay pixel-identical to `design/raid-shop/*.dc.html`). Two traps,
+both worth knowing before pooling anything else in this codebase:
+
+- **`LayoutOrder` must be set on every pass, outside the create/reuse branch.** A pooled row
+  otherwise keeps its old order and the grid silently stops sorting. This bit for real in the shop:
+  escape chips **never set `LayoutOrder` at all** and sorted correctly only because the whole row
+  was destroyed and re-parented in sorted order every render. Pooling breaks that implicit
+  assumption. `buildEscapeChip` takes an explicit `layoutOrder` now, fed the same sorted index the
+  insertion order used to produce — identical output, stated instead of assumed.
+- **A row's STRUCTURE is fixed at creation** from whatever resolved then. An inventory tile built
+  before its icon existed has the wrong internals forever, so that case rebuilds rather than
+  patches — which preserves the existing behaviour where dropping an icon into `ItemIcons` appears
+  without a rejoin.
+
+**`renderCards` is deliberately NOT pooled.** `RunCard.build` is a monolithic constructor with
+several structural branches and no update path, and `RaidClient`'s boss pick calls it too — giving
+it one safely is a restructure of a shared builder, not a pooling pass. A correct partial
+conversion beat a complete one that risked the approved design.
+
+**THE TOAST REWORK, which was not on any list.** The user's report: *"some pop stuff, those toaster
+pop ups... compare a inventory, or a raid pop up, and compare it to a mine cooldown, and see how
+different they are."* An audit of every transient notification found **six different visual
+treatments**, and the toasts were the oldest: a flat rounded rectangle that snapped on and snapped
+off, while the boss bar, mining cooldown bar and enemy alarm had all picked up eased motion and the
+boss bar had picked up the angular `plate` shell.
+
+Toasts are now `plate` + `accentCap` — the same language as every panel — with a 0.22s eased
+slide-and-fade in and 0.28s out, on a **CanvasGroup** so shell, surface, cap and text fade on one
+`GroupTransparency` tween instead of four trusted to stay in lockstep. Built on FIRST show, because
+`HudKit.plate` is defined ~1000 lines below the toast and there is no plate to call at module load.
+
+**There were TWO toasts** — this one and a near-identical copy in `RaidClient` with its own padding,
+corner radius and 4s default. `HudKit.makeToast(opts)` is a factory now and the raid toast is one
+call to it; both keep the positions they had, which the user asked for explicitly. The accent cap
+is coloured per kind, so a rejection reads as a rejection before the text does — `showFailure`
+already knew it was a failure and was discarding the fact. `showToast`/`showFailure` keep their
+signatures, so all 88 call sites are untouched; `HudKit.showSuccess` is new and additive.
+
+**What the audit did NOT find, which is worth recording so nobody re-runs it.** The first sweep
+looked for hardcoded greys and found essentially none — the colour side of the HUD is clean, and
+even `LoadingScreen`'s hand-copied palette still matches `HudKit.COLOR` exactly. What it found was
+~24 surfaces writing `TextSize = 11` instead of a token. That is real untidiness but adopting those
+tokens is explicitly a **no-visual-diff change**, so it would not have fixed anything the user could
+see. The complaint was about motion and shell, not colour.
+
 ### WHAT TO DO NEXT
 
 **Nothing from round 4 or round 5 is outstanding** — all nine checks passed, then all twenty did.
 There is no committed-but-unverified work left in the repo. The list below is what remains
 generally, in the order it is worth doing.
 
-1. **The polish pass** (UI in-place updates, self-maintaining boot check, the one explicit
-   disconnect) — agreed 2026-09-23, scoped in full further down, still not started. It inherits the
-   top slot by default now that the exploit backlog is closed, not because anyone re-argued for it.
-   One of its three items got SMALLER on 2026-09-25 without getting easier — see "FIFTH SESSION" above.
-2. **The three other single-hop model lookups** named under the Scavenger head fix above
+1. **SOUND.** The polish pass is done, so this is what the roadmap has pointed at for weeks: sound,
+   music and weapon effects, then the testing phase. Agreed with the user on 2026-09-25 as the next
+   thing after the polish pass and the toast rework.
+2. **Studio-verify everything built on 2026-09-25** — the polish pass's three items, the toast
+   rework, and the two pooling conversions. None of it has been run. This is round 6 and its
+   checklist is linked in "SIXTH SESSION" above.
+3. **The three other single-hop model lookups** named under the Scavenger head fix above
    (`BaseLaserService.lua:145`, `DroneService.lua:119`, `ProjectileService.lua:237`), if they turn
    out to matter.
-3. **Raise `PLAYER_ATTACK_RANGE_SLACK` if enemy reach ever feels wrong again.** It passed at 2, but
+4. **Raise `PLAYER_ATTACK_RANGE_SLACK` if enemy reach ever feels wrong again.** It passed at 2, but
    2 is deliberately tight and it is the first number to reach for, not the per-type `ContactRange`
    values.
 
@@ -3727,7 +3801,7 @@ generally, in the order it is worth doing.
 ### REPO STATE (2026-09-25, after round 4 closed)
 
 - Branch `fix/audit-p0-p3`, tracking `origin/fix/audit-p0-p3`. Working tree CLEAN.
-- **66 commits unpushed.** The user has standing authorization to have work committed, but pushing
+- **71 commits unpushed.** The user has standing authorization to have work committed, but pushing
   is theirs to approve — ask before pushing, and don't open a PR unprompted.
 - **`RaidConfig.DevFirstNodeType = "Shop"` is a TESTING setting that is currently live.** It only
   applies to a player holding the dev shortcuts, so it cannot affect a real player, but it should
@@ -3736,6 +3810,8 @@ generally, in the order it is worth doing.
 - **Checklists, newest first.** Round 4 (COMPLETE, all nine passed):
   https://claude.ai/artifact/PYwNs5vZ37zBZmsXH1psCT — round 3:
   https://claude.ai/artifact/JG4cBncHEgQY1QQGdZiUe3 — the exploit half (F1-F8):
+  https://claude.ai/artifact/WSxQ7D47XQTFYBVc7k8e8v (round 6, 21 checks, OPEN — and the only one
+  whose verdicts a session can read back) —
   https://claude.ai/artifact/5yNSs3qagi91T4TWP67fg7 (round 5, COMPLETE, all twenty passed). These
   pages exist so a round's verdicts outlive the conversation — but see the correction at the top of
   this section: only a page built on the `db` capability actually reads its ticks back to a session.
@@ -4018,7 +4094,11 @@ through two days and two unrelated rounds before round 5 finally ran it. It was 
 polish pass below, not in place of it — that pass was agreed and scoped first, on the same day, and
 is still exactly where it was left.
 
-**THEN THE POLISH PASS, AGREED 2026-09-23, NOT STARTED.** The user
+**THE POLISH PASS — ALL THREE ITEMS BUILT 2026-09-25, NONE STUDIO-VERIFIED.** See "SIXTH SESSION"
+above for what each one turned into. The scope below is kept as written because it is what was
+agreed, and because two of the three grew a complication worth reading before touching them again.
+
+Originally: **AGREED 2026-09-23, NOT STARTED.** The user
 approved this scope and then cleared the session so it could be executed from this file. Three
 read-only audits (security, efficiency, memory) ran first; their verdicts are recorded below the
 task list. Do the tasks, commit each, and DON'T widen the scope — the user explicitly chose
