@@ -3778,22 +3778,92 @@ even `LoadingScreen`'s hand-copied palette still matches `HudKit.COLOR` exactly.
 tokens is explicitly a **no-visual-diff change**, so it would not have fixed anything the user could
 see. The complaint was about motion and shell, not colour.
 
+### ROUND 6 RESULTS, 2026-09-25 — 19 passed, 2 failed, both fixed same day
+
+Checklist, with every verdict and the user's notes stored ON the page and readable by a later
+session: https://claude.ai/artifact/WSxQ7D47XQTFYBVc7k8e8v. **Read it rather than asking.** That
+property is new — rounds 3, 4 and 5 used `localStorage` and cannot be read back.
+
+**C14 FAILED — raid shop slots rendered right-to-left. My regression, fixed.** Four layouts set no
+`SortOrder`: the shop's slot row and escape-chip row, and the inventory's tile grid and detail-slot
+row. It never mattered, because all four were destroyed and rebuilt in the intended order every
+render, so child insertion order WAS the intended order (the children are unnamed, so name-sorting
+was a no-op). Pooling removed that, and the `LayoutOrder` the conversion carefully set on every pass
+was being ignored by the layout meant to read it. **The general lesson: the conversion added
+`LayoutOrder` to the children and never checked that the parent honoured it — half a fix reads
+exactly like a whole one until something reorders.** C9 and C13 passed with the same gap present in
+the inventory; those tests simply didn't reorder anything. All four fixed, not just the one that
+showed.
+
+**C17 passed WITH A NOTE that was worse than most failures — fixed.** *"whenever you click outside
+of it, it closes and you cant open it again, and get stuck."* `RaidShopPanel.Open` runs once per
+node, when the server sends that node's `ShopOffers`, and nothing re-sends it (re-entering the same
+Shop deliberately shows the same offers). So a scrim click destroyed the only UI for the node the
+player was standing on. `HudKit.openPanel` already had `dismissOnScrim`; the shop just never passed
+it, and it is the right panel for it — a decision point whose own LEAVE SHOP fires `"Continue"`, so
+the single remaining exit also advances the node. **Worth remembering that this arrived on a PASS.**
+
+**C12 FAILED, and it is NOT a bug — it is the design, and the user should decide whether to keep
+it.** Reported as: one Heavy Rounds mod equipping onto several guns at once. That is exactly what
+the code intends. `DataService`'s `defaultProfile` comments `CraftedMods` as `[modKey] = true (permanent
+unlock, same shape as CraftedWeapons)`, and `CraftingService` REFUSES to craft a mod you already own
+— so a second copy cannot exist and quantity is not modelled anywhere. `EquipMod`'s duplicate guard
+is scoped to one item deliberately (the same mod twice in one weapon's slots would double one
+multiplier for no reason); across items it was never meant to apply.
+
+Making mods scarce is a real change, not a one-line fix, and it is put to the user rather than
+assumed: it needs a reverse index, because — as this file already notes — `EquippedMods` is keyed
+`itemKey -> slot -> modKey`, so "where is this mod currently fitted" has no lookup. It also changes
+the crafting economy (a second copy has to become craftable) and needs a rule for what happens when
+a mod is fitted somewhere else.
+
+**C13's question, answered: yes, robots take mods exactly as weapons do.** Same `EquippedMods`
+structure, `EquipMod` accepts `tree = "Robots"`, slots 1-3, and robot mod slots are never locked.
+One caveat worth knowing: `itemKey` is a robot TYPE, so every deployed Scrapbot shares one loadout.
+
+**Three things the notes surfaced that are NOT round-6 regressions, and are now backlog:**
+
+1. **A Combat/Ambush node auto-advances with the chest unclaimed.** User: *"make sure that whenever
+   there is a chest on that node, to hold the player until they open or they choose to skip it."*
+   This is loot silently lost to the single-exit auto-advance built on 2026-09-23 — the auto-advance
+   does not know the room still has something in it. Real bug, not cosmetic.
+2. **An ore pickup should say what you got.** User: *"whenever you get their drop, make a cute pop up
+   appear showing how much you got and the ore icon."* Now cheap: the toast is already
+   plate-shelled, and `HudKit.getItemIcon` already resolves ore art. Wants an icon slot on the toast
+   (the factory has no icon support yet) or a small dedicated pickup popup.
+3. **`AimCamera` warns `R15 rig: Waist MISSING, Neck MISSING` at boot.** Reported on C1, which
+   passed — the shoulder camera and facing lock work, only the pitch waits on the joint. Harmless
+   today, but it is the sort of warning that trains people to ignore Output.
+
+**ASSET NOTE: the user has a VFX pack** (2026-09-25), intended for attacks and abilities later. Not
+yet in the repo or Studio. When it lands, the existing pattern applies — a config of asset keys with
+a placeholder fallback, the way `ItemIconConfig`/`UiIconConfig`/`SoundConfig` all work — rather than
+referencing particles by name from service logic.
+
 ### WHAT TO DO NEXT
 
 **Nothing from round 4 or round 5 is outstanding** — all nine checks passed, then all twenty did.
 There is no committed-but-unverified work left in the repo. The list below is what remains
 generally, in the order it is worth doing.
 
-1. **SOUND.** The polish pass is done, so this is what the roadmap has pointed at for weeks: sound,
-   music and weapon effects, then the testing phase. Agreed with the user on 2026-09-25 as the next
-   thing after the polish pass and the toast rework.
-2. **Studio-verify everything built on 2026-09-25** — the polish pass's three items, the toast
-   rework, and the two pooling conversions. None of it has been run. This is round 6 and its
-   checklist is linked in "SIXTH SESSION" above.
-3. **The three other single-hop model lookups** named under the Scavenger head fix above
+1. **SOUND — the system is BUILT, the assets are not.** `Shared/SoundConfig.lua` +
+   `StarterPlayerScripts/Sfx.lua`, ~50 named entries all sitting at `Id = 0`, silent and warning
+   once each. Three call sites wired (button hover/press, toast by kind, mining swing). **The next
+   step is the user uploading audio and filling in numbers** — not more code. Wiring the remaining
+   entries is one line each and should happen WITH the audio, not before it, so each one can be
+   judged against how it actually sounds.
+2. **The chest-skipped-on-auto-advance bug** — see "ROUND 6 RESULTS" above, item 1 of the backlog.
+   Loot is being silently lost, which makes it the most valuable of the three.
+3. **The ore-pickup popup** — see the same list, item 2. Cheap now the toast is rebuilt.
+4. **Decide whether mods should be scarce** (round 6's C12). Currently one crafted mod fits every
+   weapon at once, by design. The user flagged it as wrong; the change is not small. Their call.
+5. **Studio-verify the 2026-09-25 fixes that came AFTER round 6 ran** — the four `SortOrder` rows,
+   the raid shop's `dismissOnScrim`, and the three wired sounds (which are silent, so only their
+   warnings are observable until assets land).
+6. **The three other single-hop model lookups** named under the Scavenger head fix above
    (`BaseLaserService.lua:145`, `DroneService.lua:119`, `ProjectileService.lua:237`), if they turn
    out to matter.
-4. **Raise `PLAYER_ATTACK_RANGE_SLACK` if enemy reach ever feels wrong again.** It passed at 2, but
+7. **Raise `PLAYER_ATTACK_RANGE_SLACK` if enemy reach ever feels wrong again.** It passed at 2, but
    2 is deliberately tight and it is the first number to reach for, not the per-type `ContactRange`
    values.
 
@@ -3801,7 +3871,7 @@ generally, in the order it is worth doing.
 ### REPO STATE (2026-09-25, after round 4 closed)
 
 - Branch `fix/audit-p0-p3`, tracking `origin/fix/audit-p0-p3`. Working tree CLEAN.
-- **71 commits unpushed.** The user has standing authorization to have work committed, but pushing
+- **76 commits unpushed.** The user has standing authorization to have work committed, but pushing
   is theirs to approve — ask before pushing, and don't open a PR unprompted.
 - **`RaidConfig.DevFirstNodeType = "Shop"` is a TESTING setting that is currently live.** It only
   applies to a player holding the dev shortcuts, so it cannot affect a real player, but it should
