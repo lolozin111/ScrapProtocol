@@ -3927,6 +3927,45 @@ it. Feel the mechanic first, retune second.
 Solved by grid search over the 4-window Markov chain, not estimated. The script is trivial to redo:
 four windows, each rolling "advance one tier?" against the gate for the tier you are currently on.
 
+**SUPERSEDED BY THE USER, 2026-09-25: every case can reach Mythical, scaling with tier.** The user's
+call — "lets make the chances for higher cases better as well". This REPLACES the keep-today's-payouts
+recommendation immediately above, which is kept only for its reasoning. **This is a deliberate
+economy change, not just a presentation change** — Scavenged and Encrypted can now produce tiers they
+never could.
+
+| Case | Starts at | Gates | C | R | E | L | M | decode per Mythical |
+|---|---|---|---|---|---|---|---|---|
+| Scavenged | Common | 14 / 16 / 26 / 34 | 55 | 34 | 9 | 2 | **0.2%** | ~1000 min |
+| Encrypted | Common | 29 / 29 / 35 / 51 | 25 | 42 | 24 | 7 | **1.5%** | ~467 min |
+| Blackline | **Rare** | 32 / 30 / 27 | — | 22 | 42 | 28 | **8%** | ~187 min |
+| Prototype | **Epic** | 21 / 22 | — | — | 40 | 40 | **20%** | ~50 min |
+
+**TWO FINDINGS THAT SHAPED THESE, both worth keeping — they are traps, not preferences.**
+
+**1. The cheap case's Mythical rate has to be measured in DECODE TIME, not in percent.** The user
+first proposed 1% for Scavenged. At 1% a Scavenged costs ~222 minutes of decode per Mythical and a
+Blackline costs ~187 — effectively identical. Since bays are limited (3) and decode time is therefore
+the real bottleneck for a dedicated player, premium currency would buy almost no throughput advantage
+and Blackline would stop being the Mythical case in any meaningful sense. 0.2% restores a ~20x spread
+across the four cases. **Always check the time-per-outcome, not the per-case percentage** — the
+percentages look graded when the throughput is flat.
+
+**2. Legendary and Mythical cannot sit close together on a low case.** Targeting L 2% / M 1% on
+Scavenged made the solver put the LAST GATE AT 100% — i.e. "reach Legendary and Mythical is
+guaranteed". That is degenerate, and it is forced by the structure: Mythical is reachable only
+THROUGH Legendary with one window left, so the final gate is pinned by the ratio between them. Rule
+of thumb that came out of it: keep M at roughly a tenth of L on the low cases, or the last gate stops
+being a gate.
+
+**Prototype stays at 20%, NOT the ~10% floated.** 10% would be a cut from today's 20%, and it would
+leave Prototype only 1.9x better than Blackline per unit of decode time while costing real money.
+Flagged to the user as a probable misremembering rather than applied silently; revisit if they
+confirm they meant to lower it.
+
+Solved by coordinate descent over the 4-window Markov chain, not estimated. Two solver bugs worth not
+repeating if this is redone: a full 4-gate grid search does not finish in any reasonable time, and a
+descent whose STEP shrinks while its SCAN RANGE does not will hang on the late passes.
+
 **A property worth keeping on purpose, which fell out of the arithmetic rather than being designed.**
 Blackline's gates RISE as you climb (26 → 28 → 34). Starting at Rare means three upgrades across four
 windows, so there is a spare window, and the later gates have fewer remaining attempts to land in —
