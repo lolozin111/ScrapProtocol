@@ -1580,7 +1580,7 @@ end
 
 -- Inventory panel — extracted to InventoryPanel.lua; constructed below, after the Ultimate
 -- picker it depends on (openUltPicker) exists. See InventoryPanel.lua's header for the full
--- rationale and for why makeItemTile/TILE_SIZE come back out of it for the Smelting tab to reuse.
+-- rationale.
 
 ----------------------------------------------------------------------
 -- Ultimate picker — the fourth, exclusive weapon slot (see UltimateConfig.lua).
@@ -1702,9 +1702,6 @@ local inventoryPanel = InventoryPanel.new({
 local openInventory = inventoryPanel.openInventory
 local renderInvList = inventoryPanel.renderInvList
 local refreshInvDetailIfShowing = inventoryPanel.refreshInvDetailIfShowing
--- The Smelting tab's ore-picker popup (further down) reuses these rather than keeping its own copy.
-local makeItemTile = inventoryPanel.makeItemTile
-local TILE_SIZE = inventoryPanel.TILE_SIZE
 
 ----------------------------------------------------------------------
 -- Ore Smelting — the Forge's second mechanic, alongside rolling weapons (see RefinedOreConfig.lua

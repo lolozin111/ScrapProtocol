@@ -47,11 +47,11 @@
 	  panel's original code (it shares the same "click a slot, pick from a list" shape as the mod
 	  picker), but it's its own, separate popup, not part of the Inventory itself.
 
-	Two things this module owns are, in turn, needed by code that stays behind in MainHud: the
-	Smelting tab's ore-picker popup builds its tiles with the same `makeItemTile` this panel's tabs
-	use, sized to the same `TILE_SIZE` — MainHud.client.lua's own comments had already documented
-	that cross-dependency ("needs makeItemTile ... (Inventory panel helpers)") before this file
-	existed. Both are exposed on the table `InventoryPanel.new` returns rather than duplicated.
+	`makeItemTile` and `TILE_SIZE` are still exposed on the table `InventoryPanel.new` returns.
+	They were exposed for the Smelting tab's ore-picker popup, which reused them rather than
+	keeping its own copy — but that popup was deleted outright in a later redesign, so nothing in
+	MainHud calls either one now and its two aliases have been removed. They stay exported because
+	the next thing that needs a tile should reuse this one rather than build a third.
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -387,63 +387,127 @@ function InventoryPanel.new(context)
 		end
 	end)
 
+	-- Pooled instead of destroyed-and-rebuilt every call: refreshInvDetailIfShowing reruns this on
+	-- every InventoryUpdate patch while the detail panel is open (not just on click), so this used to
+	-- tear down and rebuild 3-4 small buttons on every single patch. Keyed by slot POSITION (1..
+	-- ModConfig.SlotsPerItem), plus one dedicated slot for the optional Ultimate button, since a given
+	-- physical slot always holds the same kind of thing across renders regardless of which item is
+	-- shown — unlike the grid tiles above, whose identity IS the data.
+	local detailSlotPool: { [number]: TextButton } = {}
+	local detailSlotContext: { [number]: { tree: string, itemKey: string } } = {}
+	local detailUltimateButton: TextButton? = nil
+	local detailUltimateContext: { itemKey: string }? = nil
+	local lastShowUltimate: boolean? = nil
+
 	local function rebuildInvDetailSlots(tree: string, itemKey: string)
-		for _, child in ipairs(inv.detailSlotRow:GetChildren()) do
-			if child:IsA("TextButton") then
-				child:Destroy()
-			end
-		end
 		-- Weapons get a fourth ULTIMATE slot on the end; robots do not (Ultimates are weapon-only).
 		-- Width is divided by the real button count so the row still fits either way.
 		local showUltimate = (tree == "Weapons")
 		local slotCount = ModConfig.SlotsPerItem + (showUltimate and 1 or 0)
 		local slotWidth = math.floor((260 - 20 - 6 * (slotCount - 1)) / slotCount)
+
+		-- The only thing that changes the ROW'S SHAPE (not just a button's content) is showUltimate
+		-- flipping between a Weapons and a Robots view, which also changes slotWidth for every slot in
+		-- the row (see above) — Hud.button() bakes restSize/hoverSize into its own hover-tween closures
+		-- at build time with no public setter to change them later, so resizing a pooled button in
+		-- place would fight its own MouseLeave tween back to the stale size on the very next hover.
+		-- Cheapest correct fix: wipe and rebuild the whole row on that flip (still not "every pass" —
+		-- only the two-value showUltimate flip triggers it). Every other call — switching between two
+		-- different owned weapons, or the constant refresh-while-open case — reuses in place below.
+		if showUltimate ~= lastShowUltimate then
+			for _, button in pairs(detailSlotPool) do
+				button:Destroy()
+			end
+			table.clear(detailSlotPool)
+			table.clear(detailSlotContext)
+			if detailUltimateButton then
+				detailUltimateButton:Destroy()
+				detailUltimateButton = nil
+				detailUltimateContext = nil
+			end
+			lastShowUltimate = showUltimate
+		end
+
 		for slotIndex = 1, ModConfig.SlotsPerItem do
 			local equippedKey = ModPicker.equippedModKeyForSlot(itemKey, slotIndex)
 			local mod = equippedKey and ModConfig.Mods[equippedKey]
-			local slotButton = Hud.button({
-				-- Computed per-render (an equipped mod's own AccentDark, or the empty-slot Panel
-				-- shade) — `fill` is exactly the escape hatch for a color that isn't one of the
-				-- three named variants; hover/press are still derived from it same as any variant.
-				fill = mod and Hud.COLOR.AccentDark or Hud.COLOR.Panel,
-				size = UDim2.new(0, slotWidth, 1, 0),
-				text = mod and mod.DisplayName or ("Slot %d"):format(slotIndex),
-				parent = inv.detailSlotRow,
-				onClick = function()
-					ModPicker.openModPicker(tree, itemKey, slotIndex)
-				end,
-			})
-			-- Overridden after building, not exposed by HudButtonOptions: these cells are much
-			-- narrower than a standard button, and Body-size unwrapped text would truncate a longer
-			-- mod DisplayName instead of wrapping across the two lines the cell has room for.
-			slotButton.Font = Enum.Font.Code
-			slotButton.TextSize = 11
-			slotButton.TextWrapped = true
+			local fill = mod and Hud.COLOR.AccentDark or Hud.COLOR.Panel
+			local text = mod and mod.DisplayName or ("Slot %d"):format(slotIndex)
+			local slotButton = detailSlotPool[slotIndex]
+			if not slotButton then
+				local context = { tree = tree, itemKey = itemKey }
+				slotButton = Hud.button({
+					-- Computed per-render (an equipped mod's own AccentDark, or the empty-slot Panel
+					-- shade) — `fill` is exactly the escape hatch for a color that isn't one of the
+					-- three named variants; hover/press are still derived from it same as any variant.
+					fill = fill,
+					size = UDim2.new(0, slotWidth, 1, 0),
+					text = text,
+					layoutOrder = slotIndex,
+					parent = inv.detailSlotRow,
+					onClick = function()
+						ModPicker.openModPicker(context.tree, context.itemKey, slotIndex)
+					end,
+				})
+				-- Overridden after building, not exposed by HudButtonOptions: these cells are much
+				-- narrower than a standard button, and Body-size unwrapped text would truncate a longer
+				-- mod DisplayName instead of wrapping across the two lines the cell has room for.
+				slotButton.Font = Enum.Font.Code
+				slotButton.TextSize = 11
+				slotButton.TextWrapped = true
+				detailSlotPool[slotIndex] = slotButton
+				detailSlotContext[slotIndex] = context
+			else
+				-- Reused: the onClick closure above captured `context` BY REFERENCE, not `tree`/
+				-- `itemKey` directly, so mutating it here is what makes a click on this pooled button
+				-- still open the mod picker for whichever weapon/robot is CURRENTLY shown — not
+				-- whichever one this slot happened to be built for the first time.
+				local context = detailSlotContext[slotIndex]
+				context.tree = tree
+				context.itemKey = itemKey
+				Hud.setButtonFill(slotButton, fill)
+				slotButton.Text = text
+				slotButton.LayoutOrder = slotIndex
+			end
 		end
 
 		if showUltimate then
 			local equippedUltimate = (Hud.profile.EquippedUltimate or {})[itemKey]
 			local data = equippedUltimate and UltimateConfig.Mods[equippedUltimate]
 			local rarity = ModConfig.Rarities[UltimateConfig.Rarity] or {}
-			local ultButton = Hud.button({
-				-- Tinted with the Mythical colour whether filled or empty, so the slot reads as a
-				-- different KIND of slot at a glance rather than a fourth ordinary one.
-				fill = data and (rarity.Color or Hud.COLOR.AccentDark) or Hud.COLOR.Panel,
-				text = data and data.DisplayName or UltimateConfig.SlotLabel,
-				size = UDim2.new(0, slotWidth, 1, 0),
-				parent = inv.detailSlotRow,
-				onClick = function()
-					openUltPicker(itemKey)
-				end,
-			})
-			ultButton.Font = Enum.Font.Code
-			ultButton.TextSize = 11
-			ultButton.TextWrapped = true
+			local fill = data and (rarity.Color or Hud.COLOR.AccentDark) or Hud.COLOR.Panel
+			local text = data and data.DisplayName or UltimateConfig.SlotLabel
 			-- HudButtonOptions has no per-render text-color override (only the variant's fixed
-			-- `text` shade) — reasserted here same as before conversion, since the empty/filled
+			-- `text` shade) — reasserted below same as before conversion, since the empty/filled
 			-- distinction needs white-on-fill vs. a rarity-tinted "empty slot" label, not either of
 			-- HudKit.button()'s two fixed text colors.
-			ultButton.TextColor3 = data and Color3.new(1, 1, 1) or (rarity.Color or Hud.COLOR.Muted)
+			local textColor = data and Color3.new(1, 1, 1) or (rarity.Color or Hud.COLOR.Muted)
+			if not detailUltimateButton then
+				local context = { itemKey = itemKey }
+				detailUltimateButton = Hud.button({
+					-- Tinted with the Mythical colour whether filled or empty, so the slot reads as a
+					-- different KIND of slot at a glance rather than a fourth ordinary one.
+					fill = fill,
+					text = text,
+					size = UDim2.new(0, slotWidth, 1, 0),
+					layoutOrder = ModConfig.SlotsPerItem + 1,
+					parent = inv.detailSlotRow,
+					onClick = function()
+						openUltPicker(context.itemKey)
+					end,
+				})
+				detailUltimateButton.Font = Enum.Font.Code
+				detailUltimateButton.TextSize = 11
+				detailUltimateButton.TextWrapped = true
+				detailUltimateButton.TextColor3 = textColor
+				detailUltimateContext = context
+			else
+				(detailUltimateContext :: any).itemKey = itemKey
+				Hud.setButtonFill(detailUltimateButton, fill)
+				detailUltimateButton.Text = text
+				detailUltimateButton.TextColor3 = textColor
+				detailUltimateButton.LayoutOrder = ModConfig.SlotsPerItem + 1
+			end
 		end
 
 		inv.detailSlotRow.Visible = true
@@ -594,88 +658,177 @@ function InventoryPanel.new(context)
 	-- function below ORs its own status flag (equipped/deployed) together with "is this the tile
 	-- currently open in the detail panel" (isInvSelected) rather than adding a second visual for the
 	-- latter, so a tile can't end up needing two different accent treatments at once.
-	local function makeItemTile(key: string, displayName: string, badgeText: string?, highlighted: boolean, onSelect)
+	-- Pool of already-built tiles, reused in place instead of destroyed-and-rebuilt on every
+	-- InventoryUpdate patch (that patch fires constantly during normal play — looting one ore used
+	-- to rebuild every tile in whichever tab was open). Keyed "<category>:<identity>" — Weapons key
+	-- on the Forged instance's Id (two owned copies of the same weapon TYPE are two different
+	-- tiles), everything else keys on its own natural selection key (the same string showInvDetail's
+	-- second argument gets). The category prefix keeps the four tabs' key spaces from colliding,
+	-- since a hidden tile from a tab you're not currently on stays alive in this same table (see
+	-- renderInvList's hide-everything sweep below) rather than being destroyed at the tab boundary.
+	inv.tilePool = {}
+
+	local function makeItemTile(poolKey: string, key: string, displayName: string, badgeText: string?, highlighted: boolean, layoutOrder: number, onSelect)
 		local icon = Hud.getItemIcon(key)
 		local panelFrameImage = UiIconConfig.Get("panelframe")
 		local isSliceable = panelFrameImage ~= nil
 
-		local tile = Hud.new("ImageButton", {
-			-- Only visible on the fallback (non-sliceable) path below — the sliceable path hides this
-			-- via BackgroundTransparency and paints the fill on the frame ImageLabel's ImageColor3
-			-- instead, same split HudKit.button() uses for its own sliced/fallback background.
-			BackgroundColor3 = highlighted and Hud.COLOR.AccentDark or Hud.COLOR.PanelLight,
-			BackgroundTransparency = if isSliceable then 1 else 0,
-			AutoButtonColor = false,
-			Image = "",
-			Size = UDim2.new(0, TILE_SIZE, 0, TILE_SIZE),
-		}, if isSliceable then {} else { Hud.corner(8), Hud.stroke() })
-		-- No UICorner/stroke on the sliceable path: the shape and outline both come from the image's
-		-- own cut corners and baked edge, same reasoning as HudKit.plate()'s shell/surface branch.
+		local handle = inv.tilePool[poolKey]
 
-		if isSliceable then
-			-- The selected tile is OUTLINED in accent, not filled — the reference shows the selected
-			-- slot as an accent-tinted frame around an otherwise normal dark interior, not a solid
-			-- accent block. Retinting this one ImageLabel (frame tint doubles as the fill, since the
-			-- slice image covers the whole tile) is the smallest change that gets there, rather than
-			-- adding a second filled layer underneath just for the unselected case.
-			Hud.new("ImageLabel", {
-				BackgroundTransparency = 1,
-				Image = panelFrameImage,
-				ImageColor3 = highlighted and Hud.COLOR.Accent or Hud.COLOR.PanelLight,
-				ScaleType = Enum.ScaleType.Slice,
-				SliceCenter = Rect.new(20, 20, 44, 44),
-				Size = UDim2.new(1, 0, 1, 0),
-				ZIndex = 0,
-				Parent = tile,
-			})
+		-- A pooled tile's STRUCTURE (sliceable frame vs. plain corner+stroke fallback; an icon
+		-- ImageLabel vs. a fallback TextLabel) was fixed at creation time from whatever `icon`/
+		-- `isSliceable` resolved to THEN. Both are still re-read fresh above on every call, same as
+		-- before pooling (this section's header: a dev can drop an icon into ItemIcons mid-session and
+		-- expects it to appear without a rejoin) — so if either has actually changed since this tile
+		-- was built, its old structure is wrong and gets rebuilt, not patched. This only fires when art
+		-- shows up/disappears mid-session; every ordinary render (equip state, owned count, selection)
+		-- takes the reuse branch below instead.
+		if handle and (handle.icon ~= icon or handle.isSliceable ~= isSliceable) then
+			handle.tile:Destroy()
+			handle = nil
+			inv.tilePool[poolKey] = nil
 		end
 
-		if icon then
-			-- Inset 6px each side so the icon sits inside the frame's cut corners instead of
-			-- overdrawing them — TILE_SIZE (84) clears the frame's own ~20px corner regions
-			-- comfortably either way, this is purely so the icon doesn't visually collide with the
-			-- frame's edge.
-			Hud.new("ImageLabel", {
-				BackgroundTransparency = 1,
-				AnchorPoint = Vector2.new(0.5, 0.5),
-				Position = UDim2.new(0.5, 0, 0.5, 0),
-				Size = UDim2.new(1, -12, 1, -12),
-				Image = icon,
-				ScaleType = Enum.ScaleType.Fit,
-				ZIndex = 1,
-				Parent = tile,
-			})
+		if not handle then
+			local tile = Hud.new("ImageButton", {
+				-- Only visible on the fallback (non-sliceable) path below — the sliceable path hides this
+				-- via BackgroundTransparency and paints the fill on the frame ImageLabel's ImageColor3
+				-- instead, same split HudKit.button() uses for its own sliced/fallback background.
+				BackgroundColor3 = highlighted and Hud.COLOR.AccentDark or Hud.COLOR.PanelLight,
+				BackgroundTransparency = if isSliceable then 1 else 0,
+				AutoButtonColor = false,
+				Image = "",
+				Size = UDim2.new(0, TILE_SIZE, 0, TILE_SIZE),
+			}, if isSliceable then {} else { Hud.corner(8), Hud.stroke() })
+			-- No UICorner/stroke on the sliceable path: the shape and outline both come from the image's
+			-- own cut corners and baked edge, same reasoning as HudKit.plate()'s shell/surface branch.
+
+			local frameImage: ImageLabel? = nil
+			if isSliceable then
+				-- The selected tile is OUTLINED in accent, not filled — the reference shows the selected
+				-- slot as an accent-tinted frame around an otherwise normal dark interior, not a solid
+				-- accent block. Retinting this one ImageLabel (frame tint doubles as the fill, since the
+				-- slice image covers the whole tile) is the smallest change that gets there, rather than
+				-- adding a second filled layer underneath just for the unselected case.
+				frameImage = Hud.new("ImageLabel", {
+					BackgroundTransparency = 1,
+					Image = panelFrameImage,
+					ImageColor3 = highlighted and Hud.COLOR.Accent or Hud.COLOR.PanelLight,
+					ScaleType = Enum.ScaleType.Slice,
+					SliceCenter = Rect.new(20, 20, 44, 44),
+					Size = UDim2.new(1, 0, 1, 0),
+					ZIndex = 0,
+					Parent = tile,
+				})
+			end
+
+			local iconLabel: ImageLabel? = nil
+			local fallbackLabel: TextLabel? = nil
+			if icon then
+				-- Inset 6px each side so the icon sits inside the frame's cut corners instead of
+				-- overdrawing them — TILE_SIZE (84) clears the frame's own ~20px corner regions
+				-- comfortably either way, this is purely so the icon doesn't visually collide with the
+				-- frame's edge.
+				iconLabel = Hud.new("ImageLabel", {
+					BackgroundTransparency = 1,
+					AnchorPoint = Vector2.new(0.5, 0.5),
+					Position = UDim2.new(0.5, 0, 0.5, 0),
+					Size = UDim2.new(1, -12, 1, -12),
+					Image = icon,
+					ScaleType = Enum.ScaleType.Fit,
+					ZIndex = 1,
+					Parent = tile,
+				})
+			else
+				fallbackLabel = Hud.new("TextLabel", {
+					BackgroundTransparency = 1,
+					Position = UDim2.new(0, 3, 0, 3),
+					Size = UDim2.new(1, -6, 1, -6),
+					Font = Enum.Font.SourceSansBold,
+					TextColor3 = Hud.COLOR.Muted,
+					TextSize = 12,
+					TextWrapped = true,
+					Text = displayName,
+					ZIndex = 1,
+					Parent = tile,
+				})
+			end
+
+			local badgeLabel: TextLabel? = nil
+			if badgeText then
+				badgeLabel = Hud.new("TextLabel", {
+					BackgroundColor3 = Hud.COLOR.Panel,
+					Position = UDim2.new(1, -24, 1, -18),
+					Size = UDim2.new(0, 22, 0, 16),
+					Font = Enum.Font.Code,
+					TextColor3 = Hud.COLOR.Text,
+					TextSize = 11,
+					Text = badgeText,
+					ZIndex = 2,
+					Parent = tile,
+				}, { Hud.corner(4) })
+			end
+
+			tile.MouseButton1Click:Connect(onSelect)
+
+			handle = {
+				tile = tile,
+				frameImage = frameImage,
+				iconLabel = iconLabel,
+				fallbackLabel = fallbackLabel,
+				badgeLabel = badgeLabel,
+				icon = icon,
+				isSliceable = isSliceable,
+			}
+			inv.tilePool[poolKey] = handle
 		else
-			Hud.new("TextLabel", {
-				BackgroundTransparency = 1,
-				Position = UDim2.new(0, 3, 0, 3),
-				Size = UDim2.new(1, -6, 1, -6),
-				Font = Enum.Font.SourceSansBold,
-				TextColor3 = Hud.COLOR.Muted,
-				TextSize = 12,
-				TextWrapped = true,
-				Text = displayName,
-				ZIndex = 1,
-				Parent = tile,
-			})
+			-- Reused: every property the creation branch above set from PER-RENDER data (not from
+			-- fixed structure/geometry) gets reasserted here, or a pooled tile would keep showing
+			-- whatever it looked like the first time this poolKey was ever built. onSelect is NOT
+			-- reconnected — its closure only ever closes over this poolKey's own fixed identity (the
+			-- same instance.Id/key that IS this poolKey), never anything that changes between renders,
+			-- so the connection made at creation is already correct forever.
+			handle.tile.BackgroundColor3 = highlighted and Hud.COLOR.AccentDark or Hud.COLOR.PanelLight
+			if handle.frameImage then
+				handle.frameImage.ImageColor3 = highlighted and Hud.COLOR.Accent or Hud.COLOR.PanelLight
+			end
+			if handle.iconLabel then
+				handle.iconLabel.Image = icon
+			end
+			if handle.fallbackLabel then
+				handle.fallbackLabel.Text = displayName
+			end
+			if badgeText then
+				if handle.badgeLabel then
+					handle.badgeLabel.Text = badgeText
+					handle.badgeLabel.Visible = true
+				else
+					-- Same construction as the creation branch's badge block above — this poolKey never
+					-- had a badge before (e.g. a freshly-smelted refined material's first render with
+					-- owned > 0) but does now.
+					handle.badgeLabel = Hud.new("TextLabel", {
+						BackgroundColor3 = Hud.COLOR.Panel,
+						Position = UDim2.new(1, -24, 1, -18),
+						Size = UDim2.new(0, 22, 0, 16),
+						Font = Enum.Font.Code,
+						TextColor3 = Hud.COLOR.Text,
+						TextSize = 11,
+						Text = badgeText,
+						ZIndex = 2,
+						Parent = handle.tile,
+					}, { Hud.corner(4) })
+				end
+			elseif handle.badgeLabel then
+				handle.badgeLabel.Visible = false
+			end
 		end
 
-		if badgeText then
-			Hud.new("TextLabel", {
-				BackgroundColor3 = Hud.COLOR.Panel,
-				Position = UDim2.new(1, -24, 1, -18),
-				Size = UDim2.new(0, 22, 0, 16),
-				Font = Enum.Font.Code,
-				TextColor3 = Hud.COLOR.Text,
-				TextSize = 11,
-				Text = badgeText,
-				ZIndex = 2,
-				Parent = tile,
-			}, { Hud.corner(4) })
-		end
-
-		tile.MouseButton1Click:Connect(onSelect)
-		return tile
+		-- Set on EVERY pass, create or reuse: with pooling, a reused tile keeps whatever LayoutOrder it
+		-- was last given otherwise, and the grid silently stops re-sorting once data changes the
+		-- intended order (a newly-crafted robot outranking an older one on the sorted list, etc).
+		handle.tile.LayoutOrder = layoutOrder
+		handle.tile.Visible = true
+		return handle.tile
 	end
 
 	local currentInvTab = "Weapons"
@@ -707,7 +860,7 @@ function InventoryPanel.new(context)
 			end
 			return a.Id < b.Id
 		end)
-		for _, instance in ipairs(sorted) do
+		for index, instance in ipairs(sorted) do
 			local recipe = CraftingRecipes.Weapons[instance.WeaponKey]
 			local rarityData = ModConfig.Rarities[instance.Rarity]
 			local equipped = Hud.profile.EquippedWeaponId == instance.Id
@@ -715,8 +868,9 @@ function InventoryPanel.new(context)
 			-- clicking a non-equipped weapon still gets the selection outline on top of that.
 			local highlighted = equipped or isInvSelected("Weapons", instance.Id)
 			-- Icon lookup key is instance.WeaponKey (the TYPE, icons aren't per-roll), but selecting
-			-- the tile opens the detail panel on this specific instance.Id.
-			makeItemTile(instance.WeaponKey, recipe.DisplayName, rarityData and rarityData.Badge or "?", highlighted, function()
+			-- the tile opens the detail panel on this specific instance.Id, which also doubles as the
+			-- pool key -- two owned copies of the same weapon TYPE are still two different tiles.
+			makeItemTile("Weapons:" .. instance.Id, instance.WeaponKey, recipe.DisplayName, rarityData and rarityData.Badge or "?", highlighted, index, function()
 				showInvDetail("Weapons", instance.Id)
 				-- Re-render so this tile's outline appears (and any previously-selected tile's
 				-- disappears) right away — nothing else re-renders the grid on a plain click, only on
@@ -741,11 +895,11 @@ function InventoryPanel.new(context)
 		table.sort(keys, function(a, b)
 			return CraftingRecipes.Robots[a].Tier < CraftingRecipes.Robots[b].Tier
 		end)
-		for _, key in ipairs(keys) do
+		for index, key in ipairs(keys) do
 			local recipe = CraftingRecipes.Robots[key]
 			local deployed = deployedCountForRobot(key)
 			local highlighted = (deployed > 0) or isInvSelected("Robots", key)
-			makeItemTile(key, recipe.DisplayName, ("x%d"):format(Hud.profile.CraftedRobots[key]), highlighted, function()
+			makeItemTile("Robots:" .. key, key, recipe.DisplayName, ("x%d"):format(Hud.profile.CraftedRobots[key]), highlighted, index, function()
 				showInvDetail("Robots", key)
 				renderInvList() -- see the matching comment in renderInvWeapons above
 			end).Parent = inv.listFrame
@@ -759,9 +913,9 @@ function InventoryPanel.new(context)
 			inv.emptyLabel.Visible = true
 			return
 		end
-		for _, key in ipairs(keys) do
+		for index, key in ipairs(keys) do
 			local mod = ModConfig.Mods[key]
-			makeItemTile(key, mod.DisplayName, nil, isInvSelected("Mods", key), function()
+			makeItemTile("Mods:" .. key, key, mod.DisplayName, nil, isInvSelected("Mods", key), index, function()
 				showInvDetail("Mods", key)
 				renderInvList() -- see the matching comment in renderInvWeapons above
 			end).Parent = inv.listFrame
@@ -774,18 +928,26 @@ function InventoryPanel.new(context)
 	-- anticipated. Never shows the empty state — Scrap/Cores/every raw ore always gets a tile even at
 	-- 0; refined materials only show once you've actually smelted at least one (there'd otherwise be
 	-- 5 more permanently-zero tiles here before the player has ever touched the Forge's second tab).
+	--
+	-- `order` is a single running counter across all four sections below (not per-loop, like the other
+	-- three renderInv* functions) so Scrap/Cores/ores/refined materials all sort left-to-right/top-to-
+	-- bottom in the same order they're built in here, same as they always have.
 	local function renderInvMaterials()
-		makeItemTile("Scrap", "Scrap", nil, isInvSelected("Materials", "Scrap"), function()
+		local order = 0
+		order += 1
+		makeItemTile("Materials:Scrap", "Scrap", "Scrap", nil, isInvSelected("Materials", "Scrap"), order, function()
 			showInvDetail("Materials", "Scrap")
 			renderInvList() -- see the matching comment in renderInvWeapons above
 		end).Parent = inv.listFrame
-		makeItemTile("Cores", "Cores", nil, isInvSelected("Materials", "Cores"), function()
+		order += 1
+		makeItemTile("Materials:Cores", "Cores", "Cores", nil, isInvSelected("Materials", "Cores"), order, function()
 			showInvDetail("Materials", "Cores")
 			renderInvList()
 		end).Parent = inv.listFrame
 		for _, oreKey in ipairs(ORE_DISPLAY_ORDER) do
+			order += 1
 			local displayName = OreConfig.Ores[oreKey].DisplayName
-			makeItemTile(oreKey, displayName, nil, isInvSelected("Materials", oreKey), function()
+			makeItemTile("Materials:" .. oreKey, oreKey, displayName, nil, isInvSelected("Materials", oreKey), order, function()
 				showInvDetail("Materials", oreKey)
 				renderInvList()
 			end).Parent = inv.listFrame
@@ -793,7 +955,8 @@ function InventoryPanel.new(context)
 		for _, refineData in pairs(RefinedOreConfig.Ores) do
 			local owned = (Hud.profile.RefinedOreCounts or {})[refineData.RefinedKey] or 0
 			if owned > 0 then
-				makeItemTile(refineData.RefinedKey, refineData.DisplayName, ("x%d"):format(owned), isInvSelected("Materials", refineData.RefinedKey), function()
+				order += 1
+				makeItemTile("Materials:" .. refineData.RefinedKey, refineData.RefinedKey, refineData.DisplayName, ("x%d"):format(owned), isInvSelected("Materials", refineData.RefinedKey), order, function()
 					showInvDetail("Materials", refineData.RefinedKey)
 					renderInvList()
 				end).Parent = inv.listFrame
@@ -803,11 +966,19 @@ function InventoryPanel.new(context)
 
 	-- Assigns into the forward-declared upvalue above (no `local`) — same convention as
 	-- closeInvDetail's assignment further up.
+	--
+	-- This used to destroy every tile in inv.listFrame and rebuild the current tab from scratch on
+	-- every call — and this is called on every InventoryUpdate patch, which fires constantly during
+	-- normal play (looting a single ore rebuilt every tile in whatever tab happened to be open). Tiles
+	-- are pooled now (see makeItemTile/inv.tilePool above): hide every pooled tile first, then let
+	-- whichever renderInv* runs below re-show and update only the ones that are actually part of this
+	-- tab's data this pass. A tile from a DIFFERENT tab, or an item that's no longer owned, simply never
+	-- gets touched after being hidden here and stays hidden (and pooled, not destroyed) until its key
+	-- shows up again — e.g. switching back to a tab you already visited reuses its tiles instead of
+	-- rebuilding them, and a material dropping back to 0 owned just disappears without a Destroy() call.
 	renderInvList = function()
-		for _, child in ipairs(inv.listFrame:GetChildren()) do
-			if child:IsA("ImageButton") then
-				child:Destroy()
-			end
+		for _, handle in pairs(inv.tilePool) do
+			handle.tile.Visible = false
 		end
 		inv.emptyLabel.Visible = false
 
