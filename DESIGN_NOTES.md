@@ -3876,38 +3876,58 @@ facts behind it, which took a scout pass to establish:
 **ALL FOUR QUESTIONS ANSWERED, 2026-09-25 (late session).** Supersedes the "FOUR QUESTIONS
 OUTSTANDING" list below.
 
-**1. Decoder: DECRYPTION, but restructured by the user — and the restructure is the better design.**
-Full spec and both timing diagrams: https://claude.ai/artifact/BtKK6rtg7X5dq4GfxH6oQv
+**1. Decoder: DECRYPTION, restructured by the user. CORRECTED 2026-09-25 — an earlier version of
+this entry described the model WRONG; this is the right one.** Full spec and three diagrams:
+https://claude.ai/artifact/BtKK6rtg7X5dq4GfxH6oQv
 
-The change: **the decode timer IS the reveal.** My version put all the tension in a 3-second
-animation and left the 2-15 minute decode as dead time. The user's inverts it — the rarity FLOOR
-climbs a rung at a time across the decode, so checking in on a case tells you something and you get
-a real decision at each rung (wait / rush for Cores / discard). The reel survives and finally has a
-job it is good at: rolling through the items INSIDE the rarity already earned, where no card on
-screen can disappoint.
+**The model, exactly.** A case starts at **Common** — not at a rarity rolled from the case's weight
+table, which is what the wrong version said. Across the decode there are exactly **four upgrade
+windows**, because four is what Common → Mythical requires. Each window is a **time RANGE, not a
+fixed moment**, specifically so the schedule cannot be learned. When a window fires it rolls once:
+*go up one tier?* A hit climbs one and the panel shows the new rarity; a miss changes nothing and the
+next window is a fresh attempt at the same step. **Only the rarity is ever shown, never the item.**
 
-- **Gaps between rungs SHRINK** (4:30, 3:45, 3:00, 2:15 on a 15-minute Blackline). The floor only
-  goes up, so faster news is always better news — the rhythm itself is information.
-- **Chained upgrade rolls:** Rare->Epic 5%, Epic->Legendary 1%, Legendary->Mythical 0.1%, each able
-  to fire after the last. Small enough to stay a thrill: under 2% of Blackline outcomes move.
-- **Three decode BAYS**, each visitable. Explicitly so it is something people run while offline —
-  the user's words: "smth people do it while offline yk?, they seem to like that".
-- **Never draw a rung the case cannot reach.** A Scavenged ladder is three rungs, not five with two
-  greyed out. An unreachable rung is the reveal lying, and one player working that out poisons every
-  climb after it.
+Then **the reel can upgrade you again.** It rolls the rarity you earned, but an upgrade slot may be
+hidden in the strip; landing on it makes the reel shake, grow and recolour, then re-roll one tier
+higher — and that can chain. Reel odds, the user's numbers: Common→Rare 20%, Rare→Epic 5%,
+Epic→Legendary 1%, Legendary→Mythical 0.1%.
 
-**THE ONE THING THAT MUST BE DESIGNED IN, NOT RETROFITTED: the server cannot send the answer early.**
-Knowing a case's rarity before it finishes is worth Cores — it is precisely what the rush button
-sells. If the final rarity ships to the client at job start, a modified client reads it immediately
-and only ever rushes winners. Roll the whole ladder at job start, store it server-side with a
-timestamp per rung, and release each rung only once its time has passed — computed on demand, no
-ticking loop. Cheap now, expensive later.
+**There is no upgrade slot to land on.** The server rolls the upgrade first and, on a hit, tells the
+client to PLANT an upgrade card at the landing position. A client that genuinely chose where the reel
+stopped could be made to stop wherever it liked.
 
-Consequences, all real: `DecodeJob`/`DecodedCase` are SINGULAR on the profile and both become
-collections (a save-shape change, so a real migration, not a backfill); DISCARD is a new action
-needing a refund rule (proposal: no refund, no cost, you just free the bay); and rush gets strictly
-stronger once nobody rushes a bad case, which is either an accepted reward for engaging or a reason
-to scale rush cost with the revealed floor. User's call, not yet made.
+**THE NUMBERS ARE NOT SETTLED, AND THE REASON IS STRUCTURAL — read this before picking any.** With
+the chances as first discussed (60/25/5/1 from Common), **Mythical comes out at 0.01%** — one in ten
+thousand, against 8% today. Reaching Mythical means passing EVERY gate, so its probability is the
+four chances MULTIPLIED. The consequence, which no amount of retuning removes: **you cannot have a
+rare Mythical and a rare Legendary at the same time.** Anything generous enough to make Mythical
+reachable floods Legendary on the way past. Modelled, not guessed — the Markov run is in the session
+and reproduced on the page.
+
+**The lever that works: a per-case STARTING TIER.** Instead of everything starting at Common, a
+Blackline opens already at Rare (three gates left) and a Prototype at Epic (two). That also does the
+job the old per-case weight tables were doing, so replacing them costs nothing. Illustrative only —
+the right way round is for the user to name the outcome (what fraction of Blacklines should end
+Legendary, and Mythical) and solve the gates backwards from it. Guessing gates and seeing what falls
+out is exactly how the 0.01% happened.
+
+**Pity: cases only.** The reel has none, but a reel upgrade landing on Legendary or Mythical RESETS
+it — the good outcome arrived, so the mercy rule has done its job whichever system delivered it. Two
+counters proposed, Legendary and Mythical separate, because with one a steady trickle of Legendaries
+would keep resetting it and the Mythical floor would never arrive.
+
+**Three bays**, each visitable, explicitly so it is something to run while offline — the user's
+words: "smth people do it while offline yk?, they seem to like that".
+
+**Still open, all four on the plan page:** the target outcome for a Blackline; whether starting tiers
+are adopted; whether the four windows sit at the same fractions for every case (a Scavenged decodes
+in 2 minutes, a Blackline in 15 — same fractions scaled is the simple answer); and one pity counter
+or two.
+
+Consequences for the code, unchanged by the correction: `DecodeJob`/`DecodedCase` are SINGULAR on the
+profile and both become collections (a save-shape change, so a real migration, not a backfill);
+DISCARD is a new action needing a refund rule (proposal: no refund, no cost, you just free the bay);
+and rush gets strictly stronger once nobody rushes a bad case.
 
 **2. A mod already fitted elsewhere: REFUSE, then OFFER TO MOVE.** The user's answer, and better
 than either option I put up: "refuse it first, make a pop up, and ask the player if they would like
