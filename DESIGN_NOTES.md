@@ -3415,8 +3415,46 @@ and frames.
 
 ### Resuming after a context reset
 
-**START HERE — LIVE STATE AS OF 2026-09-25.** Everything below this block is history or backlog;
-this is what is actually in flight.
+**START HERE — LIVE STATE, END OF 2026-09-25.** Everything below this block is history or backlog.
+
+**THE REPO IS IN A DESIGN PAUSE. Nothing is half-built.** The working tree is clean, everything is
+committed AND PUSHED, and the next step is building — not deciding. Read these two pages before
+touching anything; they are the plan, and they hold detail this file summarises:
+
+- **The Next Five Jobs** — the agreed work with real `file:line` targets:
+  https://claude.ai/artifact/Ni5SMuqXecy9Y6AbkM6xnw
+- **Decoder Reveal Directions** — the settled case-opening design, three diagrams, and the balance
+  table with the two traps that produced it: https://claude.ai/artifact/BtKK6rtg7X5dq4GfxH6oQv
+
+**BUILD ORDER, agreed:**
+
+1. **The chest fix** — a Combat/Ambush node auto-advances with the chest unopened. Real lost loot,
+   and the only item on the list that is actively costing the player something. Needs one short scout
+   pass to find the auto-advance call site; it was never in scope for an audit.
+2. **Mods become countable** — decided in full. Spec under "THE AGREED PLAN" below and on the plan
+   page. The trap: `backfillMissingFields` will NOT convert `true` to `1`, so this needs a real
+   migration on the `migrateLegacyWeapons` pattern.
+3. **The ore pickup popup** — cheap now the toast is plate-shelled; needs an icon slot on
+   `HudKit.makeToast` and accumulation so a vein does not fire forty toasts.
+4. **The decoder rebuild** — the biggest of the four, fully designed, nothing left to decide except
+   one confirmation (below).
+
+**EVERYTHING FROM 2026-09-25 IS UNVERIFIED IN STUDIO** except what round 6 covered. Round 6 passed
+19 of 21 with both failures fixed the same day; the `SortOrder` fix, the raid shop's
+`dismissOnScrim`, and the three wired sounds all landed AFTER that round ran and have never been
+played. Round 6's checklist — and it is the only one whose verdicts a later session can actually
+READ rather than ask about, because it is built on the `db` capability:
+https://claude.ai/artifact/WSxQ7D47XQTFYBVc7k8e8v
+
+**ONE THING TO CONFIRM WITH THE USER BEFORE BUILDING THE DECODER:** Prototype's Mythical rate stays
+at **20%**, not the ~10% they floated. 10% would be a cut from today and would leave Prototype only
+1.9x better than Blackline per minute of decode while costing real money. This was flagged to them as
+a probable misremembering and NOT applied. Everything else in that design is settled.
+
+**Sound is built and silent.** `Shared/SoundConfig.lua` + `StarterPlayerScripts/Sfx.lua`, ~50 entries
+at `Id = 0`. Three call sites wired (button hover/press, toast by kind, mining swing). The next move
+is the user uploading audio and pasting numbers — not code. Do not wire the remaining entries before
+there is audio to judge them against.
 
 **The fourth round is COMPLETE. All NINE checks passed in Studio** (T1, T2a, T2b, T3a, T3b, T4, T5,
 T6, T7 — the last three added mid-round as the round itself produced fixes). Nothing this round built
@@ -4072,8 +4110,10 @@ generally, in the order it is worth doing.
 ### REPO STATE (2026-09-25, after round 4 closed)
 
 - Branch `fix/audit-p0-p3`, tracking `origin/fix/audit-p0-p3`. Working tree CLEAN.
-- **78 commits unpushed.** The user has standing authorization to have work committed, but pushing
-  is theirs to approve — ask before pushing, and don't open a PR unprompted.
+- **Everything is PUSHED as of 2026-09-25.** `origin/fix/audit-p0-p3` is level with local; there is
+  no unpushed backlog for the first time in this branch's life. The user has standing authorization
+  to have work COMMITTED; pushing stays theirs to approve each time — they authorised this one
+  explicitly. Still no PR — don't open one unprompted.
 - **`RaidConfig.DevFirstNodeType = "Shop"` is a TESTING setting that is currently live.** It only
   applies to a player holding the dev shortcuts, so it cannot affect a real player, but it should
   be revisited (set to `nil`) before launch rather than discovered later. Same for anything else
