@@ -3418,21 +3418,30 @@ and frames.
 **START HERE — LIVE STATE AS OF 2026-09-25.** Everything below this block is history or backlog;
 this is what is actually in flight.
 
-**All EIGHT checks of the fourth round passed in Studio** (T1, T2a, T2b, T3a, T3b, T4, T5, T6 — the
-last two added mid-round as the round itself produced fixes). The checklist and every note the user
-wrote on it: https://claude.ai/artifact/PYwNs5vZ37zBZmsXH1psCT
+**The fourth round is COMPLETE. All NINE checks passed in Studio** (T1, T2a, T2b, T3a, T3b, T4, T5,
+T6, T7 — the last three added mid-round as the round itself produced fixes). Nothing this round built
+is unverified. The checklist and every note the user wrote on it:
+https://claude.ai/artifact/PYwNs5vZ37zBZmsXH1psCT
 
-**The ONE unverified thing is the shop item retune (T7), built 2026-09-25.** See "SHOP ITEM RETUNE"
-below and item 1 of "WHAT TO DO NEXT". Everything else here has run.
+**The largest outstanding thing in the repo is now the eight exploit fixes (F1-F8)**, committed
+2026-09-23 and never run — they were never folded into round 3 or round 4, so they have sat still
+while two rounds of other work passed around them. That is item 1 of "WHAT TO DO NEXT" and the
+obvious round 5; its checklist already exists.
 
-The three replication-lag gear visuals are now ALL closed — Scorch Aura's ring, its floor-locking,
-and the Orbit Blades — and the pattern they converged on is written up under the aura's entry. Read
-that before adding a fourth gear visual: the answer is an Anchored server part positioned from the
-client, never a weld and never a server Heartbeat.
+Two things this round settled that are worth reading before touching the adjacent code:
+
+- **The three replication-lag gear visuals are ALL closed** — Scorch Aura's ring, its floor-locking,
+  and the Orbit Blades. The pattern they converged on is written up under the aura's entry. Read it
+  before adding a fourth gear visual: the answer is an Anchored server part positioned from the
+  CLIENT, never a weld and never a server Heartbeat.
+- **The shop item retune is calibrated, not just shipped** — see "SHOP ITEM RETUNE" below, and in
+  particular the closed weapon-relevance question. Someone comparing a 25-DPS aura to a 30-DPS gun
+  will think the capstones are overtuned; they are comparing the one axis where gear competes and
+  ignoring range, crit and mod slots, where it cannot.
 
 ### FOURTH SESSION, 2026-09-24 — ALL FOUR AGREED TASKS BUILT AND STUDIO-VERIFIED
 
-**All eight checks passed** (T1, T2a, T2b, T3a, T3b, T4, plus T5 and T6 added mid-round) — checklist
+**All nine checks passed** (T1, T2a, T2b, T3a, T3b, T4, plus T5, T6 and T7 added mid-round) — checklist
 and the user's notes at
 https://claude.ai/artifact/PYwNs5vZ37zBZmsXH1psCT. That includes both regression checks, which were
 the real risk: base-wall attacks still work after the attack-slack split (T3b), and a normal
@@ -3566,7 +3575,7 @@ so two items writing the same key there is a collision waiting for its first rea
 Note `LevelStats` overlays `Lv5` onto `Lv4` key by key, so restating a key in `Lv5` REPLACES the
 `Lv4` value rather than stacking with it. That is why the aura's Lv5 entry says 0.70 and not 0.40.
 
-### SHOP ITEM RETUNE, 2026-09-25 — BUILT, NOT YET VERIFIED (T7)
+### SHOP ITEM RETUNE, 2026-09-25 — BUILT AND STUDIO-VERIFIED (T7)
 
 From the user's T6 note: *"these perks, these things u buy from the shop, should be like a bigg help
 yk, cuz they can be hard to come by and etc... thats how these gamemodes usually work"* — plus,
@@ -3635,51 +3644,58 @@ ScorchAura's Lv5 sets a flat 25 DPS instead of being stuck with whatever the lin
 **Prices deliberately unchanged.** The user's reasoning was that these are hard to come by, so the
 payoff should be big — that argues against charging more for it.
 
-**What to watch in play, and the honest risk:** these stack. Four maxed slots is now a very large
-power swing, and the thing to watch is whether the equipped WEAPON still feels like it matters.
-Individually each maxed piece is comparable to a mid-tier gun (weapons run roughly 4–48 DPS); four
-of them together is not. If guns start feeling irrelevant, the fix is to lower the Lv5 capstones
-rather than the per-level ramps, since the ramps are what carry the early run.
+**The weapon-relevance risk is CLOSED, and the reasoning matters more than the verdict.** Going in,
+the honest worry was that four maxed slots would make the equipped gun pointless — each maxed piece
+is individually comparable to a mid-tier gun (weapons run roughly 4–48 DPS), and four together
+plainly are not. Verified in play and the answer is no. The user's words: *"it looks good, guns do a
+little less but they have wayy more range and they can crit and all, and my gun had no attachments
+either, this is very good."*
+
+**Why it holds, which is the part worth keeping:** raw DPS was never the whole comparison. A gun
+keeps three things no gear piece has — **range** (gear is 6–20 studs; a gun reaches across a room),
+**crit** (gear damage does not crit; `RollCrit` applies to weapon shots), and **mod slots**. So gear
+being DPS-comparable at max level does not make it a replacement; it makes it a floor that the gun
+builds on top of.
+
+**And the test understates the margin:** that run was made with a gun carrying NO mods. A modded gun
+widens the gap further, so the real ceiling is higher than what was measured.
+
+**Treat this as calibration evidence, not just a pass.** If someone later looks at a 25-DPS aura
+next to a 30-DPS gun and concludes the capstones are overtuned, they are comparing the one axis
+where gear competes and ignoring the three where it cannot. Do not pull the Lv5 numbers down on that
+reasoning alone. If a real problem does appear, the capstones are still the right lever rather than
+the per-level ramps, since the ramps are what carry the early run.
 
 ### WHAT TO DO NEXT
 
-1. **Studio-verify the shop item retune — T7 on the checklist.** The only unverified thing from
-   THIS round (item 2 is older and has been outstanding longer).
-   Everything else in this section passed. Details and the full number table are in "SHOP ITEM
-   RETUNE" immediately above; the short version of what to actually check:
-   - A maxed (Lv5) item should feel like a genuine payoff. If it doesn't, the capstone numbers are
-     the thing to move, not the per-level ramps.
-   - **Nano Repair is the one most likely to disappoint**, because it is the one gated by a cap
-     rather than by its own number. If its heal still feels stingy, `ShopHealCap` is the lever, not
-     `RoomClearHealPct`.
-   - **Watch whether the equipped WEAPON still matters** with three or four maxed slots. That is the
-     real risk of this change, and it only shows up in a long run, not in a single room.
-   - Rare copies should now visibly improve at Lv3 (the ring grows, a third blade appears, crit
-     starts) where before they never did. Quick check: grant something at Rare and look.
-2. **Verify the eight exploit fixes (F1-F8) — the largest genuinely outstanding thing in the repo.**
-   Committed 2026-09-23 and never run; they were never folded into round 3 or round 4, so they have
-   quietly stayed unverified while two rounds of other work passed around them. Checklist already
-   exists: https://claude.ai/artifact/5yNSs3qagi91T4TWP67fg7. This is the obvious round 5.
-3. **The polish pass** (UI in-place updates, self-maintaining boot check, the one explicit
+**Nothing from round 4 is outstanding — all nine checks passed.** The list below is what is left in
+the repo generally, in the order it is worth doing.
+
+1. **Verify the eight exploit fixes (F1-F8) — the largest genuinely outstanding thing in the repo,
+   and the obvious round 5.** Committed 2026-09-23 and never run; they were never folded into round 3
+   or round 4, so they have quietly stayed unverified while two rounds of other work passed around
+   them. The checklist already exists: https://claude.ai/artifact/5yNSs3qagi91T4TWP67fg7 — check it
+   for existing verdicts before re-testing anything, since notes are stored with the page.
+2. **The polish pass** (UI in-place updates, self-maintaining boot check, the one explicit
    disconnect) — agreed long ago, still not started.
-4. **The three other single-hop model lookups** named under the Scavenger head fix above
+3. **The three other single-hop model lookups** named under the Scavenger head fix above
    (`BaseLaserService.lua:145`, `DroneService.lua:119`, `ProjectileService.lua:237`), if they turn
    out to matter.
-5. **Raise `PLAYER_ATTACK_RANGE_SLACK` if enemy reach ever feels wrong again.** It passed at 2, but
+4. **Raise `PLAYER_ATTACK_RANGE_SLACK` if enemy reach ever feels wrong again.** It passed at 2, but
    2 is deliberately tight and it is the first number to reach for, not the per-type `ContactRange`
    values.
 
 
-### REPO STATE (2026-09-25, after the shop item retune)
+### REPO STATE (2026-09-25, after round 4 closed)
 
 - Branch `fix/audit-p0-p3`, tracking `origin/fix/audit-p0-p3`. Working tree CLEAN.
-- **63 commits unpushed.** The user has standing authorization to have work committed, but pushing
+- **64 commits unpushed.** The user has standing authorization to have work committed, but pushing
   is theirs to approve — ask before pushing, and don't open a PR unprompted.
 - **`RaidConfig.DevFirstNodeType = "Shop"` is a TESTING setting that is currently live.** It only
   applies to a player holding the dev shortcuts, so it cannot affect a real player, but it should
   be revisited (set to `nil`) before launch rather than discovered later. Same for anything else
   gated on `DevShortcuts.Active`.
-- **Checklists, newest first.** Round 4 (the live one, all eight passed, T7 pending):
+- **Checklists, newest first.** Round 4 (COMPLETE, all nine passed):
   https://claude.ai/artifact/PYwNs5vZ37zBZmsXH1psCT — round 3:
   https://claude.ai/artifact/JG4cBncHEgQY1QQGdZiUe3 — the exploit half (F1-F8):
   https://claude.ai/artifact/5yNSs3qagi91T4TWP67fg7. Verdicts and notes are stored WITH each page, so
