@@ -2754,9 +2754,20 @@ local function refreshHealthBar()
 	end
 end
 
+-- Held so the previous character's connection is dropped explicitly when a new one arrives. Roblox
+-- would collect it anyway with the destroyed Humanoid, so this is not a leak fix — it is the only
+-- per-character connection in this file that wasn't stored, and every other teardown here is
+-- explicit. Respawning is frequent (every raid death), so "it gets cleaned up eventually" is a
+-- claim worth not relying on.
+local healthConn: RBXScriptConnection? = nil
+
 local function bindHealth(character: Model)
+	if healthConn then
+		healthConn:Disconnect()
+		healthConn = nil
+	end
 	local humanoid = character:WaitForChild("Humanoid")
-	humanoid.HealthChanged:Connect(refreshHealthBar)
+	healthConn = humanoid.HealthChanged:Connect(refreshHealthBar)
 	refreshHealthBar()
 end
 
