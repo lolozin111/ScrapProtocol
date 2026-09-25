@@ -39,7 +39,7 @@ already made (numbers, mechanics, sequencing), not just vague direction.
 | Aim camera (over-the-shoulder while a gun is equipped) | **Built 2026-09-22, untested in Studio** — `AimCamera.client.lua`/`Shared/AimCameraConfig.lua` — see "Resuming after a context reset" |
 | Dash i-frames | **Built 2026-09-22** — `DashConfig.IFrameSeconds`, honoured in the raid damage path only (not mine lava, not outpost chip damage yet) — see "Stamina & dash" and "Resuming after a context reset" |
 | Mining cooldown bar (replaces the "Swinging too fast" toast) | **Built 2026-09-22** — `MiningCooldownBar.lua`, a frame-driven state machine — see "Resuming after a context reset" |
-| Adversarial exploit review (F1-F8) | **Done 2026-09-23** — 8 findings, all fixed same day, none Studio-verified yet — report: "Breaking Salvage Protocol", https://claude.ai/code/artifact/UkMW3M9KMJ8H7m8G1pYt7A — see "Resuming after a context reset" |
+| Adversarial exploit review (F1-F8) | **Done 2026-09-23; all 8 STUDIO-VERIFIED 2026-09-25** — 8 findings, all fixed same day, all twenty checks passed — report: "Breaking Salvage Protocol", https://claude.ai/code/artifact/UkMW3M9KMJ8H7m8G1pYt7A — see "Resuming after a context reset" |
 | Raid flow & end-of-run screen | **ALL 3 built 2026-09-23, none Studio-verified** — single-exit auto-advance with a travel wipe, `RunSummaryPanel.lua`'s staggered stats screen, and the notice/damage-number retrofit: four hand-rolled `roomBody` labels collapsed into one fading `noticeLine`, and bonus damage now MERGED into the hit that caused it (`feedbackBatch` in `CombatEncounterService`) so AimBot's top-up stops reading as a weak crit — see "Resuming after a context reset" |
 | PvP base invasion | **Recommended cut from v1** — see "Road to release" below |
 
@@ -3423,10 +3423,17 @@ T6, T7 — the last three added mid-round as the round itself produced fixes). N
 is unverified. The checklist and every note the user wrote on it:
 https://claude.ai/artifact/PYwNs5vZ37zBZmsXH1psCT
 
-**The largest outstanding thing in the repo is now the eight exploit fixes (F1-F8)**, committed
-2026-09-23 and never run — they were never folded into round 3 or round 4, so they have sat still
-while two rounds of other work passed around them. That is item 1 of "WHAT TO DO NEXT" and the
-obvious round 5; its checklist already exists.
+**ROUND 5 IS CLOSED: the eight exploit fixes (F1-F8) all passed in Studio, 2026-09-25.** The user
+ran the checklist (https://claude.ai/artifact/5yNSs3qagi91T4TWP67fg7) and reported every check
+passing. They had been committed 2026-09-23 and sat unverified while rounds 3 and 4 passed around
+them. **That backlog is now empty — nothing in the repo is committed-but-unverified any more,** for
+the first time since the audit began.
+
+**One correction, because this file said the opposite.** The F1-F8 checklist page keeps its ticks in
+the browser's `localStorage`, NOT in the artifact's database — so they persist for the user and are
+INVISIBLE to a session that reads the page. "Verdicts and notes are stored WITH each page" is true
+only of a page built on the `db` capability. Check which kind a page is before trusting a reset to
+recover verdicts from it; otherwise the honest move is to ASK the user, which is what happened here.
 
 Two things this round settled that are worth reading before touching the adjacent code:
 
@@ -3666,22 +3673,53 @@ where gear competes and ignoring the three where it cannot. Do not pull the Lv5 
 reasoning alone. If a real problem does appear, the capstones are still the right lever rather than
 the per-level ramps, since the ramps are what carry the early run.
 
+### FIFTH SESSION, 2026-09-25 — THE EXPLOIT FIXES PASSED, AND THE BOOT CHECK NEARLY STOPPED THEM
+
+**All twenty checks on the F1-F8 list passed** (https://claude.ai/artifact/5yNSs3qagi91T4TWP67fg7),
+reported by the user. This closes the last committed-but-unverified work in the repo. Nothing here
+needed a fix afterwards — the round found one problem, and it found it *before* Studio.
+
+**The boot check was about to cry wolf, and check 1 says to STOP when it does.** `BaseLaserService`
+is genuinely required at `Main.server.lua:23`, but it was missing from the HAND-TYPED copy of the
+require list that the boot check compares the `Services/` folder against — so every boot warned that
+a working feature (Tier 4+ base security lasers) was never required. Check 1 of the checklist reads
+"no warning about unloaded modules" and tells the tester to stop if there is one. Added the missing
+name; swept all of `Services/` against both lists first, and it was the only module in that state.
+
+**This is the polish pass's item 2 in miniature, and it makes that item's argument rather than
+retiring it.** The fix removes today's false alarm and changes nothing about the mechanism: a list
+someone maintains by hand, whose failure is ASYMMETRIC. A name in the copy with no matching
+`require` produces SILENCE — which is precisely the hang-forever bug the check exists to catch. The
+loud half has now drifted twice; the quiet half cannot be observed at all. Item 2 (record what
+actually loaded, e.g. a `load(name)` helper) is still the real answer and is still unstarted.
+
+**Five of the eight were pre-cleared statically, which is worth repeating next round.** F1's
+`NodeConfig.InteractDistance = 60`, F4's four caps, F7's shared `"MineSwing"` key across both mining
+handlers, F8's `ResetBlockThreshold = 15000`, and F3's `PlayerVitals` presence in the correct
+(transitive) half of the boot check are all just "did the constant land" — one batched grep answers
+them and no Studio time is spent. What that leaves is the behavioural half, which is the part worth
+a human anyway: the fourteen rerouted HP write sites and the two new refusals.
+
+**The checklist pages do NOT hand their verdicts back to a session.** All three store ticks in
+`localStorage`. This file claimed otherwise and the claim has been corrected in two places. The
+practical consequence: a reset must ASK the user how a round went, and cannot read it off the page.
+Build the next checklist on the `db` capability if that matters — the content of these pages is
+fine, it is only the storage that does not do what the notes promised.
+
 ### WHAT TO DO NEXT
 
-**Nothing from round 4 is outstanding — all nine checks passed.** The list below is what is left in
-the repo generally, in the order it is worth doing.
+**Nothing from round 4 or round 5 is outstanding** — all nine checks passed, then all twenty did.
+There is no committed-but-unverified work left in the repo. The list below is what remains
+generally, in the order it is worth doing.
 
-1. **Verify the eight exploit fixes (F1-F8) — the largest genuinely outstanding thing in the repo,
-   and the obvious round 5.** Committed 2026-09-23 and never run; they were never folded into round 3
-   or round 4, so they have quietly stayed unverified while two rounds of other work passed around
-   them. The checklist already exists: https://claude.ai/artifact/5yNSs3qagi91T4TWP67fg7 — check it
-   for existing verdicts before re-testing anything, since notes are stored with the page.
-2. **The polish pass** (UI in-place updates, self-maintaining boot check, the one explicit
-   disconnect) — agreed long ago, still not started.
-3. **The three other single-hop model lookups** named under the Scavenger head fix above
+1. **The polish pass** (UI in-place updates, self-maintaining boot check, the one explicit
+   disconnect) — agreed 2026-09-23, scoped in full further down, still not started. It inherits the
+   top slot by default now that the exploit backlog is closed, not because anyone re-argued for it.
+   One of its three items got SMALLER on 2026-09-25 without getting easier — see "FIFTH SESSION" above.
+2. **The three other single-hop model lookups** named under the Scavenger head fix above
    (`BaseLaserService.lua:145`, `DroneService.lua:119`, `ProjectileService.lua:237`), if they turn
    out to matter.
-4. **Raise `PLAYER_ATTACK_RANGE_SLACK` if enemy reach ever feels wrong again.** It passed at 2, but
+3. **Raise `PLAYER_ATTACK_RANGE_SLACK` if enemy reach ever feels wrong again.** It passed at 2, but
    2 is deliberately tight and it is the first number to reach for, not the per-type `ContactRange`
    values.
 
@@ -3689,7 +3727,7 @@ the repo generally, in the order it is worth doing.
 ### REPO STATE (2026-09-25, after round 4 closed)
 
 - Branch `fix/audit-p0-p3`, tracking `origin/fix/audit-p0-p3`. Working tree CLEAN.
-- **64 commits unpushed.** The user has standing authorization to have work committed, but pushing
+- **66 commits unpushed.** The user has standing authorization to have work committed, but pushing
   is theirs to approve — ask before pushing, and don't open a PR unprompted.
 - **`RaidConfig.DevFirstNodeType = "Shop"` is a TESTING setting that is currently live.** It only
   applies to a player holding the dev shortcuts, so it cannot affect a real player, but it should
@@ -3698,16 +3736,17 @@ the repo generally, in the order it is worth doing.
 - **Checklists, newest first.** Round 4 (COMPLETE, all nine passed):
   https://claude.ai/artifact/PYwNs5vZ37zBZmsXH1psCT — round 3:
   https://claude.ai/artifact/JG4cBncHEgQY1QQGdZiUe3 — the exploit half (F1-F8):
-  https://claude.ai/artifact/5yNSs3qagi91T4TWP67fg7. Verdicts and notes are stored WITH each page, so
-  they survive a context reset and can be re-read rather than re-asked. That property is the whole
-  reason these exist as pages instead of as conversation.
+  https://claude.ai/artifact/5yNSs3qagi91T4TWP67fg7 (round 5, COMPLETE, all twenty passed). These
+  pages exist so a round's verdicts outlive the conversation — but see the correction at the top of
+  this section: only a page built on the `db` capability actually reads its ticks back to a session.
+  All three above use `localStorage`, so their verdicts survive for the USER and a reset must ASK
+  rather than read.
 
-**Still committed and unverified: the eight exploit fixes (F1-F8), and only those.** See the STEP 0
-record further down, and the checklist at https://claude.ai/artifact/5yNSs3qagi91T4TWP67fg7. The
-paragraph that used to sit here said NOTHING had been through Studio — that was true when it was
-written and is now wrong: rounds 3 and 4 both happened and everything they covered passed. The
-exploit half was never folded into either round, which is why it is still outstanding, and it is the
-obvious candidate for round 5 once T7 is closed.
+**Nothing is committed-and-unverified.** The eight exploit fixes were the last of it and they passed
+on 2026-09-25. The paragraph that used to sit here tracked that backlog through three revisions —
+first "nothing has been through Studio", then "rounds 3 and 4 passed but the exploit half didn't",
+now empty. Keep the habit that emptied it: a round is a checklist page, run by the user, closed in
+this file.
 
 **Fixed after the first Studio test round (2026-09-23):**
 
@@ -3973,8 +4012,9 @@ double-pay; combat rooms can't be re-entered for loot; `SellOre`/`StartSmelt` ar
 complete; every activity acquires and releases on every exit path; `RequestFireWeapon` is sound;
 admin is UserId-based.
 
-**Nothing in this pass is Studio-verified yet.** There is no test suite; it needs a walkthrough of
-`README.md` section 4 before it's more than committed. It was also inserted AHEAD of the three-task
+**ALL EIGHT ARE NOW STUDIO-VERIFIED (round 5, 2026-09-25) — every check on the checklist passed.**
+The sentence here used to read "Nothing in this pass is Studio-verified yet", and stayed true
+through two days and two unrelated rounds before round 5 finally ran it. It was also inserted AHEAD of the three-task
 polish pass below, not in place of it — that pass was agreed and scoped first, on the same day, and
 is still exactly where it was left.
 
