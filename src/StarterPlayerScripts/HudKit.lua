@@ -262,38 +262,184 @@ local toastGui = HudKit.new("ScreenGui", {
 	Parent = LocalPlayer:WaitForChild("PlayerGui"),
 })
 
-local toastLabel = HudKit.new("TextLabel", {
-	Name = "Toast",
-	BackgroundColor3 = COLOR.Panel,
-	Position = UDim2.new(0.5, 0, 0, 70),
-	AnchorPoint = Vector2.new(0.5, 0),
-	Size = UDim2.new(0, 420, 0, 0),
-	AutomaticSize = Enum.AutomaticSize.Y,
-	Visible = false,
-	Font = Enum.Font.SourceSans,
-	Text = "",
-	TextColor3 = COLOR.Text,
-	TextSize = 16,
-	TextWrapped = true,
-	Parent = toastGui,
-}, { HudKit.corner(6), HudKit.stroke(), HudKit.new("UIPadding", {
-	PaddingTop = UDim.new(0, 10), PaddingBottom = UDim.new(0, 10),
-	PaddingLeft = UDim.new(0, 14), PaddingRight = UDim.new(0, 14),
-}) })
+-- The toast was the last popup in the game still drawing itself as a plain rounded rectangle that
+-- snapped on and snapped off. Everything else that appears by itself — the boss bar, the mining
+-- cooldown bar, the enemy alarm — had picked up eased motion and, in the boss bar's case, the
+-- angular `plate` shell, so a sell confirmation looked like it came from a different game than the
+-- fight happening behind it. Toasts now use the same plate + accentCap language as every panel.
+--
+-- `makeToast` is a FACTORY because there were two toasts: this one and a near-identical copy in
+-- RaidClient with its own padding, its own corner radius and its own 4s default. That is the exact
+-- drift this codebase keeps paying for, so the raid toast is now a second call to this function
+-- with a different position rather than a second implementation. Both keep the positions they had
+-- — top-centre here, bottom-centre in a raid, which is deliberate: top-centre is the room panel's
+-- spot, and the boss bar's.
+local TOAST_WIDTH = 420
+local TOAST_SLIDE = 10 -- px it travels on the way in and back out
+local TOAST_ENTER_INFO = TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+local TOAST_EXIT_SECONDS = 0.28
+local TOAST_EXIT_INFO = TweenInfo.new(TOAST_EXIT_SECONDS, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
 
--- The token guard means a newer toast always wins, rather than an older one's timer hiding it early.
-local toastToken = 0
+-- The accent cap is the one part that changes per toast, so a rejection reads as a rejection BEFORE
+-- the text is. Nothing at the call sites changed to get this: showFailure already knew it was a
+-- failure and was throwing that fact away.
+local TOAST_ACCENT = {
+	info = COLOR.Accent,
+	good = COLOR.Good,
+	bad = COLOR.Bad,
+}
+
+export type ToastOptions = {
+	parent: Instance,
+	position: UDim2,
+	anchorPoint: Vector2?,
+	width: number?,
+	defaultSeconds: number?,
+}
+
+-- Returns `show(text, seconds, kind)`. The instances are built on the FIRST show, not here, and
+-- they have to be: HudKit.plate is defined ~1000 lines below this point, so a toast constructed at
+-- module load would have no plate to call. Deferring to first use costs one nil check, and a
+-- screen that never toasts never builds one.
+function HudKit.makeToast(opts)
+	local width = opts.width or TOAST_WIDTH
+	local anchorPoint = opts.anchorPoint or Vector2.new(0.5, 0)
+	local restPosition = opts.position
+	-- Enters from SLIDE px above its resting spot and leaves the same way, whether it sits at the
+	-- top or the bottom of the screen. Deriving it from the rest position means a caller never has
+	-- to specify two positions that must agree.
+	local offPosition = restPosition - UDim2.fromOffset(0, TOAST_SLIDE)
+
+	local root = nil
+	local label = nil
+	local cap = nil
+	local token = 0
+	local tween = nil
+
+	local function build()
+		-- A CanvasGroup so the whole toast — shell bevel, surface, accent cap and text — fades on
+		-- ONE GroupTransparency tween. The alternative is four transparencies tweened in lockstep
+		-- and trusted to stay in lockstep, which is how a bevel outlives the text it framed.
+		local newRoot = HudKit.new("CanvasGroup", {
+			Name = "Toast",
+			AnchorPoint = anchorPoint,
+			Position = restPosition,
+			Size = UDim2.new(0, width, 0, 0),
+			AutomaticSize = Enum.AutomaticSize.Y,
+			BackgroundTransparency = 1,
+			GroupTransparency = 1,
+			Visible = false,
+			Parent = opts.parent,
+		})
+
+		-- Y only: width is fixed, so a long message wraps instead of growing a one-line toast off
+		-- both edges of the screen.
+		local surface = HudKit.plate({
+			Size = UDim2.new(1, 0, 0, 0),
+			automaticSize = true,
+			Parent = newRoot,
+		})
+
+		local newLabel = HudKit.new("TextLabel", {
+			Name = "Text",
+			BackgroundTransparency = 1,
+			Size = UDim2.new(1, 0, 0, 0),
+			AutomaticSize = Enum.AutomaticSize.Y,
+			Font = HudKit.FONT.Body,
+			Text = "",
+			TextColor3 = COLOR.Text,
+			TextSize = HudKit.TEXTSIZE.Body,
+			TextWrapped = true,
+			Parent = surface,
+		}, { HudKit.new("UIPadding", {
+			-- Top clears the 4px accent cap, which draws OVER this padding rather than displacing
+			-- the text. A UIPadding on the surface itself would push the cap down off the top edge
+			-- too, since UIPadding applies to every child including the cap.
+			PaddingTop = UDim.new(0, 4 + HudKit.SPACE.M),
+			PaddingBottom = UDim.new(0, HudKit.SPACE.M),
+			PaddingLeft = UDim.new(0, HudKit.SPACE.L),
+			PaddingRight = UDim.new(0, HudKit.SPACE.L),
+		}) })
+
+		-- Created after the label so it paints over the label's top padding under
+		-- ZIndexBehavior.Sibling; ZIndex set too, rather than relying on child order alone.
+		local newCap = HudKit.accentCap(surface)
+		newCap.ZIndex = 2
+
+		root, label, cap = newRoot, newLabel, newCap
+		return newRoot, newLabel, newCap
+	end
+
+	return function(text: string, seconds: number?, kind: string?)
+		local thisRoot, thisLabel, thisCap
+		if root then
+			thisRoot, thisLabel, thisCap = root, label, cap
+		else
+			thisRoot, thisLabel, thisCap = build()
+		end
+
+		-- The token guard means a newer toast always wins, rather than an older one's timer hiding
+		-- it early.
+		token += 1
+		local myToken = token
+
+		thisLabel.Text = text
+		thisCap.BackgroundColor3 = TOAST_ACCENT[kind or "info"] or COLOR.Accent
+
+		-- Cancel-then-Play, the same rule HudKit.button follows: a second toast arriving mid-flight
+		-- must REPLACE the running tween, not race it. Two tweens on one GroupTransparency is how a
+		-- toast ends up stuck half-faded.
+		if tween then
+			tween:Cancel()
+		end
+		thisRoot.Visible = true
+		thisRoot.GroupTransparency = 1
+		thisRoot.Position = offPosition
+		tween = TweenService:Create(thisRoot, TOAST_ENTER_INFO, {
+			GroupTransparency = 0,
+			Position = restPosition,
+		})
+		tween:Play()
+
+		task.delay(seconds or opts.defaultSeconds or 3.5, function()
+			if token ~= myToken then
+				return
+			end
+			if tween then
+				tween:Cancel()
+			end
+			tween = TweenService:Create(thisRoot, TOAST_EXIT_INFO, {
+				GroupTransparency = 1,
+				Position = offPosition,
+			})
+			tween:Play()
+			-- Hidden only once the fade has actually finished, and only if no newer toast claimed
+			-- the slot meanwhile — otherwise a toast fired during the fade-out is hidden by this
+			-- timer a quarter-second after it appeared.
+			task.delay(TOAST_EXIT_SECONDS, function()
+				if token == myToken then
+					thisRoot.Visible = false
+				end
+			end)
+		end)
+	end
+end
+
+local defaultToast = nil
+
+local function showToast(text: string, seconds: number?, kind: string?)
+	if not defaultToast then
+		defaultToast = HudKit.makeToast({
+			parent = toastGui,
+			position = UDim2.new(0.5, 0, 0, 70),
+			anchorPoint = Vector2.new(0.5, 0),
+		})
+	end
+	defaultToast(text, seconds, kind)
+end
 
 function HudKit.showToast(text: string, seconds: number?)
-	toastToken += 1
-	local myToken = toastToken
-	toastLabel.Text = text
-	toastLabel.Visible = true
-	task.delay(seconds or 3.5, function()
-		if toastToken == myToken then
-			toastLabel.Visible = false
-		end
-	end)
+	showToast(text, seconds, "info")
 end
 
 -- Use for every rejected action instead of a bare warn(). Keeps the Output line (useful in Studio,
@@ -302,7 +448,13 @@ end
 function HudKit.showFailure(context: string, reason: string?)
 	local text = reason or "That didn't work."
 	warn(("[HUD] %s: %s"):format(context, text))
-	HudKit.showToast(text)
+	showToast(text, nil, "bad")
+end
+
+-- Same toast, green cap. Additive: no existing call site has to change, and a caller that wants a
+-- success to LOOK like one now has something to reach for other than showToast.
+function HudKit.showSuccess(text: string, seconds: number?)
+	showToast(text, seconds, "good")
 end
 
 ----------------------------------------------------------------------

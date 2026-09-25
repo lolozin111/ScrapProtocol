@@ -417,37 +417,19 @@ end
 -- fight, BossBar's too), and a toast firing mid-status-change used to land directly on top of
 -- whichever of those was showing. ~22% up from the bottom keeps it clear of both without needing
 -- to know either panel's exact height.
-local toastLabel = new("TextLabel", {
-	Name = "Toast",
-	BackgroundColor3 = COLOR.Panel,
-	Position = UDim2.new(0.5, 0, 0.78, 0),
-	AnchorPoint = Vector2.new(0.5, 1),
-	Size = UDim2.new(0, 420, 0, 0),
-	AutomaticSize = Enum.AutomaticSize.Y,
-	Visible = false,
-	Font = Hud.FONT.Body,
-	Text = "",
-	TextColor3 = COLOR.Text,
-	TextSize = Hud.TEXTSIZE.Body,
-	TextWrapped = true,
-	Parent = screenGui,
-}, { corner(Hud.RADIUS.Panel), stroke(), new("UIPadding", {
-	PaddingTop = UDim.new(0, Hud.SPACE.S), PaddingBottom = UDim.new(0, Hud.SPACE.S),
-	PaddingLeft = UDim.new(0, Hud.SPACE.M + 2), PaddingRight = UDim.new(0, Hud.SPACE.M + 2),
-}) })
-
-local toastToken = 0
-local function showToast(text: string, seconds: number?)
-	toastToken += 1
-	local myToken = toastToken
-	toastLabel.Text = text
-	toastLabel.Visible = true
-	task.delay(seconds or 4, function()
-		if toastToken == myToken then
-			toastLabel.Visible = false
-		end
-	end)
-end
+-- One call to HudKit's shared toast factory, instead of the near-identical copy that used to live
+-- here with its own padding, its own corner radius and its own default duration. Same plate shell,
+-- same eased enter and exit, same accent-cap colouring as every other toast in the game now.
+--
+-- Position and the 4s default are the only raid-specific parts, and they are all this ever needed
+-- to own. The returned function takes (text, seconds) exactly as the local one did, so none of the
+-- call sites below moved.
+local showToast = Hud.makeToast({
+	parent = screenGui,
+	position = UDim2.new(0.5, 0, 0.78, 0),
+	anchorPoint = Vector2.new(0.5, 1),
+	defaultSeconds = 4,
+})
 
 ----------------------------------------------------------------------
 -- "Go Back To Base" button (top-center) — a renamed, repositioned Abandon Raid: visible ONLY while
