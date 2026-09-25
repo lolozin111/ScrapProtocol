@@ -3840,6 +3840,62 @@ yet in the repo or Studio. When it lands, the existing pattern applies — a con
 a placeholder fallback, the way `ItemIconConfig`/`UiIconConfig`/`SoundConfig` all work — rather than
 referencing particles by name from service logic.
 
+### THE AGREED PLAN, 2026-09-25 (end of session) — READ THIS FIRST AFTER A RESET
+
+Two companion pages hold it, and they are the fastest way back in:
+
+- **The Next Five Jobs** — the plan, with real `file:line` targets:
+  https://claude.ai/artifact/Ni5SMuqXecy9Y6AbkM6xnw
+- **Decoder Reveal Directions** — three drawn directions for the case-opening reveal:
+  https://claude.ai/artifact/BtKK6rtg7X5dq4GfxH6oQv
+
+**The user's own ordering, verbatim:** mods countable → decoder rework (sketches first) → sound
+hookup summary → the chest fix → the ore pickup popup. **My recommended ordering differs and is on
+the plan page:** the chest first, because it is silently destroying loot while the rest is polish.
+Confirm with the user before reordering their list.
+
+**DECIDED: mods become countable.** "built once, use once per gun, so if u want u gotta have
+multiples to fit different guns, so have them have a counter." The spec is on the plan page; the
+facts behind it, which took a scout pass to establish:
+
+- `CraftedMods[key] = true` today (`DataService.lua:228`), written in exactly ONE place
+  (`CraftingService.lua:137`), and crafting REFUSES a duplicate (`:98`) — which is why a second copy
+  cannot currently exist. That rejection has to go for any of this to work.
+- **`backfillMissingFields` will NOT convert `true` to `1`.** It fills missing fields only. This
+  needs a one-time self-guarding migration on the `migrateLegacyWeapons` pattern
+  (`DataService.lua:271`) or every existing save gets a mod count of `true`.
+- **There is no reverse index.** `EquippedMods` is `itemKey -> slot -> modKey`, so "how many copies
+  of this mod are in use" must be counted by walking it. One shared helper — the server gate and the
+  UI badge must not disagree.
+- `WeldingPanel.lua:1395` does an explicit `== true` and breaks the moment the value is a number.
+  `ModPicker.lua:30` iterates owned mods and should grey out ones whose copies are all fitted.
+- **`ModConfig.ApplyMods` needs no change** — it reads modKey strings out of the slots table and
+  never touches `CraftedMods`, so the stat maths is untouched.
+- The Welding panel ALREADY badges a mod with how many slots carry it; that becomes `fitted/owned`.
+
+**FOUR QUESTIONS OUTSTANDING, all on the plan page.** Do not guess at these:
+
+1. **Which decoder direction** (01 Decryption / 02 Shatter / 03 Salvage Rig). Blocks the rebuild.
+   My pick is 01 and the reasoning is on the sketches page.
+2. **Fitting a mod that is already on another gun — refuse or auto-move?** Building REFUSAL unless
+   told otherwise: a silent stat loss on a weapon the player is not looking at is precisely the
+   failure mode this project keeps hunting.
+3. **Should two copies of one mod stack in one gun?** Refused today because it doubled a multiplier
+   for free; with counts it stops being free and becomes a real choice. I would allow it.
+4. **A pity counter for cases?** None exists. Blackline is the only Mythical source at 8%. Optional,
+   changes the economy, the user's call.
+
+**The decoder facts worth not re-deriving.** Decoding is a real-time job of 120s (Scavenged) to 900s
+(Blackline), so the reveal is the payoff for a wait, not a slot pull — which is the argument against
+the current CS:GO-style reel (`CasePanel.lua:419`, `drawReel`). Four cases; rarity order
+Common/Rare/Epic/Legendary/Mythical; **Blackline is the only Mythical source in the game (8%)**;
+duplicates of unique rewards refund half the case cost. All four case icons and every item icon are
+uploaded except `CopperOre`, so a rebuild needs no new art.
+
+**ASSET: the user has a VFX pack** for attacks and abilities, not yet in the repo. When it lands it
+should follow the config-with-placeholder-fallback pattern (`ItemIconConfig`/`UiIconConfig`/
+`SoundConfig`), not be referenced by name from service logic.
+
 ### WHAT TO DO NEXT
 
 **Nothing from round 4 or round 5 is outstanding** — all nine checks passed, then all twenty did.
@@ -3871,7 +3927,7 @@ generally, in the order it is worth doing.
 ### REPO STATE (2026-09-25, after round 4 closed)
 
 - Branch `fix/audit-p0-p3`, tracking `origin/fix/audit-p0-p3`. Working tree CLEAN.
-- **76 commits unpushed.** The user has standing authorization to have work committed, but pushing
+- **77 commits unpushed.** The user has standing authorization to have work committed, but pushing
   is theirs to approve — ask before pushing, and don't open a PR unprompted.
 - **`RaidConfig.DevFirstNodeType = "Shop"` is a TESTING setting that is currently live.** It only
   applies to a player holding the dev shortcuts, so it cannot affect a real player, but it should
