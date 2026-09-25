@@ -28,6 +28,9 @@ local CraftingRecipes = require(ReplicatedStorage.Shared.CraftingRecipes)
 local RaidEnergyConfig = require(ReplicatedStorage.Shared.RaidEnergyConfig)
 local UiIconConfig = require(ReplicatedStorage.Shared.UiIconConfig)
 local ItemIconConfig = require(ReplicatedStorage.Shared.ItemIconConfig)
+-- Sibling module, and the dependency runs ONE WAY: Sfx must never require HudKit back, or this is
+-- a cycle. That is why Sfx parents its 2D sounds to SoundService rather than to Hud.screenGui.
+local Sfx = require(script.Parent.Sfx)
 local Wallet = require(ReplicatedStorage.Shared.Wallet)
 
 local LocalPlayer = Players.LocalPlayer
@@ -289,6 +292,14 @@ local TOAST_ACCENT = {
 	bad = COLOR.Bad,
 }
 
+-- Keyed on the same `kind`, so the sound and the cap colour can never disagree about what sort of
+-- message this is. Silent until the IDs are filled in (SoundConfig), like all audio here.
+local TOAST_SOUND = {
+	info = "ToastInfo",
+	good = "ToastGood",
+	bad = "ToastBad",
+}
+
 export type ToastOptions = {
 	parent: Instance,
 	position: UDim2,
@@ -385,6 +396,7 @@ function HudKit.makeToast(opts)
 
 		thisLabel.Text = text
 		thisCap.BackgroundColor3 = TOAST_ACCENT[kind or "info"] or COLOR.Accent
+		Sfx.play(TOAST_SOUND[kind or "info"] or "ToastInfo")
 
 		-- Cancel-then-Play, the same rule HudKit.button follows: a second toast arriving mid-flight
 		-- must REPLACE the running tween, not race it. Two tweens on one GroupTransparency is how a
@@ -1315,6 +1327,11 @@ function HudKit.button(opts: HudButtonOptions): TextButton
 		tween({ Size = hoverSize })
 		tweenFill({ [fillProperty] = state.hoverColor })
 		swapIcon(iconHoverImage)
+		-- Hover audio lives here rather than at any call site: every button in the game is built by
+		-- this function, so one line covers all of them and none can be missed. Kept very quiet in
+		-- SoundConfig — a hover fires whenever the mouse crosses anything, and at click volume it
+		-- would be the most irritating sound in the game.
+		Sfx.play("ButtonHover")
 	end)
 	btn.MouseLeave:Connect(function()
 		tween({ Size = restSize, Position = restPos })
@@ -1324,6 +1341,10 @@ function HudKit.button(opts: HudButtonOptions): TextButton
 	btn.MouseButton1Down:Connect(function()
 		tween({ Position = pressPos })
 		tweenFill({ [fillProperty] = state.pressColor })
+		-- On DOWN, not on Click: the press is the moment the player commits, and a click sound that
+		-- waits for the button-up reads as late even though it is only milliseconds behind. It also
+		-- means a press that slides off the button still gave feedback that it registered.
+		Sfx.play("ButtonClick")
 	end)
 	btn.MouseButton1Up:Connect(function()
 		tween({ Position = restPos, Size = hoverSize })

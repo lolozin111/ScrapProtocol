@@ -29,6 +29,7 @@ local RunService = game:GetService("RunService")
 local OreConfig = require(ReplicatedStorage.Shared.OreConfig)
 local ToolModConfig = require(ReplicatedStorage.Shared.ToolModConfig)
 local Hud = require(script.Parent.HudKit)
+local Sfx = require(script.Parent.Sfx)
 
 local LocalPlayer = Players.LocalPlayer
 
@@ -175,6 +176,13 @@ function MiningCooldownBar.Start()
 	if seconds <= 0 then
 		return
 	end
+
+	-- The swing sound hangs off the same guard as the bar, which is exactly where it wants to be:
+	-- Start() is called on every click but no-ops while a bar is running, so a player mashing the
+	-- button gets ONE swing sound per actual swing instead of one per click. Wiring this to the
+	-- click itself would machine-gun it. SoundConfig gives MineSwing a pitch range too, so the
+	-- repeats do not read as one sample retriggered.
+	Sfx.play("MineSwing")
 
 	barActive = true
 	duration = seconds
