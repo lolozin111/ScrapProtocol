@@ -112,7 +112,7 @@ local function fireOnce()
 	end
 
 	-- RunFireRateMult is a Player attribute RunBuffService stamps for the Salvage Run shop's Rapid
-	-- Feeder perk (and its Lv4 opening burst / Lv5 kill frenzy) — read fresh at fire time, not cached,
+	-- Feeder perk (and its Lv3+ opening burst / Lv5 kill frenzy) — read fresh at fire time, not cached,
 	-- since it can change mid-fight. Neutral (1) outside a raid run, per RunBuffService's own contract.
 	local fireRateMult = LocalPlayer:GetAttribute("RunFireRateMult") or 1
 	local cooldown = 1 / math.max(getEquippedFireRate() * fireRateMult, 0.01)

@@ -67,9 +67,14 @@ RunBuffConfig.Slots = 4 -- perks + gear share this pool; Escape items take none 
 RunBuffConfig.SellRefund = 0.5 -- selling a slotted item back refunds 50% of total Scrap paid for it
 
 -- Separate from the Support Core drone's raid heal cap (15%/room, 75%/map) — the user's call, Round 2.
-RunBuffConfig.ShopHealCap = { PerRoom = 0.25, PerMap = 1.0 }
+-- Raised from PerRoom 0.25 / PerMap 1.0 on 2026-09-25, and it had to move for the Nano Repair
+-- retune to mean anything: that perk's Lv5 total was 5% x 5 levels = EXACTLY the old 25% room
+-- ceiling, so its capstone was already being clipped and lifting the perk alone would have been an
+-- inert change. The trade is real and deliberate -- a more generous shop-heal budget makes a raid
+-- Heal ROOM slightly less precious, which is the thing this cap was introduced to protect.
+RunBuffConfig.ShopHealCap = { PerRoom = 0.35, PerMap = 1.6 }
 
-RunBuffConfig.CritMultiplier = 1.5 -- damage multiplier on a crit proc (Overclock Chip's Lv4/Lv5)
+RunBuffConfig.CritMultiplier = 1.5 -- damage multiplier on a crit proc (Overclock Chip, Lv3 and up)
 
 ----------------------------------------------------------------------
 -- Items — 9 levelled perks/gear + 2 Escape items. Shape:
@@ -96,9 +101,10 @@ RunBuffConfig.Items = {
 		Icon = "RunOverclockChip",
 		Rarities = RunBuffConfig.RarityOrder,
 		Price = { Rare = 100, Epic = 140, Legendary = 190 },
-		PerLevel = { DamagePct = 0.08 }, -- +8% damage per level (Lv3 Rare cap = +24%, matches the Card.dc.html mock)
-		Lv4 = { CritChance = 0.05 }, -- +5% flat crit chance, Epic+
-		Lv5 = { GuaranteedCritEvery = 10 }, -- every 10th shot is a guaranteed crit, Legendary only
+		PerLevel = { DamagePct = 0.10 }, -- +10% damage per level (Lv5 = +50%)
+		Lv3 = { CritChance = 0.05 }, -- +5% flat crit, the RARE cap's step (crit used to start at Epic)
+		Lv4 = { CritChance = 0.10 }, -- +10% flat crit, the Epic-cap step
+		Lv5 = { CritChance = 0.15, GuaranteedCritEvery = 5 }, -- +15% crit AND every 5th shot crits outright
 		Card = { Label = "Damage", StatKey = "DamagePct", Format = "Percent" },
 	},
 
@@ -108,9 +114,11 @@ RunBuffConfig.Items = {
 		Icon = "RunRapidFeeder",
 		Rarities = RunBuffConfig.RarityOrder,
 		Price = { Rare = 100, Epic = 140, Legendary = 190 },
-		PerLevel = { FireRatePct = 0.07 }, -- +7% fire rate per level
-		Lv4 = { OpeningBurstPct = 0.30, OpeningBurstSeconds = 3 }, -- +30% fire rate for the first 3s of a fight
-		Lv5 = { KillFrenzyPct = 0.25, KillFrenzySeconds = 2 }, -- each kill: +25% fire rate for 2s
+		PerLevel = { FireRatePct = 0.09 }, -- +9% fire rate per level (Lv5 = +45%)
+		Lv3 = { OpeningBurstPct = 0.20, OpeningBurstSeconds = 3 }, -- the RARE cap's step
+		Lv4 = { OpeningBurstPct = 0.30, OpeningBurstSeconds = 3 }, -- +30% for the first 3s of a fight
+		-- The Legendary capstone: a bigger opening burst AND a kill-fed frenzy that chains through a room.
+		Lv5 = { OpeningBurstPct = 0.45, OpeningBurstSeconds = 4, KillFrenzyPct = 0.40, KillFrenzySeconds = 3 },
 		Card = { Label = "Fire Rate", StatKey = "FireRatePct", Format = "Percent" },
 	},
 
@@ -120,9 +128,12 @@ RunBuffConfig.Items = {
 		Icon = "RunPlatedVest",
 		Rarities = RunBuffConfig.RarityOrder,
 		Price = { Rare = 120, Epic = 190, Legendary = 260 },
-		PerLevel = { MaxHpPct = 0.10 }, -- +10% max HP per level
-		Lv4 = { EliteBossDamageTakenPct = -0.10 }, -- -10% damage taken from elites/bosses
-		Lv5 = { LowHpShieldThreshold = 0.25, LowHpShieldPct = 0.20 }, -- once/room, dropping under 25% HP grants a shield worth 20% max HP
+		PerLevel = { MaxHpPct = 0.12 }, -- +12% max HP per level (Lv5 = +60%)
+		Lv3 = { EliteBossDamageTakenPct = -0.10 }, -- the RARE cap's step
+		Lv4 = { EliteBossDamageTakenPct = -0.15 }, -- -15% damage taken from elites/bosses
+		-- The Legendary capstone: a quarter less damage from the things that actually kill you, and a
+		-- once-per-room bail-out that triggers earlier and gives more.
+		Lv5 = { EliteBossDamageTakenPct = -0.25, LowHpShieldThreshold = 0.30, LowHpShieldPct = 0.35 },
 		Card = { Label = "Max HP", StatKey = "MaxHpPct", Format = "Percent" },
 	},
 
@@ -132,9 +143,14 @@ RunBuffConfig.Items = {
 		Icon = "RunNanoRepair",
 		Rarities = RunBuffConfig.RarityOrder,
 		Price = { Rare = 100, Epic = 140, Legendary = 190 },
-		PerLevel = { RoomClearHealPct = 0.05 }, -- heal 5% max HP per level on room clear (subject to ShopHealCap)
-		Lv4 = { KillHealPct = 0.01 }, -- kills also heal 1% max HP (same cap)
-		Lv5 = { OverhealToShield = true }, -- healing past full HP becomes a small shield instead of being wasted
+		-- 6% not 5%: at the OLD 5% the Lv5 total was 25%, which is EXACTLY ShopHealCap.PerRoom's old
+		-- ceiling -- the capstone was already being clipped, so raising this alone would have changed
+		-- nothing. The cap moved with it (see RunBuffConfig.ShopHealCap).
+		PerLevel = { RoomClearHealPct = 0.06 }, -- heal 6% max HP per level on room clear (Lv5 = 30%, under the 35% room cap)
+		Lv3 = { KillHealPct = 0.01 }, -- kills also heal, the RARE cap's step
+		Lv4 = { KillHealPct = 0.015 }, -- 1.5% per kill, the Epic-cap step (same cap)
+		-- The Legendary capstone: kills heal more, and healing past full stops being wasted at all.
+		Lv5 = { KillHealPct = 0.025, OverhealToShield = true },
 		Card = { Label = "Room Clear Heal", StatKey = "RoomClearHealPct", Format = "Percent" },
 	},
 
@@ -144,9 +160,12 @@ RunBuffConfig.Items = {
 		Icon = "RunKineticBarrier",
 		Rarities = RunBuffConfig.RarityOrder,
 		Price = { Rare = 110, Epic = 150, Legendary = 200 },
-		PerLevel = { ShieldPctOfMaxHp = 0.08 }, -- shield worth 8% max HP per level, refills each room
-		Lv4 = { RefillAfterSeconds = 8 }, -- also refills mid-room after 8s without taking damage
-		Lv5 = { BreakKnockbackRadius = 10, BreakKnockbackForce = 40 }, -- breaking the shield knocks nearby enemies back
+		PerLevel = { ShieldPctOfMaxHp = 0.10 }, -- shield worth 10% max HP per level, refills each room (Lv5 = 50%)
+		Lv3 = { RefillAfterSeconds = 10 }, -- the RARE cap's step: it also refills mid-room
+		Lv4 = { RefillAfterSeconds = 8 }, -- refills after 8s without taking damage, the Epic-cap step
+		-- The Legendary capstone: refills twice as often as Rare, and breaking it clears the space around
+		-- you rather than nudging it.
+		Lv5 = { RefillAfterSeconds = 5, BreakKnockbackRadius = 16, BreakKnockbackForce = 70 },
 		Card = { Label = "Shield", StatKey = "ShieldPctOfMaxHp", Format = "Percent" },
 	},
 
@@ -156,9 +175,11 @@ RunBuffConfig.Items = {
 		Icon = "RunScavengersLens",
 		Rarities = RunBuffConfig.RarityOrder,
 		Price = { Rare = 110, Epic = 150, Legendary = 200 },
-		PerLevel = { LootPct = 0.10 }, -- +10% ore/Scrap from drops and chests per level
-		Lv4 = { ChestHoldSeconds = 2 }, -- chests open in 2s instead of 3
-		Lv5 = { ChestBonusItems = 1 }, -- every chest drops one extra item
+		PerLevel = { LootPct = 0.12 }, -- +12% ore/Scrap from drops and chests per level (Lv5 = +60%)
+		Lv3 = { ChestHoldSeconds = 2 }, -- chests open in 2s instead of 3, the RARE cap's step
+		Lv4 = { ChestHoldSeconds = 1.5 }, -- 1.5s, the Epic-cap step
+		-- The Legendary capstone: near-instant chests and two extra items out of every one.
+		Lv5 = { ChestHoldSeconds = 1, ChestBonusItems = 2 },
 		Card = { Label = "Loot Bonus", StatKey = "LootPct", Format = "Percent" },
 	},
 
@@ -180,13 +201,16 @@ RunBuffConfig.Items = {
 		-- drag the burn up off the floor with you and leave the drawn ring claiming a reach it no
 		-- longer has. Generous on purpose -- a jump should never interrupt your own aura.
 		Base = { Radius = 10, TickSeconds = 0.5, Height = 14 },
-		PerLevel = { DamagePerSecond = 3 }, -- +3 DPS to everything inside the ring per level (Lv5 = 15 DPS, well under a weak gun's own DPS)
-		Lv4 = { RadiusPct = 0.30 }, -- ring radius +30% (10 -> 13 studs) — the Epic-cap step
-		-- The Legendary-cap step, and deliberately the bigger of the two: 10 -> 17 studs. Growth is
-		-- banked at the caps rather than spread evenly per level (the user's call, 2026-09-24) so the
-		-- ring keeps its milestone feel instead of creeping. LevelStats overlays Lv5 onto Lv4 key by
-		-- key, so restating RadiusPct here REPLACES the 0.30 above rather than stacking with it.
-		Lv5 = { Status = "Slow", RadiusPct = 0.70 }, -- enemies inside the ring are Slowed (StatusConfig.Slow)
+		PerLevel = { DamagePerSecond = 4 }, -- +4 DPS to everything inside the ring per level (Lv4 Epic cap = 16)
+		Lv3 = { RadiusPct = 0.15 }, -- ring 10 -> 11.5 studs, the RARE cap's step (see LevelStats on why Lv3 exists now)
+		Lv4 = { RadiusPct = 0.30 }, -- ring 10 -> 13 studs, the Epic-cap step
+		-- The Legendary capstone, and it is meant to feel like one: the ring DOUBLES to 20 studs and the
+		-- burn jumps to a flat 25 DPS, well above where the linear +4/level ramp would have landed (20).
+		-- Restating DamagePerSecond here REPLACES that ramp outright -- see LevelStats. Radius growth is
+		-- safe to be this aggressive because the aura is a filled DISC (horizontal distance to the
+		-- player), so a wider ring is strictly more coverage, with no pocket in the middle. OrbitBlades
+		-- is a ring BAND and deliberately does not grow -- see its entry.
+		Lv5 = { Status = "Slow", RadiusPct = 1.00, DamagePerSecond = 25 },
 		Card = { Label = "Burn Damage", StatKey = "DamagePerSecond", Format = "Rate" },
 	},
 
@@ -205,12 +229,21 @@ RunBuffConfig.Items = {
 		-- hits are the same blade by construction. Two copies of the speed would drift apart slowly and
 		-- invisibly, which is the worst version of this bug.
 		Base = { Blades = 2, OrbitRadius = 6, HitCooldown = 0.5, OrbitSpeed = 2 },
-		PerLevel = { DamagePerHit = 2 }, -- +2 damage per hit per level
-		-- Same cap-step shape as ScorchAura above, on a key of its own: RadiusPct is already summed
-		-- into Aggregate's flat totals by the aura, and a second item writing the same key there would
-		-- be a collision waiting for the first reader of it.
-		Lv4 = { ExtraBlades = 1, OrbitRadiusPct = 0.30 }, -- +1 blade; orbit 6 -> 7.8 studs
-		Lv5 = { Status = "Staggered", OrbitRadiusPct = 0.70 }, -- Staggered (StatusConfig.Staggered); orbit 6 -> 10.2 studs
+		PerLevel = { DamagePerHit = 3 }, -- +3 damage per hit per level (Lv5 = 15)
+		Lv3 = { ExtraBlades = 1 }, -- 3 blades, the RARE cap's step
+		-- The orbit radius deliberately does NOT grow with level, unlike ScorchAura's ring. The blades
+		-- damage only what comes within ~3 studs of a BLADE, so they cut a ring BAND rather than a filled
+		-- disc, and anything closer to you than the orbit sits in a safe pocket. Widening the orbit widens
+		-- that pocket -- it would make the blades WORSE against exactly the enemies you want them for,
+		-- now that a Scavenger attacks from 6 studs. An OrbitRadiusPct key was tried here and removed for
+		-- this reason (the user's call, 2026-09-25); the multiplier survives in RunBuffService so the
+		-- option stays one config value away, but do not re-add it without solving the pocket first.
+		-- Max level grows the blade COUNT and their damage instead, which has no such downside.
+		Lv4 = { ExtraBlades = 2 }, -- 4 blades, the Epic-cap step
+		-- The Legendary capstone: 5 blades at 15 damage each. Single-target DPS works out at roughly
+		-- blades * damage / orbit period (2pi/OrbitSpeed = 3.14s), so the ramp is about 8.6 -> 15.3 ->
+		-- 23.9 DPS across the three rarity caps -- each cap close to double the last, which is the point.
+		Lv5 = { Status = "Staggered", ExtraBlades = 3 }, -- 5 blades; hits also apply Staggered (StatusConfig.Staggered)
 		Card = { Label = "Blades circling you", Special = "OrbitBladeCount" },
 	},
 
@@ -221,9 +254,16 @@ RunBuffConfig.Items = {
 		Rarities = RunBuffConfig.RarityOrder,
 		Price = { Rare = 170, Epic = 220, Legendary = 270 },
 		Base = { Range = 25, ShotsPerSecond = 2 }, -- a drone that auto-shoots the nearest enemy in range
-		PerLevel = { DamagePerShot = 2 }, -- +2 damage per shot per level
-		Lv4 = { FireRatePct = 0.30 }, -- fires 30% faster
-		Lv5 = { ExtraBeams = 1 }, -- fires a second beam
+		-- Damage per shot is deliberately NOT lifted. ExtraBeams below fires at DIFFERENT targets (see
+		-- GearBehaviors.LaserDrone: it sorts candidates and shoots the nearest N), so beams spread damage
+		-- rather than stacking it on one enemy -- which already made this the strongest single-target gear
+		-- piece of the three at ~26 DPS. It gets a rate-and-targets capstone instead of a damage one.
+		PerLevel = { DamagePerShot = 2 }, -- +2 damage per shot per level (Lv5 = 10)
+		Lv3 = { FireRatePct = 0.15 }, -- 2.3 shots/s, the RARE cap's step
+		Lv4 = { FireRatePct = 0.30 }, -- 2.6 shots/s, the Epic-cap step
+		-- The Legendary capstone: 3 shots/s on the nearest enemy (30 DPS) and two further beams, so it
+		-- covers three targets at once instead of one.
+		Lv5 = { FireRatePct = 0.50, ExtraBeams = 2 },
 		Card = { Label = "Damage Per Shot", StatKey = "DamagePerShot", Format = "Flat" },
 	},
 
@@ -362,14 +402,26 @@ function RunBuffConfig.LevelStats(itemKey: string, level: number)
 			stats[key] = perLevelValue * level
 		end
 	end
-	if level >= 4 and item.Lv4 then
-		for key, value in pairs(item.Lv4) do
-			stats[key] = value
-		end
-	end
-	if level >= 5 and item.Lv5 then
-		for key, value in pairs(item.Lv5) do
-			stats[key] = value
+	-- Tier overrides, applied in ASCENDING order so a higher tier's value wins. This used to be two
+	-- hardcoded blocks for Lv4 and Lv5, which quietly meant a RARE copy could never have a tier step
+	-- of its own -- Rare caps at level 3, so every milestone in the file landed above its ceiling and
+	-- a Rare item's only progression was the linear PerLevel term. Walking the levels generically
+	-- lets each rarity cap (Rare 3 / Epic 4 / Legendary 5) get a step that a player at that cap
+	-- actually reaches.
+	--
+	-- Starts at 2 because level 1 IS the PerLevel term above; an Lv1 table would just be a confusing
+	-- second way to write a base value.
+	--
+	-- Note this OVERWRITES rather than accumulates: an Lv5 entry restating a key REPLACES the Lv4
+	-- value, and restating a PerLevel key replaces the computed `perLevelValue * level` entirely.
+	-- That is load-bearing, not incidental -- it is how a capstone sets a flat number (ScorchAura's
+	-- Lv5 DamagePerSecond) instead of being stuck with whatever the linear ramp reached.
+	for tierLevel = 2, level do
+		local tier = item["Lv" .. tostring(tierLevel)]
+		if tier then
+			for key, value in pairs(tier) do
+				stats[key] = value
+			end
 		end
 	end
 	return stats

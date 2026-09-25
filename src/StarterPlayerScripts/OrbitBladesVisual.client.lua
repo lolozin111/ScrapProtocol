@@ -41,7 +41,7 @@ local ORBIT_SPEED = RunBuffConfig.Items.OrbitBlades.Base.OrbitSpeed
 local FALLBACK_RADIUS = RunBuffConfig.Items.OrbitBlades.Base.OrbitRadius
 
 -- Cached across frames and revalidated by Parent rather than trusted: the model is destroyed and
--- rebuilt whenever the blade COUNT changes (a Lv4 grant adds one) or the run ends, and a stale
+-- rebuilt whenever the blade COUNT changes (Lv3 adds one, Lv4 two, Lv5 three) or the run ends, and a stale
 -- reference would silently stop moving.
 local cachedModel = nil
 local cachedCharacter = nil
