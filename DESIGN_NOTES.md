@@ -3911,6 +3911,39 @@ the right way round is for the user to name the outcome (what fraction of Blackl
 Legendary, and Mythical) and solve the gates backwards from it. Guessing gates and seeing what falls
 out is exactly how the 0.01% happened.
 
+**RECOMMENDED NUMBERS, solved 2026-09-25 — keep today's payouts, change only the presentation.**
+The gates below reproduce the CURRENT `CaseConfig` rarity tables to the decimal, so the ladder ships
+as a pure presentation change. The argument for doing it this way: retuning the reveal and the reward
+economy in one move means that when something feels wrong afterwards you cannot tell which half did
+it. Feel the mechanic first, retune second.
+
+| Case | Starts at | Gates (chance to climb one tier, per window) | Produces |
+|---|---|---|---|
+| Scavenged | Common | 6% / 6% | C78 R20 E2 |
+| Encrypted | Common | 18% / 20% / 15% | C45 R38 E15 L2 |
+| Blackline | **Rare** | 26% / 28% / 34% | R30 E40 L22 **M8** |
+| Prototype | **Epic** | 20% / 22% | E40 L40 **M20** |
+
+Solved by grid search over the 4-window Markov chain, not estimated. The script is trivial to redo:
+four windows, each rolling "advance one tier?" against the gate for the tier you are currently on.
+
+**A property worth keeping on purpose, which fell out of the arithmetic rather than being designed.**
+Blackline's gates RISE as you climb (26 → 28 → 34). Starting at Rare means three upgrades across four
+windows, so there is a spare window, and the later gates have fewer remaining attempts to land in —
+which forces them to be kinder. The consequence: **a case that reaches Legendary late in the decode
+still has a real shot at Mythical.** The ladder gets more generous exactly when there is least time
+left. Do not "fix" the rising numbers; they are doing something.
+
+**THE KNOWN WEAKNESS, accepted deliberately: Scavenged.** At 6%/6%, **78% of Scavenged cases never
+move at all** — two minutes, four windows, nothing. Because only the rarity is ever shown, a failed
+window is invisible, so the mechanic does nothing for the cheapest case most of the time. Two honest
+options: accept it (it is the grind case, it is short, and a climb becomes a real surprise), or
+loosen Scavenged ALONE as the one deliberate economy change. **Recommendation: accept for now** —
+ship against known numbers, then retune one case rather than four. Revisit after the first playtest.
+
+The reel's hidden upgrades sit on top of all of this and nudge every distribution very slightly
+upward (Epic→Legendary 1%, Legendary→Mythical 0.1%) — too small to compensate for in the gates.
+
 **Pity: cases only.** The reel has none, but a reel upgrade landing on Legendary or Mythical RESETS
 it — the good outcome arrived, so the mercy rule has done its job whichever system delivered it. Two
 counters proposed, Legendary and Mythical separate, because with one a steady trickle of Legendaries
@@ -3919,8 +3952,8 @@ would keep resetting it and the Mythical floor would never arrive.
 **Three bays**, each visitable, explicitly so it is something to run while offline — the user's
 words: "smth people do it while offline yk?, they seem to like that".
 
-**Still open, all four on the plan page:** the target outcome for a Blackline; whether starting tiers
-are adopted; whether the four windows sit at the same fractions for every case (a Scavenged decodes
+**Still open:** whether the user accepts the solved gates above (recommendation: yes) and the
+Scavenged weakness with them; whether the four windows sit at the same fractions for every case (a Scavenged decodes
 in 2 minutes, a Blackline in 15 — same fractions scaled is the simple answer); and one pity counter
 or two.
 
